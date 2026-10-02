@@ -111,6 +111,9 @@ public:
         drift();
         switching();
         realtime();
+        monoSingleNotes();
+        monoChords();
+        engineSwitch();
         cpu();
         renders();
     }
@@ -511,6 +514,259 @@ private:
                     + " frees, " + juce::String (counts.blockingLocks) + " blocking locks");
     }
 
+    /// Sections joined by 5 ms crossfades: each a steady harmonic chord (or a single note), 8 partials at 1/k.
+    static std::vector<float> sections (const std::vector<std::vector<double>>& notes, double secondsEach)
+    {
+        const auto each = (size_t) (secondsEach * fs);
+        const auto fadeLength = (size_t) (0.005 * fs);
+        std::vector<float> x (each * notes.size(), 0.0f);
+        juce::Random random (21);
+        for (size_t s = 0; s < notes.size(); ++s)
+        {
+            for (const auto f0 : notes[s])
+            {
+                for (int k = 1; k <= 8; ++k)
+                {
+                    const auto phase = random.nextDouble() * twoPi;
+                    for (size_t i = 0; i < each + fadeLength && s * each + i < x.size(); ++i)
+                    {
+                        auto g = 1.0;
+                        if (s > 0 && i < fadeLength)
+                            g = (double) i / (double) fadeLength;
+                        if (i >= each)
+                            g = 1.0 - (double) (i - each) / (double) fadeLength;
+                        x[s * each + i] += (float) (0.12 * g * std::sin (twoPi * f0 * k * (double) i / fs + phase) / k);
+                    }
+                }
+            }
+        }
+        return x;
+    }
+
+    /// Energy off the partials (outside +-3 Hz of each harmonic of each note, times the ratio), in dB, over
+    /// 2^order samples from start (order 16 resolves the window's own main lobe inside the 3 Hz).
+    static double offPartialsDb (const std::vector<float>& y, size_t start, const std::vector<double>& notes, double ratio, int order = 15)
+    {
+        const auto mag = magnitudeSpectrum (y, start, order);
+        const auto binHz = fs / (double) (1 << order);
+        double on = 0.0, total = 0.0;
+        for (size_t k = 1; k < mag.size(); ++k)
+        {
+            const auto f = (double) k * binHz;
+            const auto e = mag[k] * mag[k];
+            total += e;
+            for (const auto f0 : notes)
+            {
+                const auto h = std::round (f / (f0 * ratio));
+                if (h >= 1.0 && std::abs (f - h * f0 * ratio) <= 3.0)
+                {
+                    on += e;
+                    break;
+                }
+            }
+        }
+        return 10.0 * std::log10 (std::max (1.0e-30, total - on) / total);
+    }
+
+    void monoSingleNotes()
+    {
+        beginTest ("Mono: single notes are PSOLA, and clean");
+
+        // A single voice on three steady notes (A2, G3, high E), wet only, Mono against Poly.
+        const std::vector<std::vector<double>> notes { { 110.0 }, { 196.0 }, { 329.63 } };
+        const auto x = sections (notes, 2.5);
+        juce::StringArray rows;
+        for (const auto semitones : { -12.0, -24.0, 12.0, 7.0 })
+        {
+            double off[2] = { 0.0, 0.0 }, share = 0.0;
+            for (const auto mono : { false, true })
+            {
+                auto s = single (semitones);
+                s.engine = mono ? Multivoicer::Engine::mono : Multivoicer::Engine::poly;
+                Multivoicer m;
+                m.setSettings (s);
+                m.prepare (fs, blockSize);
+                std::vector<double> shares;
+                const auto out = run (m, x, [&] (size_t start)
+                {
+                    if (start % (size_t) (0.5 * fs) < (size_t) blockSize && start % (size_t) (2.5 * fs) >= (size_t) (0.5 * fs))
+                        shares.push_back (m.getPsolaShare());
+                });
+                double worst = -400.0;
+                for (size_t k = 0; k < notes.size(); ++k)
+                    worst = std::max (worst, offPartialsDb (out.left, k * (size_t) (2.5 * fs) + (size_t) (0.8 * fs), notes[k], Multivoicer::ratioOf (s.voices[0]), 16));
+                off[mono ? 1 : 0] = worst;
+                if (mono)
+                    share = *std::min_element (shares.begin(), shares.end());
+            }
+            expectLessThan (off[1], -40.0);
+            expectGreaterThan (share, 0.99);
+            rows.add (str (semitones, 0) + " st: Poly " + str (off[0], 1) + " dB, Mono " + str (off[1], 1) + " dB (PSOLA share " + str (share, 3) + ")");
+        }
+        logMessage ("  -> energy off the shifted note's harmonics, worst of A2, G3, high E (steady, wet only; Mono limit -40 dB): " + rows.joinIntoString ("; ")
+                    + ". On steady single notes both engines are clean: the granular engine's splices are aligned to whole periods too");
+
+        // What does differ: PSOLA keeps the input's spectral envelope (its formants: on a guitar, the amp and
+        // cab's colour), granular scales it with the pitch. A G3 whose partials peak at a 1.2 kHz resonance,
+        // down an octave: where is the output's strongest partial?
+        const auto n = (size_t) (3.0 * fs);
+        std::vector<float> formant (n, 0.0f);
+        for (int k = 1; k <= 40; ++k)
+        {
+            const auto f = 196.0 * k;
+            const auto a = 0.05 / k + 1.0 / (1.0 + std::pow ((f - 1200.0) / 150.0, 2.0));
+            for (size_t i = 0; i < n; ++i)
+                formant[i] += (float) (0.03 * a * std::sin (twoPi * f * (double) i / fs + 0.7 * k));
+        }
+        double peakHz[2] = { 0.0, 0.0 };
+        for (const auto mono : { false, true })
+        {
+            auto s = single (-12.0);
+            s.engine = mono ? Multivoicer::Engine::mono : Multivoicer::Engine::poly;
+            Multivoicer m;
+            m.setSettings (s);
+            m.prepare (fs, blockSize);
+            const auto out = run (m, formant);
+            constexpr int order = 16;
+            const auto mag = magnitudeSpectrum (out.left, (size_t) (1.0 * fs), order);
+            size_t best = 1;
+            for (size_t k = 1; k < mag.size(); ++k)
+                if (mag[k] > mag[best])
+                    best = k;
+            peakHz[mono ? 1 : 0] = (double) best * fs / (double) (1 << order);
+        }
+        expectWithinAbsoluteError (peakHz[1], 1176.0, 120.0); // the 12th partial of 98 Hz sits at the resonance
+        expectWithinAbsoluteError (peakHz[0], 588.0, 120.0);  // granular moved the resonance down an octave
+        logMessage ("  -> a G3 with a 1.2 kHz resonance, down an octave: the strongest output partial is at " + juce::String (juce::roundToInt (peakHz[1])) + " Hz in Mono (PSOLA keeps "
+                    + "the resonance) and " + juce::String (juce::roundToInt (peakHz[0])) + " Hz in Poly (granular takes it down an octave with the pitch)");
+    }
+
+    void monoChords()
+    {
+        beginTest ("Mono: on chords it degrades to Poly (the granular fallback), with no clicks at the changes");
+
+        // "Gracefully" here means: once the analysis can't find one period, each voice is its granular twin,
+        // so Mono on a chord sounds and measures like Poly (level and spectrum), and the moves between PSOLA
+        // and granular are 20 ms crossfades with no step beyond steady playing.
+        const std::vector<std::vector<double>> notes { { 110.0 }, { 82.41, 123.47, 164.81 }, { 146.83 }, { 130.81, 164.81, 196.0 }, { 196.0 } };
+        const auto each = 1.0;
+        const auto x = sections (notes, each);
+        auto s = single (-12.0);
+        Stereo outs[2];
+        std::vector<double> shareTrace;
+        for (const auto mono : { false, true })
+        {
+            s.engine = mono ? Multivoicer::Engine::mono : Multivoicer::Engine::poly;
+            Multivoicer m;
+            m.setSettings (s);
+            m.prepare (fs, blockSize);
+            outs[mono ? 1 : 0] = run (m, x, [&] (size_t)
+            {
+                if (mono)
+                    shareTrace.push_back (m.getPsolaShare());
+            });
+        }
+
+        juce::StringArray rows;
+        const auto blocksPerSection = (size_t) (each * fs) / (size_t) blockSize;
+        for (size_t k = 0; k < notes.size(); ++k)
+        {
+            const auto start = k * (size_t) (each * fs) + (size_t) (0.3 * fs);
+            const auto len = (size_t) (0.6 * fs);
+            double meanShare = 0.0;
+            const auto firstBlock = k * blocksPerSection + blocksPerSection * 3 / 10;
+            for (auto b = firstBlock; b < (k + 1) * blocksPerSection; ++b)
+                meanShare += shareTrace[b];
+            meanShare /= (double) ((k + 1) * blocksPerSection - firstBlock);
+            const auto levelDiff = toDb (rms (outs[1].left.data() + start, len) / rms (outs[0].left.data() + start, len));
+            const auto offPoly = offPartialsDb (outs[0].left, start, notes[k], 0.5);
+            const auto offMono = offPartialsDb (outs[1].left, start, notes[k], 0.5);
+            const auto isChord = notes[k].size() > 1;
+            if (isChord)
+            {
+                expectLessThan (meanShare, 0.05);
+                expectWithinAbsoluteError (levelDiff, 0.0, 1.0);
+                expectWithinAbsoluteError (offMono, offPoly, 2.0);
+            }
+            else
+            {
+                expectGreaterThan (meanShare, 0.9);
+            }
+            rows.add (juce::String (isChord ? "chord" : "note") + " " + juce::String ((int) k + 1) + ": PSOLA share " + str (meanShare, 3) + ", Mono vs Poly level "
+                      + str (levelDiff, 2) + " dB, off-partial energy Poly " + str (offPoly, 1) + " / Mono " + str (offMono, 1) + " dB");
+        }
+
+        // Clicks: the largest step in the 120 ms around each change against the steady-state largest either side.
+        double worst = 0.0;
+        const auto& y = outs[1].left;
+        for (size_t k = 1; k < notes.size(); ++k)
+        {
+            const auto change = k * (size_t) (each * fs);
+            const auto steady = std::max (maxStep (y, change - (size_t) (0.5 * fs), change - (size_t) (0.05 * fs)),
+                                          maxStep (y, change + (size_t) (0.4 * fs), change + (size_t) (0.9 * fs)));
+            worst = std::max (worst, maxStep (y, change - (size_t) (0.02 * fs), change + (size_t) (0.1 * fs)) / steady);
+        }
+        expectLessThan (worst, 1.25);
+        logMessage ("  -> one voice down an octave, A2 / E5 chord / D3 / C major chord / G3, 1 s each, from 0.3 s in: " + rows.joinIntoString ("; "));
+        logMessage ("  -> largest step around each change in Mono, against the steady state either side: " + str (worst, 3)
+                    + " (limit 1.25; a note change itself makes bigger steps than steady playing)");
+
+        PlotSeries share { "PSOLA share of the voice (Mono)", {}, {}, plotColour (0) };
+        for (size_t b = 0; b < shareTrace.size(); ++b)
+        {
+            share.x.push_back ((double) (b * (size_t) blockSize) / fs);
+            share.y.push_back (shareTrace[b]);
+        }
+        PlotOptions o;
+        o.title = "Mono on notes and chords: A2, E5, D3, C major, G3 (1 s each)";
+        o.xLabel = "s";
+        o.yLabel = "share";
+        o.xMin = 0.0;
+        o.xMax = 5.0;
+        o.yMin = -0.05;
+        o.yMax = 1.05;
+        const auto png = proofDir().getChildFile ("multivoicer_mono_fallback.png");
+        expect (savePlot (png, o, { share }));
+        logMessage ("  -> " + png.getFullPathName());
+    }
+
+    void engineSwitch()
+    {
+        beginTest ("engine switch: Poly <-> Mono crossfades without a click");
+
+        const auto x = sections ({ { 146.83 } }, 4.0);
+        auto s = Multivoicer::startingPoint (Multivoicer::StartingPoint::octaveStack);
+        Multivoicer m;
+        m.setSettings (s);
+        m.prepare (fs, blockSize);
+        std::vector<size_t> switches;
+        const auto out = run (m, x, [&] (size_t start)
+        {
+            if (start > (size_t) (0.5 * fs) && start % (size_t) (0.4 * fs) < (size_t) blockSize)
+            {
+                s.engine = s.engine == Multivoicer::Engine::poly ? Multivoicer::Engine::mono : Multivoicer::Engine::poly;
+                m.setSettings (s);
+                switches.push_back (start);
+            }
+        });
+        std::vector<bool> near (out.left.size(), false);
+        for (auto c : switches)
+            for (size_t i = c; i < std::min (out.left.size(), c + (size_t) (0.05 * fs)); ++i)
+                near[i] = true;
+        double steady = 0.0, around = 0.0;
+        for (size_t i = (size_t) (0.5 * fs); i < out.left.size(); ++i)
+        {
+            const auto step = std::max (std::abs ((double) out.left[i] - (double) out.left[i - 1]), std::abs ((double) out.right[i] - (double) out.right[i - 1]));
+            if (near[i])
+                around = std::max (around, step);
+            else
+                steady = std::max (steady, step);
+        }
+        expectLessThan (around / steady, 1.1);
+        logMessage ("  -> " + juce::String ((int) switches.size()) + " switches on a sustained D3 (Octave stack): largest step within 50 ms of a switch "
+                    + str (around / steady, 3) + " x the steady-state largest (limit 1.1)");
+    }
+
     void cpu()
     {
         beginTest ("CPU: a 128-sample stereo buffer");
@@ -550,7 +806,11 @@ private:
             eight.voices[(size_t) v].levelDb = 0.0;
         }
         const auto poly = time (eight, "8 voices Poly (unison to +24, drift on)");
+        auto eightMono = eight;
+        eightMono.engine = Multivoicer::Engine::mono;
+        const auto mono = time (eightMono, "8 voices Mono (PSOLA plus the granular fallback, one analysis)");
         expectLessThan (poly, 0.15 * deadlineMicros);
+        expectLessThan (mono, 0.25 * deadlineMicros);
         logMessage ("  -> 10 s of guitar DI, of the 2.67 ms deadline: " + rows.joinIntoString ("; "));
     }
 
@@ -561,22 +821,28 @@ private:
         const auto di = guitarDI ((int) (6.0 * fs));
         juce::StringArray files;
         using SP = Multivoicer::StartingPoint;
-        for (const auto& [point, name] : { std::pair { SP::unisonDouble, "unison_double" }, std::pair { SP::octaveStack, "octave_stack" },
-                                           std::pair { SP::fifthsStack, "fifths_stack" }, std::pair { SP::doubleOctaves, "double_octaves" } })
+        for (const auto engine : { Multivoicer::Engine::poly, Multivoicer::Engine::mono })
         {
-            Multivoicer m;
-            m.setSettings (Multivoicer::startingPoint (point));
-            m.prepare (fs, blockSize);
-            const auto out = run (m, di);
-            juce::AudioBuffer<float> stereo (2, (int) di.size());
-            stereo.copyFrom (0, 0, out.left.data(), (int) di.size());
-            stereo.copyFrom (1, 0, out.right.data(), (int) di.size());
-            const auto file = proofDir().getChildFile ("multivoicer_poly_" + juce::String (name) + ".wav");
-            expect (writeWav (file, stereo));
-            files.add (file.getFileName());
+            for (const auto& [point, name] : { std::pair { SP::unisonDouble, "unison_double" }, std::pair { SP::octaveStack, "octave_stack" },
+                                               std::pair { SP::fifthsStack, "fifths_stack" }, std::pair { SP::doubleOctaves, "double_octaves" } })
+            {
+                auto s = Multivoicer::startingPoint (point);
+                s.engine = engine;
+                Multivoicer m;
+                m.setSettings (s);
+                m.prepare (fs, blockSize);
+                const auto out = run (m, di);
+                juce::AudioBuffer<float> stereo (2, (int) di.size());
+                stereo.copyFrom (0, 0, out.left.data(), (int) di.size());
+                stereo.copyFrom (1, 0, out.right.data(), (int) di.size());
+                const auto file = proofDir().getChildFile ("multivoicer_" + juce::String (engine == Multivoicer::Engine::poly ? "poly_" : "mono_") + juce::String (name)
+                                                           + ".wav");
+                expect (writeWav (file, stereo));
+                files.add (file.getFileName());
+            }
         }
         expect (writeWav (proofDir().getChildFile ("multivoicer_dry.wav"), di));
-        logMessage ("  -> the synthetic guitar DI through each starting point at mix 50%, Poly: " + files.joinIntoString (", ") + " (plus multivoicer_dry.wav) in "
+        logMessage ("  -> the synthetic guitar DI through each starting point at mix 50%, Poly and Mono: " + files.joinIntoString (", ") + " (plus multivoicer_dry.wav) in "
                     + proofDir().getFullPathName() + ". Unverified by ear: Sean's to judge.");
     }
 };
