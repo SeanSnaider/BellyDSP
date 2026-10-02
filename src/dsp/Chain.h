@@ -32,7 +32,9 @@ namespace ampsim
 /// generic logic reaches them through blockFor(). A section's order is an array of slots, changed by
 /// a request from the message thread: the audio thread dips the section to its own input over 10 ms,
 /// swaps the order at the bottom of the dip (where the swap can't be heard), and fades back, so a
-/// reorder never clicks and never allocates (Foundation decisions, "Reorderable chain").
+/// reorder never clicks and never allocates (Foundation decisions, "Reorderable chain"). During the dip
+/// every block's input fades too, so a block with memory (a delay line, a reverb tank) never stores the
+/// jump from one order's signal to the other's, which it would replay after the section faded back in.
 class Chain
 {
 public:
@@ -159,6 +161,7 @@ private:
     std::vector<float> di;        // decision 2: the clean guitar, snapshotted every buffer
     juce::AudioBuffer<float> dry; // a block's input, kept while its bypass crossfades
     juce::AudioBuffer<float> sectionDry; // a section's input, kept while it reorders
+    std::vector<float> dipGain, blockGain; // a reorder's fade for this buffer: the section's, and each block input's
 
 public:
     Chain();

@@ -242,6 +242,70 @@ public:
                         + juce::String (converged, 1) + " dB from a chain that started in the new order");
             logMessage ("  -> refused: a block twice, a block from the other section, a missing block");
         }
+
+        beginTest ("a reorder doesn't leave a splice in a delay line: the repeats of the swap are as clean as the playing");
+        {
+            // Chorus then delay, swapped to delay then chorus while a pure tone plays. Without care, the
+            // delay line stores the jump from the chorus's output to the dry input at the swap, and replays
+            // it 300 ms later, after the section has faded back in, where no dip hides it.
+            const auto setUp = [] (ampsim::Chain& chain)
+            {
+                ampsim::Chorus::Settings chorus;
+                chorus.mix = 1.0f;
+                chorus.analog = false;
+                chain.chorus.setSettings (chorus);
+                ampsim::Delay::Settings delay;
+                delay.timeMs = 300.0f;
+                delay.feedback = 0.5f;
+                delay.mix = 0.5f;
+                delay.duckDb = 0.0f;
+                delay.lowCutHz = 20.0f;
+                delay.highCutHz = 20000.0f;
+                chain.delay.setSettings (delay);
+                chain.setBypassed (Slot::chorus, false);
+                chain.setBypassed (Slot::delay, false);
+            };
+            using Section = ampsim::Chain::Section;
+            const std::vector<Slot> swapped { Slot::postEq, Slot::postCompressor, Slot::delay, Slot::chorus, Slot::reverb };
+
+            ampsim::Chain chain;
+            setUp (chain);
+            chain.prepare (fs, blockSize);
+            auto tone = sine (220.0, 0.25, (int) (1.5 * fs));
+            tone.resize ((size_t) (2.6 * fs), 0.0f); // then silence, so the repeats stand alone
+            const auto swapAt = (size_t) (1.0 * fs) / blockSize * blockSize;
+            const auto out = runChain (chain, tone, [&] (size_t start)
+            {
+                if (start == swapAt)
+                    chain.requestOrder (Section::post, swapped);
+            }).left;
+
+            // A click shows as a burst in the second difference (a step or kink has a large one; a 220 Hz
+            // tone and its chorus a small one).
+            const auto curvature = [&out] (size_t from, size_t to)
+            {
+                double worst = 0.0;
+                for (size_t n = std::max<size_t> (from, 2); n < std::min (to, out.size()); ++n)
+                    worst = std::max (worst, std::abs ((double) out[n] - 2.0 * out[n - 1] + (double) out[n - 2]));
+                return worst;
+            };
+            const auto delaySamples = (size_t) (0.3 * fs);
+            const auto steady = curvature ((size_t) (0.5 * fs), (size_t) (0.95 * fs));
+            const auto atSwap = curvature (swapAt - 480, swapAt + 2400);
+            juce::StringArray repeats;
+            double worstRepeat = 0.0;
+            for (size_t r = 1; r <= 3; ++r)
+            {
+                const auto centre = swapAt + r * delaySamples;
+                const auto ratio = curvature (centre - 960, centre + 2400) / steady;
+                worstRepeat = std::max (worstRepeat, ratio);
+                repeats.add ("x" + juce::String (ratio, 2));
+            }
+            expectLessThan (worstRepeat, 1.5);
+            logMessage ("  -> chorus <-> delay swapped at 1 s on a 220 Hz tone (delay 300 ms, feedback 50%): largest second difference in the "
+                        "repeats of the swap " + repeats.joinIntoString (", ") + " of steady playing; during the swap itself x"
+                        + juce::String (atSwap / steady, 2));
+        }
     }
 };
 
