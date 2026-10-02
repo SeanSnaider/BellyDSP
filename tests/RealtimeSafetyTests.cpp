@@ -159,7 +159,11 @@ public:
                     case 2950: midi.addEvent (juce::MidiMessage::controllerEvent (1, 81, 127), 7); break;  // thaw
                     case 3000: setParam (p, "reverb_predelay_sync", 1.0f); setParam (p, "reverb_size", 80.0f); break;
                     case 3100: setParam (p, "reverb_on", 0.0f); setParam (p, "chorus_on", 0.0f); break;   // reverb spills over
-                    case 3300: setParam (p, "reverb_on", 1.0f); setParam (p, "reverb_engine", 0.0f); break;
+                    case 3300: setParam (p, "reverb_on", 1.0f); setParam (p, "reverb_engine", 0.0f); setParam (p, "reverb_shimmer", 70.0f); break;
+                    case 3320: setParam (p, "reverb_shimmer_interval", 1.0f); setParam (p, "mv_on", 1.0f); break;
+                    case 3340: setParam (p, "mv_engine", 1.0f); setParam (p, "mv_voices", 8.0f); break;
+                    case 3360: setParam (p, "mv_engine", 0.0f); setParam (p, "reverb_freeze", 1.0f); break;
+                    case 3380: setParam (p, "reverb_freeze", 0.0f); setParam (p, "mv_on", 0.0f); break;
                     // Phase 7 tuner: engaged (muting), A4 moved, heard instead of muted, disengaged.
                     case 2620: setParam (p, "tuner_on", 1.0f); break;
                     case 2780: setParam (p, "tuner_a4", 432.0f); setParam (p, "tuner_mute", 0.0f); break;

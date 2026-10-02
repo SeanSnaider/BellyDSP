@@ -4,6 +4,7 @@
 #include "CutFilter.h"
 #include "DelayLine.h"
 #include "Lfo.h"
+#include "PitchShifter.h"
 #include "Svf.h"
 
 #include <array>
@@ -303,7 +304,40 @@ public:
         double modDepth = 0.3;                               // 0..1 of +-0.5 ms
         double modRateHz = 0.5;
         double earlyGain = 1.0, lateGain = 1.0;
+        double shimmer = 0.0;      // 0 .. maxShimmer: the share of the network's energy sent round the shifter each pass
+        double shimmerRatio = 2.0; // the shifter's pitch ratio (2 = an octave up)
     };
+
+    /// Shimmer (Phase 9, BUILD_PLAN "Reverb", Shimmer): a granular pitch shifter inside the feedback loop.
+    /// Each sample the network's line outputs s (after their decay filters) are split along a fixed unit
+    /// vector u into m u + s_perp (m = u . s), and only the u component is crossfaded with its shifted
+    /// version (an octave up by default):
+    ///     s' = s_perp + (sqrt(1 - g^2) m + g limit(shift(m))) u
+    /// If the shifted signal were uncorrelated with m and had m's power, then on average
+    ///     |s'|^2 = |s_perp|^2 + (1 - g^2) m^2 + g^2 m^2 = |s|^2
+    /// and the shimmer would only move energy up in pitch. Neither holds in a frozen tank (measured: it grew
+    /// 24 dB in 30 s): after a few passes m holds the octaves the shimmer made, the shifted signal lines up
+    /// with them, and as the cascade climbs toward Nyquist the shifter's correlation-matched crossfade puts
+    /// out up to 3 times its input's power. So:
+    ///   - The shifter's input is low-passed at shimmerLowPassHz (12 dB/oct): the cascade stops climbing
+    ///     there instead of folding over at Nyquist, as shimmer designs usually do to keep it from turning
+    ///     harsh.
+    ///   - The bound is enforced, not assumed: a slow power match (powers averaged over about 50 ms) scales
+    ///     the new u component by k = min(1, sqrt(margin P_m / P_new)). A ratio of averages is biased high
+    ///     when the denominator lags (Jensen: E[x / X] > E[x] / E[X]), which let the realized power run 4%
+    ///     over with no margin; margin = 0.9 covers it, so on average |s'|^2 <= |s_perp|^2 + m^2 = |s|^2.
+    /// Frozen (a lossless tank) a shimmering tail holds roughly steady, shedding a little; with any decay it
+    /// dies away at about the reverb's own rate; each pass shifts what's already shifted again, the rising
+    /// cascade a shimmer is. (A first version scaled all of s by sqrt(1 - g^2): with 16 lines m^2 is about
+    /// |s|^2 / 16, which drained a frozen tail by about 50 dB a second.) The matrix keeps turning other
+    /// directions into u, so every part of the tail gets its turn. u is a
+    /// balanced +-1 pattern: it sums to zero, so the Householder part of the matrix leaves it alone and the
+    /// rotation spreads it over every line. The shifter's output only depends on input at least 1 ms old
+    /// (PitchShifter.h), so it can sit in the loop; a soft limit (identity below 0.7) bounds anything a
+    /// splice could throw. At 0 the shifter isn't run at all.
+    static constexpr double maxShimmer = 0.7;
+    static constexpr double shimmerLowPassHz = 5000.0;
+    static constexpr double shimmerPowerMargin = 0.9;
 
     explicit FeedbackDelayNetwork (int numLines);
 
@@ -347,6 +381,13 @@ private:
     std::array<DelayLine, maxLines> lines;
     std::array<Glide, maxLines> lengths;
     std::array<GlidingSvf, maxLines> lowShelves, highShelves;
+
+    GranularShifter shimmerShifter;
+    Svf shimmerLowPass;
+    juce::SmoothedValue<double> shimmerAmount { 0.0 };
+    double shimmerPowerIn = 0.0, shimmerPowerOut = 0.0, shimmerAverage = 0.0; // the power match
+    double shimmerRatio = 2.0;
+    std::array<double, maxLines> shimmerDirection {};
     std::array<double, maxLines> gains {}, gainSteps {}, gainTargets {}; // the mid gains glide like the shelves
     int glideRemaining = 0;
     std::array<double, maxLines> injectLeft {}, injectRight {}, tapLeft {}, tapRight {};
@@ -437,6 +478,8 @@ public:
         float highCutHz = 8000.0f;         // wet high cut, 12 dB/oct; 20000 or above is off
         float ducking = 0.0f;              // 0 off .. 1 (18 dB)
         bool freeze = false;
+        float shimmer = 0.0f;              // 0 .. 1 (Room and Hall): FeedbackDelayNetwork::maxShimmer at 1
+        float shimmerSemitones = 12.0f;    // the shimmer's interval
     };
 
     static constexpr double lowCrossoverHz = 300.0;

@@ -370,6 +370,18 @@ void FeedbackDelayNetwork::prepare (double rate)
     sampleRate = rate;
     const auto toSamples = rate / 1000.0;
 
+    // Shimmer: the shifter, and the balanced +-1 direction (it sums to zero over the lines in use).
+    shimmerShifter.prepare (rate);
+    shimmerShifter.setSettings ({ shimmerRatio, 0.0, 30.0 });
+    shimmerLowPass.setCoefficients (Svf::design (Svf::Type::lowpass, shimmerLowPassHz, 0.7071067811865476, 0.0, rate));
+    shimmerLowPass.reset();
+    shimmerAmount.reset (rate, 0.05);
+    shimmerAverage = 1.0 - std::exp (-1.0 / (0.05 * rate));
+    shimmerPowerIn = shimmerPowerOut = 0.0;
+    shimmerAmount.setCurrentAndTargetValue (juce::jlimit (0.0, maxShimmer, target.shimmer));
+    for (int i = 0; i < numLines; ++i)
+        shimmerDirection[(size_t) i] = ((i % 4 == 0 || i % 4 == 3) ? 1.0 : -1.0) / std::sqrt ((double) numLines);
+
     // Base lengths: geometric from 30 to 100 ms, so neighbouring lines are a constant ratio apart.
     for (int i = 0; i < numLines; ++i)
         baseLengths[(size_t) i] = shortestLineMs * std::pow (longestLineMs / shortestLineMs, (double) i / (numLines - 1)) * toSamples;
@@ -429,6 +441,9 @@ void FeedbackDelayNetwork::prepare (double rate)
 
 void FeedbackDelayNetwork::reset()
 {
+    shimmerShifter.reset();
+    shimmerLowPass.reset();
+    shimmerPowerIn = shimmerPowerOut = 0.0;
     for (auto& line : lines)
         line.reset();
     for (auto& line : earlyLines)
@@ -450,6 +465,13 @@ void FeedbackDelayNetwork::setParameters (const Parameters& p)
     target = p;
     if (! prepared)
         return;
+
+    shimmerAmount.setTargetValue (juce::jlimit (0.0, maxShimmer, p.shimmer));
+    if (const auto ratio = juce::jlimit (0.25, 4.0, p.shimmerRatio); std::abs (ratio - shimmerRatio) > 1.0e-12)
+    {
+        shimmerRatio = ratio;
+        shimmerShifter.setSettings ({ ratio, 0.0, 30.0 }); // glides over 30 ms
+    }
 
     const auto scale = juce::jlimit (0.05, maxSizeScale, p.sizeScale);
     if (std::abs (scale - lengthsDesignedFor) > 1.0e-12)
@@ -528,6 +550,20 @@ void FeedbackDelayNetwork::updateDecayFilters (bool glide)
     }
     glideRemaining = glide ? coefficientInterval : 0;
 }
+
+namespace
+{
+/// Identity below 0.7, then a tanh knee that never exceeds 1, with matching slope at the joint (the same
+/// curve as the delay's loop limiter, Delay::softLimit).
+float shimmerLimit (float x) noexcept
+{
+    constexpr float knee = 0.7f, headroom = 1.0f - knee;
+    const auto a = std::abs (x);
+    if (a <= knee)
+        return x;
+    return std::copysign (knee + headroom * std::tanh ((a - knee) / headroom), x);
+}
+} // namespace
 
 void FeedbackDelayNetwork::process (const float* inLeft, const float* inRight, float* outLeft, float* outRight, int numSamples) noexcept
 {
@@ -625,6 +661,23 @@ void FeedbackDelayNetwork::process (const float* inLeft, const float* inRight, f
             s[(size_t) i] = v;
             yLeft += tapLeft[(size_t) i] * v;
             yRight += tapRight[(size_t) i] * v;
+        }
+
+        // Shimmer: the projection on u, shifted, crossfaded back in along u (see the class comment).
+        if (const auto g = shimmerAmount.getNextValue(); g > 0.0 || shimmerAmount.isSmoothing())
+        {
+            double m = 0.0;
+            for (int i = 0; i < n; ++i)
+                m += shimmerDirection[(size_t) i] * s[(size_t) i];
+            const auto shifted = (double) shimmerLimit (shimmerShifter.processSample ((float) shimmerLowPass.processSample (m)));
+            const auto replacement = std::sqrt (1.0 - g * g) * m + g * shifted;
+            shimmerPowerIn += shimmerAverage * (m * m - shimmerPowerIn);
+            shimmerPowerOut += shimmerAverage * (replacement * replacement - shimmerPowerOut);
+            const auto allowed = shimmerPowerMargin * shimmerPowerIn;
+            const auto k = shimmerPowerOut > allowed && shimmerPowerOut > 1.0e-30 ? std::sqrt (allowed / shimmerPowerOut) : 1.0;
+            const auto change = k * replacement - m; // the u component's new value, minus the old
+            for (int i = 0; i < n; ++i)
+                s[(size_t) i] += change * shimmerDirection[(size_t) i];
         }
 
         feedbackMatrix (s.data(), n);
@@ -737,6 +790,8 @@ void Reverb::applySettings (bool snap)
     f.modRateHz = juce::jlimit (0.0, 10.0, (double) s.modRateHz);
     f.earlyGain = std::min (1.0, 2.0 * (1.0 - balance)); // the balance knob: both full at the centre
     f.lateGain = std::min (1.0, 2.0 * balance) * fdnLateLevel;
+    f.shimmer = FeedbackDelayNetwork::maxShimmer * juce::jlimit (0.0, 1.0, (double) s.shimmer);
+    f.shimmerRatio = std::exp2 (juce::jlimit (-12.0, 24.0, (double) s.shimmerSemitones) / 12.0);
     room.setParameters (f);
     hall.setParameters (f);
     plate.setParameters (plateParameters (s, plate.loopSeconds()));

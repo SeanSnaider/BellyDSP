@@ -521,7 +521,7 @@ public:
             AmpSimProcessor p;
             expectEquals (getParam (p, "chorus_on"), 0.0f);
             expectEquals (getParam (p, "reverb_on"), 0.0f);
-            expect (p.getSectionOrder (ampsim::Chain::Section::post) == juce::StringArray { "eq", "comp", "bloom", "chorus", "delay", "reverb" });
+            expect (p.getSectionOrder (ampsim::Chain::Section::post) == juce::StringArray { "eq", "comp", "multivoicer", "bloom", "chorus", "delay", "reverb" });
 
             // Synced: a quarter-note chorus cycle at 120 BPM is 2 Hz; a sixteenth-note pre-delay is 125 ms.
             setParam (p, "chorus_sync", 1.0f);
@@ -677,7 +677,7 @@ public:
                 for (auto* child : c.getChildren())
                     walk (*child);
             };
-            for (int tab = 0; tab < 7; ++tab)
+            for (int tab = 0; tab < 8; ++tab)
             {
                 ampSimEditor->showTab (tab);
                 walk (*editor);
@@ -762,7 +762,7 @@ public:
             expectEquals (reachedOnRightClick, 0);
             expect (control.downs == 1 && control.drags == 1 && control.ups == 1);
 
-            logMessage ("  -> " + juce::String (tagged.size()) + " parameters reachable by right-click across the 6 tabs; the delay switch learned CC 85 "
+            logMessage ("  -> " + juce::String (tagged.size()) + " parameters reachable by right-click across the 8 tabs; the delay switch learned CC 85 "
                         "as a toggle (the learning press changed nothing), switched to follow the switch and back, and was forgotten; the reverb mix "
                         "learned CC 86 over 0-100%; a learn was cancelled; right- and ctrl-clicks reached the control 0 times, a left-click 3 (down, drag, up)");
         }
@@ -1262,7 +1262,7 @@ public:
             expect (startsWith (p.getSectionOrder (Section::post), { "eq", "comp" }));
             p.setSectionOrder (Section::pre, { "eq", "gate", "comp", "boost", "overdrive" });
             p.setSectionOrder (Section::post, { "comp", "eq" });
-            expect (startsWith (p.getSectionOrder (Section::post), { "comp", "eq", "bloom", "chorus" }));
+            expect (startsWith (p.getSectionOrder (Section::post), { "comp", "eq", "multivoicer", "bloom", "chorus" }));
 
             juce::MemoryBlock state;
             p.getStateInformation (state);
@@ -1379,14 +1379,15 @@ public:
             setParam (p, "boost_mode", 1.0f);
             setParam (p, "od_on", 1.0f);
             setParam (p, "od_mode", 1.0f);
+            setParam (p, "mv_on", 1.0f);
             setParam (p, "bloom_on", 1.0f);
             setParam (p, "bloom_phaser_on", 1.0f);
             setParam (p, "bloom_phaser_mode", 1.0f);
             setParam (p, "bloom_flanger_on", 1.0f);
             setParam (p, "bloom_flanger_sync", 1.0f);
             for (auto [tab, name] : std::initializer_list<std::pair<int, const char*>> {
-                     { 2, "editor_gates.png" }, { 3, "editor_prefx.png" }, { 4, "editor_postfx.png" }, { 5, "editor_bloom.png" },
-                     { 6, "editor_timefx.png" } })
+                     { 2, "editor_gates.png" }, { 3, "editor_prefx.png" }, { 4, "editor_postfx.png" }, { 5, "editor_pitch.png" },
+                     { 6, "editor_bloom.png" }, { 7, "editor_timefx.png" } })
             {
                 ampSimEditor->showTab (tab);
                 ampSimEditor->resized();

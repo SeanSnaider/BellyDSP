@@ -473,6 +473,107 @@ ampsim::Chorus::Settings ChorusParameters::read (double bpm) const noexcept
     return s;
 }
 
+// ---- Multivoicer ------------------------------------------------------------------------------
+
+void MultivoicerParameters::addTo (Layout& layout)
+{
+    using MV = ampsim::Multivoicer;
+    const auto d = MV::defaults();
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "mv_on", 1 }, "Multivoicer On", false));
+    layout.add (std::make_unique<Choice> (juce::ParameterID { "mv_engine", 1 }, "Multivoicer Engine", juce::StringArray { "Poly", "Mono" }, 0));
+    layout.add (std::make_unique<juce::AudioParameterInt> (juce::ParameterID { "mv_voices", 1 }, "Multivoicer Voices", 1, MV::maxVoices, d.voiceCount));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "mv_mix", 1 }, "Multivoicer Mix", juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f),
+                                         (float) d.mix * 100.0f, percent()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "mv_spread", 1 }, "Multivoicer Spread", juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f),
+                                         (float) d.spread * 100.0f, percent()));
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "mv_hp", 1 }, "Multivoicer Wet High-Pass", d.wetHighPass));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "mv_hp_freq", 1 }, "Multivoicer High-Pass Frequency",
+                                         skewedRange ((float) MV::minHighPassHz, (float) MV::maxHighPassHz, 150.0f, 1.0f), (float) d.wetHighPassHz, hertz()));
+
+    for (int v = 0; v < MV::maxVoices; ++v)
+    {
+        const auto& voice = d.voices[(size_t) v];
+        const auto name = "Voice " + juce::String (v + 1) + " ";
+        layout.add (std::make_unique<juce::AudioParameterInt> (juce::ParameterID { voiceId (v, "semitones"), 1 }, name + "Semitones", -24, 24,
+                                                               (int) std::lround (voice.semitones)));
+        layout.add (std::make_unique<Float> (juce::ParameterID { voiceId (v, "cents"), 1 }, name + "Cents", juce::NormalisableRange<float> (-100.0f, 100.0f, 0.1f),
+                                             (float) voice.cents, juce::AudioParameterFloatAttributes().withLabel ("ct")));
+        layout.add (std::make_unique<Float> (juce::ParameterID { voiceId (v, "delay"), 1 }, name + "Delay", juce::NormalisableRange<float> (0.0f, (float) MV::maxDelayMs, 0.1f),
+                                             (float) voice.delayMs, milliseconds()));
+        layout.add (std::make_unique<Float> (juce::ParameterID { voiceId (v, "pan"), 1 }, name + "Pan", juce::NormalisableRange<float> (-100.0f, 100.0f, 1.0f),
+                                             (float) voice.pan * 100.0f, percent()));
+        layout.add (std::make_unique<Float> (juce::ParameterID { voiceId (v, "level"), 1 }, name + "Level",
+                                             juce::NormalisableRange<float> ((float) MV::minLevelDb, (float) MV::maxLevelDb, 0.1f), (float) voice.levelDb, decibels()));
+        layout.add (std::make_unique<Float> (juce::ParameterID { voiceId (v, "drift"), 1 }, name + "Drift", juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f),
+                                             (float) voice.drift * 100.0f, percent()));
+    }
+}
+
+void MultivoicerParameters::bind (State& s)
+{
+    on.bind (s, "mv_on");
+    engine.bind (s, "mv_engine");
+    voiceCount.bind (s, "mv_voices");
+    mix.bind (s, "mv_mix");
+    spread.bind (s, "mv_spread");
+    highPass.bind (s, "mv_hp");
+    highPassHz.bind (s, "mv_hp_freq");
+    for (int v = 0; v < ampsim::Multivoicer::maxVoices; ++v)
+    {
+        auto& voice = voices[(size_t) v];
+        voice.semitones.bind (s, voiceId (v, "semitones"));
+        voice.cents.bind (s, voiceId (v, "cents"));
+        voice.delay.bind (s, voiceId (v, "delay"));
+        voice.pan.bind (s, voiceId (v, "pan"));
+        voice.level.bind (s, voiceId (v, "level"));
+        voice.drift.bind (s, voiceId (v, "drift"));
+    }
+}
+
+ampsim::Multivoicer::Settings MultivoicerParameters::read() const noexcept
+{
+    ampsim::Multivoicer::Settings s;
+    s.engine = engine.index() == 1 ? ampsim::Multivoicer::Engine::mono : ampsim::Multivoicer::Engine::poly;
+    s.voiceCount = juce::jlimit (1, ampsim::Multivoicer::maxVoices, voiceCount.index());
+    s.mix = mix.get() / 100.0;
+    s.spread = spread.get() / 100.0;
+    s.wetHighPass = highPass.on();
+    s.wetHighPassHz = highPassHz.get();
+    for (int v = 0; v < ampsim::Multivoicer::maxVoices; ++v)
+    {
+        const auto& p = voices[(size_t) v];
+        auto& voice = s.voices[(size_t) v];
+        voice.semitones = (double) p.semitones.index();
+        voice.cents = p.cents.get();
+        voice.delayMs = p.delay.get();
+        voice.pan = p.pan.get() / 100.0;
+        voice.levelDb = p.level.get();
+        voice.drift = p.drift.get() / 100.0;
+    }
+    return s;
+}
+
+void MultivoicerParameters::applyStartingPoint (State& state, ampsim::Multivoicer::StartingPoint point)
+{
+    const auto s = ampsim::Multivoicer::startingPoint (point);
+    const auto set = [&state] (const juce::String& id, double plain)
+    {
+        if (auto* parameter = state.getParameter (id))
+            parameter->setValueNotifyingHost (parameter->convertTo0to1 ((float) plain));
+    };
+    set ("mv_voices", s.voiceCount);
+    for (int v = 0; v < ampsim::Multivoicer::maxVoices; ++v)
+    {
+        const auto& voice = s.voices[(size_t) v];
+        set (voiceId (v, "semitones"), voice.semitones);
+        set (voiceId (v, "cents"), voice.cents);
+        set (voiceId (v, "delay"), voice.delayMs);
+        set (voiceId (v, "pan"), voice.pan * 100.0);
+        set (voiceId (v, "level"), voice.levelDb);
+        set (voiceId (v, "drift"), voice.drift * 100.0);
+    }
+}
+
 // ---- Bloom ------------------------------------------------------------------------------------
 
 void BloomParameters::addTo (Layout& layout)
@@ -650,6 +751,10 @@ void ReverbParameters::addTo (Layout& layout)
     layout.add (std::make_unique<Float> (juce::ParameterID { "reverb_highcut", 1 }, "Reverb High Cut", skewedRange (1000.0f, 20000.0f, 6000.0f, 1.0f), d.highCutHz, hertz()));
     layout.add (std::make_unique<Float> (juce::ParameterID { "reverb_ducking", 1 }, "Reverb Ducking", juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f), d.ducking * 100.0f, percent()));
     layout.add (std::make_unique<Bool> (juce::ParameterID { "reverb_freeze", 1 }, "Reverb Freeze", false));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "reverb_shimmer", 1 }, "Reverb Shimmer", juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f),
+                                         d.shimmer * 100.0f, percent()));
+    layout.add (std::make_unique<Choice> (juce::ParameterID { "reverb_shimmer_interval", 1 }, "Reverb Shimmer Interval",
+                                          juce::StringArray { "+12 (octave)", "+7 (fifth)", "+19 (octave and a fifth)", "+24 (two octaves)" }, 0));
 }
 
 void ReverbParameters::bind (State& s)
@@ -673,6 +778,8 @@ void ReverbParameters::bind (State& s)
     highCut.bind (s, "reverb_highcut");
     ducking.bind (s, "reverb_ducking");
     freeze.bind (s, "reverb_freeze");
+    shimmer.bind (s, "reverb_shimmer");
+    shimmerInterval.bind (s, "reverb_shimmer_interval");
 }
 
 ampsim::Reverb::Settings ReverbParameters::read (double bpm, int freezeOverride) const noexcept
@@ -694,6 +801,9 @@ ampsim::Reverb::Settings ReverbParameters::read (double bpm, int freezeOverride)
     s.highCutHz = highCut.get();
     s.ducking = ducking.get() / 100.0f;
     s.freeze = freezeOverride >= 0 ? freezeOverride == 1 : freeze.on();
+    static constexpr float shimmerIntervals[] = { 12.0f, 7.0f, 19.0f, 24.0f };
+    s.shimmer = shimmer.get() / 100.0f;
+    s.shimmerSemitones = shimmerIntervals[juce::jlimit (0, 3, shimmerInterval.index())];
     return s;
 }
 

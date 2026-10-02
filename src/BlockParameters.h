@@ -7,6 +7,7 @@
 #include "dsp/Delay.h"
 #include "dsp/Equalizer.h"
 #include "dsp/Gate.h"
+#include "dsp/Multivoicer.h"
 #include "dsp/Overdrive.h"
 #include "dsp/Reverb.h"
 
@@ -95,6 +96,29 @@ struct BloomParameters
         flangerMix, flangerThroughZero;
 };
 
+/// The multivoicer ("mv_*"): engine, voice count, mix, spread, and the wet high-pass, then each voice
+/// ("mv_v1_semitones", ...). The defaults are the Double + Octaves starting point; the other starting
+/// points are written into these parameters by applyStartingPoint().
+struct MultivoicerParameters
+{
+    static void addTo (Layout& layout);
+    void bind (State& state);
+    bool isOn() const noexcept { return on.on(); }
+    ampsim::Multivoicer::Settings read() const noexcept;
+
+    static juce::String voiceId (int voice, const char* what) { return "mv_v" + juce::String (voice + 1) + "_" + what; }
+
+    /// Message thread: sets every voice (and the voice count) to a starting point.
+    static void applyStartingPoint (State& state, ampsim::Multivoicer::StartingPoint point);
+
+    Raw on, engine, voiceCount, mix, spread, highPass, highPassHz;
+    struct Voice
+    {
+        Raw semitones, cents, delay, pan, level, drift;
+    };
+    std::array<Voice, ampsim::Multivoicer::maxVoices> voices;
+};
+
 /// The drive blocks' oversampling factor ("drive_oversampling": 4x or 8x), a global setting.
 int oversamplingFactor (const Raw& choice) noexcept;
 
@@ -171,7 +195,7 @@ struct ReverbParameters
     ampsim::Reverb::Settings read (double bpm, int freezeOverride = -1) const noexcept;
 
     Raw on, engine, mix, preDelay, preDelaySync, preDelayNote, size, decay, lowDecay, highDecay, diffusion, modDepth, modRate,
-        width, earlyLate, lowCut, highCut, ducking, freeze;
+        width, earlyLate, lowCut, highCut, ducking, freeze, shimmer, shimmerInterval;
 };
 
 /// Shared helpers for declaring parameters.

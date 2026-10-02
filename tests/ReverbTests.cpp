@@ -327,6 +327,7 @@ public:
         freeze();
         stereo();
         denormals();
+        shimmer();
         latencyAndMixLaw();
         bufferSizes();
         spillover();
@@ -915,6 +916,129 @@ private:
                             + juce::String (ratio, 2) + "; output exactly zero from " + juce::String ((double) silentFrom / fs - 0.5, 2) + " s after the input stopped");
             }
         }
+    }
+
+    // ------------------------------------------------------------------------------------------
+    void shimmer()
+    {
+        beginTest ("shimmer: an octave-up shifter in the feedback loop builds the octave into the tail, never adds energy (even frozen), and costs nothing when off");
+
+        // The level of a pure tone in x[from, to), by correlation with a Hann-windowed complex exponential.
+        const auto toneDb = [] (const std::vector<float>& x, size_t from, size_t to, double f)
+        {
+            double re = 0.0, im = 0.0, w = 0.0;
+            const auto n = to - from;
+            for (size_t i = 0; i < n; ++i)
+            {
+                const auto hann = 0.5 - 0.5 * std::cos (2.0 * juce::MathConstants<double>::pi * (double) i / (double) n);
+                const auto phase = 2.0 * juce::MathConstants<double>::pi * f * (double) (from + i) / fs;
+                re += hann * x[from + i] * std::cos (phase);
+                im += hann * x[from + i] * std::sin (phase);
+                w += hann;
+            }
+            return toDb (2.0 * std::sqrt (re * re + im * im) / w + 1.0e-12);
+        };
+        const auto render = [] (float shimmerAmount, float semitones, const std::vector<float>& input, bool freeze = false, float decay = 6.0f)
+        {
+            auto s = wetOnly (Engine::hall);
+            s.decaySeconds = decay;
+            s.modDepth = 0.0f; // a clean tone: no line modulation
+            s.lowCutHz = 20.0f;
+            s.highCutHz = 20000.0f;
+            s.shimmer = shimmerAmount;
+            s.shimmerSemitones = semitones;
+            Reverb r;
+            r.setSettings (s);
+            r.prepare (fs, blockSize);
+            if (freeze)
+            {
+                // Freeze after the input has gone in.
+                Stereo out { input, input };
+                for (size_t start = 0; start + blockSize <= input.size(); start += blockSize)
+                {
+                    if (start == (size_t) (0.6 * fs) / blockSize * blockSize)
+                    {
+                        s.freeze = true;
+                        r.setSettings (s);
+                    }
+                    float* channels[] = { out.left.data() + start, out.right.data() + start };
+                    r.process (juce::dsp::AudioBlock<float> (channels, 2, blockSize), {});
+                }
+                return out;
+            }
+            return run (r, input);
+        };
+
+        // A 330 Hz tone for 0.3 s, then the tail, measured from 1.5 to 2.5 s.
+        auto tone = sine (330.0, 0.3, (int) (0.3 * fs));
+        tone.resize ((size_t) (3.0 * fs), 0.0f);
+        const auto from = (size_t) (1.5 * fs), to = (size_t) (2.5 * fs);
+        const auto plain = render (0.0f, 12.0f, tone).left;
+        const auto octave = render (1.0f, 12.0f, tone).left;
+        const auto fifth = render (1.0f, 7.0f, tone).left;
+        const auto plainOctave = toneDb (plain, from, to, 660.0) - toneDb (plain, from, to, 330.0);
+        const auto shimmerOctave = toneDb (octave, from, to, 660.0) - toneDb (octave, from, to, 330.0);
+        const auto shimmerTwo = toneDb (octave, from, to, 1320.0) - toneDb (octave, from, to, 330.0);
+        const auto fifthUp = toneDb (fifth, from, to, 330.0 * std::exp2 (7.0 / 12.0)) - toneDb (fifth, from, to, 330.0);
+        expectLessThan (plainOctave, -60.0);
+        expectGreaterThan (shimmerOctave, -20.0);
+        expectGreaterThan (fifthUp, -20.0);
+
+        // Energy never builds: frozen with full shimmer for 30 s, and a 30 s decay with full shimmer.
+        auto noise = whiteNoise ((int) (0.5 * fs), 0.3f, 11);
+        noise.resize ((size_t) (30.5 * fs), 0.0f);
+        const auto frozen = render (1.0f, 12.0f, noise, true);
+        const auto longest = render (1.0f, 12.0f, noise, false, 30.0f);
+        const auto secondDb = [] (const Stereo& o, double second)
+        {
+            const auto start = (size_t) (second * fs);
+            return toDb (std::sqrt (0.5 * (std::pow (rms (o.left.data() + start, (size_t) fs), 2.0) + std::pow (rms (o.right.data() + start, (size_t) fs), 2.0))));
+        };
+        double frozenStart = secondDb (frozen, 1.0), frozenMax = -1000.0, frozenEnd = secondDb (frozen, 29.0);
+        double longestStart = secondDb (longest, 1.0), longestMax = -1000.0;
+        float peak = 0.0f;
+        for (int second = 1; second < 30; ++second)
+        {
+            frozenMax = std::max (frozenMax, secondDb (frozen, second));
+            longestMax = std::max (longestMax, secondDb (longest, second));
+        }
+        for (const auto& o : { frozen, longest })
+            for (const auto v : o.left)
+                peak = std::max (peak, std::abs (v));
+        expectLessThan (frozenMax - frozenStart, 1.0);
+        expectLessThan (longestMax - longestStart, 1.0);
+        expect (std::isfinite (peak) && peak < 2.0f);
+
+        // Cost: Hall with and without it.
+        const auto cost = [] (float shimmerAmount)
+        {
+            auto s = wetOnly (Engine::hall);
+            s.shimmer = shimmerAmount;
+            Reverb r;
+            r.setSettings (s);
+            r.prepare (fs, blockSize);
+            const auto input = guitarDI ((int) (2.0 * fs));
+            Stereo out { input, input };
+            std::vector<double> micros;
+            for (size_t start = 0; start + blockSize <= input.size(); start += blockSize)
+            {
+                float* channels[] = { out.left.data() + start, out.right.data() + start };
+                const auto t0 = std::chrono::steady_clock::now();
+                r.process (juce::dsp::AudioBlock<float> (channels, 2, blockSize), {});
+                micros.push_back (std::chrono::duration<double, std::micro> (std::chrono::steady_clock::now() - t0).count());
+            }
+            return percentile (micros, 0.5);
+        };
+        const auto withoutUs = cost (0.0f), withUs = cost (1.0f);
+
+        logMessage ("  -> a 330 Hz tone into Hall (6 s): from 1.5 to 2.5 s the octave sits " + juce::String (plainOctave, 1) + " dB under the tone without "
+                    "shimmer, " + juce::String (shimmerOctave, 1) + " dB with it (two octaves up " + juce::String (shimmerTwo, 1) + " dB); set to +7, the fifth "
+                    + juce::String (fifthUp, 1) + " dB");
+        logMessage ("  -> frozen with full shimmer for 30 s: level " + juce::String (frozenStart, 1) + " dBFS in the first second, at most "
+                    + juce::String (frozenMax, 1) + ", " + juce::String (frozenEnd, 1) + " at the end; a 30 s decay with full shimmer: at most "
+                    + juce::String (longestMax - longestStart, 2) + " dB over its first second; peak " + juce::String (peak, 3));
+        logMessage ("  -> Hall per 128-sample stereo block: " + juce::String (withoutUs, 1) + " us without shimmer, " + juce::String (withUs, 1)
+                    + " us with it (" + juce::String (100.0 * withUs / 2666.7, 2) + "% of the deadline)");
     }
 
     // ------------------------------------------------------------------------------------------

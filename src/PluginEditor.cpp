@@ -913,7 +913,10 @@ ReverbPanel::ReverbPanel (AmpSimProcessor& processor) : EffectPanel (processor, 
              &addKnob ("reverb_diffusion", "Diffusion", " %"), &addKnob ("reverb_early_late", "Early/late", " %"),
              &addKnob ("reverb_mod_depth", "Mod depth", " %"), &addKnob ("reverb_mod_rate", "Mod rate", " Hz"),
              &addKnob ("reverb_width", "Width", " %"), &addKnob ("reverb_ducking", "Ducking", " %"),
-             &addKnob ("reverb_lowcut", "Low cut", " Hz"), &addKnob ("reverb_highcut", "High cut", " Hz") };
+             &addKnob ("reverb_lowcut", "Low cut", " Hz"), &addKnob ("reverb_highcut", "High cut", " Hz"),
+             &addKnob ("reverb_shimmer", "Shimmer", " %") };
+    shimmerInterval = &addCombo ("reverb_shimmer_interval", { "+12", "+7", "+19", "+24" });
+    shimmerInterval->setTooltip ("Shimmer interval (Room and Hall)");
     refresh();
 }
 
@@ -940,6 +943,8 @@ void ReverbPanel::resized()
     area.removeFromTop (4);
     std::vector<juce::Component*> cells (grid.begin(), grid.end());
     layoutGrid (area, cells, 4, area.getHeight() / 4);
+    // The shimmer's interval sits beside its knob, in the last row's next cell.
+    shimmerInterval->setBounds (grid.back()->getBounds().translated (grid.back()->getWidth(), 0).withSizeKeepingCentre (grid.back()->getWidth() - 8, 26));
 }
 
 // ---- GatePanel --------------------------------------------------------------------------------
@@ -1059,6 +1064,107 @@ void GatePanel::resized()
     for (auto* knob : knobs)
         cells.push_back (knob);
     layoutGrid (area, cells, 2, juce::jmin (110, area.getHeight() / 4));
+}
+
+// ---- MultivoicerPanel -----------------------------------------------------------------------------
+
+MultivoicerPanel::MultivoicerPanel (AmpSimProcessor& processor) : EffectPanel (processor, "Multivoicer", "mv_on")
+{
+    engine = &addCombo ("mv_engine", { "Poly (chords)", "Mono (single notes)" });
+    addKnob ("mv_voices", "Voices", "");
+    addKnob ("mv_mix", "Mix", " %");
+    addKnob ("mv_spread", "Spread", " %");
+    addKnob ("mv_hp_freq", "Wet HPF", " Hz");
+    highPass = &addToggle ("mv_hp", "Wet high-pass");
+
+    startingPoints.onClick = [this]
+    {
+        juce::PopupMenu menu;
+        using SP = ampsim::Multivoicer::StartingPoint;
+        for (const auto& [startingPoint, name] : std::initializer_list<std::pair<SP, const char*>> {
+                 { SP::unisonDouble, "Unison double" }, { SP::octaveStack, "Octave stack" }, { SP::fifthsStack, "Fifths stack" },
+                 { SP::doubleOctaves, "Double + Octaves" } })
+            menu.addItem (name, [this, sp = startingPoint] { params::MultivoicerParameters::applyStartingPoint (ampSim.parameters, sp); });
+        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (startingPoints));
+    };
+    addAndMakeVisible (startingPoints);
+
+    static const char* what[] = { "semitones", "cents", "delay", "pan", "level", "drift" };
+    static const char* suffix[] = { " st", " ct", " ms", " %", " dB", " %" };
+    for (int v = 0; v < ampsim::Multivoicer::maxVoices; ++v)
+    {
+        auto& row = rows[(size_t) v];
+        row.label.setText (juce::String (v + 1), juce::dontSendNotification);
+        row.label.setColour (juce::Label::textColourId, textColour);
+        row.label.setJustificationType (juce::Justification::centred);
+        addAndMakeVisible (row.label);
+        for (size_t k = 0; k < row.sliders.size(); ++k)
+        {
+            auto& slider = row.sliders[k];
+            slider.setSliderStyle (juce::Slider::LinearBar);
+            slider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 0, 0);
+            slider.setTextValueSuffix (suffix[k]);
+            slider.setColour (juce::Slider::trackColourId, accent.withAlpha (0.55f));
+            const auto id = params::MultivoicerParameters::voiceId (v, what[k]);
+            rowAttachments.add (new juce::AudioProcessorValueTreeState::SliderAttachment (processor.parameters, id, tagged (slider, id)));
+            addAndMakeVisible (slider);
+        }
+    }
+    refresh();
+}
+
+void MultivoicerPanel::refresh()
+{
+    const auto voices = juce::roundToInt (ampSim.parameters.getRawParameterValue ("mv_voices")->load());
+    if (voices == shownVoices)
+        return;
+    shownVoices = voices;
+    for (int v = 0; v < ampsim::Multivoicer::maxVoices; ++v)
+    {
+        auto& row = rows[(size_t) v];
+        const auto alpha = v < voices ? 1.0f : 0.35f;
+        row.label.setAlpha (alpha);
+        for (auto& slider : row.sliders)
+            slider.setAlpha (alpha);
+    }
+}
+
+void MultivoicerPanel::paint (juce::Graphics& g)
+{
+    EffectPanel::paint (g);
+    // Column headings over the voice table.
+    g.setColour (dimText);
+    g.setFont (juce::FontOptions (12.0f));
+    auto heads = headerArea;
+    heads.removeFromLeft (30);
+    const auto width = heads.getWidth() / 6;
+    for (const auto* name : { "Interval", "Fine", "Delay", "Pan", "Level", "Drift" })
+        g.drawText (name, heads.removeFromLeft (width), juce::Justification::centred);
+}
+
+void MultivoicerPanel::resized()
+{
+    auto area = layoutTitle();
+    auto top = area.removeFromTop (26);
+    engine->setBounds (top.removeFromLeft (200).reduced (2, 0));
+    highPass->setBounds (top.removeFromLeft (140).reduced (4, 0));
+    startingPoints.setBounds (top.removeFromRight (150).reduced (2, 0));
+    area.removeFromTop (6);
+    std::vector<juce::Component*> cells;
+    for (auto* knob : knobs)
+        cells.push_back (knob);
+    layoutGrid (area.removeFromTop (110), cells, 4, 110);
+    area.removeFromTop (8);
+    headerArea = area.removeFromTop (18);
+    const auto rowHeight = juce::jmin (30, area.getHeight() / ampsim::Multivoicer::maxVoices);
+    for (auto& row : rows)
+    {
+        auto line = area.removeFromTop (rowHeight).reduced (0, 2);
+        row.label.setBounds (line.removeFromLeft (30));
+        const auto width = line.getWidth() / (int) row.sliders.size();
+        for (auto& slider : row.sliders)
+            slider.setBounds (line.removeFromLeft (width).reduced (2, 0));
+    }
 }
 
 // ---- Bloom's panels ----------------------------------------------------------------------------------
@@ -1717,6 +1823,16 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p)
     tabs.addTab ("Pre FX", panel, &preFxPage, false);
     tabs.addTab ("Post FX", panel, &postFxPage, false);
 
+    // Pitch: the multivoicer (and, in Phase 10, the harmonizer).
+    multivoicerPanel = std::make_unique<MultivoicerPanel> (p);
+    pitchPage.addAndMakeVisible (multivoicerPanel.get());
+    pitchPage.layout = [this] (juce::Rectangle<int> area)
+    {
+        area.reduce (8, 8);
+        multivoicerPanel->setBounds (area.removeFromLeft (juce::jmin (area.getWidth(), 760)).reduced (4));
+    };
+    tabs.addTab ("Pitch", panel, &pitchPage, false);
+
     // Bloom: the container's switch, mix, and order, then its three effects side by side.
     bloomOrder = std::make_unique<OrderStrip> ("Order inside Bloom:", [&p] { return p.getBloomOrder(); },
                                                [&p] (const juce::StringArray& order) { p.setBloomOrder (order); });
@@ -1882,6 +1998,7 @@ void AmpSimEditor::timerCallback()
     chorusPanel->refresh();
     reverbPanel->refresh();
     bloomOrder->refresh();
+    multivoicerPanel->refresh();
     phaserPanel->refresh();
     flangerPanel->refresh();
     bloomLatencyLabel.setText (ampSim.getLatencySamples() > 0 ? "Through-zero flanging adds " + juce::String (ampSim.getLatencySamples() * 1000.0 / 48000.0, 1)

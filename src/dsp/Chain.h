@@ -11,6 +11,7 @@
 #include "Reverb.h"
 #include "Equalizer.h"
 #include "Gain.h"
+#include "Multivoicer.h"
 #include "LinkedGates.h"
 #include "Overdrive.h"
 
@@ -50,6 +51,7 @@ public:
     Cab cab;
     Equalizer postEq { true };
     Compressor postCompressor { true };
+    Multivoicer multivoicer;
     Bloom bloom;
     Chorus chorus;
     Delay delay;
@@ -69,6 +71,7 @@ public:
         cab,
         postEq,
         postCompressor,
+        multivoicer,
         bloom,
         chorus,
         delay,

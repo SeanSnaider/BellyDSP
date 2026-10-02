@@ -278,7 +278,7 @@ public:
     void resized() override;
 
 private:
-    juce::ComboBox *engine = nullptr, *preDelayNote = nullptr;
+    juce::ComboBox *engine = nullptr, *preDelayNote = nullptr, *shimmerInterval = nullptr;
     ToggleControl *freeze = nullptr, *preDelaySync = nullptr;
     std::vector<Knob*> grid;
     Knob* preDelay = nullptr;
@@ -376,6 +376,31 @@ private:
     int shownSync = -1;
 };
 
+/// The multivoicer: engine, voice count, mix, spread, wet high-pass, a starting-point menu, and a row of
+/// controls per voice (rows past the voice count are dimmed).
+class MultivoicerPanel final : public EffectPanel
+{
+public:
+    explicit MultivoicerPanel (AmpSimProcessor& processor);
+    void refresh();
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+private:
+    juce::ComboBox *engine = nullptr;
+    ToggleControl* highPass = nullptr;
+    juce::TextButton startingPoints { "Starting points..." };
+    struct Row
+    {
+        juce::Label label;
+        std::array<SliderControl, 6> sliders;
+    };
+    std::array<Row, ampsim::Multivoicer::maxVoices> rows;
+    juce::OwnedArray<juce::AudioProcessorValueTreeState::SliderAttachment> rowAttachments;
+    int shownVoices = -1;
+    juce::Rectangle<int> headerArea;
+};
+
 /// The delay's controls, plus the tempo and its tap button.
 class DelayPanel final : public juce::Component
 {
@@ -450,7 +475,7 @@ public:
     void resized() override;
 
     /// For tests and snapshots: show the Amps (0), Cab (1), Gates & Drive (2), Pre FX (3), Post FX (4),
-    /// Bloom (5), or Time FX (6) tab, and refresh the status lines now.
+    /// Pitch (5), Bloom (6), or Time FX (7) tab, and refresh the status lines now.
     void showTab (int index) { tabs.setCurrentTabIndex (index); }
     void refresh() { timerCallback(); }
 
@@ -485,7 +510,8 @@ private:
     Knob inputKnob, outputKnob;
     juce::Label warningLabel;
 
-    PageComponent ampsPage, cabPage, gatesPage, preFxPage, postFxPage, bloomPage, timeFxPage;
+    PageComponent ampsPage, cabPage, gatesPage, preFxPage, postFxPage, pitchPage, bloomPage, timeFxPage;
+    std::unique_ptr<MultivoicerPanel> multivoicerPanel;
     std::unique_ptr<OrderStrip> bloomOrder;
     std::unique_ptr<BitcrushPanel> bitcrushPanel;
     std::unique_ptr<PhaserPanel> phaserPanel;

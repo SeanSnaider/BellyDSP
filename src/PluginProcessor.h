@@ -256,6 +256,7 @@ private:
     params::GateParameters gateAParams, gateBParams;
     params::BoostParameters boostParams;
     params::BloomParameters bloomParams;
+    params::MultivoicerParameters multivoicerParams;
     std::atomic<int> bloomOrderCode { 0 + 3 * 1 + 9 * 2 }; // the order as three base-3 digits, first effect lowest
     ampsim::Bloom::Order bloomOrder() const noexcept;
     params::OverdriveParameters overdriveParams;
