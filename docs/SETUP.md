@@ -52,7 +52,7 @@ First-time setup, which the app remembers afterwards:
 2. Audio device: **Scarlett Solo 4th Gen** for both input and output. Sample rate **48000**, buffer size **128** (2.7 ms).
 3. Active input channels: **Input 1** only.
 4. Untick **Mute audio input** (next to "Feedback Loop:"). JUCE mutes the input by default to protect against feedback (a laptop mic into laptop speakers howls), so until you untick it, the app gets silence. While it's muted, a pale yellow bar across the top of the window says "Audio input is muted to avoid feedback loop", and its **Settings...** button opens the same dialog.
-5. Close Options, click **Load amp model...** and **Load cab IR...**, and play.
+5. Close Options. On the **Amps** tab click **Load model...** on Amp 1 and pick an amp-only `.nam` capture; on the **Cab** tab click **Load IR...** on Close mic 1 and pick a cab IR (`.wav`). Play.
 
 Buffer size is how many samples the driver hands over per callback. At 48 kHz, 128 samples is 2.7 ms. Smaller means lower latency but less time to finish processing. Drop to 64 once things are stable if latency bugs you, and go up to 256 if you get crackles.
 
