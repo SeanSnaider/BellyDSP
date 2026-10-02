@@ -40,6 +40,13 @@ public:
     /// False for mono blocks. The chain copies channel 0 to channel 1 once, right before
     /// the first stereo block (decision 3).
     virtual bool isStereo() const { return false; }
+
+    /// Spillover (BUILD_PLAN "Bypass and spillover"): a block with a tail (delay, reverb) can take
+    /// over its own bypass. Bypassed, it stops taking new input (fading its input out over ~10 ms) but
+    /// lets what's already inside ring out on top of the dry signal. The chain then never skips or
+    /// crossfades it; it just passes the switch on through setBypassed(), once per buffer.
+    virtual bool handlesOwnBypass() const { return false; }
+    virtual void setBypassed (bool /*shouldBeBypassed*/) {}
 };
 
 } // namespace ampsim

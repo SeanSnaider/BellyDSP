@@ -28,10 +28,7 @@ Chain::Chain()
         // Effects start switched off, so a bare chain is just gain, amp, cab, and level; the
         // processor switches them on from their parameters.
         for (auto slot : defaultOrder (section))
-        {
-            bypass[(size_t) slot].bypassed = true;
-            bypass[(size_t) slot].wet.setCurrentAndTargetValue (0.0f);
-        }
+            setBypassed (slot, true);
     }
 }
 
@@ -288,6 +285,14 @@ void Chain::process (juce::dsp::AudioBlock<float> io)
 
 void Chain::setBypassed (Slot slot, bool shouldBeBypassed)
 {
+    // A block with spillover handles its own bypass, so its tail can ring out; the chain keeps
+    // running it.
+    if (auto& block = blockFor (slot); block.handlesOwnBypass())
+    {
+        block.setBypassed (shouldBeBypassed);
+        return;
+    }
+
     auto& state = bypass[(size_t) slot];
 
     if (state.bypassed == shouldBeBypassed)
