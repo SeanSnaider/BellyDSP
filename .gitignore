@@ -14,3 +14,6 @@ __pycache__/
 
 # Test proof output when ampsim_tests runs without --proof-dir
 /proof
+
+# Agent worktrees (Claude Code)
+/.claude/
