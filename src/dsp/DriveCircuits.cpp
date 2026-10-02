@@ -497,4 +497,293 @@ double DistortionCircuit::meanIterations() const
     return solves > 0.0 ? (double) (opAmpIterations + diodes.iterations) / solves : 0.0;
 }
 
+// ---- Transparent (Klon Centaur) ---------------------------------------------------------------
+
+namespace
+{
+namespace klon
+{
+constexpr double r1 = 10.0e3, c1 = 0.1e-6, r2 = 1.0e6;                              // input buffer
+constexpr double c3 = 0.1e-6, r6 = 10.0e3, c5 = 68.0e-9, gainPot = 100.0e3;        // into the gain stage
+constexpr double r7 = 1.5e3, c16 = 1.0e-6, r19 = 15.0e3;                           // feed-forward 1
+constexpr double r11 = 15.0e3, c7 = 82.0e-9, r10 = 2.0e3, r12 = 422.0e3, c8 = 390.0e-12; // gain stage
+constexpr double c9 = 1.0e-6, r13 = 1.0e3, c10 = 1.0e-6, r16 = 47.0e3, c11 = 2.2e-9, r15 = 22.0e3; // clipper
+constexpr double r5 = 5.1e3, c4 = 68.0e-9, r8 = 1.5e3, c6 = 390.0e-9, r9 = 1.0e3;  // feed-forward 2
+constexpr double r17 = 27.0e3, c12 = 27.0e-9, r18 = 12.0e3;
+constexpr double r20 = 392.0e3, c13 = 820.0e-12;                                   // summing amplifier
+constexpr double r22 = 100.0e3, r24 = 100.0e3, r21 = 1.8e3, r23 = 4.7e3, treblePot = 10.0e3, c14 = 3.9e-9; // treble
+constexpr double c15 = 4.7e-6, r25 = 560.0, volumePot = 10.0e3, r28 = 100.0e3, load = 1.0e6; // output
+constexpr double c2 = 4.7e-6, r3 = 100.0e3, rBleed = 560.0 + 68.0e3;               // bypass line: R4 + R243
+constexpr double gOut = 1.0 / volumePot + 1.0 / r28 + 1.0 / load;
+} // namespace klon
+} // namespace
+
+TransparentCircuit::TransparentCircuit() : diodes (DiodeModel { diodeSaturationCurrent, diodeEmission })
+{
+    // The macromodel's constants: the input pair's tanh(u / 2VT), Ro for the DC gain, and clamps that
+    // reach `swing` when they carry the pair's whole current (prototypes/circuits.py, Netlist.tl072).
+    inputScale = 1.0 / (2.0 * thermalVoltage);
+    gm = inputStageCurrent * inputScale;
+    outputConductance = gm / openLoopGain;
+    clampVoltage = swing - thermalVoltage * std::log (inputStageCurrent / clampSaturationCurrent + 1.0);
+    setSampleRate (sampleRate);
+    reset();
+}
+
+void TransparentCircuit::setSampleRate (double newSampleRate)
+{
+    using namespace klon;
+    sampleRate = newSampleRate;
+    T = 1.0 / sampleRate;
+    inputBuffer.design (0.0, c1 * r2, 1.0, c1 * (r1 + r2), 2.0 * sampleRate);
+    c3.design (klon::c3, 0.0, T);
+    c5.design (klon::c5, 0.0, T);
+    c16.design (klon::c16, 0.0, T);
+    c7.design (klon::c7, 0.0, T);
+    c8.design (klon::c8, 0.0, T);
+    c4.design (klon::c4, 0.0, T);
+    c6.design (klon::c6, r9, T);
+    c9.design (klon::c9, r13, T);
+    c10.design (klon::c10, 0.0, T);
+    c11.design (klon::c11, r15, T);
+    c12.design (klon::c12, r18, T);
+    c13.design (klon::c13, 0.0, T);
+    c14.design (klon::c14, 0.0, T);
+    c2.design (klon::c2, 0.0, T);
+    c15.design (klon::c15, r25, T);
+    designNetworks();
+}
+
+void TransparentCircuit::reset()
+{
+    inputBuffer.reset();
+    for (auto* c : { &c3, &c5, &c16, &c7, &c8, &c4, &c6, &c9, &c10, &c11, &c12, &c13, &c14, &c2, &c15 })
+        c->reset();
+    vo = vj = 0.0;
+}
+
+void TransparentCircuit::setControls (double newDrive, double newTone)
+{
+    drive = juce::jlimit (0.0, 1.0, newDrive);
+    tone = juce::jlimit (0.0, 1.0, newTone);
+    designNetworks();
+}
+
+void TransparentCircuit::designNetworks() noexcept
+{
+    using namespace klon;
+    // The Gain pot's gangs: `upper` (the + input to the bias; b to the wiper f) grows with the gain.
+    const auto upper = pot (drive * gainPot), lower = pot ((1.0 - drive) * gainPot);
+
+    // Front network, nodes a, p, g (see process()): p and g eliminated into a.
+    g6 = 1.0 / r6 + c5.g;
+    aP = g6 + 1.0 / upper;
+    aG = 1.0 / r7 + c16.g + 1.0 / r19;
+    kA = c3.g + g6 + 1.0 / r7 - g6 * g6 / aP - 1.0 / (r7 * r7 * aG);
+
+    // Gain stage feedback, nodes m (the (-) input) and h: vm = alpha vo + beta.
+    g12 = 1.0 / r12 + c8.g;
+    g11 = 1.0 / r11 + c7.g;
+    gH = 1.0 / (r10 + (1.0 - drive) * gainPot);
+    kM = g12 + g11 * gH / (g11 + gH);
+
+    // The ladder b - f - e - d, eliminated from b toward the diode node.
+    g4 = 1.0 / r5 + c4.g;
+    gUpper = 1.0 / upper;
+    gLower = 1.0 / lower;
+    g17 = 1.0 / r17 + c12.gs;
+    aB = g4 + 1.0 / r8 + c6.gs + gUpper;
+    aF2 = gUpper + gLower + g17 + c11.gs - gUpper * gUpper / aB;
+    aE2 = c11.gs + 1.0 / r16 + c10.g - c11.gs * c11.gs / aF2;
+    kD = c10.g + c9.gs - c10.g * c10.g / aE2;
+    kJ = kD / (1.0 + kD * diodeSeriesResistance);
+
+    // Treble control and output.
+    ra = r21 + (1.0 - tone) * treblePot;
+    rb = r23 + tone * treblePot;
+    yT = 1.0 / ra + 1.0 / rb + c14.g;
+    aX = c2.g + 1.0 / r3 + 1.0 / rBleed;
+    kO = 1.0 / rBleed + c15.gs + gOut - 1.0 / (rBleed * rBleed * aX);
+}
+
+double TransparentCircuit::gainStage (double vp) noexcept
+{
+    // KCL at m and h with the companions of C8 (|| R12, from the output) and C7 (|| R11, to h):
+    //   g12 (vo - vm) - J8 = g11 (vm - vh) - J7,   g11 (vm - vh) - J7 = gH vh
+    // gives vm = alpha vo + beta.
+    const auto alpha = g12 / kM;
+    const auto beta = (c7.j * gH / (g11 + gH) - c8.j) / kM;
+
+    // The macromodel's node: F(v) = Go v + Iclamp(v) - It tanh((vp - vm(v)) / 2VT) = 0 rises
+    // monotonically, and since |It tanh| <= It and the clamps carry It at +-swing, the root lies in
+    // [-swing, swing]. Newton from the last sample's output, with the RAT's safeguards (limiting on the
+    // tanh's argument and on the clamp junctions, bisection when a step leaves the bracket).
+    double lo = -swing, hi = swing;
+    auto v = juce::jlimit (lo, hi, vo);
+    const auto vcrit = thermalVoltage * std::log (thermalVoltage / (std::sqrt (2.0) * clampSaturationCurrent));
+    int i = 0;
+    for (; i < maxIterations; ++i)
+    {
+        const auto u = (vp - alpha * v - beta) * inputScale;
+        const auto th = std::tanh (u);
+        const auto eUp = std::exp (std::min ((v - clampVoltage) / thermalVoltage, maxExponent));
+        const auto eDown = std::exp (std::min ((-clampVoltage - v) / thermalVoltage, maxExponent));
+        const auto f = outputConductance * v + clampSaturationCurrent * (eUp - eDown) + 2.0 * gmin * v - inputStageCurrent * th;
+        const auto df = outputConductance + clampSaturationCurrent * (eUp + eDown) / thermalVoltage + 2.0 * gmin
+                        + inputStageCurrent * inputScale * alpha * (1.0 - th * th);
+        if (f > 0.0)
+            hi = v;
+        else if (f < 0.0)
+            lo = v;
+        else
+            break;
+
+        auto next = v - f / df;
+        if (std::abs (next - v) <= 1.0e-15 + 1.0e-9 * std::abs (next))
+        {
+            v = next;
+            break;
+        }
+        const auto uNew = (vp - alpha * next - beta) * inputScale;
+        const auto maxMove = std::max (2.0, std::abs (u) - 2.0);
+        if (std::abs (uNew - u) > maxMove)
+            next = (vp - beta - (u + std::copysign (maxMove, uNew - u)) / inputScale) / alpha;
+        const auto side = next >= 0.0 ? 1.0 : -1.0;
+        next = side * (clampVoltage + pnjlim (side * next - clampVoltage, side * v - clampVoltage, thermalVoltage, vcrit));
+        if (! (next > lo && next < hi))
+            next = 0.5 * (lo + hi);
+        v = next;
+    }
+    opAmpIterations += i + 1;
+    ++opAmpSolves;
+    vo = v;
+
+    const auto vm = alpha * v + beta;
+    const auto vh = (g11 * vm - c7.j) / (g11 + gH);
+    c8.updateFromVoltage (v - vm);
+    c7.updateFromVoltage (vm - vh);
+    return v;
+}
+
+void TransparentCircuit::process (double* volts, int numSamples) noexcept
+{
+    using namespace klon;
+    const auto g7 = 1.0 / r7, gBleed = 1.0 / rBleed, rs = diodeSeriesResistance;
+    for (int n = 0; n < numSamples; ++n)
+    {
+        const auto buf = inputBuffer.process (volts[n]);
+
+        // Front network. KCL at a, p, g with C3 (from the buffer), R6 || C5 (a to p), R7 (a to g),
+        // the gang's `upper` (p to the bias), C16 and R19 (g to ground and to the summing node):
+        //   (G3 + g6 + g7) va - g6 vp - g7 vg = G3 buf - J3 + J5
+        //   vp = (g6 va - J5) / aP,   vg = (g7 va + J16) / aG
+        const auto va = (c3.g * buf - c3.j + c5.j * (1.0 - g6 / aP) + g7 * c16.j / aG) / kA;
+        const auto vp = (g6 * va - c5.j) / aP;
+        const auto vg = (g7 * va + c16.j) / aG;
+        c3.updateFromVoltage (buf - va);
+        c5.updateFromVoltage (va - vp);
+        c16.updateFromVoltage (vg);
+
+        const auto out1 = gainStage (vp);
+
+        // The ladder, KCL at b, f, e, d (series R-C branches as one companion each):
+        //   aB vb - gU vf = g4 buf - J4 + J6'
+        //   -gU vb + aF vf - G11' ve = J12' - J11'
+        //   -G11' vf + aE ve - G10 vd = J11' - J10
+        //   -G10 ve + aD vd + Id(vd) = G9' out1 - J9' + J10
+        // eliminated forward (aF2, aE2, kD from designNetworks()), then the diodes, then back.
+        const auto rB = g4 * buf - c4.j + c6.js();
+        const auto rF = c12.js() - c11.js() + gUpper * rB / aB;
+        const auto rE = c11.js() - c10.j + c11.gs * rF / aF2;
+        const auto c = c9.gs * out1 - c9.js() + c10.j + c10.g * rE / aE2;
+        vj = diodes.solve (kJ, 1.0, c / (1.0 + kD * rs), vj); // the junctions, behind their series resistance
+        const auto vd = vj + rs * (c / (1.0 + kD * rs) - kJ * vj);
+        const auto ve = (rE + c10.g * vd) / aE2;
+        const auto vf = (rF + c11.gs * ve) / aF2;
+        const auto vb = (rB + gUpper * vf) / aB;
+
+        // Into the summing amplifier's virtual ground: R16 from e, R17 || (C12 + R18) from f, R19 from g.
+        const auto i17 = g17 * vf - c12.js();
+        const auto iS = ve / r16 + i17 + vg / r19;
+
+        c4.updateFromVoltage (buf - vb);
+        c6.updateFromCurrent (c6.gs * vb - c6.js());
+        c12.updateFromCurrent (i17 - vf / r17);
+        c11.updateFromCurrent (c11.gs * (ve - vf) - c11.js());
+        c10.updateFromVoltage (vd - ve);
+        c9.updateFromCurrent (c9.gs * (out1 - vd) - c9.js());
+
+        // Summing amplifier: iS + vsum / R20 + G13 vsum - J13 = 0.
+        const auto vsum = (c13.j - iS) / (1.0 / r20 + c13.g);
+        c13.updateFromVoltage (vsum);
+
+        // Treble control: KCL at the wiper w and at (-) (a virtual ground), with C14's companion:
+        //   vw = (vsum / Ra + vt / Rb + J14) / yT,   vsum / R22 + vt / R24 + G14 vw - J14 = 0.
+        const auto vt = (-vsum * (1.0 / r22 + c14.g / (ra * yT)) + c14.j * (1.0 - c14.g / yT)) / (1.0 / r24 + c14.g / (rb * yT));
+        c14.updateFromVoltage ((vsum / ra + vt / rb + c14.j) / yT);
+
+        // Output: node x on the bypass line (C2 from the buffer, R3, R4 + R243 to the output) and the
+        // output node (C15 + R25 from the treble stage, Volume || R28 || load).
+        const auto rX = c2.g * buf - c2.j;
+        const auto vout = (c15.gs * vt - c15.js() + gBleed * rX / aX) / kO;
+        const auto vx = (rX + gBleed * vout) / aX;
+        c2.updateFromVoltage (buf - vx);
+        c15.updateFromCurrent (c15.gs * (vt - vout) - c15.js());
+        volts[n] = vout;
+    }
+}
+
+std::complex<double> TransparentCircuit::smallSignalResponse (double frequency) const
+{
+    // The same stages at s = j 2 pi f, the diodes at their rest conductance (each behind its Rs) and the
+    // macromodel at its rest gain (prototypes/circuits.py, transparent_small_signal).
+    using namespace klon;
+    using C = std::complex<double>;
+    const C s (0.0, 2.0 * pi * frequency);
+    const auto upper = pot (drive * gainPot), lower = pot ((1.0 - drive) * gainPot);
+    const auto hBuf = s * c1 * r2 / (1.0 + s * c1 * (r1 + r2));
+
+    const C y3 = s * klon::c3, y6 = 1.0 / r6 + s * klon::c5, g7 = 1.0 / r7, y16 = s * klon::c16, g19 = 1.0 / r19;
+    const auto ap = y6 + 1.0 / upper, ag = g7 + y16 + g19;
+    const auto va = y3 / (y3 + y6 + g7 - y6 * y6 / ap - g7 * g7 / ag);
+    const auto vp = y6 * va / ap, vg = g7 * va / ag;
+
+    const auto gClamps = 2.0 * (clampSaturationCurrent / thermalVoltage * std::exp (-clampVoltage / thermalVoltage) + gmin);
+    const auto A = gm / (outputConductance + gClamps);
+    const auto zf = 1.0 / (1.0 / r12 + s * klon::c8);
+    const auto zg = 1.0 / (1.0 / r11 + s * klon::c7) + r10 + (1.0 - drive) * gainPot;
+    const auto vo1 = A * vp / (1.0 + A * zg / (zg + zf));
+
+    const C y4 = 1.0 / r5 + s * klon::c4, y6b = 1.0 / (r9 + 1.0 / (s * klon::c6));
+    const auto gu = 1.0 / upper, gl = 1.0 / lower;
+    const auto y17 = 1.0 / r17 + 1.0 / (r18 + 1.0 / (s * klon::c12));
+    const auto y11 = 1.0 / (r15 + 1.0 / (s * klon::c11)), y10 = s * klon::c10, y9 = 1.0 / (r13 + 1.0 / (s * klon::c9));
+    const auto g0 = diodeSaturationCurrent / (diodeEmission * thermalVoltage) + gmin;
+    const auto gd = 2.0 * g0 / (1.0 + g0 * diodeSeriesResistance);
+    const auto ab = y4 + 1.0 / r8 + y6b + gu;
+    const auto af = gu + gl + y17 + y11 - gu * gu / ab;
+    const auto rf = gu * y4 / ab;
+    const auto ae = y11 + 1.0 / r16 + y10 - y11 * y11 / af;
+    const auto re = y11 * rf / af;
+    const auto vd = (y9 * vo1 + y10 * re / ae) / (y10 + y9 + gd - y10 * y10 / ae);
+    const auto ve = (re + y10 * vd) / ae;
+    const auto vf = (rf + y11 * ve) / af;
+
+    const auto vsum = -(ve / r16 + vf * y17 + vg * g19) / (1.0 / r20 + s * klon::c13);
+    const auto y14 = s * klon::c14;
+    const auto Y = 1.0 / ra + 1.0 / rb + y14;
+    const auto vt = -(Y / r22 + y14 / ra) / (Y / r24 + y14 / rb) * vsum;
+
+    const C y2 = s * klon::c2, gbl = 1.0 / rBleed, y15 = 1.0 / (r25 + 1.0 / (s * klon::c15));
+    const auto a11 = y2 + 1.0 / r3 + gbl, a22 = gbl + y15 + gOut;
+    const auto vout = (y15 * vt + gbl * y2 / a11) / (a22 - gbl * gbl / a11);
+    return hBuf * vout;
+}
+
+double TransparentCircuit::meanIterations() const
+{
+    const auto solves = (double) (opAmpSolves + diodes.solves);
+    return solves > 0.0 ? (double) (opAmpIterations + diodes.iterations) / solves : 0.0;
+}
+
 } // namespace ampsim::drive

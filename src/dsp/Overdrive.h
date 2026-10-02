@@ -14,8 +14,10 @@ namespace ampsim
 ///     is added to the clean one: soft clipping, a mid hump, and bass that passes clean.
 ///   - Distortion: RAT-style. A slow LM308 op-amp at up to 67 dB of gain (its slew rate and bandwidth are
 ///     modeled), then hard-clipping diodes to ground and a passive low-pass filter.
-/// Transparent (Klon-style) and Fuzz (Big Muff-style) come later as two more circuits: adding a mode is
-/// adding a drive::Circuit and an entry here.
+///   - Transparent: Klon-style. A gain stage into germanium diodes, summed with two clean paths whose
+///     share the Drive knob turns down as it turns the gain up, then an active treble control.
+/// Fuzz (Big Muff-style) comes later as one more circuit: adding a mode is adding a drive::Circuit and an
+/// entry here.
 ///
 /// Controls: Drive and Tone are the pedal's own pots (audio taper where the original is); Level is a gain
 /// after the circuit's output with its volume pot at maximum; Mix blends the circuit with the dry signal
@@ -24,10 +26,12 @@ namespace ampsim
 class Overdrive : public Block
 {
 public:
+    /// The processor maps the od_mode choice index straight onto this: append new modes, never reorder.
     enum class Mode
     {
         midDrive,
-        distortion
+        distortion,
+        transparent
     };
 
     struct Settings
