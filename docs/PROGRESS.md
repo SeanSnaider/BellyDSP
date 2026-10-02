@@ -216,3 +216,9 @@ Add a dated line here when something meaningful lands or a decision changes.
 - Undo and redo: two gestures undone one at a time (the reverb mix, then the delay switch and mix together) and redone exactly; Undo/Redo buttons and cmd-Z; loading a preset clears the history.
 - A/B: B starts as a copy of A; each keeps its own settings (delay mix 40 against 70, the chorus off against on); copying makes them equal; loading a preset starts again on A.
 - Factory presets: Polyphia, CHON, Tech Death, Metal, and Midwest Emo load with no warnings, each with three scenes (Clean/Crunch/Lead, Rhythm/Lead/Clean, ...), and each says which captures to load where. The Load button offers them next to "Open a preset file".
+
+2026-10-02: The whole rig at once (`tests/FullRigTests.cpp`, 128-sample buffers, 10 s of guitar DI through the processor, timed on a normal-priority test thread with builds running alongside).
+- Three captures (A1 standard, A2, LSTM) and three mics, everything else at its defaults: 11.9% of the deadline on average, worst buffer 20.3%.
+- Every block on (both gates and compressors, the Screamer boost, the Distortion at 4x, the harmonizer with 2 voices, the multivoicer with 4, Bloom with all three, the Tri chorus, the tape delay, Hall with 50% shimmer): 18.3% on average, p99 22.7%, worst 34.8%.
+- The heaviest settings (8x drive with the Fuzz, the multivoicer in Mono with 8 voices, 4 harmonies): 24.7% on average, worst 38.4%.
+- No buffer over the deadline in any run, and 0 allocations, 0 frees, 0 blocking locks on the audio thread in all three.
