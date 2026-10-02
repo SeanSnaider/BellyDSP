@@ -246,6 +246,10 @@ void AmpSimProcessor::handleMidi (const juce::MidiBuffer& midi)
             freezeOverride = frozen ? 0 : 1;
             freezeRequest.store (freezeOverride, std::memory_order_relaxed);
         }
+
+        // Any other controller goes to the mappings (applied by the timer).
+        if (metadata.numBytes >= 3 && (data[0] & 0xf0) == 0xb0 && data[1] != tapController && data[1] != freezeController)
+            ccFifo.push (data[1], data[2]);
     }
 
     // Taps from the GUI's button, timed to this buffer.
@@ -443,7 +447,9 @@ juce::AudioProcessorEditor* AmpSimProcessor::createEditor()
 
 void AmpSimProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    if (auto xml = parameters.copyState().createXml())
+    auto state = parameters.copyState();
+    state.setProperty (midiMapKey, juce::JSON::toString (midiMap.toVar(), true), nullptr);
+    if (auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
 }
 
@@ -456,6 +462,9 @@ void AmpSimProcessor::setStateInformation (const void* data, int sizeInBytes)
 
     parameters.replaceState (juce::ValueTree::fromXml (*xml));
     auto& state = parameters.state;
+
+    // MIDI mappings (states saved before they existed have none).
+    midiMap = MidiMap::fromVar (juce::JSON::parse (state.getProperty (midiMapKey).toString()), parameters);
 
     // The captures below load with the restored calibration, so it's already applied.
     appliedCalibration = pendingCalibration = currentCalibration();
@@ -660,6 +669,9 @@ void AmpSimProcessor::timerCallback()
         chain.amp.slot (s).model.collectGarbage();
 
     chain.cab.collectGarbage();
+
+    // Footswitches and pedals mapped to parameters (and MIDI learn).
+    ccFifo.drain ([this] (int cc, int value) { midiMap.handle (cc, value, parameters); });
 
     // A footswitch toggled the reverb's freeze: write it into the switch (the audio thread already has).
     if (auto freeze = freezeRequest.load(); freeze >= 0)

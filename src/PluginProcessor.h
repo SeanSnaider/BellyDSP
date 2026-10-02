@@ -1,6 +1,7 @@
 #pragma once
 
 #include "BlockParameters.h"
+#include "MidiMap.h"
 #include "Presets.h"
 #include "dsp/Chain.h"
 #include "dsp/Tempo.h"
@@ -88,6 +89,12 @@ public:
     bool isChangingPreset() const { return presetStage != PresetStage::idle; }
     juce::StringArray getPresetWarnings() const { return presetWarnings; }
     juce::String getPresetName() const { return parameters.state.getProperty ("presetName").toString(); }
+
+    /// Message thread: the MIDI mappings (footswitch toggles, expression pedals), and MIDI learn: the
+    /// next controller that moves maps to the parameter.
+    MidiMap& getMidiMap() noexcept { return midiMap; }
+    void midiLearn (const juce::String& parameterId) { midiMap.startLearn (parameterId); }
+    static inline const juce::Identifier midiMapKey { "midiMap" };
 
     /// Message thread: a tap on the GUI's tap tempo button. Taps from the GUI and the footswitch (the
     /// CC set by midi_tap_cc, value 64 or more) both reach the audio thread's TapTempo; the resulting
@@ -223,6 +230,10 @@ private:
     std::atomic<float>* freezeCc = nullptr;
     int freezeOverride = -1;
     std::atomic<int> freezeRequest { -1 };
+
+    // Every other controller: forwarded by the audio thread, mapped by the timer.
+    CcFifo ccFifo;
+    MidiMap midiMap; // message thread
 
     // Tempo and tap tempo. The TapTempo and the sample clock belong to the audio thread.
     void registerTap (double timeSeconds);

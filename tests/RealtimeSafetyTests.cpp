@@ -1,4 +1,5 @@
 #include "AllocationTracking.h"
+#include "MidiMap.h"
 #include "PluginProcessor.h"
 #include "TestHelpers.h"
 
@@ -74,6 +75,8 @@ public:
             const auto small = exampleModel ("wavenet.nam");
 
             AmpSimProcessor p;
+            p.getMidiMap().set ({ 82, MidiMapping::Action::toggle, "chorus_on" }); // a footswitch mapped to an effect
+            p.getMidiMap().set ({ 11, MidiMapping::Action::continuous, "delay_mix", 0.0f, 100.0f }); // an expression pedal
             p.loadModel (0, a1);
             p.loadCabIR (0, irA);
             while (p.isLoading())
@@ -157,6 +160,12 @@ public:
                     case 3000: setParam (p, "reverb_predelay_sync", 1.0f); setParam (p, "reverb_size", 80.0f); break;
                     case 3100: setParam (p, "reverb_on", 0.0f); setParam (p, "chorus_on", 0.0f); break;   // reverb spills over
                     case 3300: setParam (p, "reverb_on", 1.0f); setParam (p, "reverb_engine", 0.0f); break;
+                    case 3400: midi.addEvent (juce::MidiMessage::controllerEvent (1, 82, 127), 3); break; // mapped toggle
+                    case 3420: midi.addEvent (juce::MidiMessage::controllerEvent (1, 82, 0), 9); break;
+                    case 3450:
+                        for (int i = 0; i < 64; ++i)
+                            midi.addEvent (juce::MidiMessage::controllerEvent (1, 11, i * 2), i * 2); // pedal sweep
+                        break;
                     case 1500: setParam (p, "input_gain", 6.0f); break;
                     case 1600: setParam (p, "output_gain", -6.0f); break;
                     case 2000: p.loadModel (0, a1); break;                                  // switch the capture back

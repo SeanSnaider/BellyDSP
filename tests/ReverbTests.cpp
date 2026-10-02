@@ -853,37 +853,51 @@ private:
         {
             for (const bool flush : { true, false })
             {
-                auto s = wetOnly (engine);
-                s.decaySeconds = 1.0f;
-                s.earlyLate = 0.5f;
-                Reverb r;
-                r.setSettings (s);
-                r.prepare (fs, blockSize);
-
                 // Half a second of noise, then 20 s of silence: -60 dB a second takes the tail through
                 // float's smallest normal numbers (-758 dB) around 13 s.
                 const auto input = concat (whiteNoise ((int) (0.5 * fs), 0.5f, 3), std::vector<float> ((size_t) (20.0 * fs), 0.0f));
-                std::vector<double> blockMicros;
-                Stereo out { input, input };
-                {
-                    std::unique_ptr<juce::ScopedNoDenormals> noDenormals;
-                    if (flush)
-                        noDenormals = std::make_unique<juce::ScopedNoDenormals>();
-                    for (size_t start = 0; start + blockSize <= input.size(); start += blockSize)
-                    {
-                        float* channels[2] = { out.left.data() + start, out.right.data() + start };
-                        const auto t0 = std::chrono::steady_clock::now();
-                        r.process (juce::dsp::AudioBlock<float> (channels, 2, blockSize), {});
-                        const auto t1 = std::chrono::steady_clock::now();
-                        blockMicros.push_back (std::chrono::duration<double, std::micro> (t1 - t0).count());
-                    }
-                }
+                const auto perSecond = (size_t) (fs / blockSize);
 
                 // Median block time in each second of the tail, against the first second after the input.
-                const auto perSecond = (size_t) (fs / blockSize);
+                // Other processes can only make a run slower, so each second's time is the fastest of three
+                // runs: a real denormal slowdown shows in all three, a burst of load elsewhere doesn't.
                 std::vector<double> medians;
-                for (size_t b = (size_t) (0.5 * fs) / blockSize; b + perSecond <= blockMicros.size(); b += perSecond)
-                    medians.push_back (percentile (std::vector<double> (blockMicros.begin() + (long) b, blockMicros.begin() + (long) (b + perSecond)), 0.5));
+                Stereo out;
+                for (int run = 0; run < 3; ++run)
+                {
+                    auto s = wetOnly (engine);
+                    s.decaySeconds = 1.0f;
+                    s.earlyLate = 0.5f;
+                    Reverb r;
+                    r.setSettings (s);
+                    r.prepare (fs, blockSize);
+
+                    std::vector<double> blockMicros;
+                    out = Stereo { input, input };
+                    {
+                        std::unique_ptr<juce::ScopedNoDenormals> noDenormals;
+                        if (flush)
+                            noDenormals = std::make_unique<juce::ScopedNoDenormals>();
+                        for (size_t start = 0; start + blockSize <= input.size(); start += blockSize)
+                        {
+                            float* channels[2] = { out.left.data() + start, out.right.data() + start };
+                            const auto t0 = std::chrono::steady_clock::now();
+                            r.process (juce::dsp::AudioBlock<float> (channels, 2, blockSize), {});
+                            const auto t1 = std::chrono::steady_clock::now();
+                            blockMicros.push_back (std::chrono::duration<double, std::micro> (t1 - t0).count());
+                        }
+                    }
+
+                    size_t second = 0;
+                    for (size_t b = (size_t) (0.5 * fs) / blockSize; b + perSecond <= blockMicros.size(); b += perSecond, ++second)
+                    {
+                        const auto median = percentile (std::vector<double> (blockMicros.begin() + (long) b, blockMicros.begin() + (long) (b + perSecond)), 0.5);
+                        if (run == 0)
+                            medians.push_back (median);
+                        else
+                            medians[second] = std::min (medians[second], median);
+                    }
+                }
                 const auto slowest = *std::max_element (medians.begin(), medians.end());
                 const auto ratio = slowest / medians.front();
                 const auto lastRatio = medians.back() / medians.front();

@@ -60,6 +60,16 @@ Status key: **Open** (waiting for Sean), **Confirmed** (Sean agreed), **Changed*
 | P4 | Presets live in `~/Library/Application Support/AmpSim/presets`, one `.json` per preset, saved and loaded from the header's Save and Load buttons. | The plan's folder. A browser list is Phase 11. | `presets::defaultFolder`. |
 | P5 | Every parameter starts at its default as read back through its normalized value (so an 8 kHz default is exactly 8000 Hz, not 7999.9995). | Makes a fresh processor and a preset-loaded one bit-identical. | Nothing to decide. |
 
+## Phase 6: MIDI mappings
+
+| # | Assumption | Why | To change it |
+|---|---|---|---|
+| M1 | Mapped CCs are applied from the 50 Hz timer, so a mapped switch acts up to 20 ms after the press. Program change, tap tempo (CC 80), and freeze (CC 81) stay on the audio thread and act in the same buffer. | Setting a parameter notifies its listeners, which can lock, so it can't be done on the audio thread. 20 ms is about one 16th note at 190 BPM, but a block switching on that late is only heard as the block's own 10 ms fade-in. | Give each mapped block a lock-free override like freeze's (`freezeOverride`), or raise the timer rate. |
+| M2 | A toggle flips on every value of 64 or more and ignores values below 64. | Covers both kinds of footswitch that leave the state to the app: momentary (127 on press, 0 on release) and trigger (127 on every press). A latching controller (it alternates 127 and 0 itself) would need two presses per change as a toggle; for that, set the mapping to momentary, which follows the switch. | `MidiMap::handle`. Task 6.M checks what Sean's footswitch sends. |
+| M3 | MIDI learn makes a toggle for on/off parameters and a continuous mapping over the full range for everything else; choice parameters (modes) get continuous too, so a pedal steps through them. | The common cases: footswitch on a block, pedal on a knob. | `MidiMap::learn`. |
+| M4 | One mapping per CC (learning a CC replaces its old mapping); one parameter can have several CCs. | Simplest model with no surprises about which mapping wins. | `MidiMap::set`. |
+| M5 | Mappings are part of each preset as well as the app state; loading a preset that has no "midi" list keeps the current mappings. | BUILD_PLAN lists MIDI mappings under what a preset holds. Keeping mappings when a preset has none means presets made before mappings existed don't wipe the footswitch setup. | `presets::apply`. Moving mappings to global settings is a one-line change there plus removing them from `capture`. |
+
 ## Phase 5: chorus and reverb
 
 | # | Assumption | Why | To change it |

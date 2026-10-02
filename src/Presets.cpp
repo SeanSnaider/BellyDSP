@@ -54,6 +54,8 @@ juce::var capture (AmpSimProcessor& processor, const juce::String& name)
         cab->setProperty (micKeys[m], state.getProperty (AmpSimProcessor::cabPathKey (m)).toString());
     root->setProperty ("cab", juce::var (cab));
 
+    root->setProperty ("midi", processor.getMidiMap().toVar());
+
     auto* order = new juce::DynamicObject();
     order->setProperty ("pre", toVar (processor.getSectionOrder (ampsim::Chain::Section::pre)));
     order->setProperty ("post", toVar (processor.getSectionOrder (ampsim::Chain::Section::post)));
@@ -140,6 +142,10 @@ ApplyResult apply (AmpSimProcessor& processor, const juce::var& preset)
             result.warnings.add (juce::String (micKeys[m]) + "'s IR is missing: " + path);
         }
     }
+
+    // MIDI mappings: a preset without any (made before mappings existed) leaves the current ones alone.
+    if (preset.hasProperty ("midi"))
+        processor.getMidiMap() = MidiMap::fromVar (preset.getProperty ("midi", {}), processor.parameters, &result.warnings);
 
     const auto order = preset.getProperty ("order", {});
     processor.setSectionOrder (ampsim::Chain::Section::pre, toStrings (order.getProperty ("pre", {})));

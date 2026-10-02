@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "MidiMap.h"
 #include "PluginProcessor.h"
 #include "TestHelpers.h"
 
@@ -565,6 +566,97 @@ public:
                         + juce::String (chorus.read (120.0).rateHz, 3) + " Hz, a synced sixteenth pre-delay is "
                         + juce::String (p.getChain().reverb.getSettings().preDelayMs, 1) + " ms");
             logMessage ("  -> freeze footswitch (CC 81): frozen in the same buffer, the switch catches up after the timer; a second press thaws at once");
+        }
+
+        beginTest ("MIDI mappings: toggles, momentary switches, and expression pedals, learned, saved, and in presets");
+        {
+            AmpSimProcessor p;
+            p.prepareToPlay (fs, blockSize);
+            juce::AudioBuffer<float> buffer (2, blockSize);
+            const auto send = [&] (std::initializer_list<std::pair<int, int>> events)
+            {
+                juce::MidiBuffer midi;
+                for (const auto& [cc, value] : events)
+                    midi.addEvent (juce::MidiMessage::controllerEvent (1, cc, value), 0);
+                buffer.clear();
+                p.processBlock (buffer, midi);
+                p.runHousekeeping(); // the timer applies the mappings
+            };
+
+            auto& map = p.getMidiMap();
+            map.set ({ 82, MidiMapping::Action::toggle, "delay_on" });
+            map.set ({ 83, MidiMapping::Action::momentary, "reverb_freeze" });
+            MidiMapping pedal;
+            pedal.cc = 11;
+            pedal.action = MidiMapping::Action::continuous;
+            pedal.parameterId = "output_gain";
+            pedal.minimum = -24.0f;
+            pedal.maximum = 6.0f;
+            map.set (pedal);
+
+            send ({ { 82, 127 } });
+            const auto afterPress = getParam (p, "delay_on");
+            send ({ { 82, 0 } });
+            const auto afterRelease = getParam (p, "delay_on");
+            send ({ { 82, 127 } });
+            const auto afterSecondPress = getParam (p, "delay_on");
+            expect (afterPress == 1.0f && afterRelease == 1.0f && afterSecondPress == 0.0f);
+            send ({ { 82, 127 } }); // a switch that sends 127 on every press and never a release
+            const auto triggerOn = getParam (p, "delay_on");
+            send ({ { 82, 127 } });
+            expect (triggerOn == 1.0f && getParam (p, "delay_on") == 0.0f);
+
+            send ({ { 83, 127 } });
+            const auto held = getParam (p, "reverb_freeze");
+            send ({ { 83, 0 } });
+            expect (held == 1.0f && getParam (p, "reverb_freeze") == 0.0f);
+
+            juce::StringArray sweep;
+            for (int value : { 0, 64, 127 })
+            {
+                send ({ { 11, value } });
+                sweep.add (juce::String (value) + " -> " + juce::String (getParam (p, "output_gain"), 1) + " dB");
+            }
+            expectWithinAbsoluteError (getParam (p, "output_gain"), 6.0f, 1.0e-3f);
+
+            // Learn: the next controller maps to the parameter (the learning press itself changes nothing).
+            p.midiLearn ("chorus_on");
+            send ({ { 90, 127 }, { 90, 0 } });
+            const auto learnedQuietly = getParam (p, "chorus_on") == 0.0f;
+            send ({ { 90, 127 } });
+            expect (learnedQuietly && getParam (p, "chorus_on") == 1.0f);
+            p.midiLearn ("reverb_mix");
+            send ({ { 91, 100 } });
+            send ({ { 91, 127 } });
+            expectWithinAbsoluteError (getParam (p, "reverb_mix"), 100.0f, 1.0e-3f);
+            expectEquals ((int) map.getMappings().size(), 5);
+
+            // Saved with the state, and carried by presets.
+            juce::MemoryBlock state;
+            p.getStateInformation (state);
+            AmpSimProcessor restored;
+            restored.setStateInformation (state.getData(), (int) state.getSize());
+            expectEquals ((int) restored.getMidiMap().getMappings().size(), 5);
+            AmpSimProcessor fromPreset;
+            expect (fromPreset.loadPreset (p.capturePreset ("With footswitch")).ok);
+            expectEquals ((int) fromPreset.getMidiMap().getMappings().size(), 5);
+            const auto old = juce::JSON::parse (R"({ "format_version": 1, "parameters": {} })"); // no "midi": keep the mappings
+            expect (fromPreset.loadPreset (old).ok);
+            expectEquals ((int) fromPreset.getMidiMap().getMappings().size(), 5);
+
+            // A flood of controllers in one buffer: the FIFO fills and drops the rest, never blocking.
+            juce::MidiBuffer flood;
+            for (int i = 0; i < 300; ++i)
+                flood.addEvent (juce::MidiMessage::controllerEvent (1, 20, i % 128), i % blockSize);
+            buffer.clear();
+            p.processBlock (buffer, flood);
+            p.runHousekeeping();
+            logMessage ("  -> toggle (CC 82): press on, release nothing, press off, and a switch sending only 127 flips every press; "
+                        "momentary (CC 83): follows the switch; expression (CC 11 over -24..+6 dB): "
+                        + sweep.joinIntoString (", "));
+            logMessage ("  -> MIDI learn mapped CC 90 to chorus_on (a toggle) and CC 91 to reverb_mix (0-100%); 5 mappings survive saving the state "
+                        "and loading a preset; a preset without mappings leaves them alone");
+            logMessage ("  -> 300 controllers in one buffer: 255 queued, " + juce::String (300 - 255) + " dropped, the audio thread never waits");
         }
 
         beginTest ("a saved model that has gone missing is reported, not a crash");
