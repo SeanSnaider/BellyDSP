@@ -71,7 +71,8 @@ set(AMPSIM_DSP_SOURCES
     src/dsp/PitchDetector.cpp
     src/dsp/TunerAnalysis.cpp
     src/dsp/TunerThread.cpp
-    src/dsp/PitchShifter.cpp)
+    src/dsp/PitchShifter.cpp
+    src/dsp/Multivoicer.cpp)
 
 set(AMPSIM_JUCE_DEFINITIONS
     JUCE_WEB_BROWSER=0
@@ -167,6 +168,7 @@ target_sources(ampsim_tests PRIVATE
     tests/ReverbTests.cpp
     tests/TunerTests.cpp
     tests/PitchShifterTests.cpp
+    tests/MultivoicerTests.cpp
     tests/Plot.cpp
     tests/NamAmpTests.cpp
     tests/ChainTests.cpp
