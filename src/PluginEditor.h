@@ -255,6 +255,27 @@ private:
     int shownSync = -1;
 };
 
+/// One noise gate's controls with its detector meter. Gate A's panel has Learn; Gate B's has the link
+/// switch, and while linked its own knobs are dimmed (it applies Gate A's decision).
+class GatePanel final : public EffectPanel
+{
+public:
+    GatePanel (AmpSimProcessor& processor, bool isGateB);
+    void refresh();
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+private:
+    const bool gateB;
+    juce::ComboBox *releaseMode = nullptr, *detector = nullptr;
+    juce::ToggleButton *sidechain = nullptr, *link = nullptr;
+    juce::TextButton learnButton { "Learn" };
+    AmpSimProcessor::GateMeter meter;
+    bool linked = false, learning = false;
+    float learnProgress = 0.0f;
+    juce::Rectangle<int> meterArea;
+};
+
 /// The delay's controls, plus the tempo and its tap button.
 class DelayPanel final : public juce::Component
 {
@@ -289,8 +310,8 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
-    /// For tests and snapshots: show the Amps (0), Cab (1), Pre FX (2), or Post FX (3) tab, and refresh
-    /// the status lines now.
+    /// For tests and snapshots: show the Amps (0), Cab (1), Gates & Drive (2), Pre FX (3), Post FX (4), or
+    /// Time FX (5) tab, and refresh the status lines now.
     void showTab (int index) { tabs.setCurrentTabIndex (index); }
     void refresh() { timerCallback(); }
 
@@ -311,7 +332,8 @@ private:
     Knob inputKnob, outputKnob;
     juce::Label warningLabel;
 
-    PageComponent ampsPage, cabPage, preFxPage, postFxPage, timeFxPage;
+    PageComponent ampsPage, cabPage, gatesPage, preFxPage, postFxPage, timeFxPage;
+    std::unique_ptr<GatePanel> gateAPanel, gateBPanel;
     std::unique_ptr<DelayPanel> delayPanel;
     std::unique_ptr<ChorusPanel> chorusPanel;
     std::unique_ptr<ReverbPanel> reverbPanel;

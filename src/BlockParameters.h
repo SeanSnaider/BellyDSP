@@ -4,6 +4,7 @@
 #include "dsp/Compressor.h"
 #include "dsp/Delay.h"
 #include "dsp/Equalizer.h"
+#include "dsp/Gate.h"
 #include "dsp/Reverb.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -33,6 +34,17 @@ struct Raw
     float get() const noexcept { return value->load (std::memory_order_relaxed); }
     bool on() const noexcept { return get() >= 0.5f; }
     int index() const noexcept { return juce::roundToInt (get()); }
+};
+
+/// One noise gate (prefix "gate_a" or "gate_b"). The link switch, "gate_link", is the processor's.
+struct GateParameters
+{
+    static void addTo (Layout& layout, const juce::String& prefix, const juce::String& name);
+    void bind (State& state, const juce::String& prefix);
+    bool isOn() const noexcept { return on.on(); }
+    ampsim::Gate::Settings read() const noexcept;
+
+    Raw on, threshold, hysteresis, hold, attack, release, releaseMode, range, detector, sidechainOn, sidechainHz;
 };
 
 struct CompressorParameters

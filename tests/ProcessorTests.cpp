@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "BlockParameters.h"
 #include "MidiMap.h"
 #include "PluginProcessor.h"
 #include "TestHelpers.h"
@@ -455,7 +456,7 @@ public:
                     logMessage ("  !! " + juce::String (id) + " is " + juce::String (getParam (p, id)) + ", expected " + juce::String (value));
                 }
             expectEquals (wrong, 0);
-            expect (p.getSectionOrder (ampsim::Chain::Section::pre) == juce::StringArray { "eq", "comp" });
+            expect (p.getSectionOrder (ampsim::Chain::Section::pre) == juce::StringArray { "gate", "eq", "comp" }); // saved before the gate existed
             expect (startsWith (p.getSectionOrder (ampsim::Chain::Section::post), { "delay", "eq", "comp" }));
             expect (p.getPresetWarnings().joinIntoString ("; ").contains ("some_future_parameter"));
             logMessage ("  -> tests/fixtures/presets/golden_v1.json: " + juce::String ((int) expected.size()) + " parameter values as expected, order \""
@@ -711,28 +712,156 @@ public:
                         + " dB, meter " + juce::String (p.getCompressorReduction (false), 1) + " dB");
         }
 
+        beginTest ("gates: linked, Gate B applies Gate A's decision after the amp; unlinked they're independent; Learn sets the thresholds");
+        {
+            // Three notes, each followed by 0.6 s of hiss alone (uniform, peak 0.0002: -79 dBFS RMS, a quiet
+            // DI that the default threshold closes on).
+            std::vector<float> input;
+            for (int r = 0; r < 3; ++r)
+            {
+                const auto note = guitarDI ((int) (0.4 * fs));
+                input.insert (input.end(), note.begin(), note.end());
+                input.resize (input.size() + (size_t) (0.6 * fs), 0.0f);
+            }
+            const auto hiss = whiteNoise ((int) input.size(), 0.0002f, 7);
+            for (size_t n = 0; n < input.size(); ++n)
+                input[n] += hiss[n];
+
+            // The reference: one lone gate with the same settings, detecting from the same DI.
+            const auto referenceGain = [&] (const ampsim::Gate::Settings& settings)
+            {
+                ampsim::Gate gate;
+                gate.prepare (fs, blockSize);
+                std::vector<float> gain (input.size(), 1.0f), scratch ((size_t) blockSize);
+                for (size_t start = 0; start + blockSize <= input.size(); start += blockSize)
+                {
+                    gate.setSettings (settings);
+                    std::copy (input.begin() + (long) start, input.begin() + (long) start + blockSize, scratch.begin());
+                    float* channels[] = { scratch.data() };
+                    gate.process (juce::dsp::AudioBlock<float> (channels, 1, (size_t) blockSize), { input.data() + start, blockSize });
+                    std::copy (gate.getGainCurve(), gate.getGainCurve() + blockSize, gain.begin() + (long) start);
+                }
+                return gain;
+            };
+            using Settings = std::initializer_list<std::pair<const char*, float>>;
+            const auto run = [&] (Settings settings)
+            {
+                AmpSimProcessor p;
+                for (const auto& [id, value] : settings)
+                    setParam (p, id, value);
+                p.prepareToPlay (fs, blockSize);
+                return processAll (p, input).left;
+            };
+            // The reference reads its settings through the same parameters (skewed knobs round their
+            // values a little, which shows once a gate starts closing).
+            const auto settingsFor = [&] (Settings settings, const char* prefix)
+            {
+                AmpSimProcessor p;
+                for (const auto& [id, value] : settings)
+                    setParam (p, id, value);
+                params::GateParameters gate;
+                gate.bind (p.parameters, prefix);
+                return gate.read();
+            };
+            // Error against x times the gain (twice over for gating at two points), multiplied in float as
+            // the gates do, after the 10 ms switch-on fades.
+            const auto errorAgainst = [&] (const std::vector<float>& out, const std::vector<float>& gain, int times)
+            {
+                double worst = 0.0;
+                for (size_t n = 960; n < out.size() - blockSize; ++n)
+                {
+                    auto expected = input[n];
+                    for (int t = 0; t < times; ++t)
+                        expected *= gain[n];
+                    worst = std::max (worst, std::abs ((double) out[n] - (double) expected));
+                }
+                return worst;
+            };
+
+            const auto gainA = referenceGain (settingsFor ({}, "gate_a"));
+            const auto gainB = referenceGain (settingsFor ({ { "gate_b_threshold", -40.0f } }, "gate_b"));
+
+            // Gate A off, Gate B on and linked (the default): A still decides.
+            const auto followsA = errorAgainst (run ({ { "gate_b_on", 1.0f } }), gainA, 1);
+            // Both on, linked: the same decision before and after the amp.
+            const auto twice = errorAgainst (run ({ { "gate_a_on", 1.0f }, { "gate_b_on", 1.0f } }), gainA, 2);
+            // Unlinked: Gate B on its own settings, Gate A off.
+            const auto own = errorAgainst (run ({ { "gate_b_on", 1.0f }, { "gate_link", 0.0f }, { "gate_b_threshold", -40.0f } }), gainB, 1);
+            expectEquals (followsA, 0.0);
+            expectEquals (twice, 0.0);
+            expectEquals (own, 0.0);
+
+            double closedA = 1.0, closedB = 1.0;
+            for (size_t n = (size_t) (0.7 * fs); n < (size_t) (0.95 * fs); ++n) // the first gap, after the release
+            {
+                closedA = std::min (closedA, (double) gainA[n]);
+                closedB = std::min (closedB, (double) gainB[n]);
+            }
+            expectEquals (closedA, 0.0);
+            expectEquals (closedB, 0.0);
+
+            // Learn: 2 s of a louder hiss alone (peak 0.001, -65 dBFS RMS, where the default threshold
+            // wouldn't close). Linked, only Gate A learns (Gate B uses its decision); with Gate B on and
+            // unlinked, both do.
+            AmpSimProcessor p;
+            p.prepareToPlay (fs, blockSize);
+            const auto quiet = whiteNoise ((int) (2.2 * fs), 0.001f, 8);
+            setParam (p, "gate_b_on", 1.0f);
+            p.learnGates();
+            expect (p.isLearningGates());
+            processAll (p, quiet);
+            p.runHousekeeping();
+            const auto learnedA = getParam (p, "gate_a_threshold");
+            expect (! p.isLearningGates());
+            expectWithinAbsoluteError (learnedA, p.getChain().gateA.gate.getLearnedThresholdDb(), 0.051f);
+            expectEquals (getParam (p, "gate_b_threshold"), -55.0f);
+            setParam (p, "gate_link", 0.0f);
+            p.learnGates();
+            processAll (p, quiet);
+            p.runHousekeeping();
+            expectWithinAbsoluteError (getParam (p, "gate_b_threshold"), p.getChain().gateB.gate.getLearnedThresholdDb(), 0.051f);
+            expect (getParam (p, "gate_b_threshold") > -50.0f);
+            expect (! p.isLearningGates());
+            const auto noiseFloor = p.getChain().gateA.gate.getLearnedNoiseFloorDb();
+            expect (noiseFloor > -66.0f && noiseFloor < -55.0f);
+
+            logMessage ("  -> through the whole processor, bit for bit against a lone reference gate: linked Gate B with Gate A off applies Gate A's gain "
+                        "(max difference " + juce::String (followsA) + "); both on and linked gate twice with one decision (" + juce::String (twice)
+                        + "); unlinked, Gate B is its own gate at -40 dBFS (" + juce::String (own) + "); both mute the gaps in -79 dBFS RMS hiss "
+                        "(min gain " + juce::String (closedA) + " and " + juce::String (closedB) + ")");
+            logMessage ("  -> Learn on 2 s of -65 dBFS RMS hiss: noise floor (95th percentile of the 10 ms peak) " + juce::String (noiseFloor, 1)
+                        + " dBFS, Gate A's threshold set to " + juce::String (learnedA, 1) + " dBFS (floor + 6 dB margin + 8 dB hysteresis); "
+                        "Gate B learned only once unlinked: " + juce::String (getParam (p, "gate_b_threshold"), 1) + " dBFS");
+        }
+
         beginTest ("the effect order is saved by block name and restored, and odd saved orders are repaired");
         {
             using Section = ampsim::Chain::Section;
             AmpSimProcessor p;
-            expect (p.getSectionOrder (Section::pre) == juce::StringArray { "comp", "eq" });
+            expect (p.getSectionOrder (Section::pre) == juce::StringArray { "gate", "comp", "eq" });
             expect (startsWith (p.getSectionOrder (Section::post), { "eq", "comp" }));
-            p.setSectionOrder (Section::pre, { "eq", "comp" });
+            p.setSectionOrder (Section::pre, { "eq", "gate", "comp" });
             p.setSectionOrder (Section::post, { "comp", "eq" });
+            expect (startsWith (p.getSectionOrder (Section::post), { "comp", "eq", "chorus" }));
 
             juce::MemoryBlock state;
             p.getStateInformation (state);
             AmpSimProcessor restored;
             restored.setStateInformation (state.getData(), (int) state.getSize());
-            expect (restored.getSectionOrder (Section::pre) == juce::StringArray { "eq", "comp" });
+            expect (restored.getSectionOrder (Section::pre) == juce::StringArray { "eq", "gate", "comp" });
             expect (startsWith (restored.getSectionOrder (Section::post), { "comp", "eq" }));
             expect (restored.getSectionOrder (Section::post) == p.getSectionOrder (Section::post));
 
-            // A name from the future, a repeat, and a missing block: unknown and repeated names are
-            // skipped, and the missing block keeps its default place at the end.
+            // A name from the future, a repeat, and missing blocks: unknown and repeated names are
+            // skipped, and a missing block goes where it breaks the fewest pairs of the default order.
             AmpSimProcessor odd;
             odd.setSectionOrder (Section::pre, { "harmonizer", "eq", "eq" });
-            expect (odd.getSectionOrder (Section::pre) == juce::StringArray { "eq", "comp" });
+            expect (odd.getSectionOrder (Section::pre) == juce::StringArray { "gate", "comp", "eq" });
+
+            // An order saved before the gate existed (Phase 5): the gate goes first, the rest keep their order.
+            AmpSimProcessor phase5;
+            phase5.setSectionOrder (Section::pre, { "eq", "comp" });
+            expect (phase5.getSectionOrder (Section::pre) == juce::StringArray { "gate", "eq", "comp" });
 
             // A state saved before effects existed loads with the default order.
             AmpSimProcessor legacy;
@@ -741,11 +870,12 @@ public:
             juce::MemoryBlock old;
             juce::AudioProcessor::copyXmlToBinary (*tree.createXml(), old);
             legacy.setStateInformation (old.getData(), (int) old.getSize());
-            expect (legacy.getSectionOrder (Section::pre) == juce::StringArray { "comp", "eq" });
+            expect (legacy.getSectionOrder (Section::pre) == juce::StringArray { "gate", "comp", "eq" });
 
             logMessage ("  -> saved \"" + p.parameters.state.getProperty (AmpSimProcessor::orderKey (Section::pre)).toString() + "\" / \""
                         + p.parameters.state.getProperty (AmpSimProcessor::orderKey (Section::post)).toString() + "\", restored the same; "
                         "\"harmonizer, eq, eq\" becomes \"" + odd.getSectionOrder (Section::pre).joinIntoString (", ")
+                        + "\"; a Phase 5 \"eq, comp\" becomes \"" + phase5.getSectionOrder (Section::pre).joinIntoString (", ")
                         + "\"; a state without an order gets the default");
         }
 
@@ -822,7 +952,10 @@ public:
             setParam (p, "chorus_sync", 1.0f);
             setParam (p, "reverb_on", 1.0f);
             setParam (p, "reverb_engine", 2.0f);
-            for (auto [tab, name] : std::initializer_list<std::pair<int, const char*>> { { 2, "editor_prefx.png" }, { 3, "editor_postfx.png" }, { 4, "editor_timefx.png" } })
+            setParam (p, "gate_a_on", 1.0f);
+            setParam (p, "gate_b_on", 1.0f);
+            for (auto [tab, name] : std::initializer_list<std::pair<int, const char*>> {
+                     { 2, "editor_gates.png" }, { 3, "editor_prefx.png" }, { 4, "editor_postfx.png" }, { 5, "editor_timefx.png" } })
             {
                 ampSimEditor->showTab (tab);
                 ampSimEditor->resized();

@@ -30,13 +30,14 @@ Chain::Chain()
         for (auto slot : defaultOrder (section))
             setBypassed (slot, true);
     }
+    setBypassed (Slot::gateB, true);
 }
 
 const std::vector<Chain::Slot>& Chain::defaultOrder (Section section)
 {
     // Built on first use, which is always the Chain constructor, never the audio thread; after that,
     // reading them never allocates.
-    static const std::vector<Slot> pre { Slot::preCompressor, Slot::preEq };
+    static const std::vector<Slot> pre { Slot::gateA, Slot::preCompressor, Slot::preEq };
     static const std::vector<Slot> post { Slot::postEq, Slot::postCompressor, Slot::chorus, Slot::delay, Slot::reverb };
     return section == Section::pre ? pre : post;
 }
@@ -102,9 +103,11 @@ const Block& Chain::blockFor (Slot slot) const
     switch (slot)
     {
         case Slot::inputGain:      return inputGain;
+        case Slot::gateA:          return gateA;
         case Slot::preCompressor:  return preCompressor;
         case Slot::preEq:          return preEq;
         case Slot::amp:            return amp;
+        case Slot::gateB:          return gateB;
         case Slot::cab:            return cab;
         case Slot::postEq:         return postEq;
         case Slot::postCompressor: return postCompressor;
@@ -273,6 +276,7 @@ void Chain::process (juce::dsp::AudioBlock<float> io)
     runBlock (Slot::inputGain, io, context, stereoCopied);
     runSection (Section::pre, io, context, stereoCopied);
     runBlock (Slot::amp, io, context, stereoCopied);
+    runBlock (Slot::gateB, io, context, stereoCopied);
     runBlock (Slot::cab, io, context, stereoCopied);
 
     // The cab is the mono-to-stereo point; if it's bypassed, the copy still happens before post FX.

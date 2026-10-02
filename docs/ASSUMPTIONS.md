@@ -60,6 +60,23 @@ Status key: **Open** (waiting for Sean), **Confirmed** (Sean agreed), **Changed*
 | P4 | Presets live in `~/Library/Application Support/AmpSim/presets`, one `.json` per preset, saved and loaded from the header's Save and Load buttons. | The plan's folder. A browser list is Phase 11. | `presets::defaultFolder`. |
 | P5 | Every parameter starts at its default as read back through its normalized value (so an 8 kHz default is exactly 8000 Hz, not 7999.9995). | Makes a fresh processor and a preset-loaded one bit-identical. | Nothing to decide. |
 
+## Phase 6: gates
+
+| # | Assumption | Why | To change it |
+|---|---|---|---|
+| G1 | "Threshold" is the open threshold; the close threshold is threshold minus hysteresis. | The usual gate convention. The catch: widening the hysteresis after Learn lowers the close threshold toward the noise. | `Gate.h`. |
+| G2 | Learn's 6 dB margin is on the close threshold, so the open threshold lands 14 dB over the noise floor (with the default 8 dB hysteresis). Learn takes the 95th percentile of 2 s, not the maximum. | The close threshold decides whether noise can hold the gate open; the percentile keeps a stray glitch of up to 100 ms from raising it. | `Gate::learnMarginDb`, `learnPercentile`. |
+| G3 | The release falls a constant number of dB per second (the knob is the time to fall 60 dB), so a full mute takes twice the knob time (to -120 dB). | "Release exponential in dB", read as a string's own decay. | `Gate::releaseCoefficient`. |
+| G4 | One release knob: in adaptive mode it sets the slow side (250 ms) and stops get a fixed 20 ms. Anything dying faster than about 150 dB/s from playing level counts as a stop, palm mutes included. | Tight stops shouldn't need tuning, and it suits chugs. A heavily damped note will cut fast too. | `Gate::adaptiveFastReleaseMs`, the 8 and 20 dB gap thresholds. |
+| G5 | Hold defaults to 10 ms: choked tremolo gaps of 20 ms (E4) to 26 ms (A2) ride through, and a hard stop is still silent in 60 to 80 ms. | The plan's "hold to bridge tremolo gaps", against tight stops. | `gate_*_hold` default. |
+| G6 | The default threshold is -55 dBFS. With 8 dB of hysteresis it closes only on noise whose 10 ms peak stays under -63 dBFS (about -70 dBFS RMS); on a noisier DI (-65 dBFS RMS hiss peaks near -58) the gate stays open until Learn is pressed. | Safe for a typical DI at minimum interface gain; Learn is the intended workflow. | Parameter default, or run Learn at first launch. |
+| G7 | The sidechain high-pass is 24 dB/oct at 100 Hz (the compressor's is 12). Soft low notes around -40 dBFS open 2 to 3 ms after they start; picks open at once. | 12 dB/oct takes only 9.4 dB off 60 Hz hum, not enough to keep it from holding the gate open. | `Gate::designSidechain`. |
+| G8 | A gate starts open after prepare or reset and closes through its release, so re-enabling it fades in from exactly the dry signal. Cost: about 0.4 s of noise fading out at startup. | No jump when a gate is switched on mid-song. | `Gate::resetState`. |
+| G9 | Both gates start switched off, with Gate B linked. | Like every effect, a fresh session is just the amp and cab, bit for bit. | `gate_a_on`, `gate_b_on` defaults. |
+| G10 | Gate A keeps running its detector while it's off (about 1 us a buffer), so a linked Gate B follows it and Learn works with it off. | The plan says Gate B follows Gate A's detector; a switched-off Gate A shouldn't leave Gate B with a stale curve. | `GateA` in `LinkedGates.h`. |
+| G11 | Gate B's panel offers own-input detection too (the plan only names Gate A). Linked, Gate B's own knobs are dimmed but still editable. Learn sets Gate B's threshold only when it's on and unlinked. | Unlinked, an independent Gate B may want to see the amp's output; there's no reason to hide it. | `GatePanel`. |
+| G12 | A saved section order that lacks a newer block gets it where it breaks the fewest pairs of the default order (latest such place on a tie). A Phase 5 pre order "eq, comp" becomes "gate, eq, comp". | Puts new blocks where they belong without undoing the player's own reordering. | `AmpSimProcessor::setSectionOrder`. |
+
 ## Phase 6: MIDI mappings
 
 | # | Assumption | Why | To change it |

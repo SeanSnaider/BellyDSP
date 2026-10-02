@@ -72,9 +72,9 @@ public:
     /// For tests: how many times a calibration change has reloaded the captures.
     int getCalibrationReloadCount() const { return calibrationReloads; }
 
-    /// Effect sections. Blocks have permanent names ("comp", "eq", ...) used in saved state, so the
-    /// order survives blocks being added later. Message thread. Unknown names are ignored and missing
-    /// blocks keep their default places at the end.
+    /// Effect sections. Blocks have permanent names ("gate", "comp", "eq", ...) used in saved state, so
+    /// the order survives blocks being added later. Message thread. Unknown names are ignored, and a
+    /// missing block goes where it breaks the fewest pairs of the default order (the gate first).
     void setSectionOrder (ampsim::Chain::Section section, const juce::StringArray& names);
     juce::StringArray getSectionOrder (ampsim::Chain::Section section) const;
     static juce::String blockName (ampsim::Chain::Slot slot);
@@ -103,6 +103,27 @@ public:
 
     /// Any thread: the tempo in effect (BPM).
     double getTempo() const { return tapPending.load() ? tappedBpm.load() : (double) tempoBpm->load(); }
+
+    /// Any thread: Learn for the gates (BUILD_PLAN "Gates"): with the strings muted, measures the noise
+    /// floor for 2 s and sets the threshold above it. Gate A always learns (it detects even while off);
+    /// Gate B too when it's on and unlinked (linked, it uses Gate A's decision). The timer writes the
+    /// results into the threshold knobs.
+    void learnGates();
+    bool isLearningGates() const;
+    bool isGateBOnItsOwn() const;
+    float getGateLearnProgress() const { return chain.gateA.gate.getLearnProgress(); }
+
+    /// Any thread: gate meters, for Gate A (b = false) or Gate B.
+    struct GateMeter
+    {
+        float detectorDb = -180.0f, openDb = 0.0f, closeDb = 0.0f, reductionDb = 0.0f;
+        bool open = true;
+    };
+    GateMeter getGateMeter (bool b) const
+    {
+        const auto& g = b ? chain.gateB.gate : chain.gateA.gate;
+        return { g.getDetectorLevelDb(), g.getOpenThresholdDb(), g.getCloseThresholdDb(), g.getGainReductionDb(), g.isOpen() };
+    }
 
     /// Any thread: compressor gain reduction meters (dB).
     float getCompressorReduction (bool post) const { return post ? chain.postCompressor.getGainReductionDb() : chain.preCompressor.getGainReductionDb(); }
@@ -218,6 +239,9 @@ private:
     std::atomic<float>* interfaceInputDbu = nullptr;
 
     void applyEffectParameters();
+    params::GateParameters gateAParams, gateBParams;
+    std::atomic<float>* gateLink = nullptr;
+    int gateALearnSeen = 0, gateBLearnSeen = 0;
     params::CompressorParameters preCompParams, postCompParams;
     params::EqualizerParameters preEqParams, postEqParams;
     params::DelayParameters delayParams;

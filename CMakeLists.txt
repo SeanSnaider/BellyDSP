@@ -66,6 +66,7 @@ set(AMPSIM_DSP_SOURCES
     src/dsp/ModulatedDelay.cpp
     src/dsp/Chorus.cpp
     src/dsp/Gate.cpp
+    src/dsp/LinkedGates.cpp
     src/dsp/Tempo.cpp
     src/dsp/Delay.cpp
     src/dsp/Reverb.cpp)

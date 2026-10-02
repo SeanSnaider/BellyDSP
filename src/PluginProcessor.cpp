@@ -46,6 +46,9 @@ AmpSimProcessor::AmpSimProcessor()
     roomPreDelay = raw (cabParamId (roomMic, "predelay"));
     roomMute = raw (cabParamId (roomMic, "mute"));
     cabAlign = raw ("cab_align");
+    gateAParams.bind (parameters, "gate_a");
+    gateBParams.bind (parameters, "gate_b");
+    gateLink = raw ("gate_link");
     preCompParams.bind (parameters, "comp_pre");
     postCompParams.bind (parameters, "comp_post");
     preEqParams.bind (parameters, "eq_pre");
@@ -172,6 +175,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout AmpSimProcessor::createParam
 
     // Effects. Compressors start off (style presets switch them on); EQs start on, and flat they
     // pass the signal through bit for bit.
+    params::GateParameters::addTo (layout, "gate_a", "Gate A");
+    params::GateParameters::addTo (layout, "gate_b", "Gate B");
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "gate_link", 1 }, "Gate Link", true));
     params::CompressorParameters::addTo (layout, "comp_pre", "Pre Comp", false);
     params::EqualizerParameters::addTo (layout, "eq_pre", "Pre EQ", true);
     params::EqualizerParameters::addTo (layout, "eq_post", "Post EQ", true);
@@ -294,6 +300,11 @@ void AmpSimProcessor::applyCabParameters()
 void AmpSimProcessor::applyEffectParameters()
 {
     using Slot = ampsim::Chain::Slot;
+    chain.setBypassed (Slot::gateA, ! gateAParams.isOn()); // Gate A takes this as its own bypass and keeps detecting
+    chain.gateA.gate.setSettings (gateAParams.read());
+    chain.setBypassed (Slot::gateB, ! gateBParams.isOn());
+    chain.gateB.gate.setSettings (gateBParams.read());
+    chain.gateB.setLinked (gateLink->load (std::memory_order_relaxed) >= 0.5f);
     chain.setBypassed (Slot::preCompressor, ! preCompParams.isOn());
     chain.preCompressor.setSettings (preCompParams.read());
     chain.setBypassed (Slot::preEq, ! preEqParams.isOn());
@@ -323,9 +334,29 @@ void AmpSimProcessor::registerTap (double timeSeconds)
     }
 }
 
+void AmpSimProcessor::learnGates()
+{
+    chain.gateA.gate.startLearn();
+    if (isGateBOnItsOwn())
+        chain.gateB.gate.startLearn();
+}
+
+bool AmpSimProcessor::isGateBOnItsOwn() const
+{
+    return gateBParams.isOn() && gateLink->load() < 0.5f;
+}
+
+bool AmpSimProcessor::isLearningGates() const
+{
+    // A Gate B switched off or relinked mid-measurement stops detecting, so it only counts while it runs.
+    return chain.gateA.gate.isLearning() || (chain.gateB.gate.isLearning() && isGateBOnItsOwn());
+}
+
 juce::String AmpSimProcessor::blockName (ampsim::Chain::Slot slot)
 {
     using Slot = ampsim::Chain::Slot;
+    if (slot == Slot::gateA)
+        return "gate";
     if (slot == Slot::preCompressor || slot == Slot::postCompressor)
         return "comp";
     if (slot == Slot::preEq || slot == Slot::postEq)
@@ -341,16 +372,35 @@ juce::String AmpSimProcessor::blockName (ampsim::Chain::Slot slot)
 
 void AmpSimProcessor::setSectionOrder (ampsim::Chain::Section section, const juce::StringArray& names)
 {
-    // Names to slots, skipping unknown and repeated names, then any block not named, in default order.
+    // Names to slots, skipping unknown and repeated names. A block the names leave out (one added since
+    // they were saved, like the gate in a Phase 5 preset) goes where it breaks the fewest of the default
+    // order's pairs with the blocks already placed, the latest such place on a tie: first for the gate
+    // in "eq, comp", after both for the chorus in "comp, eq".
     const auto defaults = ampsim::Chain::defaultOrder (section);
+    const auto rank = [&defaults] (ampsim::Chain::Slot slot) { return (size_t) (std::find (defaults.begin(), defaults.end(), slot) - defaults.begin()); };
     std::vector<ampsim::Chain::Slot> order;
     for (const auto& name : names)
         for (auto slot : defaults)
             if (blockName (slot) == name.trim() && std::find (order.begin(), order.end(), slot) == order.end())
                 order.push_back (slot);
-    for (auto slot : defaults)
-        if (std::find (order.begin(), order.end(), slot) == order.end())
-            order.push_back (slot);
+    for (size_t i = 0; i < defaults.size(); ++i)
+    {
+        if (std::find (order.begin(), order.end(), defaults[i]) != order.end())
+            continue;
+        size_t best = 0, fewest = defaults.size() + 1;
+        for (size_t k = 0; k <= order.size(); ++k)
+        {
+            size_t broken = 0; // placed blocks on the wrong side of position k
+            for (size_t m = 0; m < order.size(); ++m)
+                broken += (m < k) != (rank (order[m]) < i) ? 1 : 0;
+            if (broken <= fewest)
+            {
+                fewest = broken;
+                best = k;
+            }
+        }
+        order.insert (order.begin() + (long) best, defaults[i]);
+    }
 
     chain.requestOrder (section, order);
     parameters.state.setProperty (orderKey (section), getSectionOrder (section).joinIntoString (","), nullptr);
@@ -680,6 +730,20 @@ void AmpSimProcessor::timerCallback()
             param->setValueNotifyingHost ((float) freeze);
         freezeRequest.compare_exchange_strong (freeze, -1); // a newer press keeps its request for the next tick
     }
+
+    // Gate Learn finished: write each measured threshold into its knob. (The count goes up after the
+    // result is stored, so reading it first means the threshold read after it is the new one.)
+    const auto writeLearned = [this] (const ampsim::Gate& gate, int& seen, const char* id)
+    {
+        if (const auto count = gate.getLearnCount(); count != seen)
+        {
+            seen = count;
+            if (auto* param = parameters.getParameter (id))
+                param->setValueNotifyingHost (param->convertTo0to1 (gate.getLearnedThresholdDb()));
+        }
+    };
+    writeLearned (chain.gateA.gate, gateALearnSeen, "gate_a_threshold");
+    writeLearned (chain.gateB.gate, gateBLearnSeen, "gate_b_threshold");
 
     // A tapped tempo: write it into the tempo knob (the audio thread already uses it).
     if (tapPending.load())

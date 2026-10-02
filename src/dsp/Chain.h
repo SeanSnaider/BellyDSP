@@ -9,6 +9,7 @@
 #include "Reverb.h"
 #include "Equalizer.h"
 #include "Gain.h"
+#include "LinkedGates.h"
 
 #include <array>
 #include <atomic>
@@ -22,8 +23,8 @@ namespace ampsim
 /// bypass, and runs the two reorderable sections. It never special-cases a block (BUILD_PLAN "Block
 /// design", decisions 2 to 6).
 ///
-///   input gain ─► PRE FX (mono, reorderable) ─► amp ─► cab (mono to stereo) ─► POST FX (stereo,
-///   reorderable) ─► output level
+///   input gain ─► PRE FX (mono, reorderable) ─► amp ─► Gate B ─► cab (mono to stereo) ─► POST FX
+///   (stereo, reorderable) ─► output level
 ///
 /// Blocks are typed members (decision 6), so the processor can call block-specific setters. The
 /// generic logic reaches them through blockFor(). A section's order is an array of slots, changed by
@@ -34,9 +35,11 @@ class Chain
 {
 public:
     Gain inputGain { false };
+    GateA gateA;
     Compressor preCompressor { false };
     Equalizer preEq { false };
     AmpSection amp;
+    GateB gateB { gateA.gate }; // follows Gate A when linked (LinkedGates.h)
     Cab cab;
     Equalizer postEq { true };
     Compressor postCompressor { true };
@@ -48,9 +51,11 @@ public:
     enum class Slot : size_t
     {
         inputGain,
+        gateA,
         preCompressor,
         preEq,
         amp,
+        gateB,
         cab,
         postEq,
         postCompressor,

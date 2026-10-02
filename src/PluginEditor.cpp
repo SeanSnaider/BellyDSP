@@ -923,6 +923,125 @@ void ReverbPanel::resized()
     layoutGrid (area, cells, 4, area.getHeight() / 4);
 }
 
+// ---- GatePanel --------------------------------------------------------------------------------
+
+GatePanel::GatePanel (AmpSimProcessor& processor, bool isGateB)
+    : EffectPanel (processor, isGateB ? "Gate B (after the amp)" : "Gate A (before the amp)", isGateB ? "gate_b_on" : "gate_a_on"),
+      gateB (isGateB)
+{
+    const juce::String p = isGateB ? "gate_b" : "gate_a";
+    addKnob (p + "_threshold", "Threshold");
+    addKnob (p + "_hysteresis", "Hysteresis");
+    addKnob (p + "_hold", "Hold", " ms");
+    addKnob (p + "_attack", "Attack", " ms");
+    addKnob (p + "_release", "Release", " ms");
+    addKnob (p + "_range", "Range");
+    addKnob (p + "_sc_freq", "SC freq", " Hz");
+    releaseMode = &addCombo (p + "_release_mode", { "Adaptive release", "Classic release" });
+    detector = &addCombo (p + "_detector", { "Detect from DI", "Detect from own input" });
+    sidechain = &addToggle (p + "_sc_hpf", "Sidechain HPF");
+
+    if (isGateB)
+    {
+        link = &addToggle ("gate_link", "Linked to Gate A");
+    }
+    else
+    {
+        learnButton.setTooltip ("Mute the strings, then press: measures the noise for 2 s and sets the threshold above it");
+        learnButton.onClick = [this] { ampSim.learnGates(); };
+        addAndMakeVisible (learnButton);
+    }
+}
+
+void GatePanel::refresh()
+{
+    const auto newMeter = ampSim.getGateMeter (gateB);
+    const auto newLinked = gateB && ampSim.parameters.getRawParameterValue ("gate_link")->load() >= 0.5f;
+    const auto newLearning = ampSim.isLearningGates() && (! gateB || ampSim.isGateBOnItsOwn());
+    const auto newProgress = ampSim.getGateLearnProgress();
+
+    if (newLinked != linked)
+    {
+        // Linked, Gate B's own settings don't apply: dim them (they stay editable for when it's unlinked).
+        for (auto* c : std::initializer_list<juce::Component*> { releaseMode, detector, sidechain })
+            c->setAlpha (newLinked ? 0.4f : 1.0f);
+        for (auto* knob : knobs)
+            knob->setAlpha (newLinked ? 0.4f : 1.0f);
+    }
+
+    const auto changed = std::abs (newMeter.detectorDb - meter.detectorDb) > 0.5f || newMeter.open != meter.open
+                         || std::abs (newMeter.openDb - meter.openDb) > 0.05f || std::abs (newMeter.reductionDb - meter.reductionDb) > 0.5f
+                         || newLinked != linked || newLearning != learning || std::abs (newProgress - learnProgress) > 0.01f;
+    meter = newMeter;
+    linked = newLinked;
+    learning = newLearning;
+    learnProgress = newProgress;
+    learnButton.setButtonText (learning ? "Learning..." : "Learn");
+    if (changed)
+        repaint (meterArea);
+}
+
+void GatePanel::paint (juce::Graphics& g)
+{
+    EffectPanel::paint (g);
+
+    // The detector's level on a -100 to 0 dBFS scale, against the open (bright) and close (amber)
+    // thresholds; the gap between them is the hysteresis.
+    auto bar = meterArea;
+    const auto textRow = bar.removeFromTop (18);
+    const auto xFor = [&bar] (float db)
+    { return (float) bar.getX() + (float) bar.getWidth() * juce::jlimit (0.0f, 1.0f, (db + 100.0f) / 100.0f); };
+
+    g.setColour (background);
+    g.fillRect (bar);
+    if (! linked)
+    {
+        g.setColour ((meter.open ? accent : dimText).withAlpha (0.8f));
+        g.fillRect (bar.toFloat().withRight (xFor (meter.detectorDb)));
+        g.setColour (textColour);
+        g.drawLine (xFor (meter.openDb), (float) bar.getY(), xFor (meter.openDb), (float) bar.getBottom(), 2.0f);
+        g.setColour (warningColour);
+        g.drawLine (xFor (meter.closeDb), (float) bar.getY(), xFor (meter.closeDb), (float) bar.getBottom(), 2.0f);
+    }
+
+    const auto dB = [] (float value) { return juce::String (juce::roundToInt (value)); };
+    juce::String text;
+    if (learning)
+        text = "Learning the noise floor: keep the strings muted (" + juce::String (juce::roundToInt (learnProgress * 100.0f)) + "%)";
+    else if (linked)
+        text = juce::String ("Following Gate A: ") + (meter.reductionDb < 1.0f ? "open" : "closing, " + dB (meter.reductionDb) + " dB down");
+    else
+        text = (meter.open ? "Open" : "Closed") + juce::String (": level ") + dB (meter.detectorDb) + " dBFS (opens at " + dB (meter.openDb)
+               + ", closes below " + dB (meter.closeDb) + "), reduction " + (meter.reductionDb >= 99.0f ? juce::String ("full") : dB (meter.reductionDb) + " dB");
+    g.setColour (learning ? warningColour : textColour);
+    g.setFont (juce::FontOptions (12.0f));
+    g.drawText (text, textRow, juce::Justification::centredLeft);
+}
+
+void GatePanel::resized()
+{
+    auto area = layoutTitle();
+    auto combos = area.removeFromTop (26);
+    releaseMode->setBounds (combos.removeFromLeft (combos.getWidth() / 2).reduced (2, 0));
+    detector->setBounds (combos.reduced (2, 0));
+    area.removeFromTop (6);
+
+    auto toggles = area.removeFromTop (26);
+    sidechain->setBounds (toggles.removeFromLeft (toggles.getWidth() / 2));
+    if (link != nullptr)
+        link->setBounds (toggles);
+    else
+        learnButton.setBounds (toggles.reduced (2, 0));
+    area.removeFromTop (8);
+
+    meterArea = area.removeFromBottom (40);
+    area.removeFromBottom (8);
+    std::vector<juce::Component*> cells;
+    for (auto* knob : knobs)
+        cells.push_back (knob);
+    layoutGrid (area, cells, 4, juce::jmin (110, area.getHeight() / 2));
+}
+
 // ---- DelayPanel -------------------------------------------------------------------------------
 
 DelayPanel::DelayPanel (AmpSimProcessor& processor) : ampSim (processor)
@@ -1192,8 +1311,22 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p)
         };
     }
 
+    // Gates & Drive: the two linked gates (and the boost and overdrive).
+    gateAPanel = std::make_unique<GatePanel> (p, false);
+    gateBPanel = std::make_unique<GatePanel> (p, true);
+    gatesPage.addAndMakeVisible (gateAPanel.get());
+    gatesPage.addAndMakeVisible (gateBPanel.get());
+    gatesPage.layout = [this] (juce::Rectangle<int> area)
+    {
+        area.reduce (8, 8);
+        auto gates = area.removeFromTop (juce::jmin (area.getHeight(), 420));
+        gateAPanel->setBounds (gates.removeFromLeft (gates.getWidth() / 2).reduced (4));
+        gateBPanel->setBounds (gates.reduced (4));
+    };
+
     tabs.addTab ("Amps", panel, &ampsPage, false);
     tabs.addTab ("Cab", panel, &cabPage, false);
+    tabs.addTab ("Gates & Drive", panel, &gatesPage, false);
     tabs.addTab ("Pre FX", panel, &preFxPage, false);
     tabs.addTab ("Post FX", panel, &postFxPage, false);
 
@@ -1327,6 +1460,8 @@ void AmpSimEditor::timerCallback()
     delayPanel->refresh();
     chorusPanel->refresh();
     reverbPanel->refresh();
+    gateAPanel->refresh();
+    gateBPanel->refresh();
 }
 
 void AmpSimEditor::paint (juce::Graphics& g)

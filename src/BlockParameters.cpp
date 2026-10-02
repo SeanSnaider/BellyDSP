@@ -20,6 +20,65 @@ juce::AudioParameterFloatAttributes hertz() { return juce::AudioParameterFloatAt
 juce::AudioParameterFloatAttributes milliseconds() { return juce::AudioParameterFloatAttributes().withLabel ("ms"); }
 juce::AudioParameterFloatAttributes percent() { return juce::AudioParameterFloatAttributes().withLabel ("%"); }
 
+// ---- Gates ------------------------------------------------------------------------------------
+
+void GateParameters::addTo (Layout& layout, const juce::String& p, const juce::String& n)
+{
+    // Defaults and ranges are the block's (Gate.h): threshold -55 dBFS with 8 dB of hysteresis, 10 ms
+    // hold, 0.5 ms attack, adaptive release with a 250 ms slow side, a full mute when closed, detecting
+    // from the DI through a 100 Hz sidechain high-pass. Off by default, like every effect.
+    const ampsim::Gate::Settings d;
+    using G = ampsim::Gate;
+    layout.add (std::make_unique<Bool> (juce::ParameterID { p + "_on", 1 }, n + " On", false));
+    layout.add (std::make_unique<Float> (juce::ParameterID { p + "_threshold", 1 }, n + " Threshold",
+                                         juce::NormalisableRange<float> (G::minThresholdDb, G::maxThresholdDb, 0.1f), d.thresholdDb, decibels()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { p + "_hysteresis", 1 }, n + " Hysteresis",
+                                         juce::NormalisableRange<float> (0.0f, G::maxHysteresisDb, 0.1f), d.hysteresisDb, decibels()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { p + "_hold", 1 }, n + " Hold", skewedRange (0.0f, G::maxHoldMs, 50.0f, 0.1f), d.holdMs, milliseconds()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { p + "_attack", 1 }, n + " Attack",
+                                         skewedRange (G::minAttackMs, G::maxAttackMs, 2.0f, 0.01f), d.attackMs, milliseconds()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { p + "_release", 1 }, n + " Release",
+                                         skewedRange (G::minReleaseMs, G::maxReleaseMs, 200.0f, 0.1f), d.releaseMs, milliseconds()));
+    layout.add (std::make_unique<Choice> (juce::ParameterID { p + "_release_mode", 1 }, n + " Release Mode", juce::StringArray { "Adaptive", "Classic" }, 0));
+    layout.add (std::make_unique<Float> (juce::ParameterID { p + "_range", 1 }, n + " Range",
+                                         juce::NormalisableRange<float> (G::muteDb, 0.0f, 0.1f), d.rangeDb, decibels()));
+    layout.add (std::make_unique<Choice> (juce::ParameterID { p + "_detector", 1 }, n + " Detector", juce::StringArray { "DI", "Own Input" }, 0));
+    layout.add (std::make_unique<Bool> (juce::ParameterID { p + "_sc_hpf", 1 }, n + " Sidechain High-Pass", d.sidechainHighPass));
+    layout.add (std::make_unique<Float> (juce::ParameterID { p + "_sc_freq", 1 }, n + " Sidechain Frequency",
+                                         skewedRange (G::minSidechainHz, G::maxSidechainHz, 100.0f, 1.0f), d.sidechainHz, hertz()));
+}
+
+void GateParameters::bind (State& s, const juce::String& p)
+{
+    on.bind (s, p + "_on");
+    threshold.bind (s, p + "_threshold");
+    hysteresis.bind (s, p + "_hysteresis");
+    hold.bind (s, p + "_hold");
+    attack.bind (s, p + "_attack");
+    release.bind (s, p + "_release");
+    releaseMode.bind (s, p + "_release_mode");
+    range.bind (s, p + "_range");
+    detector.bind (s, p + "_detector");
+    sidechainOn.bind (s, p + "_sc_hpf");
+    sidechainHz.bind (s, p + "_sc_freq");
+}
+
+ampsim::Gate::Settings GateParameters::read() const noexcept
+{
+    ampsim::Gate::Settings s;
+    s.thresholdDb = threshold.get();
+    s.hysteresisDb = hysteresis.get();
+    s.holdMs = hold.get();
+    s.attackMs = attack.get();
+    s.releaseMs = release.get();
+    s.releaseMode = releaseMode.index() == 1 ? ampsim::Gate::ReleaseMode::classic : ampsim::Gate::ReleaseMode::adaptive;
+    s.rangeDb = range.get();
+    s.detector = detector.index() == 1 ? ampsim::Gate::DetectorSource::ownInput : ampsim::Gate::DetectorSource::di;
+    s.sidechainHighPass = sidechainOn.on();
+    s.sidechainHz = sidechainHz.get();
+    return s;
+}
+
 // ---- Compressor -------------------------------------------------------------------------------
 
 void CompressorParameters::addTo (Layout& layout, const juce::String& p, const juce::String& n, bool onByDefault)
