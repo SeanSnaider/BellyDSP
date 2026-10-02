@@ -1,0 +1,112 @@
+{
+  "granular": {
+    "up_fifth": {
+      "ratio": 1.4983070768766815,
+      "delay_ms": 0.0,
+      "glide_ms": 30.0,
+      "max_voice_delay_ms": 0.0,
+      "changes": []
+    },
+    "down_octave": {
+      "ratio": 0.5,
+      "delay_ms": 0.0,
+      "glide_ms": 30.0,
+      "max_voice_delay_ms": 0.0,
+      "changes": []
+    },
+    "up_two_octaves": {
+      "ratio": 4.0,
+      "delay_ms": 0.0,
+      "glide_ms": 30.0,
+      "max_voice_delay_ms": 0.0,
+      "changes": []
+    },
+    "detune": {
+      "ratio": 0.9930924954370359,
+      "delay_ms": 3.0,
+      "glide_ms": 30.0,
+      "max_voice_delay_ms": 10.0,
+      "changes": []
+    },
+    "glide_and_delay": {
+      "ratio": 2.0,
+      "delay_ms": 5.0,
+      "glide_ms": 40.0,
+      "max_voice_delay_ms": 20.0,
+      "changes": [
+        [
+          15360,
+          0.7491535384383408,
+          5.0,
+          40.0
+        ],
+        [
+          32000,
+          1.0,
+          12.0,
+          40.0
+        ]
+      ]
+    }
+  },
+  "psola": {
+    "track": [
+      [
+        0,
+        244.89795918367346
+      ],
+      [
+        19200,
+        326.90866989034936
+      ],
+      [
+        30720,
+        194.3792014254475
+      ],
+      [
+        39680,
+        436.3636363636364
+      ]
+    ],
+    "max_delay_ms": 40.0,
+    "cases": {
+      "down_octave": {
+        "ratio": 0.5,
+        "delay_ms": 0.0,
+        "glide_ms": 30.0,
+        "changes": []
+      },
+      "up_fifth": {
+        "ratio": 1.4983070768766815,
+        "delay_ms": 0.0,
+        "glide_ms": 30.0,
+        "changes": []
+      },
+      "up_two_octaves": {
+        "ratio": 4.0,
+        "delay_ms": 0.0,
+        "glide_ms": 30.0,
+        "changes": []
+      },
+      "glide": {
+        "ratio": 0.5,
+        "delay_ms": 4.0,
+        "glide_ms": 40.0,
+        "changes": [
+          [
+            12032,
+            0.7491535384383408,
+            4.0,
+            40.0
+          ],
+          [
+            28800,
+            2.0,
+            4.0,
+            40.0
+          ]
+        ]
+      }
+    }
+  }
+}

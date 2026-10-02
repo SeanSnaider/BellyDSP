@@ -81,7 +81,10 @@ set(AMPSIM_DSP_SOURCES
     src/dsp/Bitcrush.cpp
     src/dsp/Phaser.cpp
     src/dsp/Flanger.cpp
-    src/dsp/Bloom.cpp)
+    src/dsp/Bloom.cpp
+    src/dsp/PitchShifter.cpp
+    src/dsp/Psola.cpp
+    src/dsp/Multivoicer.cpp)
 
 set(AMPSIM_JUCE_DEFINITIONS
     JUCE_WEB_BROWSER=0
@@ -180,6 +183,8 @@ target_sources(ampsim_tests PRIVATE
     tests/OversamplerTests.cpp
     tests/DriveTests.cpp
     tests/BloomTests.cpp
+    tests/PitchShifterTests.cpp
+    tests/MultivoicerTests.cpp
     tests/Plot.cpp
     tests/NamAmpTests.cpp
     tests/ChainTests.cpp
