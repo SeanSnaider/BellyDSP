@@ -239,3 +239,14 @@ Status key: **Open** (waiting for Sean), **Confirmed** (Sean agreed), **Changed*
 | K10 | Key presets switchable over MIDI are scenes holding the key and scale (right-click them, "Held by scenes"), not a separate list. | Scenes already switch from the footswitch and are saved per preset. | A separate key-preset list later, if scenes aren't enough. |
 | K11 | The lowest note is a choice of three (110, 80, 60 Hz), with a detector prepared for each; changing it restarts the note tracking. | A detector's buffers depend on its floor, and the audio thread can't allocate. | `Harmonizer::floors`. |
 
+## Phase 11: presets and scenes
+
+| # | Assumption | Why | To change it |
+|---|---|---|---|
+| Q1 | The library roots are ~/Library/Application Support/AmpSim/models and /irs. A preset stores paths relative to them for files inside, absolute paths otherwise, and relinking only searches the roots. | The plan's "relative to the models/ or irs/ root". Captures kept elsewhere load by absolute path but can't be relinked if they move. | `presets::libraryRoot`; a setting for extra roots later. |
+| Q2 | The content hash is 64-bit FNV-1a, checked after the file size; a pack folder hashes its files' relative names and hashes. | Fast and enough to tell files apart; nothing here needs to resist forgery. | `presets::contentHash`. |
+| Q3 | Relinking runs on the message thread while the preset applies, so a large library can pause the panel briefly when a file has moved. | Rare, and simple. | Move `presets::resolve` onto the loader thread. |
+| Q4 | A file found at its path with different content loads anyway, with a warning. | It's probably a re-export of the same capture or IR. | `presets::resolve`. |
+| Q5 | A scene holds the amp slot, every block switch (`..._on` and `cab_bypass`), and the parameters chosen for scenes (right-click a knob, "Held by scenes"); everything else stays where it is. Clicking an empty scene stores the current sound in it. | The plan's "a chosen set of parameter values". | `Scenes::isSwitch`, the editor. |
+| Q6 | The scene footswitch is CC 70 (`midi_scene_cc`; value 0 is scene 1, ... 7 is scene 8), applied by the 50 Hz timer, so up to 20 ms after the press; it takes precedence over a MIDI mapping on the same CC. | Setting parameters can't happen on the audio thread; nothing reloads, so the slot's 20 ms crossfade and the 10 ms bypass fades follow at once. | A dedicated audio-thread path like freeze's. |
+| Q7 | Loading a preset without scenes clears the scenes (unlike MIDI mappings, which stay). | Scenes belong to a song; mappings to the footswitch. | `presets::apply`. |

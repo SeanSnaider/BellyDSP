@@ -15,7 +15,7 @@ Status key: Not started, In progress, Done. See `BUILD_PLAN.md` for what each ph
 | 8 | Bloom: bitcrush, phaser, flanger | Not started | |
 | 9 | Pitch shifter (granular + PSOLA), multivoicer, shimmer reverb | Not started | Pitch shifter is shared with the harmonizer |
 | 10 | Harmonizer | Not started | Depends on 7 and 9 |
-| 11 | Full preset system, scenes, undo/A-B, real GUI | Not started | UI_DESIGN.md written first |
+| 11 | Full preset system, scenes, undo/A-B, real GUI | In progress (branch `phase-11-presets`) | Format version 2 (library-relative files with content hashes, relinking, migration) and scenes done. Undo/redo, A/B, factory presets, and UI_DESIGN.md plus the real GUI to come |
 
 ## Workflow
 
@@ -203,3 +203,9 @@ Add a dated line here when something meaningful lands or a decision changes.
 - Aliasing (now measured to 20 kHz; the downsampler's transition band folds harmonics just above 24 kHz to just below it at any factor): worst at 4x up to 1.3 kHz, Fuzz -54.2 dB, Transparent -48.3 dB (its limit is -46: a fast op-amp clipping on its rails, ASSUMPTIONS V20); at 8x -78 and -73 dB.
 - Switching into and out of each new mode from and to every other one while playing: within -38.9 dB of an ideal crossfade, steps at most 1.004 times the ideal's. Drive and tone sweeps step no more than either end's steady playing. DC: -135 to -142 dBFS (the slowest coupling capacitors still settling after a DC step). Real time: 2250 blocks through every mode, knob, mix, tight, and 4x/8x change: 0 allocations, 0 frees, 0 locks.
 - Not verified (Sean): how either sounds and feels (6.L).
+
+2026-10-02: Phase 11, presets format 2 and scenes (branch `phase-11-presets`, from `phase-8`; 1542 checks pass).
+- A capture inside the library saves as "models/High gain/Lead.nam" with its size and a 64-bit FNV-1a hash; a pack folder as "irs/Packs/4x12" with a hash of its contents (the same wherever the folder is); files outside the library keep their absolute paths.
+- Moved inside the library, a capture and a pack are both found again by hash and loaded, with a warning saying where from and to; a deleted capture loads as an empty slot with a warning while the rest of the preset (here, delay_on) still applies; a file changed at its path loads with a warning. Version 1 presets migrate with a pure function that leaves the original untouched; the golden v1 file still loads the same.
+- Scenes: "Verse" and "Chorus" each hold 25 values (the amp slot, every block switch, and the chosen delay and reverb mix); CC 70 with value 0 or 1 switches the whole set (and the chain's amp slot) through the timer; empty scenes and out-of-range values change nothing; knobs no scene holds are untouched. Scenes come back from presets and the saved session. A scene bar in the header (click to recall or to store into an empty scene; Store, then a scene, to overwrite; right-click to store or clear) and a "Held by scenes" item on every knob's right-click menu.
+- The real-time test now stores scenes and recalls two from the footswitch while playing: 0 allocations, 0 frees, 0 blocking locks.

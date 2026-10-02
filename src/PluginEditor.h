@@ -533,6 +533,14 @@ private:
     juce::Label presetLabel;
     juce::TextButton savePresetButton { "Save..." }, loadPresetButton { "Load..." }, midiButton { "MIDI..." };
     IgnoresRightClick<juce::TextButton> tunerButton { "Tuner" };
+
+    // Scenes: click one to recall it (or to store the current sound in an empty one); Store, then a scene,
+    // overwrites it; right-click a scene to store over it or clear it.
+    juce::Label scenesLabel;
+    std::array<IgnoresRightClick<juce::TextButton>, Scenes::count> sceneButtons;
+    juce::TextButton storeSceneButton { "Store" };
+    void clickScene (int index);
+    void sceneMenu (int index);
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> tunerAttachment;
     juce::String presetMessage;
     Knob inputKnob, outputKnob;
