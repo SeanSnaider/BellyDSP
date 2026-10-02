@@ -1,0 +1,85 @@
+{
+  "chorus": {
+    "classic": {
+      "mode": "classic",
+      "shape": "triangle",
+      "rateHz": 1.1,
+      "depth": 0.7,
+      "mix": 0.5,
+      "width": 0.8,
+      "analog": false,
+      "noise": false,
+      "wetHighPass": true,
+      "wetHighPassHz": 150.0
+    },
+    "dimension": {
+      "mode": "dimension",
+      "shape": "sine",
+      "rateHz": 0.6,
+      "depth": 0.9,
+      "mix": 0.6,
+      "width": 1.0,
+      "analog": false,
+      "noise": false,
+      "wetHighPass": true,
+      "wetHighPassHz": 180.0
+    },
+    "tri": {
+      "mode": "tri",
+      "shape": "triangle",
+      "rateHz": 2.3,
+      "depth": 0.4,
+      "mix": 0.45,
+      "width": 0.6,
+      "analog": false,
+      "noise": false,
+      "wetHighPass": false,
+      "wetHighPassHz": 150.0
+    },
+    "tri_analog": {
+      "mode": "tri",
+      "shape": "sine",
+      "rateHz": 0.9,
+      "depth": 0.6,
+      "mix": 0.5,
+      "width": 1.0,
+      "analog": true,
+      "noise": false,
+      "wetHighPass": true,
+      "wetHighPassHz": 150.0
+    }
+  },
+  "engine": {
+    "feedback": 0.6,
+    "max_delay_ms": 30.0,
+    "voices": [
+      {
+        "base_ms": 5.0,
+        "depth_ms": 2.0,
+        "shape": "sine",
+        "rate": 0.7,
+        "phase": 0.1,
+        "inverted": false,
+        "level": 0.6
+      },
+      {
+        "base_ms": 9.0,
+        "depth_ms": 3.0,
+        "shape": "triangle",
+        "rate": 1.3,
+        "phase": 0.6,
+        "inverted": true,
+        "level": 0.5
+      },
+      {
+        "base_ms": 14.0,
+        "depth_ms": 0.5,
+        "shape": "triangle",
+        "rate": 4.0,
+        "phase": 0.25,
+        "inverted": false,
+        "level": 0.3
+      }
+    ]
+  }
+}
