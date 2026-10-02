@@ -41,7 +41,11 @@ namespace ampsim
 ///   Modern   any of 2, 4, 6, 8, or 12 stages, sine or triangle LFO, an exponential sweep (even in octaves)
 ///            across a set range of the corner, by default 100 Hz to 4 kHz:
 ///                fc = low (high / low)^p,   p = 1/2 + depth m / 2
-///            and feedback from -0.9 to 0.9.
+///            and feedback (resonance) from 0 to 0.9. Positive only, because in this topology (the dry plus a
+///            wet whose loop gain has the opposite sign) negative feedback has a dead spot: at mix 1/2 the
+///            response 1/2 (1 + c A / (1 + b A)) is flat whenever (b + c) b = 1, which with the level
+///            compensation c = sqrt(1 - b^2) is b = 1/sqrt(2) (0.618 without it). The knob would fade the
+///            phasing out completely at -0.71 and back in, inverted, beyond it.
 ///   Classic  Phase 90-style: four matched stages whose resistors are JFETs, swept by a triangle. In the
 ///            ohmic region the square-law JFET's channel conductance is linear in the gate voltage above
 ///            pinch-off, g_ds = 2 beta (V_gs - V_p), so its resistance 1 / g_ds is hyperbolic in it: the JFET's
@@ -102,7 +106,7 @@ public:
         float depth = 1.0f;                   // 0 to 1 of the sweep
         Lfo::Shape shape = Lfo::Shape::sine;  // Modern: sine or triangle (Classic is triangle, Vibe sine)
         float lowHz = 100.0f, highHz = 4000.0f; // Modern: the corner's sweep range
-        float feedback = 0.0f;                // Modern: -0.9 to 0.9
+        float feedback = 0.0f;                // Modern: 0 to 0.9 (resonance)
         bool classicFeedback = false;         // Classic: the later (block logo) version's feedback
         float stereoOffset = 0.25f;           // the right LFO's lead in cycles, 0 to 0.5 (0 to 180 degrees)
         float mix = 0.5f;                     // 0 dry to 1 wet; 0.5 gives the deepest notches

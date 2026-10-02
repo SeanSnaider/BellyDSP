@@ -23,8 +23,9 @@ The phaser, per channel and sample:
                  g = tan(pi fc / fs), G = g / (1 + g)
                  v = (u - s) G, lp = v + s, s <- lp + v, out = 2 lp - u
                so out = a u + b with a = 2G - 1 and b = 2 (1 - G) s, the instantaneous (affine) response
-    feedback   u0 = x + fb y, where y is the last stage's output: a delay-free loop, solved exactly ("zero
-               delay feedback"): chaining the stages' affine responses gives y = A u0 + B, so
+    feedback   u0 = x + fb y, where y is the last stage's output (Modern 0 to 0.9; Classic's later version 0.35;
+               Vibe none): a delay-free loop, solved exactly ("zero delay feedback"): chaining the stages' affine
+               responses gives y = A u0 + B, so
                    u0 = (x + fb B) / (1 - fb A)
                |A| < 1 and |fb| < 1, so it's always solvable; the loop is the bilinear transform of the analog
                one, stable for |fb| < 1 at any sweep position.
@@ -187,7 +188,7 @@ class Phaser:
         if self.mode == "modern":
             self.stages = stage_count(int(s["stages"]))
             self.shape = s["shape"]
-            self.feedback = min(max(f32(s["feedback"]), -MAX_FEEDBACK), MAX_FEEDBACK)
+            self.feedback = min(max(f32(s["feedback"]), 0.0), MAX_FEEDBACK)
         elif self.mode == "classic":
             self.stages, self.shape = 4, "triangle"
             self.feedback = CLASSIC_BLOCK_FEEDBACK if s["classicFeedback"] else 0.0
@@ -326,8 +327,8 @@ CASES = {
     "vibe": dict(BASE, mode="vibe", rateHz=1.3, depth=0.9, stereoOffset=0.25, mix=0.5),
     "vibe_fast_wet": dict(BASE, mode="vibe", rateHz=5.0, depth=1.0, stereoOffset=0.5, mix=1.0),
     "classic_block": dict(BASE, mode="classic", rateHz=0.9, depth=1.0, classicFeedback=True, stereoOffset=0.0, mix=0.5),
-    "modern_6_negative": dict(BASE, mode="modern", stages=6, rateHz=2.1, depth=0.8, shape="triangle", lowHz=150.0,
-                              highHz=3000.0, feedback=-0.6, stereoOffset=0.3, mix=0.6),
+    "modern_6_triangle": dict(BASE, mode="modern", stages=6, rateHz=2.1, depth=0.8, shape="triangle", lowHz=150.0,
+                              highHz=3000.0, feedback=0.6, stereoOffset=0.3, mix=0.6),
     "modern_12_resonant": dict(BASE, mode="modern", stages=12, rateHz=0.4, depth=1.0, shape="sine", lowHz=80.0,
                                highHz=5000.0, feedback=0.85, stereoOffset=0.1, mix=0.5),
 }

@@ -22,8 +22,10 @@ ModulatedDelay::Settings Flanger::engineSettings (const Settings& s, int channel
     voice.seed = 11; // both sides wander through one random sequence, offset by the stereo phase
     voice.level = 1.0;
 
-    // Through-zero has no loop; otherwise the loop's soft clip (the engine's tanh) and its 150 Hz high-pass.
-    e.feedback = throughZeroOn ? 0.0 : juce::jlimit (-maxFeedback, maxFeedback, (double) s.feedback);
+    // Through-zero has no loop; otherwise the loop's soft clip (the engine's tanh) and its 150 Hz high-pass, with
+    // the feedback's sign following the polarity.
+    const auto amount = juce::jlimit (0.0, maxFeedback, (double) s.feedback);
+    e.feedback = throughZeroOn ? 0.0 : (s.negative ? -amount : amount);
     e.feedbackHighPassHz = loopHighPassHz;
     return e;
 }

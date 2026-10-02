@@ -28,12 +28,16 @@ namespace ampsim
 /// Reads use the engine's 4-point Hermite interpolation; LFO shapes are sine, triangle, or smoothed random;
 /// the right channel's LFO leads by the stereo phase (0 to 180 degrees).
 ///
-/// Feedback, -0.95 to 0.95: the engine writes x + tanh(fb HP(wet)) back into its line, so the loop's gain
-/// stays below 1 and its level is bounded by the soft clip whatever the setting, and HP, a first-order
-/// high-pass at 150 Hz in the loop, keeps the lows from recirculating into a boom (at 80 Hz the loop gain is
-/// at most 0.45 even at 0.95). Positive feedback raises resonant peaks at multiples of 1/d, negative at the
-/// odd multiples of 1/2d. Resonance adds power: a feedback comb's average power gain is 1 / (1 - fb^2), so
-/// the wet is scaled by sqrt(1 - fb^2), which holds the level while feedback sharpens the peaks.
+/// Feedback, 0 to 0.95, positive or negative with the polarity: positive flanging feeds back +fb, raising
+/// resonant peaks at multiples of 1/d, between its notches; negative feeds back -fb, raising them at the odd
+/// multiples of 1/2d, between its own notches. The sign follows the polarity because the mismatched pairs
+/// fight: the resonances land on the comb's notches, and at |fb| = 1/sqrt(2) the response
+/// 1/2 (1 + c D / (1 + |fb| D)) goes flat (whenever (|fb| + c) |fb| = 1), no flanging at all. The engine
+/// writes x + tanh(fb HP(wet)) back into its line, so the loop's gain stays below 1 and its level is bounded
+/// by the soft clip whatever the setting, and HP, a first-order high-pass at 150 Hz in the loop, keeps the
+/// lows from recirculating into a boom (at 80 Hz the loop gain is at most 0.45 even at 0.95). Resonance adds
+/// power: a feedback comb's average power gain is 1 / (1 - fb^2), so the wet is scaled by c = sqrt(1 - fb^2),
+/// which holds the level while feedback sharpens the peaks.
 ///
 /// Through-zero (opt-in). Tape flanging used two machines; slowing one let its copy pass through the other's
 /// timing, and at the crossing they cancel completely (with one inverted). Here the dry path is delayed by
@@ -76,8 +80,8 @@ public:
         float depth = 0.6f;                       // 0 (static comb) to 1 (0.1 to 1.9 x Manual)
         Lfo::Shape shape = Lfo::Shape::triangle;
         float rateHz = 0.2f;                      // 0.05 to 10
-        float feedback = 0.5f;                    // -0.95 to 0.95 (none in through-zero mode)
-        bool negative = false;                    // the wet's polarity in the mix
+        float feedback = 0.5f;                    // 0 to 0.95, signed by the polarity (none in through-zero mode)
+        bool negative = false;                    // negative flanging: the wet inverted, the feedback negative
         float stereoPhase = 0.25f;                // the right LFO's lead in cycles, 0 to 0.5
         float mix = 0.5f;                         // 0 dry to 1 wet; 0.5 gives the deepest notches
         bool throughZero = false;                 // applied by setThroughZero(), reset(), or prepare()

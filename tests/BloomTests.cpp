@@ -671,7 +671,7 @@ private:
         expectEquals (input.getNumChannels(), 2);
         const auto left = channel (input, 0), right = channel (input, 1);
         juce::StringArray results;
-        for (const auto* name : { "vibe", "vibe_fast_wet", "classic_block", "modern_6_negative", "modern_12_resonant" })
+        for (const auto* name : { "vibe", "vibe_fast_wet", "classic_block", "modern_6_triangle", "modern_12_resonant" })
         {
             const auto expected = readWav (fixture ("expected_phaser_" + juce::String (name) + ".wav"));
             Phaser p;
@@ -867,8 +867,8 @@ private:
         };
         for (const auto stages : { 2, 4, 6, 8, 12 })
             addResponse (staticPhaser (stages, 1000.0f, 0.0f, 0.5f), juce::String (stages) + " stages", false);
-        addResponse (staticPhaser (4, 1000.0f, 0.7f, 0.5f), "4 stages, feedback +0.7", true);
-        addResponse (staticPhaser (4, 1000.0f, -0.7f, 0.5f), "4 stages, feedback -0.7", true);
+        addResponse (staticPhaser (4, 1000.0f, 0.5f, 0.5f), "4 stages, feedback 0.5", true);
+        addResponse (staticPhaser (4, 1000.0f, 0.9f, 0.5f), "4 stages, feedback 0.9", true);
         PlotOptions o;
         o.title = "Phaser at a 1 kHz corner, mix 50%: stages / 2 notches (dashed: with feedback)";
         o.xLabel = "Frequency (Hz)";
@@ -1024,7 +1024,7 @@ private:
 
         // Feedback: H = sqrt(1 - fb^2) A / (1 - fb A), A = ((1 - jW) / (1 + jW))^N with W = tan(pi f / fs) / g.
         double worstLoop = 0.0;
-        for (const auto fb : { 0.7f, -0.7f, 0.9f })
+        for (const auto fb : { 0.3f, 0.7f, 0.9f })
         {
             Phaser p;
             p.setSettings (staticPhaser (4, 1000.0f, fb, 1.0f));
@@ -1042,7 +1042,7 @@ private:
 
         logMessage ("  -> " + juce::String (configurations) + " fixed chains (2 to 12 stages at 100 Hz, 1 kHz, 6 kHz, and the Vibe's mismatched four), wet only: "
                     "largest deviation from 0 dB over every FFT bin " + juce::String (worst, 6) + " dB (limit 0.001)");
-        logMessage ("  -> with feedback +0.7, -0.7, +0.9 (4 stages, 1 kHz): the measured wet vs sqrt(1 - fb^2) A / (1 - fb A) from 30 Hz to 20 kHz, largest error "
+        logMessage ("  -> with feedback 0.3, 0.7, 0.9 (4 stages, 1 kHz): the measured wet vs sqrt(1 - fb^2) A / (1 - fb A) from 30 Hz to 20 kHz, largest error "
                     + juce::String (worstLoop, 6) + " dB (limit 0.001): the delay-free loop is solved exactly");
     }
 
@@ -1077,8 +1077,8 @@ private:
         vibe.on = true;
         vibe.mode = Phaser::Mode::vibe;
         vibe.rateHz = 10.0f;
-        const std::vector<Case> cases { { "Modern 12 stages +0.9", modern (12, 0.9f) }, { "Modern 12 stages -0.9", modern (12, -0.9f) },
-                                        { "Modern 2 stages +0.9", modern (2, 0.9f) },   { "Modern 6 stages -0.9", modern (6, -0.9f) },
+        const std::vector<Case> cases { { "Modern 12 stages, feedback 0.9", modern (12, 0.9f) }, { "Modern 8 stages, 0.9", modern (8, 0.9f) },
+                                        { "Modern 4 stages, 0.9", modern (4, 0.9f) },            { "Modern 2 stages, 0.9", modern (2, 0.9f) },
                                         { "Classic with feedback", classic },           { "Vibe", vibe } };
 
         // 10 s of full-scale white noise with a full-scale impulse every second, then 2 s of silence.
@@ -1157,19 +1157,18 @@ private:
         expectLessThan (worstPosition, 1.0e-6);
         expectLessThan (worstFractional, 0.005);
 
-        // Feedback +-0.7 at 2 ms, with the matching polarity, against
-        //   H = (1 - mix) + mix sign sqrt(1 - fb^2) e^(-jwd) / (1 - fb HP e^(-jwd)),  HP = jW / (1 + jW), W = tan(pi f / fs) / tan(pi 150 / fs)
+        // Feedback 0.7 at 2 ms, positive (+0.7 in the loop) and negative (-0.7, the wet inverted), against
+        //   H = (1 - mix) + mix sign sqrt(1 - fb^2) e^(-jwd) / (1 - sign fb HP e^(-jwd)),
+        //   HP = jW / (1 + jW), W = tan(pi f / fs) / tan(pi 150 / fs)
         // measured with a small impulse, where the loop's tanh is linear.
         double worstLoop = 0.0;
         std::vector<PlotSeries> series;
         int colour = 0;
         const auto d = 2.0 * fs / 1000.0;
-        for (const auto fb : { 0.0f, 0.7f, -0.7f })
+        for (const auto fb : { 0.0f, 0.7f })
         {
             for (const bool negative : { false, true })
             {
-                if (fb != 0.0f && negative != (fb < 0.0f))
-                    continue;
                 Flanger f;
                 f.setSettings (staticFlanger (2.0f, negative, fb));
                 f.prepare (fs, blockSize);
@@ -1181,7 +1180,7 @@ private:
                     const std::complex<double> jw (0.0, std::tan (pi * freq / fs) / g);
                     const auto hp = jw / (1.0 + jw);
                     const auto sign = negative ? -1.0 : 1.0;
-                    return 0.5 + 0.5 * sign * Flanger::feedbackCompensation (fb) * delay / (1.0 - (double) fb * hp * delay);
+                    return 0.5 + 0.5 * sign * Flanger::feedbackCompensation (fb) * delay / (1.0 - sign * (double) fb * hp * delay);
                 };
                 for (double freq = 50.0; freq < 15000.0; freq *= 1.01)
                 {
@@ -1223,7 +1222,7 @@ private:
         logMessage ("  -> static comb (depth 0, no feedback, mix 50%), notch spacing from a straight-line fit: " + rows.joinIntoString ("; "));
         logMessage ("  -> whole-sample delays: spacing within " + juce::String (worstSpacing, 9) + " of 1/d and every notch within " + juce::String (worstPosition, 9)
                     + " of (k + 1/2)/d or k/d (limits 1e-6); 1.37 ms (65.76 samples, Hermite): spacing within " + juce::String (100.0 * worstFractional, 3) + "% (limit 0.5%)");
-        logMessage ("  -> feedback +0.7 and -0.7: the measured comb vs the loop's formula (soft clip in its linear range, 150 Hz high-pass), 50 Hz to 15 kHz, largest error "
+        logMessage ("  -> feedback 0.7, positive and negative: the measured comb vs the loop's formula (soft clip in its linear range, 150 Hz high-pass), 50 Hz to 15 kHz, largest error "
                     + juce::String (worstLoop, 5) + " dB (limit 0.01)");
         logMessage ("  -> " + png.getFullPathName());
     }
@@ -1232,14 +1231,15 @@ private:
     {
         beginTest ("flanger: feedback stays bounded at the maximum, on noise and on a resonance");
 
-        // Manual 0.5 ms (24 samples), swept, feedback +-0.95. The line holds less than max|x| + 1 (the tanh), a
+        // Manual 0.5 ms (24 samples), swept, feedback 0.95, positive and negative. The line holds less than max|x| + 1 (the tanh), a
         // Hermite read overshoots by at most 1.25, and the wet is scaled by sqrt(1 - fb^2), so
         //   |out| <= (1 - mix) max|x| + mix sqrt(1 - fb^2) 1.25 (max|x| + 1)
         const auto noise = whiteNoise ((int) (4.0 * fs), 1.0f, 31);
         const auto resonance = sine (fs / 24.0, 1.0, (int) (4.0 * fs)); // 2 kHz: a multiple of 1/d
         juce::StringArray rows;
         bool finite = true, bounded = true;
-        for (const auto fb : { 0.95f, -0.95f })
+        const auto fb = (float) Flanger::maxFeedback;
+        for (const bool negative : { false, true })
         {
             for (const auto* input : { &noise, &resonance })
             {
@@ -1249,6 +1249,7 @@ private:
                 s.depth = 0.5f;
                 s.rateHz = 0.3f;
                 s.feedback = fb;
+                s.negative = negative;
                 s.mix = 0.5f;
                 Flanger f;
                 f.setSettings (s);
@@ -1263,7 +1264,7 @@ private:
                     }
                 const auto bound = 0.5 * 1.0 + 0.5 * Flanger::feedbackCompensation (fb) * 1.25 * 2.0;
                 bounded = bounded && peak < bound;
-                rows.add (juce::String (fb, 2) + (input == &noise ? " on noise" : " on a 2 kHz resonance") + ": peak " + juce::String (peak, 3) + " (bound "
+                rows.add (juce::String (negative ? "-" : "+") + juce::String (fb, 2) + (input == &noise ? " on noise" : " on a 2 kHz resonance") + ": peak " + juce::String (peak, 3) + " (bound "
                           + juce::String (bound, 3) + ")");
             }
         }
@@ -1566,7 +1567,7 @@ private:
             { "flanger stereo phase 90 -> 180 degrees", [] (Bloom::Settings& s, bool&) { s.flanger.stereoPhase = 0.5f; } },
             { "flanger polarity negative", [] (Bloom::Settings& s, bool&) { s.flanger.negative = true; } },
             { "flanger Manual 2 -> 6 ms at once", [] (Bloom::Settings& s, bool&) { s.flanger.manualMs = 6.0f; } },
-            { "flanger feedback 0.3 -> -0.8 at once", [] (Bloom::Settings& s, bool&) { s.flanger.feedback = -0.8f; } },
+            { "flanger feedback 0.3 -> 0.8 at once", [] (Bloom::Settings& s, bool&) { s.flanger.feedback = 0.8f; } },
             { "bits 6 -> 4 at once", [] (Bloom::Settings& s, bool&) { s.bitcrush.bits = 4.0f; } },
             { "crush tone 1 -> 3 kHz at once", [] (Bloom::Settings& s, bool&) { s.bitcrush.toneHz = 3000.0f; } },
             { "phaser rate 2 -> 4 Hz, depth 1 -> 0.3 at once", [] (Bloom::Settings& s, bool&) { s.phaser.rateHz = 4.0f; s.phaser.depth = 0.3f; } },
@@ -1693,7 +1694,7 @@ private:
                 s.phaser.shape = shapes[(size_t) (k % 2)];
                 s.phaser.lowHz = 50.0f + 40.0f * (float) (k % 7);
                 s.phaser.highHz = 1000.0f + 1500.0f * (float) (k % 6);
-                s.phaser.feedback = -0.9f + 0.3f * (float) (k % 7);
+                s.phaser.feedback = 0.15f * (float) (k % 7);
                 s.phaser.classicFeedback = k % 2 == 1;
                 s.phaser.stereoOffset = (float) (k % 3) / 4.0f;
                 s.phaser.mix = (float) (k % 5) / 4.0f;
@@ -1702,7 +1703,7 @@ private:
                 s.flanger.depth = (float) (k % 6) / 5.0f;
                 s.flanger.shape = shapes[(size_t) (k % 3)];
                 s.flanger.rateHz = 0.05f + (float) (k % 8);
-                s.flanger.feedback = -0.95f + 0.19f * (float) (k % 11);
+                s.flanger.feedback = 0.095f * (float) (k % 11);
                 s.flanger.negative = k % 2 == 0;
                 s.flanger.stereoPhase = (float) (k % 3) / 4.0f;
                 s.flanger.mix = (float) (k % 4) / 3.0f;
@@ -1827,7 +1828,7 @@ private:
         jet.flanger.on = true;
         jet.flanger.manualMs = 1.5f;
         jet.flanger.depth = 0.9f;
-        jet.flanger.feedback = -0.8f;
+        jet.flanger.feedback = 0.8f;
         jet.flanger.negative = true;
         Bloom::Settings tape;
         tape.flanger.on = true;

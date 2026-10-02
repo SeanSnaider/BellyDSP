@@ -72,7 +72,7 @@ void Phaser::setSettings (const Settings& newSettings)
     low.setTargetValue (lo);
     high.setTargetValue (hi);
 
-    modernFeedback.setTargetValue (juce::jlimit (-maxFeedback, maxFeedback, (double) settings.feedback));
+    modernFeedback.setTargetValue (juce::jlimit (0.0, maxFeedback, (double) settings.feedback));
     classicFeedback.setTargetValue (settings.classicFeedback ? classicBlockFeedback : 0.0);
     mix.setTargetValue (juce::jlimit (0.0, 1.0, (double) settings.mix));
 

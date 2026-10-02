@@ -39,7 +39,7 @@
       "stereoOffset": 0.0,
       "mix": 0.5
     },
-    "modern_6_negative": {
+    "modern_6_triangle": {
       "mode": "modern",
       "stages": 6,
       "rateHz": 2.1,
@@ -47,7 +47,7 @@
       "shape": "triangle",
       "lowHz": 150.0,
       "highHz": 3000.0,
-      "feedback": -0.6,
+      "feedback": 0.6,
       "classicFeedback": false,
       "stereoOffset": 0.3,
       "mix": 0.6
