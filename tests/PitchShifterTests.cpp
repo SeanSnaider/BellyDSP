@@ -2,6 +2,7 @@
 #include "Plot.h"
 #include "TestHelpers.h"
 #include "dsp/PitchShifter.h"
+#include "dsp/Psola.h"
 
 #include <chrono>
 #include <complex>
@@ -195,9 +196,420 @@ public:
         granularUnityAndTrail();
         granularGlides();
         granularRealtimeAndCpu();
+        psolaGolden();
+        psolaPitch();
+        psolaTracking();
+        psolaTrail();
+        psolaCpu();
     }
 
 private:
+    // ---- PSOLA ----------------------------------------------------------------------------------
+
+    /// One PSOLA voice with its own input and analysis, sample by sample. `period` (if given) feeds the
+    /// analysis a fixed period track instead of its detector: (block start, period) pairs.
+    struct PsolaRun
+    {
+        std::vector<float> y;
+        std::vector<double> confidence, delays;
+        int notes = 0, grains = 0;
+    };
+
+    static PsolaRun runPsola (const std::vector<float>& x, const std::vector<float>& di, ampsim::PsolaVoice::Settings settings,
+                              const std::vector<std::pair<size_t, double>>& periodTrack = {},
+                              const std::vector<std::pair<size_t, ampsim::PsolaVoice::Settings>>& changes = {}, double maxDelayMs = 40.0,
+                              double minFrequency = ampsim::PsolaAnalysis::defaultMinFrequency)
+    {
+        ampsim::PitchShifterInput input;
+        input.prepare (fs, maxDelayMs, GranularVoice::searchMarginMs);
+        ampsim::PsolaAnalysis analysis;
+        analysis.prepare (fs, minFrequency);
+        ampsim::PsolaVoice voice;
+        voice.setSettings (settings);
+        voice.prepare (fs);
+
+        PsolaRun r;
+        r.y.resize (x.size());
+        r.confidence.resize (x.size());
+        r.delays.resize (x.size());
+        for (size_t n = 0; n < x.size(); ++n)
+        {
+            if (n % (size_t) blockSize == 0)
+            {
+                for (const auto& [at, p] : periodTrack)
+                    if (at == n)
+                        analysis.setPeriodOverride (p);
+                for (const auto& [at, s] : changes)
+                    if (at == n)
+                        voice.setSettings (s);
+            }
+            r.y[n] = voice.process (analysis, input);
+            input.push (x[n]);
+            analysis.process (di[n], input);
+            r.confidence[n] = analysis.getConfidence();
+            r.delays[n] = voice.getLastGrainDelay();
+        }
+        r.notes = analysis.getNoteCount();
+        r.grains = voice.getGrainCount();
+        return r;
+    }
+
+    static ampsim::PsolaVoice::Settings psola (double ratio, double delayMs = 0.0, double glideMs = 30.0)
+    {
+        ampsim::PsolaVoice::Settings s;
+        s.ratio = ratio;
+        s.delayMs = delayMs;
+        s.glideMs = glideMs;
+        return s;
+    }
+
+    void psolaGolden()
+    {
+        beginTest ("PSOLA: matches prototypes/pitch_shifter.py sample by sample on a fixed period track (golden renders, limit -100 dB)");
+
+        const auto spec = juce::JSON::parse (fixture ("cases.json"))["psola"];
+        const auto input = channel (readWav (fixture ("input_notes.wav")), 0);
+        std::vector<std::pair<size_t, double>> track;
+        for (const auto& t : *spec["track"].getArray())
+            track.push_back ({ (size_t) (int) t[0], (double) t[1] });
+        juce::StringArray results;
+
+        for (const auto* name : { "down_octave", "up_fifth", "up_two_octaves", "glide" })
+        {
+            const auto c = spec["cases"][name];
+            const auto expected = channel (readWav (fixture ("expected_psola_" + juce::String (name) + ".wav")), 0);
+            std::vector<std::pair<size_t, ampsim::PsolaVoice::Settings>> changes;
+            for (const auto& ch : *c["changes"].getArray())
+                changes.push_back ({ (size_t) (int) ch[0], psola ((double) ch[1], (double) ch[2], (double) ch[3]) });
+            const auto r = runPsola (input, input, psola ((double) c["ratio"], (double) c["delay_ms"], (double) c["glide_ms"]), track, changes,
+                                     (double) spec["max_delay_ms"]);
+            const auto error = relativeErrorDb (r.y, expected);
+            expectLessThan (error, -100.0);
+            if (error >= -100.0)
+                writeWav (proofDir().getChildFile ("pitch_shifter_golden_psola_" + juce::String (name) + "_cpp.wav"), r.y);
+            results.add (juce::String (name) + " " + dB (error) + " (" + juce::String (r.notes) + " tracks, " + juce::String (r.grains) + " grains)");
+        }
+        logMessage ("  -> C++ vs prototypes/pitch_shifter.py (tests/fixtures/pitch_shifter/input_notes.wav: G3, D3, B3, A2, 1 s, a fixed period track "
+                    "standing in for the detector): " + results.joinIntoString ("; "));
+    }
+
+    /// A harmonic tone: partial k at 1/k, random phases, normalized to peak 0.5.
+    static std::vector<float> harmonicTone (double f0, size_t n, int harmonics = 10, juce::int64 seed = 9)
+    {
+        return chord ({ f0 }, n, harmonics, seed);
+    }
+
+    /// Energy off the harmonics of f (outside +-3 Hz of each multiple), in dB relative to the total.
+    static double offHarmonicDb (const std::vector<double>& mag, int order, double f)
+    {
+        const auto binHz = fs / (double) (1 << order);
+        double on = 0.0, total = 0.0;
+        for (size_t k = 1; k < mag.size(); ++k)
+        {
+            const auto freq = (double) k * binHz;
+            const auto e = mag[k] * mag[k];
+            total += e;
+            const auto h = std::round (freq / f);
+            if (h >= 1.0 && std::abs (freq - h * f) <= 3.0)
+                on += e;
+        }
+        return 10.0 * std::log10 (std::max (1.0e-30, total - on) / total);
+    }
+
+    void psolaPitch()
+    {
+        beginTest ("PSOLA: a shifted tone comes out within 1 cent of the target, with the real detector on the DI");
+
+        // Harmonic tones (10 partials at 1/k) on the A, G, and high E strings, and sines. PSOLA keeps the
+        // input's spectral envelope, so a sine shifted up keeps its energy near the original frequency: it
+        // comes out 6 dB down an octave up and 14 dB down two octaves up (the grain is shorter than the
+        // sine's period there), and for r < 1 its strongest component stays at f with the new fundamental r f
+        // 6 dB below it. Both still repeat at exactly r f; the peak at r f is what's measured.
+        constexpr int order = 16;
+        const auto n = (size_t) (3.0 * fs);
+        const std::vector<std::pair<juce::String, double>> shifts { { "-24", -24.0 }, { "-12", -12.0 }, { "-5", -5.0 }, { "-0.1", -0.1 },
+                                                                    { "-7 cents", -0.07 }, { "+7 cents", 0.07 }, { "+0.1", 0.1 },
+                                                                    { "+7", 7.0 }, { "+12", 12.0 }, { "+24", 24.0 } };
+        juce::StringArray harmonicRows, sineRows, distortionRows, levelRows;
+        double worstHarmonic = 0.0, worstSine = 0.0;
+        for (const auto& [name, semitones] : shifts)
+        {
+            const auto r = semitonesToRatio (semitones);
+            double rowHarmonic = 0.0, rowSine = 0.0, rowDistortion = -400.0, rowLevelLo = 100.0, rowLevelHi = -100.0;
+            for (const auto f0 : { 110.0, 196.0, 329.63 })
+            {
+                for (const auto isSine : { false, true })
+                {
+                    const auto x = isSine ? sineWave (f0, 0.5, n) : harmonicTone (f0, n);
+                    const auto run = runPsola (x, x, psola (r));
+                    const auto mag = magnitudeSpectrum (run.y, (size_t) (1.2 * fs), order);
+                    const auto error = cents (peakFrequency (mag, order, f0 * r, 20.0), f0 * r);
+                    expectLessThan (std::abs (error), 1.0);
+                    if (isSine)
+                    {
+                        rowSine = std::max (rowSine, std::abs (error));
+                    }
+                    else
+                    {
+                        rowHarmonic = std::max (rowHarmonic, std::abs (error));
+                        rowDistortion = std::max (rowDistortion, offHarmonicDb (mag, order, f0 * r));
+                        const auto level = toDb (rms (run.y.data() + (size_t) (1.0 * fs), (size_t) (1.5 * fs)) / rms (x.data() + (size_t) (1.0 * fs), (size_t) (1.5 * fs)));
+                        rowLevelLo = std::min (rowLevelLo, level);
+                        rowLevelHi = std::max (rowLevelHi, level);
+                    }
+                }
+            }
+            worstHarmonic = std::max (worstHarmonic, rowHarmonic);
+            worstSine = std::max (worstSine, rowSine);
+            harmonicRows.add (name + " " + str (rowHarmonic, 3));
+            sineRows.add (name + " " + str (rowSine, 3));
+            distortionRows.add (name + " " + str (rowDistortion, 1));
+            levelRows.add (name + " " + str (rowLevelLo, 1) + ".." + str (rowLevelHi, 1));
+            // Down and near unison the level compensation holds the level; up, PSOLA keeps the input's spectral
+            // envelope, so a tone whose partials fall as 1/k is quieter where its new harmonics land on the
+            // falling part (1.6 dB at +12, 5.8 dB at +24 for these tones).
+            expectGreaterThan (rowLevelLo, semitones > 1.0 ? -7.0 : -1.0);
+            expectLessThan (rowLevelHi, 1.0);
+        }
+        logMessage ("  -> harmonic tones on 110, 196, 330 Hz, worst error per shift (cents, limit 1): " + harmonicRows.joinIntoString (", "));
+        logMessage ("  -> sines, worst error per shift (cents, limit 1): " + sineRows.joinIntoString (", "));
+        logMessage ("  -> distortion: energy off the harmonics of the shifted pitch, worst of the three tones (dB): " + distortionRows.joinIntoString (", "));
+        logMessage ("  -> level of the harmonic tones against the input (dB; limit +-1 down to unison, -7 up, where PSOLA keeps the input's falling "
+                    "spectral envelope): " + levelRows.joinIntoString (", "));
+        logMessage ("  -> worst " + str (worstHarmonic, 3) + " cents (harmonic tones), " + str (worstSine, 3) + " cents (sines)");
+    }
+
+    /// Pitch every 10 ms with the McLeod detector (tuner preset): {time of the frame's centre, Hz, clarity}.
+    struct PitchPoint
+    {
+        double seconds, hz, clarity;
+    };
+
+    static std::vector<PitchPoint> pitchTrack (const std::vector<float>& x)
+    {
+        ampsim::PitchDetector d;
+        d.prepare (fs, ampsim::PitchDetector::Settings::tuner());
+        std::vector<PitchPoint> points;
+        const auto every = (size_t) (0.010 * fs);
+        const auto centreLag = 0.5 * d.getFrameSeconds();
+        for (size_t start = 0; start + every <= x.size(); start += every)
+        {
+            d.push (x.data() + start, (int) every);
+            const auto e = d.detect();
+            points.push_back ({ (double) (start + every) / fs - centreLag, e.frequency, e.clarity });
+        }
+        return points;
+    }
+
+    void psolaTracking()
+    {
+        beginTest ("PSOLA: the output pitch tracks input x ratio through a sweep and on the guitar DI's single notes");
+
+        // A harmonic tone sweeping 110 -> 440 Hz (two octaves in 3 s, log), and the reference guitar DI. The
+        // output's pitch (McLeod, 10 ms steps) against the input's pitch at the same moment minus the voice's
+        // trail, times the ratio. Frames the detector isn't sure of (clarity < 0.9, the input's or the
+        // output's) are left out and counted.
+        const auto n = (size_t) (3.5 * fs);
+        std::vector<double> phase (n);
+        std::vector<float> sweep (n);
+        {
+            double ph = 0.0;
+            juce::Random random (4);
+            std::vector<double> offsets (10);
+            for (auto& o : offsets)
+                o = random.nextDouble() * twoPi;
+            for (size_t i = 0; i < n; ++i)
+            {
+                const auto t = juce::jlimit (0.0, 3.0, (double) i / fs - 0.25);
+                const auto f = 110.0 * std::pow (4.0, t / 3.0);
+                ph += twoPi * f / fs;
+                double v = 0.0;
+                for (int k = 1; k <= 10; ++k)
+                    v += std::sin (k * ph + offsets[(size_t) k - 1]) / k;
+                sweep[i] = (float) (0.3 * v);
+            }
+        }
+
+        struct Case
+        {
+            juce::String name;
+            const std::vector<float>* x;
+            double semitones;
+        };
+        const auto di = guitarDI ((int) (4.0 * fs));
+        std::vector<PitchPoint> plotIn, plotOut;
+        double plotRatio = 1.0;
+        juce::StringArray rows;
+        for (const auto& c : { Case { "sweep 110-440 Hz, -12", &sweep, -12.0 }, Case { "sweep 110-440 Hz, +7", &sweep, 7.0 },
+                               Case { "guitar DI, -12", &di, -12.0 }, Case { "guitar DI, +12", &di, 12.0 } })
+        {
+            const auto r = semitonesToRatio (c.semitones);
+            const auto run = runPsola (*c.x, *c.x, psola (r));
+            const auto in = pitchTrack (*c.x);
+            const auto out = pitchTrack (run.y);
+            std::vector<double> errors;
+            int skipped = 0;
+            for (size_t i = 0; i < out.size(); ++i)
+            {
+                const auto t = out[i].seconds;
+                const auto sample = (size_t) juce::jlimit (0.0, (double) c.x->size() - 1.0, t * fs);
+                if (run.confidence[sample] < 1.0 || out[i].clarity < 0.9 || out[i].hz <= 0.0)
+                {
+                    ++skipped;
+                    continue;
+                }
+                // The input's pitch at t minus the trail, and half a period more: a grain repeats at the spacing of
+                // its mark from the previous one, the period over the half period before the mark on average.
+                const auto j0 = (size_t) juce::jlimit (0.0, (double) in.size() - 1.0, std::floor ((t - in.front().seconds) / 0.010));
+                const auto halfPeriod = in[j0].hz > 0.0 ? 0.5 / in[j0].hz : 0.0;
+                const auto source = t - run.delays[sample] / fs - halfPeriod;
+                const auto j = (size_t) std::floor ((source - in.front().seconds) / 0.010);
+                if (j + 1 >= in.size() || in[j].clarity < 0.9 || in[j + 1].clarity < 0.9 || in[j].hz <= 0.0 || in[j + 1].hz <= 0.0)
+                {
+                    ++skipped;
+                    continue;
+                }
+                const auto frac = (source - in[j].seconds) / 0.010;
+                const auto expected = r * in[j].hz * std::pow (in[j + 1].hz / in[j].hz, frac);
+                errors.push_back (std::abs (cents (out[i].hz, expected)));
+            }
+            std::sort (errors.begin(), errors.end());
+            const auto median = errors.empty() ? 0.0 : errors[errors.size() / 2];
+            const auto p95 = errors.empty() ? 0.0 : errors[(size_t) (0.95 * (double) errors.size())];
+            expectGreaterThan ((int) errors.size(), 50);
+            expectLessThan (median, 5.0);
+            rows.add (c.name + ": median " + str (median, 2) + " cents, 95th percentile " + str (p95, 2) + " over " + juce::String ((int) errors.size())
+                      + " frames (" + juce::String (skipped) + " left out)");
+            if (c.name == "sweep 110-440 Hz, -12")
+            {
+                plotIn = in;
+                plotOut = out;
+                plotRatio = r;
+            }
+        }
+        logMessage ("  -> output pitch against input x ratio (McLeod, 10 ms frames; the detector's own error is about 1-2 cents; limit: median under 5 cents): "
+                    + rows.joinIntoString ("; "));
+
+        PlotSeries expected { "input pitch x 1/2", {}, {}, plotColour (0), 2.0f };
+        PlotSeries measured { "PSOLA output, down an octave", {}, {}, plotColour (1), 1.5f, true };
+        for (const auto& p : plotIn)
+            if (p.clarity >= 0.9 && p.hz > 0.0)
+            {
+                expected.x.push_back (p.seconds);
+                expected.y.push_back (p.hz * plotRatio);
+            }
+        for (const auto& p : plotOut)
+            if (p.clarity >= 0.9 && p.hz > 0.0)
+            {
+                measured.x.push_back (p.seconds);
+                measured.y.push_back (p.hz);
+            }
+        PlotOptions o;
+        o.title = "PSOLA pitch track: a 110-440 Hz sweep shifted down an octave";
+        o.xLabel = "s";
+        o.yLabel = "Hz";
+        o.xMin = 0.0;
+        o.xMax = 3.5;
+        o.yMin = 40.0;
+        o.yMax = 240.0;
+        const auto png = proofDir().getChildFile ("pitch_shifter_psola_sweep.png");
+        expect (savePlot (png, o, { expected, measured }));
+        logMessage ("  -> " + png.getFullPathName());
+    }
+
+    void psolaTrail()
+    {
+        beginTest ("PSOLA: detection time and trail per string (a pluck after silence, the 80 Hz detector floor)");
+
+        juce::StringArray rows;
+        for (const auto& [name, f0] : { std::pair<const char*, double> { "low E", 82.41 }, { "A", 110.0 }, { "D", 146.83 }, { "G", 196.0 }, { "B", 246.94 },
+                                        { "high E", 329.63 } })
+        {
+            // A Karplus-Strong pluck at 0.3 s after faint noise, as the tuner's latency tests use.
+            const auto n = (size_t) (1.2 * fs);
+            std::vector<float> x (n, 0.0f);
+            juce::Random random (17);
+            const auto start = (size_t) (0.3 * fs);
+            const auto period = std::max (2, juce::roundToInt (fs / f0));
+            std::vector<double> loop ((size_t) period);
+            for (auto& v : loop)
+                v = 2.0 * random.nextDouble() - 1.0;
+            for (size_t i = start; i < n; ++i)
+            {
+                const auto k = (i - start) % (size_t) period;
+                x[i] = (float) (0.4 * loop[k]);
+                loop[k] = 0.996 * 0.5 * (loop[k] + loop[(k + 1) % (size_t) period]);
+            }
+            for (auto& v : x)
+                v += 0.0005f * (2.0f * random.nextFloat() - 1.0f);
+
+            const auto run = runPsola (x, x, psola (0.5));
+            size_t detected = 0;
+            for (size_t i = start; i < n; ++i)
+                if (run.confidence[i] >= 0.5)
+                {
+                    detected = i;
+                    break;
+                }
+            double delaySum = 0.0;
+            int count = 0;
+            for (size_t i = start + (size_t) (0.1 * fs); i < n; ++i)
+                if (run.confidence[i] >= 1.0)
+                {
+                    delaySum += run.delays[i];
+                    ++count;
+                }
+            const auto detectionMs = detected > 0 ? 1000.0 * (double) (detected - start) / fs : -1.0;
+            const auto trailMs = count > 0 ? 1000.0 * delaySum / count / fs : -1.0;
+            expectGreaterThan (detectionMs, 0.0);
+            expectLessThan (detectionMs, 40.0);
+            rows.add (juce::String (name) + " (" + str (f0, 1) + " Hz): detected " + str (detectionMs, 1) + " ms after the pluck, trail " + str (trailMs, 1)
+                      + " ms (" + str (trailMs * f0 / 1000.0, 2) + " periods)");
+        }
+        logMessage ("  -> an octave down, a pluck after silence: " + rows.joinIntoString ("; ")
+                    + ". The shifted note starts about detection + trail after the pluck; the dry is never delayed.");
+    }
+
+    void psolaCpu()
+    {
+        beginTest ("PSOLA: CPU for the analysis and one voice");
+
+        const auto di = guitarDI ((int) (10.0 * fs));
+        ampsim::PitchShifterInput input;
+        input.prepare (fs, 40.0, GranularVoice::searchMarginMs);
+        ampsim::PsolaAnalysis analysis;
+        analysis.prepare (fs);
+        ampsim::PsolaVoice voice;
+        voice.setSettings (psola (0.5));
+        voice.prepare (fs);
+        std::vector<double> micros;
+        micros.reserve (di.size() / (size_t) blockSize + 1);
+        float sink = 0.0f;
+        rtcheck::begin();
+        for (size_t start = 0; start + (size_t) blockSize <= di.size(); start += (size_t) blockSize)
+        {
+            const auto t0 = std::chrono::steady_clock::now();
+            for (size_t i = start; i < start + (size_t) blockSize; ++i)
+            {
+                sink += voice.process (analysis, input);
+                input.push (di[i]);
+                analysis.process (di[i], input);
+            }
+            micros.push_back (std::chrono::duration<double, std::micro> (std::chrono::steady_clock::now() - t0).count());
+        }
+        const auto counts = rtcheck::end();
+        juce::ignoreUnused (sink);
+        expectEquals (counts.allocations, 0L);
+        expectEquals (counts.frees, 0L);
+        expectEquals (counts.blockingLocks, 0L);
+        std::sort (micros.begin(), micros.end());
+        const auto mean = std::accumulate (micros.begin(), micros.end(), 0.0) / (double) micros.size();
+        logMessage ("  -> 10 s of guitar DI, one voice down an octave with its own input and analysis, per 128-sample buffer: mean " + str (mean, 2) + " us ("
+                    + str (100.0 * mean / deadlineMicros, 2) + "% of the deadline), p99 " + str (micros[(size_t) (0.99 * (double) micros.size())], 1)
+                    + " us, worst " + str (micros.back(), 1) + " us; " + juce::String (counts.allocations) + " allocations, " + juce::String (counts.frees)
+                    + " frees, " + juce::String (counts.blockingLocks) + " blocking locks");
+    }
+
     // ---- Granular -------------------------------------------------------------------------------
 
     void granularGolden()

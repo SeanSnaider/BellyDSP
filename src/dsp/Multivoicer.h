@@ -3,6 +3,7 @@
 #include "Block.h"
 #include "Lfo.h"
 #include "PitchShifter.h"
+#include "Psola.h"
 #include "Svf.h"
 
 #include <array>
@@ -40,7 +41,9 @@ namespace ampsim
 /// high-pass frequency over 25 ms with coefficients every 32 samples; intervals glide in the log domain over
 /// 30 ms inside each voice; a delay change crossfades the voice to a head at the new delay (no pitch bend).
 /// A voice count change fades voices in and out over 20 ms; a voice that starts again begins from a fresh
-/// state (it was silent). Poly/Mono switches crossfade over 30 ms; both engines run during the fade.
+/// state (it was silent). Poly/Mono switches, and Mono's moves between PSOLA and its granular fallback,
+/// crossfade over 20 ms with equal power (the two engines trail by different amounts, so they are only
+/// partly correlated); both engines run during a fade.
 class Multivoicer : public Block
 {
 public:
@@ -52,7 +55,7 @@ public:
     static constexpr double minLevelDb = -60.0, maxLevelDb = 6.0; // a voice at -60 dB is off
     static constexpr double smoothingSeconds = 0.020;
     static constexpr double highPassSmoothingSeconds = 0.025;
-    static constexpr double engineFadeSeconds = 0.030;
+    static constexpr double engineFadeSeconds = 0.020; // Poly/Mono, and Mono's fallback to granular and back
     static constexpr double glideMs = 30.0;
     static constexpr int coefficientInterval = 32;
 
@@ -128,12 +131,17 @@ public:
     // For tests and meters.
     bool isVoiceRunning (int v) const noexcept { return voices[(size_t) v].running; }
     const GranularVoice& getGranularVoice (int v) const noexcept { return voices[(size_t) v].granular; }
+    const PsolaVoice& getPsolaVoice (int v) const noexcept { return voices[(size_t) v].psola; }
+    const PsolaAnalysis& getAnalysis() const noexcept { return analysis; }
+    /// How much of each voice comes from PSOLA right now: 0 in Poly, 1 in Mono while the analysis is sure.
+    double getPsolaShare() const noexcept { return psolaShare.getCurrentValue(); }
     double getWetNormalization() const noexcept { return normalization.getCurrentValue(); }
 
 private:
     struct VoiceState
     {
         GranularVoice granular;
+        PsolaVoice psola;
         Lfo pitchDrift, timeDrift;
         juce::SmoothedValue<double> level { 0.0 }, left { 1.0 }, right { 1.0 }, drift { 0.0 };
         bool wanted = false;  // within the voice count with a level above -60 dB
@@ -147,9 +155,11 @@ private:
     Settings settings;
 
     PitchShifterInput input;
+    PsolaAnalysis analysis;
+    bool psolaRunning = false; // the PSOLA voices are computed while any of them can be heard
     std::array<VoiceState, maxVoices> voices;
 
-    juce::SmoothedValue<double> mix { 0.5 }, normalization { 1.0 }, highPassOn { 0.0 };
+    juce::SmoothedValue<double> mix { 0.5 }, normalization { 1.0 }, highPassOn { 0.0 }, psolaShare { 0.0 };
     juce::SmoothedValue<double, juce::ValueSmoothingTypes::Multiplicative> highPassHz { 100.0 };
     std::array<Svf, 2> highPass;
     int samplesUntilUpdate = 0;

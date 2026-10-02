@@ -442,6 +442,293 @@ def granular_render(x, ratio, delay_ms=0.0, glide_ms=30.0, max_voice_delay_ms=0.
     return y
 
 
+# ---- PSOLA (Psola.cpp) -----------------------------------------------------------------------------
+#
+# PsolaAnalysis with a fixed period track standing in for the pitch detector (setPeriodOverride in the C++;
+# the detector itself has its own golden test against prototypes/pitch_detection.py):
+#   every 64 samples a reading (fs / period, clarity 1); two agreeing readings (within 50 cents) confirm a
+#   pitch; a confirmed pitch 50 cents from the tracked one (or none tracked, or a lost track) anchors a new
+#   track at the largest sample of the latest period
+#   each next mark: candidates tau in [P - R, P + R] (R = ceil(P/8)) after the last mark's sample; the
+#   window of one period ending at the last mark against the one ending tau later, normalized correlation,
+#   best tau refined by a parabola; a match below 0.7 loses the track (marks continue at the last period)
+#   confidence ramps toward 1 (tracking and not lost) or 0 over 2 ms
+# PsolaVoice, per sample (before the input's push):
+#   r glided; when now >= next centre - min(P, P/r): a grain at the next centre, from the mark nearest to
+#   (centre - lag), half-length min(P, P/r), delay centre - mark, gain levelCompensation(r); next centre
+#   += P/r. Output: sum of gain * Hann((now - centre) / half) * read(delay) over live grains.
+
+PSOLA_HOP = 64
+CLARITY_THRESHOLD = 0.9
+AGREE_CENTS = 50.0
+NEW_NOTE_CENTS = 50.0
+TRACK_QUALITY = 0.7
+SEARCH_FRACTION = 0.125
+CONFIDENCE_RAMP_MS = 2.0
+MAX_MARKS = 256
+
+
+def lround(v):
+    """std::lround / std::llround for the positive values used here: round half away from zero."""
+    return int(math.floor(v + 0.5)) if v >= 0 else -int(math.floor(-v + 0.5))
+
+
+class PsolaAnalysis:
+    def __init__(self):
+        self.override = 0.0
+        self.hop_counter = 0
+        self.previous_confident = 0.0
+        self.unconfident = 0
+        self.tracking = False
+        self.lost = False
+        self.period = 0.0
+        self.note_count = 0
+        self.marks = []  # (position, period, quality), oldest first
+        self.confidence = 0.0
+        self.confidence_step = 1.0 / max(1.0, CONFIDENCE_RAMP_MS * FS / 1000.0)
+
+    def process(self, inp):
+        self.hop_counter += 1
+        if self.hop_counter >= PSOLA_HOP:
+            self.hop_counter = 0
+            if self.override > 0.0:
+                self.on_estimate(FS / self.override, 1.0, inp)
+        if self.tracking:
+            self.track_next(inp)
+        target = 1.0 if (self.tracking and not self.lost) else 0.0
+        if target > self.confidence:
+            self.confidence = min(target, self.confidence + self.confidence_step)
+        else:
+            self.confidence = max(target, self.confidence - self.confidence_step)
+
+    def on_estimate(self, frequency, clarity, inp):
+        confident = frequency > 0.0 and clarity >= CLARITY_THRESHOLD
+        if not confident:
+            self.previous_confident = 0.0
+            self.unconfident += 1
+            if self.unconfident >= 2:
+                self.tracking = False
+            return
+        self.unconfident = 0
+        agrees = self.previous_confident > 0.0 and abs(1200.0 * math.log2(frequency / self.previous_confident)) <= AGREE_CENTS
+        self.previous_confident = frequency
+        if not agrees:
+            return
+        new_period = FS / frequency
+        if not self.tracking or self.lost or abs(1200.0 * math.log2(self.period / new_period)) > NEW_NOTE_CENTS:
+            self.anchor(new_period, inp)
+
+    def anchor(self, new_period, inp):
+        p = max(8, lround(new_period))
+        x = inp.newest(p)
+        best, best_mag = 0, -1.0
+        for i in range(p):
+            if abs(x[i]) > best_mag:
+                best_mag, best = abs(x[i]), i
+        self.marks = [(float(inp.time - p + best), new_period, 1.0)]
+        self.period = new_period
+        self.tracking = True
+        self.lost = False
+        self.note_count += 1
+
+    def track_next(self, inp):
+        last = self.marks[-1]
+        rng = max(2, int(math.ceil(SEARCH_FRACTION * self.period)))
+        anchor_index = lround(last[0])
+        tau_lo = max(8, int(math.floor(self.period)) - rng)
+        tau_hi = int(math.ceil(self.period)) + rng
+        if inp.time - 1 < anchor_index + tau_hi:
+            return
+        w = max(16, lround(self.period))
+        length = inp.time - (anchor_index - w + 1)
+        tau, quality = self.period, 0.0
+        base = inp.newest(length)
+        pa = base[0:w]
+        ea = float(pa @ pa)
+        if ea > 1.0e-30:
+            count = min(512, tau_hi - tau_lo + 1)
+            rho = []
+            best = 0
+            for k in range(count):
+                pb = base[tau_lo + k:tau_lo + k + w]
+                eb = float(pb @ pb)
+                rho.append(float(pa @ pb) / math.sqrt(ea * eb) if ea * eb > 1.0e-30 else 0.0)
+                if rho[k] > rho[best]:
+                    best = k
+            tau = float(tau_lo + best)
+            quality = rho[best]
+            if 0 < best < count - 1:
+                y0, y1, y2 = rho[best - 1], rho[best], rho[best + 1]
+                curvature = y0 - 2.0 * y1 + y2
+                if curvature < 0.0:
+                    delta = min(max(0.5 * (y0 - y2) / curvature, -1.0), 1.0)
+                    tau += delta
+                    quality = y1 - 0.25 * (y0 - y2) * delta
+        if quality >= TRACK_QUALITY:
+            self.lost = False
+            self.period = tau
+        else:
+            self.lost = True
+            tau = self.period
+        self.marks.append((last[0] + tau, tau, quality))
+        if len(self.marks) > MAX_MARKS:
+            self.marks.pop(0)
+
+    def nearest(self, time):
+        best = len(self.marks) - 1
+        best_distance = abs(self.marks[best][0] - time)
+        for i in range(len(self.marks) - 2, -1, -1):
+            d = abs(self.marks[i][0] - time)
+            if d >= best_distance:
+                break
+            best, best_distance = i, d
+        return self.marks[best]
+
+
+def level_compensation(r):
+    if r >= 1.0:
+        return 1.0
+    q = 1.0 / r
+    if q < 2.0:
+        c = 0.25 * ((2.0 - q) * (1.0 + 0.5 * math.cos(math.pi * q)) + 1.5 / math.pi * math.sin(math.pi * q))
+        m = r * (0.75 + 2.0 * c)
+    else:
+        m = 0.75 * r
+    return 1.0 / math.sqrt(m)
+
+
+class PsolaVoice:
+    def __init__(self, ratio=1.0, delay_ms=0.0, glide_ms=30.0):
+        self.ratio = RatioGlide()
+        self.set_settings(ratio, delay_ms, glide_ms)
+        self.ratio.jump_to(min(max(ratio, MIN_RATIO), MAX_RATIO))
+        self.grains = [[0.0, 1.0, 0.0, 1.0, False, 0.0] for _ in range(8)]  # centre, half, delay, gain, active, offset
+        self.next_centre = -1.0e18
+        self.note_count = -1
+        self.delays = []
+
+    def set_settings(self, ratio, delay_ms, glide_ms):
+        self.delay_ms = delay_ms
+        self.ratio.glide = max(0, int(round(max(0.0, glide_ms) * FS / 1000.0)))
+        self.ratio.set_target(min(max(ratio, MIN_RATIO), MAX_RATIO))
+
+    def process(self, ana, inp, ratio_scale=1.0, extra_delay=0.0):
+        r = min(max(self.ratio.next() * ratio_scale, MIN_RATIO), MAX_RATIO)
+        now = float(inp.time)
+        if ana.marks:
+            newest = ana.marks[-1]
+            half_estimate = min(newest[1], newest[1] / r)
+            if ana.note_count != self.note_count:
+                self.note_count = ana.note_count
+                self.next_centre = min(self.next_centre, now + half_estimate)
+            if self.next_centre < now:
+                self.next_centre = now + half_estimate
+            if now >= self.next_centre - half_estimate:
+                lag = max(0.0, self.delay_ms) * FS / 1000.0 + extra_delay
+                mark = ana.nearest(self.next_centre - lag)
+                p = mark[1]
+                slot = self.grains[0]
+                for g in self.grains:
+                    if not g[4]:
+                        slot = g
+                        break
+                    if g[0] < slot[0]:
+                        slot = g
+                slot[0] = self.next_centre
+                slot[1] = min(p, p / r)
+                slot[2] = self.next_centre - mark[0]
+                slot[3] = level_compensation(r)
+                slot[5] = windowed_mean(inp, mark[0] - p, slot[1]) if slot[1] < p else 0.0
+                slot[4] = True
+                self.delays.append(slot[2])
+                self.next_centre += p / r
+        y = 0.0
+        for g in self.grains:
+            if not g[4]:
+                continue
+            u = (now - g[0]) / g[1]
+            if u >= 1.0:
+                g[4] = False
+                continue
+            if u <= -1.0:
+                continue
+            w = 0.5 * (1.0 + math.cos(math.pi * u))
+            y += g[3] * w * (inp.read(g[2]) - g[5])
+        return f32(1.0 * y)
+
+
+def windowed_mean(inp, centre, half):
+    """PsolaVoice::windowedMean: the Hann-weighted mean over whole samples within half of round(centre), the
+    cosines by the same Chebyshev recurrence."""
+    h = int(math.floor(half))
+    middle = lround(centre)
+    if h < 1 or middle + h > inp.time - 1:
+        return 0.0
+    length = inp.time - (middle - h)
+    x = inp.newest(length)
+    theta = math.pi / half
+    two_cos = 2.0 * math.cos(theta)
+    previous, current = math.cos(theta * (-h - 1)), math.cos(theta * -h)
+    sw = swx = 0.0
+    for k in range(2 * h + 1):
+        w = 0.5 * (1.0 + current)
+        sw += w
+        swx += w * x[k]
+        previous, current = current, two_cos * current - previous
+    return swx / sw if sw > 0.0 else 0.0
+
+
+PSOLA_MAX_DELAY_MS = 40.0
+
+
+def psola_render(x, track, ratio, delay_ms=0.0, glide_ms=30.0, changes=None, analysis_out=None):
+    """One PSOLA voice with the period track `track` ({block start: period}) as the analysis' readings."""
+    inp = PitchShifterInput(PSOLA_MAX_DELAY_MS)
+    ana = PsolaAnalysis()
+    v = PsolaVoice(ratio, delay_ms, glide_ms)
+    y = np.zeros(len(x))
+    for n in range(len(x)):
+        if n in track:
+            ana.override = track[n]
+        if changes and n in changes:
+            v.set_settings(*changes[n])
+        y[n] = v.process(ana, inp)
+        inp.push(x[n])
+        ana.process(inp)
+    if analysis_out is not None:
+        analysis_out.append((ana, v))
+    return y
+
+
+def notes_signal(seconds=1.0, seed=11):
+    """Single notes, each a decaying harmonic tone with a 2 ms attack, one after another with no gap: G3,
+    D3, B3, then A2. Returns the signal and its period track (at 128-sample buffer starts)."""
+    rng = np.random.default_rng(seed)
+    n = int(seconds * FS)
+    t = np.arange(n) / FS
+    notes = [(0, 196.0), (128 * 150, 146.83), (128 * 240, 246.94), (128 * 310, 110.0)]
+    out = np.zeros(n)
+    track = {}
+    for i, (start, f0) in enumerate(notes):
+        end = notes[i + 1][0] if i + 1 < len(notes) else n
+        tt = t[start:end] - t[start]
+        env = np.exp(-tt / 0.35) * np.minimum(1.0, tt / 0.002)
+        tone = sum(np.sin(2 * np.pi * f0 * k * tt + rng.uniform(0, 2 * np.pi)) / k ** 1.1 for k in range(1, 16) if f0 * k < 10000)
+        out[start:end] += 0.25 * env * tone
+        track[start] = FS / f0
+    return out, track
+
+
+PSOLA_CASES = {
+    "down_octave": dict(ratio=0.5, delay_ms=0.0, glide_ms=30.0, changes=[]),
+    "up_fifth": dict(ratio=2 ** (7 / 12), delay_ms=0.0, glide_ms=30.0, changes=[]),
+    "up_two_octaves": dict(ratio=4.0, delay_ms=0.0, glide_ms=30.0, changes=[]),
+    # Down an octave with a 4 ms lag, gliding to -5 semitones over 40 ms at 0.25 s and to +12 at 0.6 s.
+    "glide": dict(ratio=0.5, delay_ms=4.0, glide_ms=40.0,
+                  changes=[[128 * 94, 2 ** (-5 / 12), 4.0, 40.0], [128 * 225, 2.0, 4.0, 40.0]]),
+}
+
+
 # ---- Design study: granular ------------------------------------------------------------------------
 
 def _read(x, pos):
@@ -628,8 +915,20 @@ def write_golden(folder):
         y = granular_render(x, c["ratio"], c["delay_ms"], c["glide_ms"], c["max_voice_delay_ms"], changes, voices)
         wavfile.write(os.path.join(folder, f"expected_granular_{name}.wav"), int(FS), y.astype(np.float32))
         print(f"granular {name}: {voices[0].splices} splices, output RMS {20 * np.log10(np.sqrt(np.mean(y ** 2)) + 1e-30):.1f} dBFS")
+    notes, track = notes_signal()
+    notes = notes.astype(np.float32).astype(np.float64)
+    wavfile.write(os.path.join(folder, "input_notes.wav"), int(FS), notes.astype(np.float32))
+    for name, c in PSOLA_CASES.items():
+        changes = {n: (r, d, g) for n, r, d, g in c["changes"]}
+        out = []
+        y = psola_render(notes, track, c["ratio"], c["delay_ms"], c["glide_ms"], changes, out)
+        wavfile.write(os.path.join(folder, f"expected_psola_{name}.wav"), int(FS), y.astype(np.float32))
+        ana, v = out[0]
+        print(f"psola {name}: {ana.note_count} notes tracked, {len(v.delays)} grains, mean grain delay "
+              f"{np.mean(v.delays) / FS * 1000:.2f} ms, output RMS {20 * np.log10(np.sqrt(np.mean(y ** 2)) + 1e-30):.1f} dBFS")
+    psola = dict(track=[[int(k), v] for k, v in sorted(track.items())], max_delay_ms=PSOLA_MAX_DELAY_MS, cases=PSOLA_CASES)
     with open(os.path.join(folder, "cases.json"), "w") as f:
-        json.dump(dict(granular=GRANULAR_CASES), f, indent=2)
+        json.dump(dict(granular=GRANULAR_CASES, psola=psola), f, indent=2)
 
 
 if __name__ == "__main__":

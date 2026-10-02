@@ -72,6 +72,7 @@ set(AMPSIM_DSP_SOURCES
     src/dsp/TunerAnalysis.cpp
     src/dsp/TunerThread.cpp
     src/dsp/PitchShifter.cpp
+    src/dsp/Psola.cpp
     src/dsp/Multivoicer.cpp)
 
 set(AMPSIM_JUCE_DEFINITIONS

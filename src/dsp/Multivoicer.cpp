@@ -89,6 +89,12 @@ void Multivoicer::configureVoice (int index, bool restart) noexcept
     g.glideMs = glideMs;
     st.granular.setSettings (g);
 
+    PsolaVoice::Settings p;
+    p.ratio = g.ratio;
+    p.delayMs = g.delayMs;
+    p.glideMs = glideMs;
+    st.psola.setSettings (p);
+
     const auto [l, r] = panGains (v.pan * juce::jlimit (0.0, 1.0, settings.spread));
     const auto level = v.levelDb <= minLevelDb ? 0.0 : juce::Decibels::decibelsToGain (juce::jmin (maxLevelDb, v.levelDb));
     const auto drift = juce::jlimit (0.0, 1.0, v.drift);
@@ -97,6 +103,7 @@ void Multivoicer::configureVoice (int index, bool restart) noexcept
     {
         // Starting from silence: a fresh voice at the new settings with no glides, faded in from zero.
         st.granular.reset();
+        st.psola.reset();
         st.left.setCurrentAndTargetValue (l);
         st.right.setCurrentAndTargetValue (r);
         st.drift.setCurrentAndTargetValue (drift);
@@ -162,11 +169,13 @@ void Multivoicer::prepare (double newSampleRate, int)
 {
     sampleRate = newSampleRate;
     input.prepare (sampleRate, GranularVoice::maxDelayMs (maxDelayMs, driftDelayMs), GranularVoice::searchMarginMs);
+    analysis.prepare (sampleRate, PsolaAnalysis::defaultMinFrequency);
 
     for (int i = 0; i < maxVoices; ++i)
     {
         auto& st = voices[(size_t) i];
         st.granular.prepare (sampleRate);
+        st.psola.prepare (sampleRate);
         for (auto* s : { &st.level, &st.left, &st.right, &st.drift })
             s->reset (sampleRate, smoothingSeconds);
 
@@ -186,6 +195,7 @@ void Multivoicer::prepare (double newSampleRate, int)
     for (auto* s : { &mix, &normalization, &highPassOn })
         s->reset (sampleRate, smoothingSeconds);
     highPassHz.reset (sampleRate, highPassSmoothingSeconds);
+    psolaShare.reset (sampleRate, engineFadeSeconds);
 
     reset();
 }
@@ -193,6 +203,9 @@ void Multivoicer::prepare (double newSampleRate, int)
 void Multivoicer::reset()
 {
     input.reset();
+    analysis.reset();
+    psolaShare.setCurrentAndTargetValue (0.0); // nothing is tracked yet
+    psolaRunning = false;
     for (int i = 0; i < maxVoices; ++i)
     {
         auto& st = voices[(size_t) i];
@@ -217,7 +230,7 @@ void Multivoicer::reset()
     samplesUntilUpdate = 0;
 }
 
-void Multivoicer::process (juce::dsp::AudioBlock<float> block, const BlockContext&)
+void Multivoicer::process (juce::dsp::AudioBlock<float> block, const BlockContext& context)
 {
     const auto numChannels = std::min (2, (int) block.getNumChannels());
     const auto numSamples = (int) block.getNumSamples();
@@ -227,6 +240,8 @@ void Multivoicer::process (juce::dsp::AudioBlock<float> block, const BlockContex
     float* const left = block.getChannelPointer (0);
     float* const right = numChannels > 1 ? block.getChannelPointer (1) : nullptr;
     const auto driftSamples = driftDelayMs * sampleRate / 1000.0;
+    const auto* di = context.di != nullptr && context.numSamples >= numSamples ? context.di : nullptr;
+    const auto mono = settings.engine == Engine::mono;
 
     for (int n = 0; n < numSamples; ++n)
     {
@@ -238,7 +253,20 @@ void Multivoicer::process (juce::dsp::AudioBlock<float> block, const BlockContex
         }
 
         const double x[2] = { (double) left[n], right != nullptr ? (double) right[n] : (double) left[n] };
-        const auto mono = 0.5 * (x[0] + x[1]);
+        const auto sum = 0.5 * (x[0] + x[1]);
+
+        // How much of each voice is PSOLA: all of it in Mono while the analysis is sure, none in Poly, and a
+        // 20 ms equal-power crossfade between. The PSOLA voices only run while they can be heard; they start
+        // from a fresh schedule (the fade covers their first grain).
+        psolaShare.setTargetValue (mono && analysis.isConfident() ? 1.0 : 0.0);
+        const auto share = psolaShare.getNextValue();
+        const auto needPsola = share > 0.0 || psolaShare.isSmoothing();
+        if (needPsola && ! psolaRunning)
+            for (auto& st : voices)
+                st.psola.reset();
+        psolaRunning = needPsola;
+        const auto angle = share * juce::MathConstants<double>::halfPi;
+        const auto granularGain = share >= 1.0 ? 0.0 : std::cos (angle), psolaGain = std::sin (angle);
 
         // The voices read the input before this sample is pushed (read before write).
         double wet[2] = { 0.0, 0.0 };
@@ -256,14 +284,19 @@ void Multivoicer::process (juce::dsp::AudioBlock<float> block, const BlockContex
             const auto ratioScale = 1.0 + amount * driftCents * ln2Over1200 * (double) st.pitchDrift.next();
             const auto extraDelay = amount * driftSamples * 0.5 * (1.0 + (double) st.timeDrift.next());
 
-            const auto y = (double) st.granular.process (input, ratioScale, extraDelay);
+            // The granular voice always runs: it is Mono's fallback the moment the analysis loses the pitch.
+            auto y = granularGain * (double) st.granular.process (input, ratioScale, extraDelay);
+            if (needPsola)
+                y += psolaGain * (double) st.psola.process (analysis, input, ratioScale, extraDelay);
             wet[0] += gain * l * y;
             wet[1] += gain * r * y;
 
             if (! st.wanted && ! st.level.isSmoothing())
                 st.running = false; // faded out
         }
-        input.push ((float) mono);
+        input.push ((float) sum);
+        // The analysis' pitch detector reads the clean DI (the left input if there is none, as in tests).
+        analysis.process (di != nullptr ? di[n] : (float) x[0], input);
 
         const auto norm = normalization.getNextValue();
         wet[0] *= norm;
