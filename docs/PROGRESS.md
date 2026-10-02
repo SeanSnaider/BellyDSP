@@ -15,7 +15,7 @@ Status key: Not started, In progress, Done. See `BUILD_PLAN.md` for what each ph
 | 8 | Bloom: bitcrush, phaser, flanger | Built (branch `phase-8`); Sean's checks pending | Bitcrush, phaser (Classic, Modern, Vibe with a lamp-and-photocell model), and flanger with through-zero, in a reorderable container with its own bypass. Waiting on: the integration (parameters, chain slot, latency reporting) and Sean (8.L). |
 | 9 | Pitch shifter (granular + PSOLA), multivoicer, shimmer reverb | Not started | Pitch shifter is shared with the harmonizer |
 | 10 | Harmonizer | Not started | Depends on 7 and 9 |
-| 11 | Full preset system, scenes, undo/A-B, real GUI | Not started | UI_DESIGN.md written first |
+| 11 | Full preset system, scenes, undo/A-B, real GUI | In progress (branch `phase-11-presets`) | Format version 2 (library-relative files with content hashes, relinking, migration) and scenes done. Undo/redo, A/B, factory presets, and UI_DESIGN.md plus the real GUI to come |
 
 ## Workflow
 
@@ -169,3 +169,9 @@ Add a dated line here when something meaningful lands or a decision changes.
 - Through the whole processor, all three on (bitcrush 6.5 bits at 40%, Vibe, flanger at 70% feedback, mix 80%), ordered flanger, phaser, bitcrush: identical to a lone Bloom (difference 0).
 - Latency reported to the host: 0 samples, 240 (5.0 ms) with through-zero on, 0 again after. The order inside Bloom survives saving the state and loading a preset.
 - Defaults stay bit-identical with Bloom running bypassed underneath. The real-time test now switches Bloom on with all three effects, re-modes, reorders, and switches through-zero on and off: 0 allocations, 0 frees, 0 blocking locks.
+
+2026-10-02: Phase 11, presets format 2 and scenes (branch `phase-11-presets`, from `phase-8`; 1542 checks pass).
+- A capture inside the library saves as "models/High gain/Lead.nam" with its size and a 64-bit FNV-1a hash; a pack folder as "irs/Packs/4x12" with a hash of its contents (the same wherever the folder is); files outside the library keep their absolute paths.
+- Moved inside the library, a capture and a pack are both found again by hash and loaded, with a warning saying where from and to; a deleted capture loads as an empty slot with a warning while the rest of the preset (here, delay_on) still applies; a file changed at its path loads with a warning. Version 1 presets migrate with a pure function that leaves the original untouched; the golden v1 file still loads the same.
+- Scenes: "Verse" and "Chorus" each hold 25 values (the amp slot, every block switch, and the chosen delay and reverb mix); CC 70 with value 0 or 1 switches the whole set (and the chain's amp slot) through the timer; empty scenes and out-of-range values change nothing; knobs no scene holds are untouched. Scenes come back from presets and the saved session. A scene bar in the header (click to recall or to store into an empty scene; Store, then a scene, to overwrite; right-click to store or clear) and a "Held by scenes" item on every knob's right-click menu.
+- The real-time test now stores scenes and recalls two from the footswitch while playing: 0 allocations, 0 frees, 0 blocking locks.

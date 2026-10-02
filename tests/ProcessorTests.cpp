@@ -421,7 +421,7 @@ public:
             const auto warnings = p.getPresetWarnings().joinIntoString ("; ");
             expect (warnings.contains ("made_up_id") && warnings.contains ("/nowhere/amp.nam") && warnings.contains ("/nowhere/cab.wav"), warnings);
 
-            const auto future = p.loadPreset (juce::JSON::parse (R"({ "format_version": 2, "parameters": {} })"));
+            const auto future = p.loadPreset (juce::JSON::parse (R"({ "format_version": 3, "parameters": {} })"));
             const auto garbage = p.loadPreset (juce::var ("not a preset"));
             expect (! future.ok && future.error.contains ("newer"));
             expect (! garbage.ok);
@@ -429,6 +429,189 @@ public:
                         + "%, input level (global) still " + juce::String (getParam (p, "input_level_dbu"), 1) + " dBu");
             logMessage ("  -> warnings: " + warnings);
             logMessage ("  -> refused: \"" + future.error + "\"; \"" + garbage.error + "\"");
+        }
+
+        beginTest ("presets v2: files are saved relative to the library with a content hash; moved files are found again, missing ones never stop the preset");
+        {
+            // A private library, so the real one under ~/Library is never touched.
+            const auto library = tempDir().getChildFile ("preset_library");
+            library.deleteRecursively();
+            const auto models = library.getChildFile ("models"), irs = library.getChildFile ("irs");
+            models.createDirectory();
+            irs.createDirectory();
+            presets::setLibraryRoot ("models", models);
+            presets::setLibraryRoot ("irs", irs);
+
+            const auto capture = models.getChildFile ("High gain/Lead.nam");
+            capture.getParentDirectory().createDirectory();
+            expect (a1.copyFileTo (capture));
+            const auto pack = writeTestPack ("library_pack");
+            const auto packInLibrary = irs.getChildFile ("Packs/4x12");
+            packInLibrary.getParentDirectory().createDirectory();
+            expect (pack.copyDirectoryTo (packInLibrary));
+            const auto outside = irFile; // an IR outside the library keeps its absolute path
+
+            AmpSimProcessor a;
+            a.loadModel (0, capture);
+            a.loadCabIR (0, packInLibrary);
+            a.loadCabIR (1, outside);
+            waitForLoads (a);
+            const auto saved = a.capturePreset ("Library");
+            const auto amp = presets::FileRef::fromVar (saved["amps"][0]);
+            const auto mic1 = presets::FileRef::fromVar (saved["cab"]["mic1"]);
+            const auto mic2 = presets::FileRef::fromVar (saved["cab"]["mic2"]);
+            expectEquals (amp.path, juce::String ("models/High gain/Lead.nam"));
+            expectEquals (mic1.path, juce::String ("irs/Packs/4x12"));
+            expectEquals (mic2.path, outside.getFullPathName());
+            expect (amp.hash.startsWith ("fnv1a64:") && amp.hash.length() == 24 && amp.size == capture.getSize());
+            expectEquals (presets::FileRef::fromVar (saved["amps"][1]).path, juce::String());
+
+            // The same bytes anywhere hash the same; a folder's hash doesn't depend on where it is.
+            const auto copy = tempDir().getChildFile ("hash_copy.nam");
+            expect (capture.copyFileTo (copy));
+            expectEquals (presets::contentHash (copy), amp.hash);
+            expectEquals (presets::contentHash (pack), mic1.hash);
+            expect (presets::contentHash (irFile) != amp.hash);
+
+            // Move the capture and the pack within the library: both are relinked by hash.
+            const auto movedCapture = models.getChildFile ("Archive/Old/Lead (copy).nam");
+            movedCapture.getParentDirectory().createDirectory();
+            expect (capture.moveFileTo (movedCapture));
+            const auto movedPack = irs.getChildFile ("Elsewhere/My 4x12");
+            movedPack.getParentDirectory().createDirectory();
+            expect (packInLibrary.moveFileTo (movedPack));
+            AmpSimProcessor b;
+            expect (b.loadPreset (saved).ok);
+            waitForLoads (b);
+            for (int i = 0; i < 50 && b.isChangingPreset(); ++i)
+            {
+                juce::Thread::sleep (10);
+                b.runHousekeeping();
+            }
+            const auto relinkWarnings = b.getPresetWarnings().joinIntoString ("; ");
+            expect (relinkWarnings.contains ("relinked") && relinkWarnings.contains (movedCapture.getFullPathName())
+                    && relinkWarnings.contains (movedPack.getFullPathName()), relinkWarnings);
+            expect (b.getStatus().model[0].contains ("Lead (copy)"), b.getStatus().model[0]);
+            expect (b.getChain().cab.hasPack (0));
+
+            // A file that's truly gone: an empty slot and a warning, and everything else still loads.
+            movedCapture.deleteFile();
+            auto partial = saved.clone();
+            partial["parameters"].getDynamicObject()->setProperty ("delay_on", 1);
+            AmpSimProcessor c;
+            expect (c.loadPreset (partial).ok);
+            waitForLoads (c);
+            const auto missingWarnings = c.getPresetWarnings().joinIntoString ("; ");
+            expect (missingWarnings.contains ("missing: models/High gain/Lead.nam"), missingWarnings);
+            expectEquals (c.getStatus().model[0], juce::String ("Empty"));
+            expectEquals (getParam (c, "delay_on"), 1.0f);
+
+            // A file still at its path but with different content: loaded, with a warning.
+            AmpSimProcessor d;
+            expect (d.loadPreset (saved).ok); // mic2 is fine; make it "changed" by saving a preset over another file
+            auto changed = saved.clone();
+            const auto changedFile = tempDir().getChildFile ("changed_ir.wav");
+            expect (irFile.copyFileTo (changedFile));
+            auto changedRef = presets::makeRef (changedFile, "irs");
+            changedFile.appendText ("x"); // now neither its size nor its hash matches
+            changed["cab"].getDynamicObject()->setProperty ("mic2", changedRef.toVar());
+            AmpSimProcessor e;
+            expect (e.loadPreset (changed).ok);
+            expect (e.getPresetWarnings().joinIntoString ("; ").contains ("has changed"));
+
+            // The migration from version 1 is pure: the old preset is left as it was.
+            const auto v1 = juce::JSON::parse (R"({ "format_version": 1, "parameters": {}, "amps": [ "/a/b.nam", "", "" ], "cab": { "mic1": "/c/d.wav" } })");
+            const auto before = juce::JSON::toString (v1);
+            const auto v2 = presets::migrateV1toV2 (v1);
+            expectEquals (juce::JSON::toString (v1), before);
+            expectEquals ((int) v2["format_version"], 2);
+            expectEquals (presets::FileRef::fromVar (v2["amps"][0]).path, juce::String ("/a/b.nam"));
+            expectEquals (presets::FileRef::fromVar (v2["amps"][0]).hash, juce::String());
+            expectEquals (presets::FileRef::fromVar (v2["cab"]["mic1"]).path, juce::String ("/c/d.wav"));
+            expectEquals (presets::FileRef::fromVar (v2["cab"]["room"]).path, juce::String());
+
+            presets::setLibraryRoot ("models", juce::File());
+            presets::setLibraryRoot ("irs", juce::File());
+            library.deleteRecursively();
+            logMessage ("  -> saved: \"" + amp.path + "\" (" + amp.hash + ", " + juce::String (amp.size) + " bytes), \"" + mic1.path + "\" (a pack, "
+                        + mic1.hash + "), and an IR outside the library by its absolute path");
+            logMessage ("  -> moved inside the library and found again by hash: " + relinkWarnings);
+            logMessage ("  -> deleted: " + missingWarnings + " (the slot loads empty; delay_on from the same preset still applied)");
+            logMessage ("  -> version 1 migrates to version 2 without touching the original: \"/a/b.nam\" becomes { path, no hash }");
+        }
+
+        beginTest ("scenes: one footswitch press moves the song from verse to chorus (the amp slot, every switch, the chosen knobs, nothing else), saved in presets");
+        {
+            AmpSimProcessor p;
+            p.prepareToPlay (fs, blockSize);
+            juce::AudioBuffer<float> buffer (2, blockSize);
+            const auto send = [&] (int cc, int value)
+            {
+                juce::MidiBuffer midi;
+                midi.addEvent (juce::MidiMessage::controllerEvent (1, cc, value), 0);
+                buffer.clear();
+                p.processBlock (buffer, midi);
+                p.runHousekeeping();
+                buffer.clear();
+                p.processBlock (buffer, midi); // and one more buffer, so the audio thread has the new settings
+            };
+            auto& scenes = p.getScenes();
+            scenes.setChosen ("delay_mix", true);
+            scenes.setChosen ("reverb_mix", true);
+
+            using Values = std::initializer_list<std::pair<const char*, float>>;
+            const Values verse { { "amp_slot", 0.0f }, { "chorus_on", 1.0f }, { "delay_on", 0.0f }, { "delay_mix", 25.0f }, { "reverb_mix", 20.0f }, { "boost_on", 0.0f } };
+            const Values chorusPart { { "amp_slot", 2.0f }, { "chorus_on", 0.0f }, { "delay_on", 1.0f }, { "delay_mix", 40.0f }, { "reverb_mix", 35.0f }, { "boost_on", 1.0f } };
+            for (const auto& [id, value] : verse)
+                setParam (p, id, value);
+            p.storeScene (0);
+            scenes.rename (0, "Verse");
+            for (const auto& [id, value] : chorusPart)
+                setParam (p, id, value);
+            p.storeScene (1);
+            scenes.rename (1, "Chorus");
+            setParam (p, "input_gain", 3.0f); // no scene holds it
+            setParam (p, "delay_feedback", 60.0f);
+
+            const auto matches = [&] (const Values& values)
+            {
+                for (const auto& [id, value] : values)
+                    if (std::abs (getParam (p, id) - value) > 1.0e-3f)
+                        return false;
+                return true;
+            };
+            send (70, 0);
+            const auto toVerse = matches (verse) && p.getChain().amp.getSelectedSlot() == 0;
+            send (70, 1);
+            const auto toChorus = matches (chorusPart) && p.getChain().amp.getSelectedSlot() == 2;
+            send (70, 5);   // an empty scene: nothing changes
+            send (70, 100); // not a scene: ignored
+            const auto unchanged = matches (chorusPart) && scenes.getCurrent() == 1;
+            expect (toVerse && toChorus && unchanged);
+            expectWithinAbsoluteError (getParam (p, "input_gain"), 3.0f, 1.0e-4f);
+            expectWithinAbsoluteError (getParam (p, "delay_feedback"), 60.0f, 1.0e-4f);
+            const auto held = (int) scenes.get (1).values.size();
+
+            // In presets and the saved state; a preset without scenes has none.
+            AmpSimProcessor fromPreset;
+            expect (fromPreset.loadPreset (p.capturePreset ("Song")).ok);
+            expect (fromPreset.getScenes().get (0).name == "Verse" && fromPreset.getScenes().get (1).stored && ! fromPreset.getScenes().get (2).stored);
+            expect (fromPreset.getScenes().isChosen ("reverb_mix"));
+            expect (fromPreset.recallScene (0));
+            expectEquals (getParam (fromPreset, "reverb_mix"), 20.0f);
+            juce::MemoryBlock state;
+            p.getStateInformation (state);
+            AmpSimProcessor restored;
+            restored.setStateInformation (state.getData(), (int) state.getSize());
+            expect (restored.getScenes().get (1).name == "Chorus" && (int) restored.getScenes().get (1).values.size() == held);
+            const auto bare = juce::JSON::parse (R"({ "format_version": 2, "parameters": {} })");
+            expect (fromPreset.loadPreset (bare).ok);
+            expect (! fromPreset.getScenes().get (0).stored);
+
+            logMessage ("  -> scene 1 \"Verse\" and 2 \"Chorus\" each hold " + juce::String (held) + " values (the amp slot, every block switch, delay "
+                        "and reverb mix); CC 70 = 0 and 1 from the footswitch switch the whole set (amp slot 1 to 3 in the chain too); an empty scene and "
+                        "an out-of-range value change nothing; input gain and delay feedback, in no scene, are untouched");
+            logMessage ("  -> scenes come back from a preset and from the saved session; a preset without scenes has none");
         }
 
         beginTest ("presets: the golden v1 file loads the same on every build");
@@ -762,7 +945,14 @@ public:
             expectEquals (reachedOnRightClick, 0);
             expect (control.downs == 1 && control.drags == 1 && control.ups == 1);
 
-            logMessage ("  -> " + juce::String (tagged.size()) + " parameters reachable by right-click across the 6 tabs; the delay switch learned CC 85 "
+            // The same menu adds a knob to what scenes hold (switches are always held, so they don't offer it).
+            expect (choose ("delay_mix", "Held by scenes"));
+            expect (p.getScenes().isChosen ("delay_mix"));
+            expect (choose ("delay_mix", "Held by scenes"));
+            expect (! p.getScenes().isChosen ("delay_mix"));
+            expect (! choose ("delay_on", "Held by scenes"));
+
+            logMessage ("  -> " + juce::String (tagged.size()) + " parameters reachable by right-click across the 7 tabs; the delay switch learned CC 85 "
                         "as a toggle (the learning press changed nothing), switched to follow the switch and back, and was forgotten; the reverb mix "
                         "learned CC 86 over 0-100%; a learn was cancelled; right- and ctrl-clicks reached the control 0 times, a left-click 3 (down, drag, up)");
         }

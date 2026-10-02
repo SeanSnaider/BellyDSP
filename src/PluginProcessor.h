@@ -3,6 +3,7 @@
 #include "BlockParameters.h"
 #include "MidiMap.h"
 #include "Presets.h"
+#include "Scenes.h"
 #include "dsp/Chain.h"
 #include "dsp/Tempo.h"
 #include "dsp/TunerThread.h"
@@ -100,6 +101,13 @@ public:
     /// Message thread: the MIDI mappings (footswitch toggles, expression pedals), and MIDI learn: the
     /// next controller that moves maps to the parameter.
     MidiMap& getMidiMap() noexcept { return midiMap; }
+
+    /// Message thread: the preset's scenes (Scenes.h). A footswitch picks one with the scene CC
+    /// (midi_scene_cc, default 70): value 0 is scene 1, ... 7 is scene 8.
+    Scenes& getScenes() noexcept { return scenes; }
+    bool recallScene (int index) { return scenes.recall (index, parameters); }
+    void storeScene (int index) { scenes.store (index, parameters); }
+    static inline const juce::Identifier scenesKey { "scenes" };
     void midiLearn (const juce::String& parameterId) { midiMap.startLearn (parameterId); }
     static inline const juce::Identifier midiMapKey { "midiMap" };
 
@@ -278,6 +286,8 @@ private:
     // Every other controller: forwarded by the audio thread, mapped by the timer.
     CcFifo ccFifo;
     MidiMap midiMap; // message thread
+    Scenes scenes;   // message thread
+    std::atomic<float>* sceneCc = nullptr;
 
     // Tempo and tap tempo. The TapTempo and the sample clock belong to the audio thread.
     void registerTap (double timeSeconds);

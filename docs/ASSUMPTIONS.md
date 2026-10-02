@@ -186,3 +186,14 @@ Status key: **Open** (waiting for Sean), **Confirmed** (Sean agreed), **Changed*
 | B18 | The host hears about a latency change from the processor's 50 Hz timer, so up to 20 ms after the through-zero switch takes effect. | `setLatencySamples` belongs on the message thread. | Poll faster, or post a message from the audio thread. |
 | B19 | An order inside Bloom that leaves effects out (or names unknown ones) gets the missing effects appended in default order. | Three effects; the sections' fewest-broken-pairs rule would give the same answers here. | `AmpSimProcessor::setBloomOrder`. |
 
+## Phase 11: presets and scenes
+
+| # | Assumption | Why | To change it |
+|---|---|---|---|
+| Q1 | The library roots are ~/Library/Application Support/AmpSim/models and /irs. A preset stores paths relative to them for files inside, absolute paths otherwise, and relinking only searches the roots. | The plan's "relative to the models/ or irs/ root". Captures kept elsewhere load by absolute path but can't be relinked if they move. | `presets::libraryRoot`; a setting for extra roots later. |
+| Q2 | The content hash is 64-bit FNV-1a, checked after the file size; a pack folder hashes its files' relative names and hashes. | Fast and enough to tell files apart; nothing here needs to resist forgery. | `presets::contentHash`. |
+| Q3 | Relinking runs on the message thread while the preset applies, so a large library can pause the panel briefly when a file has moved. | Rare, and simple. | Move `presets::resolve` onto the loader thread. |
+| Q4 | A file found at its path with different content loads anyway, with a warning. | It's probably a re-export of the same capture or IR. | `presets::resolve`. |
+| Q5 | A scene holds the amp slot, every block switch (`..._on` and `cab_bypass`), and the parameters chosen for scenes (right-click a knob, "Held by scenes"); everything else stays where it is. Clicking an empty scene stores the current sound in it. | The plan's "a chosen set of parameter values". | `Scenes::isSwitch`, the editor. |
+| Q6 | The scene footswitch is CC 70 (`midi_scene_cc`; value 0 is scene 1, ... 7 is scene 8), applied by the 50 Hz timer, so up to 20 ms after the press; it takes precedence over a MIDI mapping on the same CC. | Setting parameters can't happen on the audio thread; nothing reloads, so the slot's 20 ms crossfade and the 10 ms bypass fades follow at once. | A dedicated audio-thread path like freeze's. |
+| Q7 | Loading a preset without scenes clears the scenes (unlike MIDI mappings, which stay). | Scenes belong to a song; mappings to the footswitch. | `presets::apply`. |

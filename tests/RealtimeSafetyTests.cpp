@@ -180,6 +180,11 @@ public:
                     case 2050: setParam (p, "gate_link", 1.0f); break;
                     case 2350: setParam (p, "gate_a_on", 0.0f); break;
                     case 3500: setParam (p, "gate_link", 0.0f); p.learnGates(); break;
+                    // Phase 11 scenes: stored, then recalled from the footswitch (CC 70) while playing.
+                    case 1750: p.storeScene (0); break;
+                    case 2701: p.storeScene (1); break;
+                    case 2901: midi.addEvent (juce::MidiMessage::controllerEvent (1, 70, 0), 17); break;
+                    case 3101: midi.addEvent (juce::MidiMessage::controllerEvent (1, 70, 1), 5); break;
                     // Phase 6 drive: boost and overdrive on, re-moded, 8x and back, tight, off again.
                     case 2450: setParam (p, "boost_on", 1.0f); setParam (p, "boost_mode", 2.0f); break; // Screamer
                     case 2500: setParam (p, "od_on", 1.0f); setParam (p, "od_mode", 1.0f); setParam (p, "od_drive", 80.0f); break;

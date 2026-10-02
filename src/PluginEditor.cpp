@@ -1609,6 +1609,22 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p)
     addAndMakeVisible (midiButton);
     addMouseListener (this, true); // right-clicks anywhere in the panel, for MIDI learn
 
+    scenesLabel.setText ("Scenes", juce::dontSendNotification);
+    scenesLabel.setColour (juce::Label::textColourId, dimText);
+    addAndMakeVisible (scenesLabel);
+    for (int i = 0; i < Scenes::count; ++i)
+    {
+        auto& button = sceneButtons[(size_t) i];
+        button.setButtonText (juce::String (i + 1));
+        button.setColour (juce::TextButton::buttonOnColourId, accent);
+        button.onClick = [this, i] { clickScene (i); };
+        addAndMakeVisible (button);
+    }
+    storeSceneButton.setClickingTogglesState (true);
+    storeSceneButton.setColour (juce::TextButton::buttonOnColourId, warningColour.darker (0.3f));
+    storeSceneButton.setTooltip ("Then click a scene to store the current sound in it");
+    addAndMakeVisible (storeSceneButton);
+
     warningLabel.setColour (juce::Label::textColourId, warningColour);
     warningLabel.setJustificationType (juce::Justification::topLeft);
     addAndMakeVisible (warningLabel);
@@ -1893,6 +1909,16 @@ void AmpSimEditor::timerCallback()
     boostPanel->refresh();
     overdrivePanel->refresh();
 
+    // Scene buttons: stored ones bright, empty ones faint, the current one lit.
+    for (int i = 0; i < Scenes::count; ++i)
+    {
+        const auto& scene = ampSim.getScenes().get (i);
+        auto& button = sceneButtons[(size_t) i];
+        button.setAlpha (scene.stored ? 1.0f : 0.45f);
+        button.setToggleState (scene.stored && ampSim.getScenes().getCurrent() == i, juce::dontSendNotification);
+        button.setTooltip (scene.stored ? scene.name : "Empty: click to store the current sound");
+    }
+
     // The tuner covers the tabs while it's engaged.
     if (const auto tuning = ampSim.parameters.getRawParameterValue ("tuner_on")->load() >= 0.5f; tunerView.isVisible() != tuning)
     {
@@ -1902,10 +1928,57 @@ void AmpSimEditor::timerCallback()
     }
 }
 
+void AmpSimEditor::clickScene (int index)
+{
+    auto& scenes = ampSim.getScenes();
+    if (storeSceneButton.getToggleState() || ! scenes.get (index).stored)
+    {
+        ampSim.storeScene (index);
+        storeSceneButton.setToggleState (false, juce::dontSendNotification);
+    }
+    else
+    {
+        ampSim.recallScene (index);
+    }
+    timerCallback();
+}
+
+void AmpSimEditor::sceneMenu (int index)
+{
+    juce::PopupMenu menu;
+    const auto& scene = ampSim.getScenes().get (index);
+    menu.addSectionHeader (scene.stored ? scene.name : "Scene " + juce::String (index + 1) + " (empty)");
+    const auto safe = juce::Component::SafePointer<AmpSimEditor> (this);
+    menu.addItem ("Store the current sound here", [safe, index]
+    {
+        if (safe != nullptr)
+        {
+            safe->ampSim.storeScene (index);
+            safe->timerCallback();
+        }
+    });
+    menu.addItem ("Clear", scene.stored, false, [safe, index]
+    {
+        if (safe != nullptr)
+        {
+            safe->ampSim.getScenes().clear (index);
+            safe->timerCallback();
+        }
+    });
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (sceneButtons[(size_t) index]));
+}
+
 void AmpSimEditor::mouseDown (const juce::MouseEvent& e)
 {
     if (! e.mods.isPopupMenu())
         return;
+
+    for (int i = 0; i < Scenes::count; ++i)
+        if (e.eventComponent == &sceneButtons[(size_t) i])
+        {
+            sceneMenu (i);
+            return;
+        }
 
     // The control under the click, or the nearest parent that is one (a slider's text box, a knob).
     for (auto* c = e.eventComponent; c != nullptr && c != this; c = c->getParentComponent())
@@ -1940,6 +2013,18 @@ juce::PopupMenu AmpSimEditor::midiMenuFor (const juce::String& parameterId)
                 m->startLearn (parameterId);
         }
     });
+
+    // Scenes always hold the amp slot and every switch; any other parameter can be added.
+    if (! Scenes::isSwitch (parameterId) && ! presets::isGlobal (parameterId))
+    {
+        const auto held = ampSim.getScenes().isChosen (parameterId);
+        menu.addSeparator();
+        menu.addItem ("Held by scenes", true, held, [safe = juce::Component::SafePointer<AmpSimEditor> (this), parameterId, held]
+        {
+            if (safe != nullptr)
+                safe->ampSim.getScenes().setChosen (parameterId, ! held);
+        });
+    }
 
     for (const auto& mapping : ampSim.getMidiMap().getMappings())
     {
@@ -2043,6 +2128,13 @@ void AmpSimEditor::resized()
     loadPresetButton.setBounds (presetRow.removeFromLeft (80).reduced (2, 0));
     midiButton.setBounds (presetRow.removeFromLeft (80).reduced (2, 0));
     tunerButton.setBounds (presetRow.removeFromLeft (80).reduced (2, 0));
+
+    auto sceneRow = getLocalBounds().reduced (16).removeFromTop (96).withTrimmedTop (70).removeFromTop (26);
+    scenesLabel.setBounds (sceneRow.removeFromLeft (60));
+    for (auto& button : sceneButtons)
+        button.setBounds (sceneRow.removeFromLeft (34).reduced (2, 0));
+    sceneRow.removeFromLeft (6);
+    storeSceneButton.setBounds (sceneRow.removeFromLeft (70).reduced (2, 0));
 
     warningLabel.setBounds (area.removeFromBottom (40));
     area.removeFromBottom (6);

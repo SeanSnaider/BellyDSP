@@ -63,6 +63,7 @@ AmpSimProcessor::AmpSimProcessor()
     tempoBpm = raw ("tempo_bpm");
     tapCc = raw ("midi_tap_cc");
     freezeCc = raw ("midi_freeze_cc");
+    sceneCc = raw ("midi_scene_cc");
     calibrateInput = raw ("input_calibrate");
     interfaceInputDbu = raw ("input_level_dbu");
     tunerOn = raw ("tuner_on");
@@ -210,6 +211,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout AmpSimProcessor::createParam
                                          juce::AudioParameterFloatAttributes().withLabel ("BPM")));
     layout.add (std::make_unique<Int> (juce::ParameterID { "midi_tap_cc", 1 }, "Tap Tempo CC", 0, 127, 80));
     layout.add (std::make_unique<Int> (juce::ParameterID { "midi_freeze_cc", 1 }, "Reverb Freeze CC", 0, 127, 81));
+    layout.add (std::make_unique<Int> (juce::ParameterID { "midi_scene_cc", 1 }, "Scene CC", 0, 127, 70));
     return layout;
 }
 
@@ -578,6 +580,7 @@ void AmpSimProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     auto state = parameters.copyState();
     state.setProperty (midiMapKey, juce::JSON::toString (midiMap.toVar(), true), nullptr);
+    state.setProperty (scenesKey, juce::JSON::toString (scenes.toVar(), true), nullptr);
     if (auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
 }
@@ -598,6 +601,7 @@ void AmpSimProcessor::setStateInformation (const void* data, int sizeInBytes)
 
     // MIDI mappings (states saved before they existed have none).
     midiMap = MidiMap::fromVar (juce::JSON::parse (state.getProperty (midiMapKey).toString()), parameters);
+    scenes = Scenes::fromVar (juce::JSON::parse (state.getProperty (scenesKey).toString()), parameters);
 
     // The captures below load with the restored calibration, so it's already applied.
     appliedCalibration = pendingCalibration = currentCalibration();
@@ -805,7 +809,20 @@ void AmpSimProcessor::timerCallback()
     chain.cab.collectGarbage();
 
     // Footswitches and pedals mapped to parameters (and MIDI learn).
-    ccFifo.drain ([this] (int cc, int value) { midiMap.handle (cc, value, parameters); });
+    // The scene CC picks a scene by its value (0 is scene 1); it takes precedence over any mapping.
+    const auto sceneController = juce::roundToInt (sceneCc->load());
+    ccFifo.drain ([this, sceneController] (int cc, int value)
+    {
+        if (cc == sceneController)
+        {
+            if (value < Scenes::count)
+                scenes.recall (value, parameters);
+        }
+        else
+        {
+            midiMap.handle (cc, value, parameters);
+        }
+    });
 
     // A footswitch toggled the reverb's freeze: write it into the switch (the audio thread already has).
     if (auto freeze = freezeRequest.load(); freeze >= 0)
