@@ -115,7 +115,10 @@ if __name__ == "__main__":
     if args.golden:
         with open (args.golden, "w") as f:
             f.write ("# Polyphase halfband coefficients (prototypes/halfband.py): nbr_coefs, transition, then the coefficients\n")
-            for n, tw in [(4, 0.1), (8, 0.04), (12, 0.01)]:
+            # (8, 0.04), (4, 0.25), and (3, 0.375) are the oversampler's three 2x stages (src/dsp/Oversampler.h):
+            # 48<->96 kHz, 96<->192 kHz, 192<->384 kHz. The later stages only have to pass 0-24 kHz, so their
+            # transition bands are far wider and a few coefficients reach more than 100 dB.
+            for n, tw in [(4, 0.1), (8, 0.04), (12, 0.01), (4, 0.25), (3, 0.375)]:
                 f.write (f"{n},{tw}," + ",".join (f"{c:.17g}" for c in design (n, tw)) + "\n")
     else:
         table()

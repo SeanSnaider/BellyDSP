@@ -2,6 +2,7 @@
 
 #include "AmpSection.h"
 #include "Block.h"
+#include "Boost.h"
 #include "Cab.h"
 #include "Chorus.h"
 #include "Compressor.h"
@@ -9,6 +10,8 @@
 #include "Reverb.h"
 #include "Equalizer.h"
 #include "Gain.h"
+#include "LinkedGates.h"
+#include "Overdrive.h"
 
 #include <array>
 #include <atomic>
@@ -22,8 +25,8 @@ namespace ampsim
 /// bypass, and runs the two reorderable sections. It never special-cases a block (BUILD_PLAN "Block
 /// design", decisions 2 to 6).
 ///
-///   input gain ─► PRE FX (mono, reorderable) ─► amp ─► cab (mono to stereo) ─► POST FX (stereo,
-///   reorderable) ─► output level
+///   input gain ─► PRE FX (mono, reorderable) ─► amp ─► Gate B ─► cab (mono to stereo) ─► POST FX
+///   (stereo, reorderable) ─► output level
 ///
 /// Blocks are typed members (decision 6), so the processor can call block-specific setters. The
 /// generic logic reaches them through blockFor(). A section's order is an array of slots, changed by
@@ -34,9 +37,13 @@ class Chain
 {
 public:
     Gain inputGain { false };
+    Gate gateA;
     Compressor preCompressor { false };
+    Boost boost;
+    Overdrive overdrive;
     Equalizer preEq { false };
     AmpSection amp;
+    GateB gateB { gateA }; // follows Gate A when linked (LinkedGates.h)
     Cab cab;
     Equalizer postEq { true };
     Compressor postCompressor { true };
@@ -48,9 +55,13 @@ public:
     enum class Slot : size_t
     {
         inputGain,
+        gateA,
         preCompressor,
+        boost,
+        overdrive,
         preEq,
         amp,
+        gateB,
         cab,
         postEq,
         postCompressor,
@@ -116,6 +127,13 @@ private:
         bool bypassed = false;                   // the target: where the fade is heading
         juce::SmoothedValue<float> wet { 1.0f }; // the fade itself: 1 = block on, 0 = bypassed
         bool resetBeforeNextRun = false;
+
+        // Keeps running while fully bypassed, on a copy of its input, so its state stays live: Gate A
+        // (a linked Gate B follows its curve, and Learn works with it off) and the drive blocks (a
+        // circuit switched on cold clips around the wrong bias while its coupling capacitors charge,
+        // which a 10 ms fade doesn't hide). Costs the block's CPU while it's off; switching it on needs
+        // no reset.
+        bool keepRunning = false;
 
         bool fullyOff() const { return bypassed && ! wet.isSmoothing(); }
     };

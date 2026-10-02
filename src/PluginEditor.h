@@ -4,6 +4,33 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+/// A control that leaves right-clicks (and ctrl-clicks) to the editor's MIDI learn menu. Without this
+/// a JUCE button flips on any click, and a linear slider jumps to where it was clicked.
+template <typename Control>
+class IgnoresRightClick : public Control
+{
+public:
+    using Control::Control;
+
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        if (! e.mods.isPopupMenu())
+            Control::mouseDown (e);
+    }
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        if (! e.mods.isPopupMenu())
+            Control::mouseDrag (e);
+    }
+    void mouseUp (const juce::MouseEvent& e) override
+    {
+        if (! e.mods.isPopupMenu())
+            Control::mouseUp (e);
+    }
+};
+using ToggleControl = IgnoresRightClick<juce::ToggleButton>;
+using SliderControl = IgnoresRightClick<juce::Slider>;
+
 /// A component that lays out its children with a function, so tab pages don't need a class each.
 class PageComponent final : public juce::Component
 {
@@ -25,7 +52,7 @@ public:
     void resized() override;
 
 private:
-    juce::Slider slider;
+    SliderControl slider;
     juce::Label label;
     juce::AudioProcessorValueTreeState::SliderAttachment attachment;
 };
@@ -94,7 +121,7 @@ private:
     juce::TextButton loadButton { "Load IR..." }, packButton { "Load pack..." };
     std::unique_ptr<MicPositionPad> pad;
     juce::OwnedArray<Knob> knobs;
-    juce::OwnedArray<juce::ToggleButton> toggles;
+    juce::OwnedArray<ToggleControl> toggles;
     juce::OwnedArray<juce::AudioProcessorValueTreeState::ButtonAttachment> toggleAttachments;
     juce::ComboBox channel;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> channelAttachment;
@@ -132,7 +159,7 @@ private:
     AmpSimProcessor& ampSim;
     const bool post;
     juce::Label titleLabel;
-    juce::ToggleButton onButton { "On" }, autoReleaseButton { "Auto release" }, autoMakeupButton { "Auto makeup" }, sidechainButton { "Sidechain HPF" };
+    ToggleControl onButton { "On" }, autoReleaseButton { "Auto release" }, autoMakeupButton { "Auto makeup" }, sidechainButton { "Sidechain HPF" };
     juce::ComboBox mode, detector;
     juce::OwnedArray<Knob> knobs;
     juce::OwnedArray<juce::AudioProcessorValueTreeState::ButtonAttachment> buttonAttachments;
@@ -174,9 +201,9 @@ private:
     {
         juce::Label title;
         juce::ComboBox type;
-        juce::Slider frequency { juce::Slider::LinearBar, juce::Slider::TextBoxLeft };
-        juce::Slider gain { juce::Slider::LinearBar, juce::Slider::TextBoxLeft };
-        juce::Slider q { juce::Slider::LinearBar, juce::Slider::TextBoxLeft };
+        SliderControl frequency { juce::Slider::LinearBar, juce::Slider::TextBoxLeft };
+        SliderControl gain { juce::Slider::LinearBar, juce::Slider::TextBoxLeft };
+        SliderControl q { juce::Slider::LinearBar, juce::Slider::TextBoxLeft };
         std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> typeAttachment;
         std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> frequencyAttachment, gainAttachment, qAttachment;
 
@@ -186,10 +213,10 @@ private:
     juce::AudioProcessorValueTreeState& state;
     const juce::String prefix;
     juce::Label titleLabel;
-    juce::ToggleButton onButton { "On" }, lowCutButton { "Low cut" }, highCutButton { "High cut" };
+    ToggleControl onButton { "On" }, lowCutButton { "Low cut" }, highCutButton { "High cut" };
     juce::ComboBox mode, lowCutSlope, highCutSlope;
     EqCurve curve;
-    juce::OwnedArray<juce::Slider> sliders;
+    juce::OwnedArray<SliderControl> sliders;
     juce::OwnedArray<juce::Label> sliderLabels;
     juce::OwnedArray<juce::AudioProcessorValueTreeState::SliderAttachment> sliderAttachments;
     juce::OwnedArray<BandControls> bands;
@@ -209,16 +236,16 @@ public:
 
 protected:
     Knob& addKnob (const juce::String& id, const juce::String& caption, const juce::String& suffix = " dB");
-    juce::ToggleButton& addToggle (const juce::String& id, const juce::String& text);
+    ToggleControl& addToggle (const juce::String& id, const juce::String& text);
     juce::ComboBox& addCombo (const juce::String& id, const juce::StringArray& items);
     /// Lays out the title row and returns the area below it.
     juce::Rectangle<int> layoutTitle();
 
     AmpSimProcessor& ampSim;
     juce::Label titleLabel;
-    juce::ToggleButton onButton { "On" };
+    ToggleControl onButton { "On" };
     juce::OwnedArray<Knob> knobs;
-    juce::OwnedArray<juce::ToggleButton> toggles;
+    juce::OwnedArray<ToggleControl> toggles;
     juce::OwnedArray<juce::ComboBox> combos;
     juce::OwnedArray<juce::AudioProcessorValueTreeState::ButtonAttachment> buttonAttachments;
     juce::OwnedArray<juce::AudioProcessorValueTreeState::ComboBoxAttachment> comboAttachments;
@@ -234,7 +261,7 @@ public:
 
 private:
     juce::ComboBox *mode = nullptr, *shape = nullptr, *note = nullptr;
-    juce::ToggleButton *sync = nullptr, *analog = nullptr, *noise = nullptr, *highPass = nullptr;
+    ToggleControl *sync = nullptr, *analog = nullptr, *noise = nullptr, *highPass = nullptr;
     Knob *rate = nullptr, *depth = nullptr, *mix = nullptr, *width = nullptr, *highPassHz = nullptr;
     int shownSync = -1;
 };
@@ -249,10 +276,60 @@ public:
 
 private:
     juce::ComboBox *engine = nullptr, *preDelayNote = nullptr;
-    juce::ToggleButton *freeze = nullptr, *preDelaySync = nullptr;
+    ToggleControl *freeze = nullptr, *preDelaySync = nullptr;
     std::vector<Knob*> grid;
     Knob* preDelay = nullptr;
     int shownSync = -1;
+};
+
+/// One noise gate's controls with its detector meter. Gate A's panel has Learn; Gate B's has the link
+/// switch, and while linked its own knobs are dimmed (it applies Gate A's decision).
+class GatePanel final : public EffectPanel
+{
+public:
+    GatePanel (AmpSimProcessor& processor, bool isGateB);
+    void refresh();
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+private:
+    const bool gateB;
+    juce::ComboBox *releaseMode = nullptr, *detector = nullptr;
+    ToggleControl *sidechain = nullptr, *link = nullptr;
+    juce::TextButton learnButton { "Learn" };
+    AmpSimProcessor::GateMeter meter;
+    bool linked = false, learning = false;
+    float learnProgress = 0.0f;
+    juce::Rectangle<int> meterArea;
+};
+
+/// The boost's controls; the knobs the current mode doesn't use are dimmed.
+class BoostPanel final : public EffectPanel
+{
+public:
+    explicit BoostPanel (AmpSimProcessor& processor);
+    void refresh();
+    void resized() override;
+
+private:
+    juce::ComboBox* mode = nullptr;
+    Knob *level = nullptr, *tilt = nullptr, *tightHz = nullptr, *mid = nullptr;
+    int shownMode = -1;
+};
+
+/// The overdrive's controls, with the drive blocks' oversampling (a global setting).
+class OverdrivePanel final : public EffectPanel
+{
+public:
+    explicit OverdrivePanel (AmpSimProcessor& processor);
+    void refresh();
+    void resized() override;
+
+private:
+    juce::ComboBox *mode = nullptr, *oversampling = nullptr;
+    ToggleControl* tight = nullptr;
+    Knob *drive = nullptr, *tone = nullptr, *level = nullptr, *mix = nullptr, *tightHz = nullptr;
+    int shownTight = -1;
 };
 
 /// The delay's controls, plus the tempo and its tap button.
@@ -267,7 +344,7 @@ public:
 private:
     AmpSimProcessor& ampSim;
     juce::Label titleLabel;
-    juce::ToggleButton onButton { "On" }, syncButton { "Sync to tempo" };
+    ToggleControl onButton { "On" }, syncButton { "Sync to tempo" };
     juce::ComboBox mode, stereo, note, rightNote;
     juce::Label noteLabel, rightNoteLabel;
     juce::TextButton tapButton { "Tap" };
@@ -289,10 +366,18 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
-    /// For tests and snapshots: show the Amps (0), Cab (1), Pre FX (2), or Post FX (3) tab, and refresh
-    /// the status lines now.
+    /// For tests and snapshots: show the Amps (0), Cab (1), Gates & Drive (2), Pre FX (3), Post FX (4), or
+    /// Time FX (5) tab, and refresh the status lines now.
     void showTab (int index) { tabs.setCurrentTabIndex (index); }
     void refresh() { timerCallback(); }
+
+    /// A right-click on any control attached to a parameter: MIDI learn for it, or change or forget its
+    /// mappings (BUILD_PLAN "MIDI control": click a control, press a switch, done). The editor listens
+    /// to every child's mouse events for this; the controls themselves ignore right-clicks.
+    void mouseDown (const juce::MouseEvent& e) override;
+
+    /// For tests: the menu a right-click on this parameter's control would show.
+    juce::PopupMenu midiMenuFor (const juce::String& parameterId);
 
 private:
     void timerCallback() override;
@@ -303,15 +388,19 @@ private:
 
     void savePreset();
     void loadPreset();
+    void showMidiMappings();
 
     std::array<juce::TextButton, AmpSimProcessor::numAmpSlots> slotButtons;
     juce::Label presetLabel;
-    juce::TextButton savePresetButton { "Save..." }, loadPresetButton { "Load..." };
+    juce::TextButton savePresetButton { "Save..." }, loadPresetButton { "Load..." }, midiButton { "MIDI..." };
     juce::String presetMessage;
     Knob inputKnob, outputKnob;
     juce::Label warningLabel;
 
-    PageComponent ampsPage, cabPage, preFxPage, postFxPage, timeFxPage;
+    PageComponent ampsPage, cabPage, gatesPage, preFxPage, postFxPage, timeFxPage;
+    std::unique_ptr<GatePanel> gateAPanel, gateBPanel;
+    std::unique_ptr<BoostPanel> boostPanel;
+    std::unique_ptr<OverdrivePanel> overdrivePanel;
     std::unique_ptr<DelayPanel> delayPanel;
     std::unique_ptr<ChorusPanel> chorusPanel;
     std::unique_ptr<ReverbPanel> reverbPanel;
@@ -321,16 +410,16 @@ private:
     std::unique_ptr<EqualizerPanel> preEq, postEq;
 
     // Amps page, input calibration row.
-    juce::ToggleButton calibrateButton { "Calibrate input to each capture" };
+    ToggleControl calibrateButton { "Calibrate input to each capture" };
     juce::Label interfaceLevelLabel, calibrationHint;
-    juce::Slider interfaceLevel { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
+    SliderControl interfaceLevel { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
     juce::AudioProcessorValueTreeState::ButtonAttachment calibrateAttachment;
     juce::AudioProcessorValueTreeState::SliderAttachment interfaceLevelAttachment;
     juce::OwnedArray<MicPanel> micPanels;
     juce::TabbedComponent tabs { juce::TabbedButtonBar::TabsAtTop };
 
     // Cab page, global section.
-    juce::ToggleButton alignButton { "Auto-align close mics" }, lowCutButton { "Low cut" }, highCutButton { "High cut" },
+    ToggleControl alignButton { "Auto-align close mics" }, lowCutButton { "Low cut" }, highCutButton { "High cut" },
         cabBypassButton { "Bypass cab" };
     juce::Label alignmentLabel;
     Knob lowCutKnob, highCutKnob;

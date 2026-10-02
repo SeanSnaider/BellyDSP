@@ -28,7 +28,7 @@ juce::StringArray toStrings (const juce::var& v)
 
 bool isGlobal (const juce::String& parameterId)
 {
-    return parameterId == "input_calibrate" || parameterId == "input_level_dbu";
+    return parameterId == "input_calibrate" || parameterId == "input_level_dbu" || parameterId == "drive_oversampling";
 }
 
 juce::var capture (AmpSimProcessor& processor, const juce::String& name)

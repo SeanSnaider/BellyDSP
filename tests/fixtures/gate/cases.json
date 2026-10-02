@@ -1,0 +1,52 @@
+{
+  "default": {
+    "threshold_db": -55.0,
+    "hysteresis_db": 8.0,
+    "hold_ms": 10.0,
+    "attack_ms": 0.5,
+    "release_ms": 250.0,
+    "release_mode": "adaptive",
+    "range_db": -90.0,
+    "detector": "di",
+    "sidechain_high_pass": true,
+    "sidechain_hz": 100.0
+  },
+  "classic_own_input": {
+    "threshold_db": -40.0,
+    "hysteresis_db": 4.0,
+    "hold_ms": 30.0,
+    "attack_ms": 2.0,
+    "release_ms": 120.0,
+    "release_mode": "classic",
+    "range_db": -30.0,
+    "detector": "own",
+    "sidechain_high_pass": true,
+    "sidechain_hz": 150.0
+  },
+  "adaptive_no_highpass": {
+    "threshold_db": -50.0,
+    "hysteresis_db": 12.0,
+    "hold_ms": 0.0,
+    "attack_ms": 0.25,
+    "release_ms": 600.0,
+    "release_mode": "adaptive",
+    "range_db": -60.0,
+    "detector": "di",
+    "sidechain_high_pass": false,
+    "sidechain_hz": 100.0
+  },
+  "learn": {
+    "threshold_db": -55.0,
+    "hysteresis_db": 8.0,
+    "hold_ms": 10.0,
+    "attack_ms": 0.5,
+    "release_ms": 250.0,
+    "release_mode": "adaptive",
+    "range_db": -90.0,
+    "detector": "di",
+    "sidechain_high_pass": true,
+    "sidechain_hz": 100.0,
+    "expected_noise_floor_db": -65.25,
+    "expected_threshold_db": -51.25
+  }
+}

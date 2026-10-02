@@ -1,0 +1,150 @@
+{
+  "volts_at_full_scale": 4.361064304789694,
+  "simulation_rate": 768000.0,
+  "cases": {
+    "mid_drive_sine220_d0": {
+      "circuit": "mid_drive",
+      "input": "input_sine220.wav",
+      "drive": 0.0,
+      "tone": 0.5,
+      "expected": "expected_mid_drive_sine220_d0.wav",
+      "peak_volts": 0.42147949697366943,
+      "opamp_peaks_volts": [
+        0.4899941227261821,
+        0.4334084959130766
+      ]
+    },
+    "mid_drive_sine220_d50": {
+      "circuit": "mid_drive",
+      "input": "input_sine220.wav",
+      "drive": 0.5,
+      "tone": 0.5,
+      "expected": "expected_mid_drive_sine220_d50.wav",
+      "peak_volts": 0.45221212346159984,
+      "opamp_peaks_volts": [
+        0.5230830077238915,
+        0.46468659315546673
+      ]
+    },
+    "mid_drive_sine220_d100": {
+      "circuit": "mid_drive",
+      "input": "input_sine220.wav",
+      "drive": 1.0,
+      "tone": 0.5,
+      "expected": "expected_mid_drive_sine220_d100.wav",
+      "peak_volts": 0.4733084161196295,
+      "opamp_peaks_volts": [
+        0.5447090555780774,
+        0.48526915528120973
+      ]
+    },
+    "mid_drive_sine110_d100": {
+      "circuit": "mid_drive",
+      "input": "input_sine110.wav",
+      "drive": 1.0,
+      "tone": 0.5,
+      "expected": "expected_mid_drive_sine110_d100.wav",
+      "peak_volts": 1.2174126521873554,
+      "opamp_peaks_volts": [
+        1.3990017563152963,
+        1.2591801862966143
+      ]
+    },
+    "mid_drive_chord_d50_t0": {
+      "circuit": "mid_drive",
+      "input": "input_chord.wav",
+      "drive": 0.5,
+      "tone": 0.0,
+      "expected": "expected_mid_drive_chord_d50_t0.wav",
+      "peak_volts": 0.8637636321070685,
+      "opamp_peaks_volts": [
+        1.1708863277593906,
+        0.7846816019715154
+      ]
+    },
+    "mid_drive_chord_d50_t100": {
+      "circuit": "mid_drive",
+      "input": "input_chord.wav",
+      "drive": 0.5,
+      "tone": 1.0,
+      "expected": "expected_mid_drive_chord_d50_t100.wav",
+      "peak_volts": 1.2080048632982856,
+      "opamp_peaks_volts": [
+        1.1708863277593953,
+        1.1346235259305597
+      ]
+    },
+    "distortion_sine220_d0": {
+      "circuit": "distortion",
+      "input": "input_sine220.wav",
+      "drive": 0.0,
+      "tone": 0.5,
+      "expected": "expected_distortion_sine220_d0.wav",
+      "peak_volts": 0.18893383074108144,
+      "opamp_peak_volts": 0.19172355223246443,
+      "opamp_fastest_volts_per_us": 0.0003199330373494656,
+      "half_slew_fraction": 0.0,
+      "diode_peak_volts": 0.1911803402491037
+    },
+    "distortion_sine220_d50": {
+      "circuit": "distortion",
+      "input": "input_sine220.wav",
+      "drive": 0.5,
+      "tone": 0.5,
+      "expected": "expected_distortion_sine220_d50.wav",
+      "peak_volts": 0.7070574187224118,
+      "opamp_peak_volts": 2.999687704856617,
+      "opamp_fastest_volts_per_us": 0.04388958334603737,
+      "half_slew_fraction": 0.0,
+      "diode_peak_volts": 0.6314734815150918
+    },
+    "distortion_sine220_d100": {
+      "circuit": "distortion",
+      "input": "input_sine220.wav",
+      "drive": 1.0,
+      "tone": 0.5,
+      "expected": "expected_distortion_sine220_d100.wav",
+      "peak_volts": 0.6874332133876334,
+      "opamp_peak_volts": 2.9999632953372943,
+      "opamp_fastest_volts_per_us": 0.11399036880703045,
+      "half_slew_fraction": 0.0,
+      "diode_peak_volts": 0.6358389679227608
+    },
+    "distortion_sine110_d100": {
+      "circuit": "distortion",
+      "input": "input_sine110.wav",
+      "drive": 1.0,
+      "tone": 0.5,
+      "expected": "expected_distortion_sine110_d100.wav",
+      "peak_volts": 0.7557924101914479,
+      "opamp_peak_volts": 2.999994982249643,
+      "opamp_fastest_volts_per_us": 0.17563009689816103,
+      "half_slew_fraction": 0.002662777752459326,
+      "diode_peak_volts": 0.6436778053831577
+    },
+    "distortion_chord_d50_t0": {
+      "circuit": "distortion",
+      "input": "input_chord.wav",
+      "drive": 0.5,
+      "tone": 0.0,
+      "expected": "expected_distortion_chord_d50_t0.wav",
+      "peak_volts": 0.6649189335187812,
+      "opamp_peak_volts": 2.999994982249569,
+      "opamp_fastest_volts_per_us": 0.2218494906155829,
+      "half_slew_fraction": 0.000651045905246779,
+      "diode_peak_volts": 0.6410290151301431
+    },
+    "distortion_chord_d50_t100": {
+      "circuit": "distortion",
+      "input": "input_chord.wav",
+      "drive": 0.5,
+      "tone": 1.0,
+      "expected": "expected_distortion_chord_d50_t100.wav",
+      "peak_volts": 0.793190108204645,
+      "opamp_peak_volts": 2.9999949822495693,
+      "opamp_fastest_volts_per_us": 0.22184949061558326,
+      "half_slew_fraction": 0.000651045905246779,
+      "diode_peak_volts": 0.6410911422010563
+    }
+  }
+}

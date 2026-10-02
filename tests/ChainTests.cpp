@@ -197,7 +197,7 @@ public:
             };
 
             using Section = ampsim::Chain::Section;
-            const std::vector<Slot> swapped { Slot::preEq, Slot::preCompressor };
+            const std::vector<Slot> swapped { Slot::gateA, Slot::preEq, Slot::preCompressor, Slot::boost, Slot::overdrive };
             ampsim::Chain chain, reference;
             setUp (chain);
             setUp (reference);
