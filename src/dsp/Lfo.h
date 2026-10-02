@@ -62,6 +62,16 @@ public:
     void setPhase (double newPhase) noexcept { phase = newPhase - std::floor (newPhase); }
     double getPhase() const noexcept { return phase; }
 
+    /// Restarts the random shape's sequence from a seed, so two LFOs given the same seed and phase wander
+    /// identically (and one of them inverted wanders in exact antiphase). Unlike a fresh LFO, whose first
+    /// cycle stays at 0, the first glide heads straight for the sequence's first target.
+    void setSeed (juce::int64 seed) noexcept
+    {
+        random.setSeed (seed);
+        from = 0.0f;
+        to = random.nextFloat() * 2.0f - 1.0f;
+    }
+
     /// The current value, then advance one sample.
     float next() noexcept
     {
