@@ -66,7 +66,8 @@ set(AMPSIM_DSP_SOURCES
     src/dsp/ModulatedDelay.cpp
     src/dsp/Chorus.cpp
     src/dsp/Tempo.cpp
-    src/dsp/Delay.cpp)
+    src/dsp/Delay.cpp
+    src/dsp/Reverb.cpp)
 
 set(AMPSIM_JUCE_DEFINITIONS
     JUCE_WEB_BROWSER=0
@@ -158,6 +159,7 @@ target_sources(ampsim_tests PRIVATE
     tests/PrimitivesTests.cpp
     tests/DelayTests.cpp
     tests/ChorusTests.cpp
+    tests/ReverbTests.cpp
     tests/Plot.cpp
     tests/NamAmpTests.cpp
     tests/ChainTests.cpp

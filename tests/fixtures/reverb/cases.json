@@ -1,0 +1,53 @@
+{
+  "impulse": {
+    "kind": "core",
+    "input": "impulse",
+    "parameters": {
+      "decay": 0.5,
+      "decay_diffusion_1": 0.7,
+      "input_diffusion_1": 0.75,
+      "input_diffusion_2": 0.625,
+      "bandwidth": 0.9995,
+      "damping": 0.0005,
+      "excursion": 0.0
+    },
+    "mod_rate_hz": 1.0
+  },
+  "modulated": {
+    "kind": "core",
+    "input": "music",
+    "parameters": {
+      "decay": 0.5,
+      "decay_diffusion_1": 0.7,
+      "input_diffusion_1": 0.75,
+      "input_diffusion_2": 0.625,
+      "bandwidth": 0.9995,
+      "damping": 0.0005,
+      "excursion": 16.0
+    },
+    "mod_rate_hz": 1.0
+  },
+  "block": {
+    "kind": "block",
+    "input": "music",
+    "settings": {
+      "decay_seconds": 3.0,
+      "low_multiplier": 1.5,
+      "high_multiplier": 0.375,
+      "diffusion": 0.875,
+      "mod_depth": 0.5,
+      "mod_rate_hz": 0.75
+    },
+    "mapped": {
+      "decay": 0.6586444576271344,
+      "decay_diffusion_1": 0.7,
+      "input_diffusion_1": 0.65625,
+      "input_diffusion_2": 0.546875,
+      "bandwidth": 0.9995,
+      "damping": 0.0,
+      "excursion": 8.0,
+      "low_shelf_db": 2.417986111111111,
+      "high_shelf_db": -12.089930555555556
+    }
+  }
+}
