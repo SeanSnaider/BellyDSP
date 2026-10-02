@@ -120,6 +120,19 @@ public:
                     case 1100: setParam (p, "cab_bypass", 0.0f); break;                     // cab back on
                     case 1200: midi.addEvent (juce::MidiMessage::programChange (1, 0), 0); break;      // footswitch: slot 1
                     case 1250: setParam (p, "input_level_dbu", 15.0f); break;               // interface level: captures reload
+                    // Phase 4 effects: on, re-moded, re-typed, re-sloped, and reordered while playing.
+                    case 1300: setParam (p, "comp_pre_on", 1.0f); break;
+                    case 1320: setParam (p, "eq_pre_g3", 6.0f); break;
+                    case 1340: setParam (p, "eq_pre_mode", 1.0f); break;                    // graphic -> parametric crossfade
+                    case 1360: setParam (p, "eq_pre_b2_type", 3.0f); break;                 // peak -> notch: dip and swap
+                    case 1380: p.setSectionOrder (ampsim::Chain::Section::pre, { "eq", "comp" }); break;
+                    case 1400: setParam (p, "comp_post_on", 1.0f); break;
+                    case 1420: setParam (p, "eq_post_lowcut_on", 1.0f); break;
+                    case 1440: setParam (p, "eq_post_lowcut_slope", 2.0f); break;           // 12 -> 48 dB/oct: dip and swap
+                    case 1460: p.setSectionOrder (ampsim::Chain::Section::post, { "comp", "eq" }); break;
+                    case 1480: setParam (p, "comp_pre_mode", 1.0f); break;                  // studio -> pedal
+                    case 1520: setParam (p, "comp_post_detector", 1.0f); break;             // peak -> RMS
+                    case 1540: setParam (p, "eq_post_b3_gain", -9.0f); break;
                     case 1500: setParam (p, "input_gain", 6.0f); break;
                     case 1600: setParam (p, "output_gain", -6.0f); break;
                     case 2000: p.loadModel (0, a1); break;                                  // switch the capture back
@@ -166,6 +179,12 @@ public:
             expectEquals (p.getChain().amp.getSelectedSlot(), 0);
             expect (p.getStatus().cab[0].contains ("rt_ir_b"));
             expectEquals (p.getCalibrationReloadCount(), 1, "the calibration change must have reloaded the captures during the measurement");
+            using Slot = ampsim::Chain::Slot;
+            expect (p.getChain().getAppliedOrder (ampsim::Chain::Section::pre) == std::vector<Slot> { Slot::preEq, Slot::preCompressor },
+                    "the pre FX reorder must have reached the audio thread");
+            expect (p.getChain().getAppliedOrder (ampsim::Chain::Section::post) == std::vector<Slot> { Slot::postCompressor, Slot::postEq },
+                    "the post FX reorder must have reached the audio thread");
+            expectGreaterThan (p.getCompressorReduction (false), 0.0f, "the pre compressor must have been working");
             const auto morphs = p.getMorphCount() - morphsBefore;
             expectGreaterThan (morphs, 4, "the mic must have re-morphed while it was dragged");
             expect (p.getStatus().cab[1].startsWith ("rt_pack (4 IRs on a grid) at ") && p.getStatus().cab[2].contains ("rt_room"), p.getStatus().cab[1]);
@@ -180,7 +199,9 @@ public:
                         "3 slot switches from the GUI and the footswitch (" + juce::String (slotSwitchBlocks)
                         + " blocks mid-crossfade), 3 IR loads into the three cab mics plus an IR swap, auto alignment, 6 cab mic changes, cuts on, off, re-sloped and swept, "
                         "a cab pack loaded into close mic 2 and dragged around (" + juce::String (morphs) + " re-morphs), cab bypass off and on, 5 knob ramps, "
-                        "an interface-level change that recalibrated and reloaded every capture");
+                        "an interface-level change that recalibrated and reloaded every capture, "
+                        "both compressors switched on (one to pedal mode, one to RMS), EQ sliders and bands moved, graphic -> parametric, "
+                        "a band type change, a cut slope change, and both FX sections reordered");
             logMessage ("  -> audio thread: " + describe (total));
         }
     }

@@ -25,13 +25,9 @@ Cab::Alignment unpack (std::uint64_t bits)
     return a;
 }
 
-constexpr int coefficientInterval = 32; // redesign knob-driven filters every 32 samples (foundation decisions)
 constexpr float sqrt2 = 1.41421356f;
 
-// 4th-order Butterworth as two 2nd-order sections: Q = 1 / (2 cos(pi/8)) and 1 / (2 cos(3 pi/8)).
-constexpr double butterworth4Q1 = 0.54119610014619701;
-constexpr double butterworth4Q2 = 1.3065629648763766;
-constexpr double butterworth2Q = 0.70710678118654752;
+CutFilter::Slope toCutSlope (Cab::Slope slope) { return slope == Cab::Slope::db24 ? CutFilter::Slope::db24 : CutFilter::Slope::db12; }
 } // namespace
 
 // ---- Loading (loader thread) ------------------------------------------------------------------
@@ -242,36 +238,8 @@ void Cab::applyTargets()
     roomState.gainLeft.setTargetValue (roomSettings.mute ? 0.0f : juce::Decibels::decibelsToGain (roomSettings.levelDb));
     roomState.delay.setDelay (juce::roundToInt (juce::jlimit (0.0, maxRoomPreDelayMs, (double) roomSettings.preDelayMs) * 0.001 * sampleRate));
 
-    const auto applyCut = [] (CutFilter& cut, bool on, float hz, Slope slope)
-    {
-        cut.frequency.setTargetValue (juce::jlimit (20.0f, 20000.0f, hz));
-
-        if (on != cut.on)
-        {
-            // Turning on from fully off: the filter's state is stale, so clear it, and start at the
-            // current frequency rather than gliding from wherever it was when it was switched off.
-            if (on && ! cut.wet.isSmoothing() && cut.wet.getCurrentValue() <= 0.0f)
-            {
-                cut.needsReset = true;
-                cut.frequency.setCurrentAndTargetValue (cut.frequency.getTargetValue());
-                cut.coefficientsDirty = true;
-            }
-
-            cut.on = on;
-            cut.wet.setTargetValue (on ? 1.0f : 0.0f);
-        }
-
-        if (slope != cut.slope)
-        {
-            cut.slope = slope;
-            for (auto& channel : cut.sections)
-                channel[1].reset(); // the second section starts clean when it comes into use
-            cut.coefficientsDirty = true;
-        }
-    };
-
-    applyCut (lowCut, cutSettings.lowCutOn, cutSettings.lowCutHz, cutSettings.lowCutSlope);
-    applyCut (highCut, cutSettings.highCutOn, cutSettings.highCutHz, cutSettings.highCutSlope);
+    lowCut.set (cutSettings.lowCutOn, cutSettings.lowCutHz, toCutSlope (cutSettings.lowCutSlope));
+    highCut.set (cutSettings.highCutOn, cutSettings.highCutHz, toCutSlope (cutSettings.highCutSlope));
 }
 
 // ---- Processing -------------------------------------------------------------------------------
@@ -287,7 +255,6 @@ void Cab::prepare (double newSampleRate, int maxBlockSize)
     room.prepare (sampleRate, maxBlockSize);
 
     micBuffers.setSize (2 * numCloseMics + 2, maxBlockSize);
-    dryBuffer.setSize (2, maxBlockSize);
 
     for (auto* state : { &micStates[0], &micStates[1], &roomState })
     {
@@ -305,15 +272,6 @@ void Cab::prepare (double newSampleRate, int maxBlockSize)
     passthrough.reset (sampleRate, gainRampSeconds);
     passthrough.setCurrentAndTargetValue (1.0f);
 
-    for (auto* cut : { &lowCut, &highCut })
-    {
-        cut->frequency.reset (sampleRate, 0.025);
-        cut->wet.reset (sampleRate, fadeSeconds);
-        for (auto& channel : cut->sections)
-            for (auto& section : channel)
-                section.reset();
-    }
-
     // Start at the current settings with no ramps: nothing is playing yet.
     applyTargets();
     for (auto* state : { &micStates[0], &micStates[1], &roomState })
@@ -323,14 +281,8 @@ void Cab::prepare (double newSampleRate, int maxBlockSize)
         state->delay.setDelayImmediately (state->delay.getDelay());
     }
 
-    for (auto* cut : { &lowCut, &highCut })
-    {
-        cut->frequency.setCurrentAndTargetValue (cut->frequency.getTargetValue());
-        cut->wet.setCurrentAndTargetValue (cut->on ? 1.0f : 0.0f);
-    }
-
-    updateCutCoefficients (lowCut, Svf::Type::highpass);
-    updateCutCoefficients (highCut, Svf::Type::lowpass);
+    lowCut.prepare (sampleRate, maxBlockSize); // after applyTargets(): starts at the current settings
+    highCut.prepare (sampleRate, maxBlockSize);
 
     // A mic whose IR is already installed (loaded before prepare) plays straight away.
     const std::array<std::pair<MicState*, CabIR*>, 3> mics { { { &micStates[0], &closeMics[0] }, { &micStates[1], &closeMics[1] }, { &roomState, &room } } };
@@ -434,93 +386,9 @@ void Cab::process (juce::dsp::AudioBlock<float> block, const BlockContext&)
         right[s] = r;
     }
 
-    processCut (lowCut, Svf::Type::highpass, left, right, n);
-    processCut (highCut, Svf::Type::lowpass, left, right, n);
-}
-
-void Cab::updateCutCoefficients (CutFilter& cut, Svf::Type type)
-{
-    const double f = cut.frequency.getCurrentValue();
-
-    cut.coefficientsDirty = false;
-
-    for (auto& channel : cut.sections)
-    {
-        if (cut.slope == Slope::db12)
-        {
-            channel[0].setCoefficients (Svf::design (type, f, butterworth2Q, 0.0, sampleRate));
-        }
-        else
-        {
-            channel[0].setCoefficients (Svf::design (type, f, butterworth4Q1, 0.0, sampleRate));
-            channel[1].setCoefficients (Svf::design (type, f, butterworth4Q2, 0.0, sampleRate));
-        }
-    }
-}
-
-void Cab::processCut (CutFilter& cut, Svf::Type type, float* left, float* right, int numSamples)
-{
-    const bool fading = cut.wet.isSmoothing();
-
-    if (! cut.on && ! fading)
-        return; // fully off: skip
-
-    if (cut.needsReset)
-    {
-        for (auto& channel : cut.sections)
-            for (auto& section : channel)
-                section.reset();
-        cut.needsReset = false;
-    }
-
-    if (fading)
-    {
-        dryBuffer.copyFrom (0, 0, left, numSamples);
-        dryBuffer.copyFrom (1, 0, right, numSamples);
-    }
-
-    if (cut.coefficientsDirty)
-        updateCutCoefficients (cut, type);
-
-    const bool fourthOrder = cut.slope == Slope::db24;
-    float* channels[2] = { left, right };
-
-    for (int s = 0; s < numSamples; ++s)
-    {
-        // Frequency moves: redesign every 32 samples, as for every other knob-driven filter.
-        if (cut.samplesUntilUpdate-- <= 0)
-        {
-            cut.samplesUntilUpdate = coefficientInterval - 1;
-            if (cut.frequency.isSmoothing())
-            {
-                cut.frequency.skip (coefficientInterval);
-                updateCutCoefficients (cut, type);
-            }
-        }
-
-        for (size_t ch = 0; ch < 2; ++ch)
-        {
-            auto v = (double) channels[ch][s];
-            v = cut.sections[ch][0].processSample (v);
-            if (fourthOrder)
-                v = cut.sections[ch][1].processSample (v);
-            channels[ch][s] = (float) v;
-        }
-    }
-
-    if (fading)
-    {
-        // On/off crossfade between the unfiltered and filtered signal, linear over 10 ms.
-        for (int s = 0; s < numSamples; ++s)
-        {
-            const auto w = cut.wet.getNextValue();
-            for (int ch = 0; ch < 2; ++ch)
-            {
-                const auto dry = dryBuffer.getSample (ch, s);
-                channels[ch][s] = dry + w * (channels[ch][s] - dry);
-            }
-        }
-    }
+    float* const channels[2] = { left, right };
+    lowCut.process (channels, 2, n);
+    highCut.process (channels, 2, n);
 }
 
 void Cab::reset()
@@ -537,10 +405,8 @@ void Cab::reset()
         state->presence.setCurrentAndTargetValue (state->presence.getTargetValue());
     }
 
-    for (auto* cut : { &lowCut, &highCut })
-        for (auto& channel : cut->sections)
-            for (auto& section : channel)
-                section.reset();
+    lowCut.reset();
+    highCut.reset();
 }
 
 } // namespace ampsim

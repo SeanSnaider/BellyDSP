@@ -285,6 +285,80 @@ public:
             logMessage ("  -> status: \"" + status.model[0] + "\"");
         }
 
+        beginTest ("effects: compressors start off, EQs start on and flat, and their knobs reach the blocks");
+        {
+            AmpSimProcessor p;
+            for (auto [id, expected] : std::initializer_list<std::pair<const char*, float>> {
+                     { "comp_pre_on", 0.0f }, { "comp_post_on", 0.0f }, { "eq_pre_on", 1.0f }, { "eq_post_on", 1.0f },
+                     { "comp_pre_threshold", -24.0f }, { "comp_pre_ratio", 4.0f }, { "comp_pre_attack", 8.0f }, { "comp_pre_mix", 70.0f },
+                     { "eq_post_g5", 0.0f }, { "eq_pre_b1_freq", 100.0f }, { "eq_post_lowcut_freq", 80.0f } })
+                expectWithinAbsoluteError (getParam (p, id), expected, 1.0e-3f, id);
+
+            // Defaults pass the signal through untouched (flat EQs are bit-transparent, compressors off).
+            p.prepareToPlay (fs, blockSize);
+            const auto di = guitarDI ((int) fs);
+            const auto untouched = processAll (p, di);
+            expectEquals (maxAbsDifference (untouched.left, di), 0.0);
+
+            // The post EQ's 1 kHz slider at +6 dB lifts a 1 kHz tone by about 6 dB.
+            setParam (p, "eq_post_g5", 6.0f);
+            const auto tone = sine (1000.0, 0.1, (int) fs);
+            const auto lifted = processAll (p, tone);
+            const auto lift = toDb (rms (lifted.left.data() + 24000, 20000) / rms (tone.data() + 24000, 20000));
+            expectWithinAbsoluteError (lift, 6.0, 0.4);
+
+            // The pre compressor, switched on, takes gain off a hot signal (its meter says how much).
+            setParam (p, "eq_post_g5", 0.0f);
+            setParam (p, "comp_pre_on", 1.0f);
+            setParam (p, "comp_pre_auto_makeup", 0.0f);
+            setParam (p, "comp_pre_mix", 100.0f);
+            const auto hot = sine (500.0, 0.5, (int) fs);
+            const auto squashed = processAll (p, hot);
+            const auto change = toDb (rms (squashed.left.data() + 24000, 20000) / rms (hot.data() + 24000, 20000));
+            expectLessThan (change, -6.0);
+            expectGreaterThan (p.getCompressorReduction (false), 6.0f);
+            logMessage ("  -> defaults leave the guitar untouched (bit for bit); post EQ 1 kHz slider +6 dB: a 1 kHz tone comes up "
+                        + juce::String (lift, 2) + " dB; pre comp on (-24 dB, 4:1, no makeup): a -6 dBFS tone comes down " + juce::String (-change, 1)
+                        + " dB, meter " + juce::String (p.getCompressorReduction (false), 1) + " dB");
+        }
+
+        beginTest ("the effect order is saved by block name and restored, and odd saved orders are repaired");
+        {
+            using Section = ampsim::Chain::Section;
+            AmpSimProcessor p;
+            expect (p.getSectionOrder (Section::pre) == juce::StringArray { "comp", "eq" });
+            expect (p.getSectionOrder (Section::post) == juce::StringArray { "eq", "comp" });
+            p.setSectionOrder (Section::pre, { "eq", "comp" });
+            p.setSectionOrder (Section::post, { "comp", "eq" });
+
+            juce::MemoryBlock state;
+            p.getStateInformation (state);
+            AmpSimProcessor restored;
+            restored.setStateInformation (state.getData(), (int) state.getSize());
+            expect (restored.getSectionOrder (Section::pre) == juce::StringArray { "eq", "comp" });
+            expect (restored.getSectionOrder (Section::post) == juce::StringArray { "comp", "eq" });
+
+            // A name from the future, a repeat, and a missing block: unknown and repeated names are
+            // skipped, and the missing block keeps its default place at the end.
+            AmpSimProcessor odd;
+            odd.setSectionOrder (Section::pre, { "harmonizer", "eq", "eq" });
+            expect (odd.getSectionOrder (Section::pre) == juce::StringArray { "eq", "comp" });
+
+            // A state saved before effects existed loads with the default order.
+            AmpSimProcessor legacy;
+            auto tree = legacy.parameters.copyState();
+            tree.removeProperty (AmpSimProcessor::orderKey (Section::pre), nullptr);
+            juce::MemoryBlock old;
+            juce::AudioProcessor::copyXmlToBinary (*tree.createXml(), old);
+            legacy.setStateInformation (old.getData(), (int) old.getSize());
+            expect (legacy.getSectionOrder (Section::pre) == juce::StringArray { "comp", "eq" });
+
+            logMessage ("  -> saved \"" + p.parameters.state.getProperty (AmpSimProcessor::orderKey (Section::pre)).toString() + "\" / \""
+                        + p.parameters.state.getProperty (AmpSimProcessor::orderKey (Section::post)).toString() + "\", restored the same; "
+                        "\"harmonizer, eq, eq\" becomes \"" + odd.getSectionOrder (Section::pre).joinIntoString (", ")
+                        + "\"; a state without an order gets the default");
+        }
+
         beginTest ("the editor draws (snapshots saved as proof)");
         {
             AmpSimProcessor p;
@@ -336,6 +410,34 @@ public:
             const auto packFile = proofDir().getChildFile ("editor_cab_pack.png");
             expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), packFile));
             logMessage ("  -> " + packFile.getFullPathName());
+
+            // Pre FX with the compressor working (its meter showing), the order swapped, and a graphic
+            // EQ curve; Post FX in parametric mode with cuts.
+            setParam (p, "comp_pre_on", 1.0f);
+            setParam (p, "comp_pre_threshold", -36.0f);
+            p.setSectionOrder (ampsim::Chain::Section::pre, { "eq", "comp" });
+            for (int m = 0; m < 9; ++m)
+                setParam (p, "eq_pre_g" + juce::String (m + 1), (float) std::sin (m * 0.9) * 9.0f);
+            setParam (p, "eq_post_mode", 1.0f);
+            setParam (p, "eq_post_b2_gain", -6.0f);
+            setParam (p, "eq_post_b3_gain", 4.5f);
+            setParam (p, "eq_post_b5_gain", 3.0f);
+            setParam (p, "eq_post_lowcut_on", 1.0f);
+            setParam (p, "eq_post_highcut_on", 1.0f);
+            setParam (p, "eq_post_highcut_slope", 2.0f);
+            processAll (p, guitarDI ((int) fs));
+            for (auto [tab, name] : std::initializer_list<std::pair<int, const char*>> { { 2, "editor_prefx.png" }, { 3, "editor_postfx.png" } })
+            {
+                ampSimEditor->showTab (tab);
+                ampSimEditor->resized();
+                ampSimEditor->refresh();
+                juce::Thread::sleep (60); // the EQ curves redraw on their own 30 Hz timers...
+                for (auto* child : ampSimEditor->getChildren())
+                    child->repaint();
+                const auto fxFile = proofDir().getChildFile (name);
+                expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), fxFile));
+                logMessage ("  -> " + fxFile.getFullPathName());
+            }
 
             AmpSimProcessor wrongRate;
             wrongRate.prepareToPlay (44100.0, blockSize);

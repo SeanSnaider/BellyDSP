@@ -175,6 +175,73 @@ public:
             expectLessThan (during, steady * 1.25);
             logMessage ("  -> never fully bypassed; largest step " + juce::String (during, 5) + " vs. " + juce::String (steady, 5) + " steady");
         }
+
+        beginTest ("reordering a section dips to its input, swaps, and fades back: no click, and it ends up as the new order");
+        {
+            // Compressor and EQ in the pre section, set so the order matters: a big low boost before a
+            // heavy compressor isn't the same as after it.
+            const auto setUp = [] (ampsim::Chain& chain)
+            {
+                ampsim::Compressor::Settings comp;
+                comp.thresholdDb = -30.0f;
+                comp.ratio = 8.0f;
+                comp.mix = 1.0f;
+                comp.autoRelease = false; // 120 ms release, so two differently started envelopes agree within 2 s
+                chain.preCompressor.setSettings (comp);
+                ampsim::Equalizer::Settings eq;
+                eq.mode = ampsim::Equalizer::Mode::parametric;
+                eq.bands[0] = { ampsim::Equalizer::BandType::lowShelf, 250.0f, 12.0f, 0.7071f };
+                chain.preEq.setSettings (eq);
+                chain.setBypassed (Slot::preCompressor, false);
+                chain.setBypassed (Slot::preEq, false);
+            };
+
+            using Section = ampsim::Chain::Section;
+            const std::vector<Slot> swapped { Slot::preEq, Slot::preCompressor };
+            ampsim::Chain chain, reference;
+            setUp (chain);
+            setUp (reference);
+            expect (reference.requestOrder (Section::pre, swapped));
+            chain.prepare (fs, blockSize);
+            reference.prepare (fs, blockSize);
+
+            const auto input = guitarDI ((int) (4.0 * fs));
+            const auto swapAt = (size_t) (1.0 * fs) / blockSize * blockSize;
+            int reorderBlocks = 0;
+            const auto out = runChain (chain, input, [&] (size_t start)
+            {
+                if (start == swapAt)
+                    expect (chain.requestOrder (Section::pre, swapped));
+                reorderBlocks += chain.isReordering (Section::pre) ? 1 : 0;
+            }).left;
+            const auto expected = runChain (reference, input).left;
+
+            expect (chain.getAppliedOrder (Section::pre) == swapped);
+            expectGreaterThan (reorderBlocks, 5);
+
+            const auto steady = std::max (maxStep (out, (size_t) (0.5 * fs), swapAt), maxStep (out, swapAt + 4800, swapAt + 48000));
+            const auto during = maxStep (out, swapAt, swapAt + 2400);
+            expectLessThan (during, steady * 1.05);
+
+            std::vector<float> tail (out.begin() + (long) (3.0 * fs), out.end()), expectedTail (expected.begin() + (long) (3.0 * fs), expected.end());
+            const auto converged = relativeErrorDb (tail, expectedTail);
+            expectLessThan (converged, -100.0);
+
+            const auto before = maxAbsDifference (std::vector<float> (out.begin() + (long) (0.5 * fs), out.begin() + (long) swapAt),
+                                                  std::vector<float> (expected.begin() + (long) (0.5 * fs), expected.begin() + (long) swapAt));
+
+            // Only permutations of the section's own blocks are accepted.
+            expect (! chain.requestOrder (Section::pre, { Slot::preEq, Slot::preEq }));
+            expect (! chain.requestOrder (Section::pre, { Slot::preEq, Slot::postCompressor }));
+            expect (! chain.requestOrder (Section::post, { Slot::postEq }));
+
+            logMessage ("  -> pre FX compressor -> EQ swapped to EQ -> compressor at 1 s: " + juce::String (reorderBlocks) + " blocks of dip ("
+                        + juce::String (reorderBlocks * blockSize * 1000.0 / fs, 1) + " ms); largest step " + juce::String (during, 4) + " vs. "
+                        + juce::String (steady, 4) + " steady");
+            logMessage ("  -> the two orders differ by up to " + juce::String (before, 3) + " before the swap; 2 s after it, the output is "
+                        + juce::String (converged, 1) + " dB from a chain that started in the new order");
+            logMessage ("  -> refused: a block twice, a block from the other section, a missing block");
+        }
     }
 };
 

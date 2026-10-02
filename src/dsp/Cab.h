@@ -3,6 +3,7 @@
 #include "Block.h"
 #include "CabIR.h"
 #include "CabPack.h"
+#include "CutFilter.h"
 #include "SwitchableDelay.h"
 #include "Svf.h"
 
@@ -142,22 +143,6 @@ private:
         int samplesSinceReady = 0;
     };
 
-    /// One cut filter (low or high) on both channels: two SVF sections each (12 dB/oct uses one, 24
-    /// uses both, as a 4th-order Butterworth), plus an on/off crossfade.
-    struct CutFilter
-    {
-        std::array<std::array<Svf, 2>, 2> sections; // [channel][section]
-        juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative> frequency { 1000.0f };
-        juce::SmoothedValue<float> wet { 0.0f };    // 0 off, 1 on
-        Slope slope = Slope::db12;
-        bool on = false;
-        bool needsReset = false;
-        bool coefficientsDirty = true;
-        int samplesUntilUpdate = 0;
-    };
-
-    void updateCutCoefficients (CutFilter& cut, Svf::Type type);
-    void processCut (CutFilter& cut, Svf::Type type, float* left, float* right, int numSamples);
     void realign();
 
     void applyTargets();
@@ -171,7 +156,7 @@ private:
     std::array<CloseMicSettings, numCloseMics> micSettings;
     RoomSettings roomSettings;
     CutSettings cutSettings;
-    CutFilter lowCut, highCut;
+    CutFilter lowCut { CutFilter::Kind::lowCut }, highCut { CutFilter::Kind::highCut };
     juce::SmoothedValue<float> passthrough;      // 1 while no mic is playing: the amp goes straight through
     bool autoAlign = true;
     int settleSamples = 2880;                    // 60 ms: JUCE's 50 ms engine crossfade plus margin
@@ -187,7 +172,6 @@ private:
     mutable std::mutex packMutex;
 
     juce::AudioBuffer<float> micBuffers;  // 2 channels per close mic, then 2 for the room
-    juce::AudioBuffer<float> dryBuffer;   // for the cut filters' on/off crossfades
     double sampleRate = 48000.0;
 };
 

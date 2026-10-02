@@ -59,7 +59,10 @@ set(AMPSIM_DSP_SOURCES
     src/dsp/ReferenceSignals.cpp
     src/dsp/Chain.cpp
     src/dsp/NamAmp.cpp
-    src/dsp/CabIR.cpp)
+    src/dsp/CabIR.cpp
+    src/dsp/CutFilter.cpp
+    src/dsp/Equalizer.cpp
+    src/dsp/Compressor.cpp)
 
 set(AMPSIM_JUCE_DEFINITIONS
     JUCE_WEB_BROWSER=0
@@ -86,6 +89,7 @@ juce_add_plugin(AmpSim
 target_sources(AmpSim PRIVATE
     src/PluginProcessor.cpp
     src/PluginEditor.cpp
+    src/BlockParameters.cpp
     ${AMPSIM_DSP_SOURCES})
 target_include_directories(AmpSim PRIVATE src)
 target_compile_definitions(AmpSim PUBLIC ${AMPSIM_JUCE_DEFINITIONS})
@@ -144,6 +148,8 @@ target_sources(ampsim_tests PRIVATE
     tests/CabIRTests.cpp
     tests/CabTests.cpp
     tests/CabPackTests.cpp
+    tests/CompressorTests.cpp
+    tests/EqualizerTests.cpp
     tests/Plot.cpp
     tests/NamAmpTests.cpp
     tests/ChainTests.cpp
@@ -151,11 +157,13 @@ target_sources(ampsim_tests PRIVATE
     tests/RealtimeSafetyTests.cpp
     src/PluginProcessor.cpp
     src/PluginEditor.cpp
+    src/BlockParameters.cpp
     ${AMPSIM_DSP_SOURCES})
 target_include_directories(ampsim_tests PRIVATE src tests)
 target_compile_definitions(ampsim_tests PRIVATE
     ${AMPSIM_JUCE_DEFINITIONS}
     AMPSIM_NAM_DIR="${NAM_DIR}"
+    AMPSIM_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
     AMPSIM_NAM_RENDER="$<TARGET_FILE:nam_render>")
 target_link_libraries(ampsim_tests
     PRIVATE

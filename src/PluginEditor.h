@@ -100,8 +100,109 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> channelAttachment;
 };
 
-/// A basic panel: header with the slot selector and global levels, then an Amps tab (three slots)
-/// and a Cab tab (three mics, alignment, cuts). The real UI comes in Phase 11 (BUILD_PLAN "GUI").
+/// A section's order: its blocks left to right, each with buttons to move it earlier or later.
+class OrderStrip final : public juce::Component
+{
+public:
+    OrderStrip (AmpSimProcessor& processor, ampsim::Chain::Section section);
+    void refresh();
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+private:
+    void move (int position, int by);
+
+    AmpSimProcessor& ampSim;
+    const ampsim::Chain::Section section;
+    juce::StringArray shown;
+    juce::OwnedArray<juce::Label> names;
+    juce::OwnedArray<juce::TextButton> earlier, later;
+};
+
+/// One compressor's controls, with its gain reduction meter.
+class CompressorPanel final : public juce::Component
+{
+public:
+    CompressorPanel (AmpSimProcessor& processor, const juce::String& prefix, const juce::String& title, bool isPost);
+    void refresh();
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+private:
+    AmpSimProcessor& ampSim;
+    const bool post;
+    juce::Label titleLabel;
+    juce::ToggleButton onButton { "On" }, autoReleaseButton { "Auto release" }, autoMakeupButton { "Auto makeup" }, sidechainButton { "Sidechain HPF" };
+    juce::ComboBox mode, detector;
+    juce::OwnedArray<Knob> knobs;
+    juce::OwnedArray<juce::AudioProcessorValueTreeState::ButtonAttachment> buttonAttachments;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> modeAttachment, detectorAttachment;
+    float reductionDb = 0.0f;
+    juce::Rectangle<int> meterArea;
+};
+
+/// The EQ's response curve, computed from the current parameter values (Equalizer::responseDb).
+class EqCurve final : public juce::Component, private juce::Timer
+{
+public:
+    EqCurve (juce::AudioProcessorValueTreeState& state, const juce::String& prefix);
+    void paint (juce::Graphics&) override;
+
+    /// Recomputes and repaints if the settings changed (its own 30 Hz timer calls this too).
+    void refresh();
+
+private:
+    void timerCallback() override { refresh(); }
+
+    params::EqualizerParameters values;
+    std::vector<double> frequencies, curve;
+    ampsim::Equalizer::Settings drawn;
+    bool everDrawn = false;
+};
+
+/// One EQ's controls: on, mode, the curve, nine graphic sliders or five parametric bands, and cuts.
+class EqualizerPanel final : public juce::Component
+{
+public:
+    EqualizerPanel (AmpSimProcessor& processor, const juce::String& prefix, const juce::String& title);
+    void refresh();
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+private:
+    struct BandControls
+    {
+        juce::Label title;
+        juce::ComboBox type;
+        juce::Slider frequency { juce::Slider::LinearBar, juce::Slider::TextBoxLeft };
+        juce::Slider gain { juce::Slider::LinearBar, juce::Slider::TextBoxLeft };
+        juce::Slider q { juce::Slider::LinearBar, juce::Slider::TextBoxLeft };
+        std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> typeAttachment;
+        std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> frequencyAttachment, gainAttachment, qAttachment;
+
+        std::vector<juce::Component*> components() { return { &title, &type, &frequency, &gain, &q }; }
+    };
+
+    juce::AudioProcessorValueTreeState& state;
+    const juce::String prefix;
+    juce::Label titleLabel;
+    juce::ToggleButton onButton { "On" }, lowCutButton { "Low cut" }, highCutButton { "High cut" };
+    juce::ComboBox mode, lowCutSlope, highCutSlope;
+    EqCurve curve;
+    juce::OwnedArray<juce::Slider> sliders;
+    juce::OwnedArray<juce::Label> sliderLabels;
+    juce::OwnedArray<juce::AudioProcessorValueTreeState::SliderAttachment> sliderAttachments;
+    juce::OwnedArray<BandControls> bands;
+    juce::OwnedArray<juce::Label> bandHeadings; // Type, Frequency, Gain, Q above the band rows
+    std::unique_ptr<Knob> lowCutKnob, highCutKnob;
+    juce::OwnedArray<juce::AudioProcessorValueTreeState::ButtonAttachment> buttonAttachments;
+    juce::OwnedArray<juce::AudioProcessorValueTreeState::ComboBoxAttachment> comboAttachments;
+    bool parametricShown = false;
+};
+
+/// A basic panel: header with the slot selector and global levels, then tabs: Amps (three slots),
+/// Cab (three mics, alignment, cuts), Pre FX and Post FX (order, compressor, EQ). The real UI comes in
+/// Phase 11 (BUILD_PLAN "GUI").
 class AmpSimEditor final : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
@@ -111,7 +212,8 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
-    /// For tests and snapshots: show the Amps (0) or Cab (1) tab, and refresh the status lines now.
+    /// For tests and snapshots: show the Amps (0), Cab (1), Pre FX (2), or Post FX (3) tab, and refresh
+    /// the status lines now.
     void showTab (int index) { tabs.setCurrentTabIndex (index); }
     void refresh() { timerCallback(); }
 
@@ -126,8 +228,11 @@ private:
     Knob inputKnob, outputKnob;
     juce::Label warningLabel;
 
-    PageComponent ampsPage, cabPage;
+    PageComponent ampsPage, cabPage, preFxPage, postFxPage;
     juce::OwnedArray<SlotPanel> slotPanels;
+    std::unique_ptr<OrderStrip> preOrder, postOrder;
+    std::unique_ptr<CompressorPanel> preComp, postComp;
+    std::unique_ptr<EqualizerPanel> preEq, postEq;
 
     // Amps page, input calibration row.
     juce::ToggleButton calibrateButton { "Calibrate input to each capture" };

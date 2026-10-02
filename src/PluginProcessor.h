@@ -1,5 +1,6 @@
 #pragma once
 
+#include "BlockParameters.h"
 #include "dsp/Chain.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -63,6 +64,17 @@ public:
 
     /// For tests: how many times a calibration change has reloaded the captures.
     int getCalibrationReloadCount() const { return calibrationReloads; }
+
+    /// Effect sections. Blocks have permanent names ("comp", "eq", ...) used in saved state, so the
+    /// order survives blocks being added later. Message thread. Unknown names are ignored and missing
+    /// blocks keep their default places at the end.
+    void setSectionOrder (ampsim::Chain::Section section, const juce::StringArray& names);
+    juce::StringArray getSectionOrder (ampsim::Chain::Section section) const;
+    static juce::String blockName (ampsim::Chain::Slot slot);
+    static juce::Identifier orderKey (ampsim::Chain::Section section) { return section == ampsim::Chain::Section::pre ? "preOrder" : "postOrder"; }
+
+    /// Any thread: compressor gain reduction meters (dB).
+    float getCompressorReduction (bool post) const { return post ? chain.postCompressor.getGainReductionDb() : chain.preCompressor.getGainReductionDb(); }
 
     /// True while a model or IR load (or a moving mic's re-morph) is still running. Used by the tests.
     bool isLoading() const { return loadsInFlight.load() > 0; }
@@ -173,6 +185,10 @@ private:
     int calibrationReloads = 0;
     std::atomic<float>* calibrateInput = nullptr;
     std::atomic<float>* interfaceInputDbu = nullptr;
+
+    void applyEffectParameters();
+    params::CompressorParameters preCompParams, postCompParams;
+    params::EqualizerParameters preEqParams, postEqParams;
     std::atomic<int> morphCount { 0 };
 
     std::atomic<bool> sampleRateOk { true };

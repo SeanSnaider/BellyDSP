@@ -363,6 +363,402 @@ void MicPanel::resized()
         knob->setBounds (area.removeFromLeft (width));
 }
 
+// ---- OrderStrip -------------------------------------------------------------------------------
+
+namespace
+{
+juce::String displayName (const juce::String& blockName)
+{
+    if (blockName == "comp") return "Compressor";
+    if (blockName == "eq") return "EQ";
+    return blockName;
+}
+} // namespace
+
+OrderStrip::OrderStrip (AmpSimProcessor& processor, ampsim::Chain::Section sectionToShow)
+    : ampSim (processor), section (sectionToShow)
+{
+    refresh();
+}
+
+void OrderStrip::refresh()
+{
+    const auto order = ampSim.getSectionOrder (section);
+    if (order == shown)
+        return;
+
+    shown = order;
+    names.clear();
+    earlier.clear();
+    later.clear();
+
+    for (int i = 0; i < shown.size(); ++i)
+    {
+        auto* name = names.add (new juce::Label ({}, juce::String (i + 1) + ". " + displayName (shown[i])));
+        name->setJustificationType (juce::Justification::centred);
+        name->setColour (juce::Label::textColourId, textColour);
+        addAndMakeVisible (name);
+
+        auto* left = earlier.add (new juce::TextButton ("<"));
+        left->setTooltip ("Move earlier in the chain");
+        left->setEnabled (i > 0);
+        left->onClick = [this, i] { move (i, -1); };
+        addAndMakeVisible (left);
+
+        auto* right = later.add (new juce::TextButton (">"));
+        right->setTooltip ("Move later in the chain");
+        right->setEnabled (i + 1 < shown.size());
+        right->onClick = [this, i] { move (i, 1); };
+        addAndMakeVisible (right);
+    }
+    resized();
+}
+
+void OrderStrip::move (int position, int by)
+{
+    auto order = shown;
+    order.move (position, position + by);
+    ampSim.setSectionOrder (section, order);
+    refresh();
+}
+
+void OrderStrip::paint (juce::Graphics& g)
+{
+    g.setColour (dimText);
+    g.setFont (juce::FontOptions (13.0f));
+    g.drawText (section == ampsim::Chain::Section::pre ? "Order (before the amp):" : "Order (after the cab):",
+                getLocalBounds().removeFromLeft (170), juce::Justification::centredLeft);
+}
+
+void OrderStrip::resized()
+{
+    auto area = getLocalBounds();
+    area.removeFromLeft (175);
+    for (int i = 0; i < names.size(); ++i)
+    {
+        auto cell = area.removeFromLeft (200).reduced (4, 2);
+        earlier[i]->setBounds (cell.removeFromLeft (28));
+        later[i]->setBounds (cell.removeFromRight (28));
+        names[i]->setBounds (cell);
+    }
+}
+
+// ---- CompressorPanel ----------------------------------------------------------------------------
+
+CompressorPanel::CompressorPanel (AmpSimProcessor& processor, const juce::String& p, const juce::String& title, bool isPost)
+    : ampSim (processor), post (isPost)
+{
+    auto& state = processor.parameters;
+    stylePanelTitle (titleLabel, title);
+    addAndMakeVisible (titleLabel);
+
+    for (auto [button, id] : std::initializer_list<std::pair<juce::ToggleButton*, juce::String>> {
+             { &onButton, p + "_on" }, { &autoReleaseButton, p + "_auto_release" }, { &autoMakeupButton, p + "_auto_makeup" }, { &sidechainButton, p + "_sc_hpf" } })
+    {
+        buttonAttachments.add (new juce::AudioProcessorValueTreeState::ButtonAttachment (state, id, *button));
+        addAndMakeVisible (button);
+    }
+
+    modeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (state, p + "_mode", withItems (mode, { "Studio", "Pedal" }));
+    detectorAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (state, p + "_detector", withItems (detector, { "Peak", "RMS" }));
+    addAndMakeVisible (mode);
+    addAndMakeVisible (detector);
+
+    knobs.add (new Knob (state, p + "_threshold", "Threshold"));
+    knobs.add (new Knob (state, p + "_ratio", "Ratio", ":1"));
+    knobs.add (new Knob (state, p + "_knee", "Knee"));
+    knobs.add (new Knob (state, p + "_attack", "Attack", " ms"));
+    knobs.add (new Knob (state, p + "_release", "Release", " ms"));
+    knobs.add (new Knob (state, p + "_makeup", "Makeup"));
+    knobs.add (new Knob (state, p + "_mix", "Mix", " %"));
+    knobs.add (new Knob (state, p + "_sc_freq", "SC freq", " Hz"));
+    for (auto* knob : knobs)
+        addAndMakeVisible (knob);
+}
+
+void CompressorPanel::refresh()
+{
+    const auto reduction = ampSim.getCompressorReduction (post);
+    if (std::abs (reduction - reductionDb) > 0.05f)
+    {
+        reductionDb = reduction;
+        repaint (meterArea);
+    }
+}
+
+void CompressorPanel::paint (juce::Graphics& g)
+{
+    g.setColour (panel);
+    g.fillRoundedRectangle (getLocalBounds().toFloat().reduced (1.0f), 6.0f);
+
+    // Gain reduction meter: 0 to 24 dB, filling from the left.
+    g.setColour (background);
+    g.fillRect (meterArea);
+    g.setColour (accent);
+    g.fillRect (meterArea.withWidth (juce::roundToInt ((float) meterArea.getWidth() * juce::jlimit (0.0f, 1.0f, reductionDb / 24.0f))));
+    g.setColour (textColour);
+    g.setFont (juce::FontOptions (12.0f));
+    g.drawText ("Gain reduction " + juce::String (reductionDb, 1) + " dB", meterArea, juce::Justification::centred);
+}
+
+void CompressorPanel::resized()
+{
+    auto area = getLocalBounds().reduced (10);
+    auto top = area.removeFromTop (28);
+    onButton.setBounds (top.removeFromRight (60));
+    titleLabel.setBounds (top);
+    area.removeFromTop (6);
+    auto combos = area.removeFromTop (26);
+    mode.setBounds (combos.removeFromLeft (combos.getWidth() / 2).reduced (2, 0));
+    detector.setBounds (combos.reduced (2, 0));
+    area.removeFromTop (8);
+
+    meterArea = area.removeFromBottom (22);
+    area.removeFromBottom (8);
+    auto toggles = area.removeFromBottom (26);
+    const auto toggleWidth = toggles.getWidth() / 3;
+    autoReleaseButton.setBounds (toggles.removeFromLeft (toggleWidth));
+    autoMakeupButton.setBounds (toggles.removeFromLeft (toggleWidth));
+    sidechainButton.setBounds (toggles);
+    area.removeFromBottom (6);
+
+    const auto rowHeight = area.getHeight() / 2;
+    for (int row = 0; row < 2; ++row)
+    {
+        auto line = area.removeFromTop (rowHeight);
+        const auto width = line.getWidth() / 4;
+        for (int i = 0; i < 4; ++i)
+            knobs[row * 4 + i]->setBounds (line.removeFromLeft (width));
+    }
+}
+
+// ---- EqCurve ----------------------------------------------------------------------------------
+
+EqCurve::EqCurve (juce::AudioProcessorValueTreeState& state, const juce::String& prefix)
+{
+    values.bind (state, prefix);
+    for (int i = 0; i < 160; ++i)
+        frequencies.push_back (20.0 * std::pow (1000.0, i / 159.0));
+    refresh();
+    startTimerHz (30);
+}
+
+void EqCurve::refresh()
+{
+    const auto settings = values.read();
+    const auto same = [] (const ampsim::Equalizer::Settings& a, const ampsim::Equalizer::Settings& b)
+    {
+        // Field by field (comparing the raw bytes would include padding): any change redraws.
+        const auto eq = [] (float x, float y) { return std::abs (x - y) < 1.0e-6f; };
+        if (a.mode != b.mode || a.lowCut.on != b.lowCut.on || a.highCut.on != b.highCut.on || a.lowCut.slope != b.lowCut.slope
+            || a.highCut.slope != b.highCut.slope || ! eq (a.lowCut.frequency, b.lowCut.frequency) || ! eq (a.highCut.frequency, b.highCut.frequency))
+            return false;
+        for (size_t m = 0; m < a.sliders.size(); ++m)
+            if (! eq (a.sliders[m], b.sliders[m]))
+                return false;
+        for (size_t i = 0; i < a.bands.size(); ++i)
+            if (a.bands[i].type != b.bands[i].type || ! eq (a.bands[i].frequency, b.bands[i].frequency) || ! eq (a.bands[i].gainDb, b.bands[i].gainDb)
+                || ! eq (a.bands[i].q, b.bands[i].q))
+                return false;
+        return true;
+    };
+
+    if (everDrawn && same (settings, drawn))
+        return;
+
+    drawn = settings;
+    everDrawn = true;
+    curve = ampsim::Equalizer::responseDb (settings, frequencies, 48000.0);
+    repaint();
+}
+
+void EqCurve::paint (juce::Graphics& g)
+{
+    const auto area = getLocalBounds().toFloat();
+    g.setColour (background);
+    g.fillRoundedRectangle (area, 4.0f);
+
+    const auto x = [&] (double f) { return area.getX() + area.getWidth() * (float) (std::log (f / 20.0) / std::log (1000.0)); };
+    const auto y = [&] (double db) { return area.getCentreY() - area.getHeight() * 0.5f * (float) (juce::jlimit (-24.0, 24.0, db) / 24.0); };
+
+    g.setColour (dimText.withAlpha (0.25f));
+    for (auto f : { 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0 })
+        g.drawVerticalLine (juce::roundToInt (x (f)), area.getY(), area.getBottom());
+    for (auto db : { -12.0, 0.0, 12.0 })
+        g.drawHorizontalLine (juce::roundToInt (y (db)), area.getX(), area.getRight());
+
+    g.setColour (dimText);
+    g.setFont (juce::FontOptions (10.0f));
+    for (auto [f, label] : std::initializer_list<std::pair<double, const char*>> { { 100.0, "100" }, { 1000.0, "1k" }, { 10000.0, "10k" } })
+        g.drawText (label, juce::Rectangle<float> (x (f) + 2.0f, area.getBottom() - 13.0f, 30.0f, 12.0f), juce::Justification::centredLeft);
+    for (auto db : { -12.0, 12.0 })
+        g.drawText (juce::String (db, 0), juce::Rectangle<float> (area.getX() + 2.0f, y (db) - 12.0f, 30.0f, 12.0f), juce::Justification::centredLeft);
+
+    if (curve.empty())
+        return;
+
+    juce::Path path;
+    for (size_t i = 0; i < curve.size(); ++i)
+    {
+        const juce::Point<float> p { x (frequencies[i]), y (curve[i]) };
+        if (i == 0)
+            path.startNewSubPath (p);
+        else
+            path.lineTo (p);
+    }
+    g.setColour (accent);
+    g.strokePath (path, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved));
+}
+
+// ---- EqualizerPanel ---------------------------------------------------------------------------
+
+EqualizerPanel::EqualizerPanel (AmpSimProcessor& processor, const juce::String& p, const juce::String& title)
+    : state (processor.parameters), prefix (p), curve (processor.parameters, p)
+{
+    stylePanelTitle (titleLabel, title);
+    addAndMakeVisible (titleLabel);
+    addAndMakeVisible (curve);
+
+    for (auto [button, id] : std::initializer_list<std::pair<juce::ToggleButton*, juce::String>> {
+             { &onButton, p + "_on" }, { &lowCutButton, p + "_lowcut_on" }, { &highCutButton, p + "_highcut_on" } })
+    {
+        buttonAttachments.add (new juce::AudioProcessorValueTreeState::ButtonAttachment (state, id, *button));
+        addAndMakeVisible (button);
+    }
+
+    const juce::StringArray slopes { "12 dB/oct", "24 dB/oct", "48 dB/oct" };
+    for (auto [box, id, items] : std::initializer_list<std::tuple<juce::ComboBox*, juce::String, juce::StringArray>> {
+             { &mode, p + "_mode", { "Graphic", "Parametric" } }, { &lowCutSlope, p + "_lowcut_slope", slopes }, { &highCutSlope, p + "_highcut_slope", slopes } })
+    {
+        comboAttachments.add (new juce::AudioProcessorValueTreeState::ComboBoxAttachment (state, id, withItems (*box, items)));
+        addAndMakeVisible (box);
+    }
+
+    static const char* sliderNames[] = { "63", "125", "250", "500", "1k", "2k", "4k", "8k", "16k" };
+    for (int m = 0; m < ampsim::Equalizer::numGraphicBands; ++m)
+    {
+        auto* slider = sliders.add (new juce::Slider (juce::Slider::LinearVertical, juce::Slider::TextBoxBelow));
+        slider->setTextBoxStyle (juce::Slider::TextBoxBelow, false, 50, 18);
+        sliderAttachments.add (new juce::AudioProcessorValueTreeState::SliderAttachment (state, params::EqualizerParameters::sliderId (p, m), *slider));
+        slider->setDoubleClickReturnValue (true, 0.0);
+        addChildComponent (slider);
+
+        auto* label = sliderLabels.add (new juce::Label ({}, sliderNames[m]));
+        label->setJustificationType (juce::Justification::centred);
+        label->setColour (juce::Label::textColourId, dimText);
+        addChildComponent (label);
+    }
+
+    for (int b = 0; b < ampsim::Equalizer::numParametricBands; ++b)
+    {
+        auto* band = bands.add (new BandControls());
+        band->title.setText ("Band " + juce::String (b + 1), juce::dontSendNotification);
+        band->title.setJustificationType (juce::Justification::centred);
+        band->title.setColour (juce::Label::textColourId, dimText);
+        band->typeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
+            state, params::EqualizerParameters::bandId (p, b, "type"), withItems (band->type, { "Peak", "Low shelf", "High shelf", "Notch" }));
+        using Attachment = juce::AudioProcessorValueTreeState::SliderAttachment;
+        band->frequencyAttachment = std::make_unique<Attachment> (state, params::EqualizerParameters::bandId (p, b, "freq"), band->frequency);
+        band->gainAttachment = std::make_unique<Attachment> (state, params::EqualizerParameters::bandId (p, b, "gain"), band->gain);
+        band->qAttachment = std::make_unique<Attachment> (state, params::EqualizerParameters::bandId (p, b, "q"), band->q);
+        band->frequency.setTextValueSuffix (" Hz");
+        band->gain.setTextValueSuffix (" dB");
+        band->gain.setDoubleClickReturnValue (true, 0.0);
+        for (auto* slider : { &band->frequency, &band->gain, &band->q })
+            slider->setColour (juce::Slider::trackColourId, accent.withAlpha (0.55f));
+        for (auto* c : band->components())
+            addChildComponent (c);
+    }
+
+    for (auto heading : { "Band", "Type", "Frequency", "Gain", "Q" })
+    {
+        auto* label = bandHeadings.add (new juce::Label ({}, heading));
+        label->setJustificationType (juce::Justification::centred);
+        label->setColour (juce::Label::textColourId, dimText);
+        addChildComponent (label);
+    }
+
+    lowCutKnob = std::make_unique<Knob> (state, p + "_lowcut_freq", "Low cut", " Hz");
+    highCutKnob = std::make_unique<Knob> (state, p + "_highcut_freq", "High cut", " Hz");
+    addAndMakeVisible (*lowCutKnob);
+    addAndMakeVisible (*highCutKnob);
+
+    parametricShown = ! (state.getRawParameterValue (p + "_mode")->load() >= 0.5f); // so refresh() sets the visibility
+    refresh();
+}
+
+void EqualizerPanel::refresh()
+{
+    curve.refresh();
+
+    const bool parametric = state.getRawParameterValue (prefix + "_mode")->load() >= 0.5f;
+    if (parametric == parametricShown)
+        return;
+
+    parametricShown = parametric;
+    for (auto* s : sliders) s->setVisible (! parametric);
+    for (auto* l : sliderLabels) l->setVisible (! parametric);
+    for (auto* l : bandHeadings) l->setVisible (parametric);
+    for (auto* band : bands)
+        for (auto* c : band->components())
+            c->setVisible (parametric);
+}
+
+void EqualizerPanel::paint (juce::Graphics& g)
+{
+    g.setColour (panel);
+    g.fillRoundedRectangle (getLocalBounds().toFloat().reduced (1.0f), 6.0f);
+}
+
+void EqualizerPanel::resized()
+{
+    auto area = getLocalBounds().reduced (10);
+    auto top = area.removeFromTop (28);
+    onButton.setBounds (top.removeFromRight (60));
+    mode.setBounds (top.removeFromRight (140).reduced (0, 1));
+    titleLabel.setBounds (top);
+    area.removeFromTop (6);
+    curve.setBounds (area.removeFromTop (juce::jmin (150, area.getHeight() / 4)));
+    area.removeFromTop (8);
+
+    // Bottom: the cuts.
+    auto cuts = area.removeFromBottom (96);
+    const auto half = cuts.getWidth() / 2;
+    auto low = cuts.removeFromLeft (half), high = cuts;
+    lowCutButton.setBounds (low.removeFromLeft (90).withSizeKeepingCentre (90, 26));
+    lowCutKnob->setBounds (low.removeFromLeft (100));
+    lowCutSlope.setBounds (low.removeFromLeft (120).withSizeKeepingCentre (120, 26));
+    highCutButton.setBounds (high.removeFromLeft (90).withSizeKeepingCentre (90, 26));
+    highCutKnob->setBounds (high.removeFromLeft (100));
+    highCutSlope.setBounds (high.removeFromLeft (120).withSizeKeepingCentre (120, 26));
+    area.removeFromBottom (6);
+
+    // Middle: nine sliders, or five band columns (same space, one or the other is visible).
+    const auto sliderWidth = area.getWidth() / ampsim::Equalizer::numGraphicBands;
+    auto sliderArea = area;
+    for (int m = 0; m < sliders.size(); ++m)
+    {
+        auto column = sliderArea.removeFromLeft (sliderWidth);
+        sliderLabels[m]->setBounds (column.removeFromTop (18));
+        sliders[m]->setBounds (column);
+    }
+
+    // Parametric: a heading row, then one row per band: name, type, frequency, gain, Q.
+    const std::array<float, 5> share { 0.10f, 0.20f, 0.28f, 0.24f, 0.18f };
+    const auto rowHeight = juce::jmin (40, (area.getHeight() - 20) / ampsim::Equalizer::numParametricBands);
+    auto headings = area.removeFromTop (20);
+    const auto width = (float) headings.getWidth();
+    for (int i = 0; i < bandHeadings.size(); ++i)
+        bandHeadings[i]->setBounds (headings.removeFromLeft (juce::roundToInt (width * share[(size_t) i])));
+    for (auto* band : bands)
+    {
+        auto row = area.removeFromTop (rowHeight).reduced (0, 3);
+        const auto cells = band->components();
+        for (size_t i = 0; i < cells.size(); ++i)
+            cells[i]->setBounds (row.removeFromLeft (juce::roundToInt (width * share[i])).reduced (3, 0));
+    }
+}
+
 // ---- AmpSimEditor -----------------------------------------------------------------------------
 
 AmpSimEditor::AmpSimEditor (AmpSimProcessor& p)
@@ -482,12 +878,38 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p)
             micPanel->setBounds (cab.removeFromLeft (panelWidth).reduced (4));
     };
 
+    // Pre FX and Post FX: the section's order, its compressor, and its EQ.
+    preOrder = std::make_unique<OrderStrip> (p, ampsim::Chain::Section::pre);
+    postOrder = std::make_unique<OrderStrip> (p, ampsim::Chain::Section::post);
+    preComp = std::make_unique<CompressorPanel> (p, "comp_pre", "Compressor", false);
+    postComp = std::make_unique<CompressorPanel> (p, "comp_post", "Compressor", true);
+    preEq = std::make_unique<EqualizerPanel> (p, "eq_pre", "EQ (before the amp)");
+    postEq = std::make_unique<EqualizerPanel> (p, "eq_post", "EQ (after the cab)");
+
+    for (auto [page, order, comp, eq] : std::initializer_list<std::tuple<PageComponent*, OrderStrip*, CompressorPanel*, EqualizerPanel*>> {
+             { &preFxPage, preOrder.get(), preComp.get(), preEq.get() }, { &postFxPage, postOrder.get(), postComp.get(), postEq.get() } })
+    {
+        page->addAndMakeVisible (order);
+        page->addAndMakeVisible (comp);
+        page->addAndMakeVisible (eq);
+        page->layout = [order, comp, eq] (juce::Rectangle<int> area)
+        {
+            area.reduce (8, 8);
+            order->setBounds (area.removeFromTop (34));
+            area.removeFromTop (6);
+            comp->setBounds (area.removeFromLeft (380).reduced (4));
+            eq->setBounds (area.reduced (4));
+        };
+    }
+
     tabs.addTab ("Amps", panel, &ampsPage, false);
     tabs.addTab ("Cab", panel, &cabPage, false);
+    tabs.addTab ("Pre FX", panel, &preFxPage, false);
+    tabs.addTab ("Post FX", panel, &postFxPage, false);
     tabs.setTabBarDepth (30);
     addAndMakeVisible (tabs);
 
-    setSize (960, 720);
+    setSize (1120, 800);
     timerCallback(); // show the current state right away
     startTimerHz (10);
 }
@@ -539,6 +961,13 @@ void AmpSimEditor::timerCallback()
 
     alignmentLabel.setText (status.alignment, juce::dontSendNotification);
     warningLabel.setText (status.warning, juce::dontSendNotification);
+
+    for (auto* strip : { preOrder.get(), postOrder.get() })
+        strip->refresh();
+    for (auto* comp : { preComp.get(), postComp.get() })
+        comp->refresh();
+    for (auto* eq : { preEq.get(), postEq.get() })
+        eq->refresh();
 }
 
 void AmpSimEditor::paint (juce::Graphics& g)

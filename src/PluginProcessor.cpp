@@ -39,6 +39,10 @@ AmpSimProcessor::AmpSimProcessor()
     roomPreDelay = raw (cabParamId (roomMic, "predelay"));
     roomMute = raw (cabParamId (roomMic, "mute"));
     cabAlign = raw ("cab_align");
+    preCompParams.bind (parameters, "comp_pre");
+    postCompParams.bind (parameters, "comp_post");
+    preEqParams.bind (parameters, "eq_pre");
+    postEqParams.bind (parameters, "eq_post");
     calibrateInput = raw ("input_calibrate");
     interfaceInputDbu = raw ("input_level_dbu");
     appliedCalibration = pendingCalibration = currentCalibration();
@@ -152,6 +156,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout AmpSimProcessor::createParam
     layout.add (std::make_unique<Bool> (juce::ParameterID { "cab_highcut_on", 1 }, "Cab High Cut", false));
     layout.add (std::make_unique<Float> (juce::ParameterID { "cab_highcut_freq", 1 }, "Cab High Cut Frequency", skewed (2000.0f, 20000.0f, 8000.0f), 8000.0f, hz));
     layout.add (std::make_unique<Choice> (juce::ParameterID { "cab_highcut_slope", 1 }, "Cab High Cut Slope", juce::StringArray { "12 dB/oct", "24 dB/oct" }, 0));
+
+    // Effects. Compressors start off (style presets switch them on); EQs start on, and flat they
+    // pass the signal through bit for bit.
+    params::CompressorParameters::addTo (layout, "comp_pre", "Pre Comp", false);
+    params::EqualizerParameters::addTo (layout, "eq_pre", "Pre EQ", true);
+    params::EqualizerParameters::addTo (layout, "eq_post", "Post EQ", true);
+    params::CompressorParameters::addTo (layout, "comp_post", "Post Comp", false);
     return layout;
 }
 
@@ -165,6 +176,7 @@ void AmpSimProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     lastSlotParameter = juce::roundToInt (ampSlot->load());
     chain.amp.selectSlot (lastSlotParameter);
     applyCabParameters();
+    applyEffectParameters();
 
     chain.prepare (sampleRate, preparedBlockSize);
     setLatencySamples (chain.latencySamples());
@@ -231,6 +243,54 @@ void AmpSimProcessor::applyCabParameters()
     chain.cab.setCuts (cuts);
 }
 
+void AmpSimProcessor::applyEffectParameters()
+{
+    using Slot = ampsim::Chain::Slot;
+    chain.setBypassed (Slot::preCompressor, ! preCompParams.isOn());
+    chain.preCompressor.setSettings (preCompParams.read());
+    chain.setBypassed (Slot::preEq, ! preEqParams.isOn());
+    chain.preEq.setSettings (preEqParams.read());
+    chain.setBypassed (Slot::postEq, ! postEqParams.isOn());
+    chain.postEq.setSettings (postEqParams.read());
+    chain.setBypassed (Slot::postCompressor, ! postCompParams.isOn());
+    chain.postCompressor.setSettings (postCompParams.read());
+}
+
+juce::String AmpSimProcessor::blockName (ampsim::Chain::Slot slot)
+{
+    using Slot = ampsim::Chain::Slot;
+    if (slot == Slot::preCompressor || slot == Slot::postCompressor)
+        return "comp";
+    if (slot == Slot::preEq || slot == Slot::postEq)
+        return "eq";
+    return {}; // fixed blocks have no section name
+}
+
+void AmpSimProcessor::setSectionOrder (ampsim::Chain::Section section, const juce::StringArray& names)
+{
+    // Names to slots, skipping unknown and repeated names, then any block not named, in default order.
+    const auto defaults = ampsim::Chain::defaultOrder (section);
+    std::vector<ampsim::Chain::Slot> order;
+    for (const auto& name : names)
+        for (auto slot : defaults)
+            if (blockName (slot) == name.trim() && std::find (order.begin(), order.end(), slot) == order.end())
+                order.push_back (slot);
+    for (auto slot : defaults)
+        if (std::find (order.begin(), order.end(), slot) == order.end())
+            order.push_back (slot);
+
+    chain.requestOrder (section, order);
+    parameters.state.setProperty (orderKey (section), getSectionOrder (section).joinIntoString (","), nullptr);
+}
+
+juce::StringArray AmpSimProcessor::getSectionOrder (ampsim::Chain::Section section) const
+{
+    juce::StringArray names;
+    for (auto slot : chain.getRequestedOrder (section))
+        names.add (blockName (slot));
+    return names;
+}
+
 void AmpSimProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
     // Denormals (tiny floats near zero) are very slow on some CPUs, and a decaying tail produces
@@ -272,11 +332,14 @@ void AmpSimProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         slot.inputTrim.setGainDecibels (p.inputTrim->load (std::memory_order_relaxed));
         slot.outputTrim.setGainDecibels (p.outputTrim->load (std::memory_order_relaxed));
 
+        // To the nearest 0.01 dB, so a centred knob (which reads 3.6e-7 dB after float snapping) is
+        // exactly flat, and flat is bit-transparent.
         for (int b = 0; b < ampsim::AmpTone::numBands; ++b)
-            slot.tone.setGainDb ((ampsim::AmpTone::Band) b, p.tone[(size_t) b]->load (std::memory_order_relaxed));
+            slot.tone.setGainDb ((ampsim::AmpTone::Band) b, std::round (p.tone[(size_t) b]->load (std::memory_order_relaxed) * 100.0f) / 100.0f);
     }
 
     applyCabParameters();
+    applyEffectParameters();
 
     // Hosts may occasionally send more samples than promised, so feed the chain in pieces that fit.
     auto io = juce::dsp::AudioBlock<float> (buffer).getSubsetChannelBlock (0, 2);
@@ -309,6 +372,10 @@ void AmpSimProcessor::setStateInformation (const void* data, int sizeInBytes)
 
     // The captures below load with the restored calibration, so it's already applied.
     appliedCalibration = pendingCalibration = currentCalibration();
+
+    // Effect order: saved by block name (older states have none, so the default order applies).
+    for (auto section : { ampsim::Chain::Section::pre, ampsim::Chain::Section::post })
+        setSectionOrder (section, juce::StringArray::fromTokens (state.getProperty (orderKey (section)).toString(), ",", ""));
 
     // Milestone 1 had one amp slot ("modelPath") and one cab IR ("irPath"): they become slot 1 and
     // close mic 1.
