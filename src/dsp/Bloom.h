@@ -36,8 +36,9 @@ namespace ampsim
 ///         effect whose input jumped at the swap would store the splice (the flanger in its delay line, the
 ///         phaser in its integrators) and play it back milliseconds later, once the wet is fading back in, and
 ///         an effect with memory keeps playing its tail after its own input has gone, so only scaling every
-///         input makes each one exactly silent at the swap. During the 20 ms the wet dips deeper than the dry
-///         rises (about 5 dB down mid-fade); nothing jumps. No allocation: the order is a three-element array.
+///         input makes each one exactly silent at the swap. During the 20 ms the wet fades deeper than the dry
+///         rises: with transparent effects the level follows 1 - s + s^4, at worst 5.6 dB down (measured 5.5);
+///         nothing jumps. No allocation: the order is a three-element array.
 ///   z     the latency dip: everything, every effect's input included, fades to silence over 10 ms and back
 ///         around a through-zero switch.
 ///

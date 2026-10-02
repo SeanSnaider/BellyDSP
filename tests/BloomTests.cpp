@@ -738,7 +738,7 @@ private:
             const auto from = corner.size() - (size_t) (2.0 * cycle);
             PlotSeries cpp { juce::String (rate, 0) + " Hz: C++", {}, {}, plotColour (colour), 2.5f };
             PlotSeries python { juce::String (rate, 0) + " Hz: Python", {}, {}, plotColour (6), 1.0f, true };
-            PlotSeries lfo { juce::String (rate, 0) + " Hz: LFO (scaled)", {}, {}, plotColour (colour + 2), 1.0f, true };
+            PlotSeries lfo { "LFO (as a lag-free lamp would follow it)", {}, {}, plotColour (2), 1.0f, true };
             for (size_t n = from; n < corner.size(); n += 24)
             {
                 const auto t = (double) (n - from) / cycle;
@@ -749,7 +749,8 @@ private:
                 lfo.x.push_back (t);
                 lfo.y.push_back (Phaser::vibeReferenceHz (0.5 + 0.5 * std::sin (twoPi * rate * (double) n / fs)));
             }
-            series.push_back (lfo);
+            if (colour == 0) // the LFO, drawn against cycles, is the same at both rates
+                series.push_back (lfo);
             series.push_back (cpp);
             series.push_back (python);
             colour += 1;
@@ -1644,6 +1645,35 @@ private:
         dropped.erase (dropped.begin() + (long) steepest);
         const auto dropRatio = controlRatio (dropped, steepest);
 
+        // How far the level dips while an order changes. With all three effects transparent (16 bits, no hold, tone
+        // open; phaser and flanger at 0% mix) the output is (1 - s) x + s v^3 x with v = s (each effect's input
+        // scaled once), so it follows 1 - s + s^4, deepest at s = 0.63: -5.6 dB. Measured on a 1 kHz tone, one
+        // cycle (48 samples) at a time.
+        double deepestDip = 0.0;
+        {
+            Bloom::Settings clear;
+            clear.bitcrush = crush (16.0f, (float) fs);
+            clear.phaser.on = true;
+            clear.phaser.mix = 0.0f;
+            clear.flanger.on = true;
+            clear.flanger.mix = 0.0f;
+            Bloom t;
+            t.setSettings (clear);
+            t.prepare (fs, blockSize);
+            const auto tone = sine (1000.0, 0.5, (int) (0.5 * fs));
+            const auto level = run (t, tone, blockSize, [&] (size_t start)
+            {
+                if (start >= (size_t) (0.25 * fs))
+                    clear.order = { E::flanger, E::bitcrush, E::phaser };
+                t.setSettings (clear);
+            }).left;
+            const auto steadyLevel = rms (level.data() + (size_t) (0.1 * fs), (size_t) (0.1 * fs));
+            for (size_t n = (size_t) (0.25 * fs); n + 48 <= level.size(); n += 8)
+                deepestDip = std::min (deepestDip, toDb (rms (level.data() + n, 48) / steadyLevel));
+        }
+        const auto predictedDip = [] { double lowest = 1.0; for (int k = 0; k <= 1000; ++k) { const auto x = k / 1000.0; lowest = std::min (lowest, 1.0 - x + x * x * x * x); } return toDb (lowest); }();
+        expectWithinAbsoluteError (deepestDip, predictedDip, 0.3);
+
         expectLessThan (worst, 1.2);
         expectGreaterThan (spliceRatio, 3.0);
         expectGreaterThan (dropRatio, 3.0);
@@ -1653,6 +1683,8 @@ private:
                     + rows.joinIntoString ("; "));
         logMessage ("  -> positive controls in the same setting: a reorder with no dip (two fixed-order renders spliced) x" + juce::String (spliceRatio, 1)
                     + ", one sample dropped x" + juce::String (dropRatio, 1) + " (each must exceed 3)");
+        logMessage ("  -> the level while an order changes, all three effects transparent: dips to " + juce::String (deepestDip, 2) + " dB at its deepest (predicted "
+                    + juce::String (predictedDip, 2) + " dB from 1 - s + s^4), twice in the 20 ms transition, with nothing jumping");
     }
 
     void realtime()
@@ -1744,10 +1776,12 @@ private:
         juce::StringArray results;
         double worstMean = 0.0;
 
-        const auto time = [&] (Bloom::Settings s, const juce::String& label, const std::function<void (Bloom::Settings&, int)>& each = {})
+        const auto time = [&] (Bloom::Settings s, const juce::String& label, const std::function<void (Bloom::Settings&, int)>& each = {},
+                               bool bypassed = false)
         {
             Bloom b;
             b.setSettings (s);
+            b.setBypassed (bypassed);
             b.prepare (fs, blockSize);
             std::vector<double> micros;
             int block = 0;
@@ -1797,6 +1831,11 @@ private:
                 s.flanger.shape = s.flanger.shape == Lfo::Shape::sine ? Lfo::Shape::triangle : Lfo::Shape::sine;
             }
         });
+
+        // Bloom keeps its effects running while bypassed (so coming back on is a pure crossfade): what that costs,
+        // with all three on, and with all three off (Bloom's state in a session that doesn't use it).
+        time (all, "bypassed, all three on", {}, true);
+        time (Bloom::Settings {}, "bypassed, all three off", {}, true);
 
         expectLessThan (worstMean, 0.10 * deadlineMicros);
         logMessage ("  -> 10 s of guitar DI, of the 2.67 ms deadline: " + results.joinIntoString ("; "));

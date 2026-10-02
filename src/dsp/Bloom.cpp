@@ -139,6 +139,7 @@ void Bloom::reset()
 void Bloom::process (juce::dsp::AudioBlock<float> block, const BlockContext& context)
 {
     const auto numChannels = std::min (2, (int) block.getNumChannels());
+    jassert (block.getNumSamples() <= inputGains.size()); // at most prepare()'s maxBlockSize
     const auto numSamples = std::min ((int) block.getNumSamples(), (int) inputGains.size());
     if (numChannels == 0 || numSamples == 0)
         return;
