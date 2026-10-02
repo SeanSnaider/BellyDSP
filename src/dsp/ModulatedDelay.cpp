@@ -36,6 +36,7 @@ void ModulatedDelay::prepare (double newSampleRate, double maxDelayMs, double sm
 void ModulatedDelay::reset()
 {
     line.reset();
+    loopHighPassState = 0.0;
     restart (0.0);
 }
 
@@ -58,6 +59,17 @@ void ModulatedDelay::setSettings (const Settings& newSettings)
     const auto numVoices = juce::jlimit (0, maxVoices, settings.numVoices);
     feedback.setTargetValue (juce::jlimit (-maxFeedback, maxFeedback, settings.feedback));
     const auto reference = getPhase();
+
+    // The optional loop high-pass: a TPT one-pole's G = g / (1 + g), g = tan(pi fc / fs) (prewarped).
+    const bool wantHighPass = settings.feedbackHighPassHz > 0.0;
+    if (wantHighPass && ! loopHighPass)
+        loopHighPassState = 0.0; // switched on: start from rest
+    loopHighPass = wantHighPass;
+    if (loopHighPass)
+    {
+        const auto g = std::tan (juce::MathConstants<double>::pi * juce::jlimit (1.0, 0.49 * sampleRate, settings.feedbackHighPassHz) / sampleRate);
+        loopHighPassG = g / (1.0 + g);
+    }
 
     for (int v = 0; v < maxVoices; ++v)
     {
@@ -149,8 +161,18 @@ float ModulatedDelay::processSample (float x) noexcept
     // Feedback through a soft clip: |tanh| < 1 keeps the loop bounded at any setting.
     auto input = (double) x;
     const auto fb = feedback.getNextValue();
+    auto loop = wet;
+    if (loopHighPass)
+    {
+        // The TPT one-pole: v = (in - s) G, low = v + s, s <- low + v, high = in - low. It runs every sample,
+        // whatever the feedback, so its state is current when feedback rises from 0.
+        const auto v = (wet - loopHighPassState) * loopHighPassG;
+        const auto low = v + loopHighPassState;
+        loopHighPassState = low + v;
+        loop = wet - low;
+    }
     if (fb != 0.0)
-        input += std::tanh (fb * wet);
+        input += std::tanh (fb * loop);
 
     line.write ((float) input);
     return (float) wet;
