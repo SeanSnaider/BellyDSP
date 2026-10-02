@@ -119,10 +119,19 @@ target_sources(AmpSim PRIVATE
     src/MidiMap.cpp
     src/Scenes.cpp
     ${AMPSIM_DSP_SOURCES})
+# The factory presets (BUILD_PLAN "Presets and scenes": the five style presets), embedded as BinaryData.
+juce_add_binary_data(AmpSimFactoryPresets SOURCES
+    presets/factory/Polyphia.json
+    presets/factory/CHON.json
+    presets/factory/TechDeath.json
+    presets/factory/Metal.json
+    presets/factory/MidwestEmo.json)
+
 target_include_directories(AmpSim PRIVATE src)
 target_compile_definitions(AmpSim PUBLIC ${AMPSIM_JUCE_DEFINITIONS})
 target_link_libraries(AmpSim
     PRIVATE
+        AmpSimFactoryPresets
         ${NAM_CORE_WHOLE}
         juce::juce_audio_utils
         juce::juce_dsp
@@ -211,6 +220,7 @@ target_compile_definitions(ampsim_tests PRIVATE
     AMPSIM_NAM_RENDER="$<TARGET_FILE:nam_render>")
 target_link_libraries(ampsim_tests
     PRIVATE
+        AmpSimFactoryPresets
         ${NAM_CORE_WHOLE}
         juce::juce_audio_utils
         juce::juce_dsp

@@ -101,6 +101,10 @@ ApplyResult validate (const juce::var& preset);
 /// ~/Library/Application Support/AmpSim/presets
 juce::File defaultFolder();
 
+/// The factory presets (the five style presets), in the plan's order. They set the sound and its scenes
+/// but no captures or IRs (nothing third-party is bundled): each has "notes" saying what to load where.
+juce::Array<juce::var> factoryPresets();
+
 bool save (const juce::var& preset, const juce::File& file);
 juce::var load (const juce::File& file, juce::String& error);
 } // namespace presets

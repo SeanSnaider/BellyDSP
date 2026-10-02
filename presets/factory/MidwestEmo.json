@@ -1,0 +1,118 @@
+{
+  "format_version": 2,
+  "name": "Midwest Emo",
+  "notes": "Slot 1: a vintage American clean (warm, chimey). Slot 2: a crunch. Slot 3: edge-of-breakup. Give the room mic a room IR. Load your own captures and cab IRs; these settings are starting points to tune by ear.",
+  "parameters": {
+    "amp_slot": 0,
+    "comp_pre_on": 1,
+    "comp_pre_threshold": -20.0,
+    "comp_pre_ratio": 2.5,
+    "comp_pre_attack": 15.0,
+    "comp_pre_mix": 60.0,
+    "cab_room_level": -2.0,
+    "delay_on": 1,
+    "delay_mode": 2,
+    "delay_sync": 1,
+    "delay_note": 6,
+    "delay_feedback": 35.0,
+    "delay_mix": 22.0,
+    "reverb_on": 1,
+    "reverb_engine": 0,
+    "reverb_mix": 15.0,
+    "reverb_early_late": 75.0,
+    "tempo_bpm": 100.0
+  },
+  "amps": [
+    {
+      "path": "",
+      "hash": "",
+      "size": 0
+    },
+    {
+      "path": "",
+      "hash": "",
+      "size": 0
+    },
+    {
+      "path": "",
+      "hash": "",
+      "size": 0
+    }
+  ],
+  "cab": {
+    "mic1": {
+      "path": "",
+      "hash": "",
+      "size": 0
+    },
+    "mic2": {
+      "path": "",
+      "hash": "",
+      "size": 0
+    },
+    "room": {
+      "path": "",
+      "hash": "",
+      "size": 0
+    }
+  },
+  "midi": [],
+  "order": {
+    "pre": [
+      "gate",
+      "comp",
+      "boost",
+      "overdrive",
+      "eq"
+    ],
+    "post": [
+      "eq",
+      "comp",
+      "harmonizer",
+      "multivoicer",
+      "bloom",
+      "chorus",
+      "delay",
+      "reverb"
+    ],
+    "bloom": [
+      "bitcrush",
+      "phaser",
+      "flanger"
+    ]
+  },
+  "scenes": {
+    "parameters": [],
+    "list": [
+      {
+        "name": "Clean",
+        "values": {
+          "amp_slot": 0,
+          "delay_on": 1,
+          "reverb_on": 1
+        }
+      },
+      {
+        "name": "Crunch",
+        "values": {
+          "amp_slot": 1,
+          "delay_on": 0,
+          "reverb_on": 1
+        }
+      },
+      {
+        "name": "Breakup",
+        "values": {
+          "amp_slot": 2,
+          "delay_on": 1,
+          "reverb_on": 1
+        }
+      },
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  }
+}

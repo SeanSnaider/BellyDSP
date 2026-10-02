@@ -1,0 +1,122 @@
+{
+  "format_version": 2,
+  "name": "CHON",
+  "notes": "Slot 1: a bright modern clean capture. Slot 2: edge-of-breakup. Slot 3: a crunch. Load your own captures and cab IRs; these settings are starting points to tune by ear.",
+  "parameters": {
+    "amp_slot": 0,
+    "comp_pre_on": 1,
+    "comp_pre_threshold": -28.0,
+    "comp_pre_ratio": 4.0,
+    "comp_pre_attack": 10.0,
+    "comp_pre_mix": 70.0,
+    "chorus_on": 1,
+    "chorus_mode": 1,
+    "chorus_mix": 40.0,
+    "delay_on": 1,
+    "delay_mode": 0,
+    "delay_sync": 1,
+    "delay_stereo": 2,
+    "delay_note": 10,
+    "delay_note_right": 6,
+    "delay_feedback": 35.0,
+    "delay_mix": 28.0,
+    "reverb_on": 1,
+    "reverb_engine": 2,
+    "reverb_mix": 20.0,
+    "reverb_decay": 2.2,
+    "tempo_bpm": 110.0
+  },
+  "amps": [
+    {
+      "path": "",
+      "hash": "",
+      "size": 0
+    },
+    {
+      "path": "",
+      "hash": "",
+      "size": 0
+    },
+    {
+      "path": "",
+      "hash": "",
+      "size": 0
+    }
+  ],
+  "cab": {
+    "mic1": {
+      "path": "",
+      "hash": "",
+      "size": 0
+    },
+    "mic2": {
+      "path": "",
+      "hash": "",
+      "size": 0
+    },
+    "room": {
+      "path": "",
+      "hash": "",
+      "size": 0
+    }
+  },
+  "midi": [],
+  "order": {
+    "pre": [
+      "gate",
+      "comp",
+      "boost",
+      "overdrive",
+      "eq"
+    ],
+    "post": [
+      "eq",
+      "comp",
+      "harmonizer",
+      "multivoicer",
+      "bloom",
+      "chorus",
+      "delay",
+      "reverb"
+    ],
+    "bloom": [
+      "bitcrush",
+      "phaser",
+      "flanger"
+    ]
+  },
+  "scenes": {
+    "parameters": [],
+    "list": [
+      {
+        "name": "Clean",
+        "values": {
+          "amp_slot": 0,
+          "chorus_on": 1,
+          "delay_on": 1
+        }
+      },
+      {
+        "name": "Breakup",
+        "values": {
+          "amp_slot": 1,
+          "chorus_on": 1,
+          "delay_on": 1
+        }
+      },
+      {
+        "name": "Crunch",
+        "values": {
+          "amp_slot": 2,
+          "chorus_on": 0,
+          "delay_on": 0
+        }
+      },
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  }
+}

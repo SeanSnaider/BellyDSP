@@ -1851,7 +1851,21 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p)
     presetLabel.setFont (juce::FontOptions (14.0f));
     addAndMakeVisible (presetLabel);
     savePresetButton.onClick = [this] { savePreset(); };
-    loadPresetButton.onClick = [this] { loadPreset(); };
+    loadPresetButton.onClick = [this]
+    {
+        // A preset file, or one of the factory presets.
+        juce::PopupMenu menu;
+        menu.addItem ("Open a preset file...", [this] { loadPreset(); });
+        menu.addSeparator();
+        menu.addSectionHeader ("Factory presets (load your own captures and IRs)");
+        for (const auto& preset : presets::factoryPresets())
+            menu.addItem (preset["name"].toString(), [this, preset]
+            {
+                const auto result = ampSim.loadPreset (preset);
+                presetMessage = result.ok ? preset["notes"].toString() : result.error;
+            });
+        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (loadPresetButton));
+    };
     midiButton.onClick = [this] { showMidiMappings(); };
     tunerButton.setClickingTogglesState (true);
     tunerButton.setColour (juce::TextButton::buttonOnColourId, accent);

@@ -1,0 +1,124 @@
+{
+  "format_version": 2,
+  "name": "Tech Death",
+  "notes": "Slot 1: a tight high-gain capture (amp only). Slot 2: a high-gain lead. Slot 3: a clean. Press Learn on Gate A with the strings muted first. Load your own captures and cab IRs; these settings are starting points to tune by ear.",
+  "parameters": {
+    "amp_slot": 0,
+    "gate_a_on": 1,
+    "gate_b_on": 1,
+    "gate_link": 1,
+    "boost_on": 1,
+    "boost_mode": 2,
+    "boost_level": 6.0,
+    "cab_lowcut_on": 1,
+    "cab_lowcut_freq": 80.0,
+    "cab_highcut_on": 1,
+    "cab_highcut_freq": 9000.0,
+    "reverb_on": 1,
+    "reverb_engine": 0,
+    "reverb_mix": 8.0,
+    "reverb_decay": 0.8
+  },
+  "amps": [
+    {
+      "path": "",
+      "hash": "",
+      "size": 0
+    },
+    {
+      "path": "",
+      "hash": "",
+      "size": 0
+    },
+    {
+      "path": "",
+      "hash": "",
+      "size": 0
+    }
+  ],
+  "cab": {
+    "mic1": {
+      "path": "",
+      "hash": "",
+      "size": 0
+    },
+    "mic2": {
+      "path": "",
+      "hash": "",
+      "size": 0
+    },
+    "room": {
+      "path": "",
+      "hash": "",
+      "size": 0
+    }
+  },
+  "midi": [],
+  "order": {
+    "pre": [
+      "gate",
+      "comp",
+      "boost",
+      "overdrive",
+      "eq"
+    ],
+    "post": [
+      "eq",
+      "comp",
+      "harmonizer",
+      "multivoicer",
+      "bloom",
+      "chorus",
+      "delay",
+      "reverb"
+    ],
+    "bloom": [
+      "bitcrush",
+      "phaser",
+      "flanger"
+    ]
+  },
+  "scenes": {
+    "parameters": [],
+    "list": [
+      {
+        "name": "Rhythm",
+        "values": {
+          "amp_slot": 0,
+          "gate_a_on": 1,
+          "gate_b_on": 1,
+          "boost_on": 1,
+          "delay_on": 0,
+          "chorus_on": 0
+        }
+      },
+      {
+        "name": "Lead",
+        "values": {
+          "amp_slot": 1,
+          "gate_a_on": 1,
+          "gate_b_on": 1,
+          "boost_on": 1,
+          "delay_on": 1,
+          "chorus_on": 0
+        }
+      },
+      {
+        "name": "Clean",
+        "values": {
+          "amp_slot": 2,
+          "gate_a_on": 0,
+          "gate_b_on": 0,
+          "boost_on": 0,
+          "delay_on": 1,
+          "chorus_on": 1
+        }
+      },
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  }
+}

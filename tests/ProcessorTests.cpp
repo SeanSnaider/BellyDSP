@@ -658,6 +658,34 @@ public:
                         "its own delay mix (40 and 70) and chorus switch, copying B to A makes them equal; loading a preset clears the history and starts on A");
         }
 
+        beginTest ("factory presets: all five load cleanly, set their sound, bring their scenes, and say what to load");
+        {
+            const auto factory = presets::factoryPresets();
+            expectEquals (factory.size(), 5);
+            juce::StringArray names;
+            for (const auto& preset : factory)
+            {
+                AmpSimProcessor p;
+                const auto result = p.loadPreset (preset);
+                expect (result.ok, result.error);
+                expect (p.getPresetWarnings().isEmpty(), preset["name"].toString() + ": " + p.getPresetWarnings().joinIntoString ("; "));
+                expect (p.getScenes().get (0).stored && p.getScenes().get (2).stored);
+                expect (preset["notes"].toString().contains ("Load your own captures"));
+                names.add (preset["name"].toString() + " (" + juce::String ((int) preset["parameters"].getDynamicObject()->getProperties().size())
+                           + " settings, scenes " + p.getScenes().get (0).name + "/" + p.getScenes().get (1).name + "/" + p.getScenes().get (2).name + ")");
+            }
+            // Spot checks: what each style is about.
+            AmpSimProcessor tech;
+            expect (tech.loadPreset (factory[2]).ok);
+            expect (getParam (tech, "gate_a_on") == 1.0f && getParam (tech, "gate_b_on") == 1.0f && getParam (tech, "boost_mode") == 2.0f);
+            AmpSimProcessor chon;
+            expect (chon.loadPreset (factory[1]).ok);
+            expect (getParam (chon, "delay_stereo") == 2.0f && getParam (chon, "chorus_on") == 1.0f);
+            expect (chon.recallScene (2));
+            expectEquals (getParam (chon, "amp_slot"), 2.0f);
+            logMessage ("  -> " + names.joinIntoString (", "));
+        }
+
         beginTest ("presets: the golden v1 file loads the same on every build");
         {
             AmpSimProcessor p;

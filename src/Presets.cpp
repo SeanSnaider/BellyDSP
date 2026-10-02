@@ -1,4 +1,5 @@
 #include "Presets.h"
+#include "BinaryData.h"
 #include "PluginProcessor.h"
 
 #include <map>
@@ -359,6 +360,18 @@ ApplyResult apply (AmpSimProcessor& processor, const juce::var& saved)
     processor.undoManager.clearUndoHistory();
     processor.resetAB();
     return result;
+}
+
+juce::Array<juce::var> factoryPresets()
+{
+    juce::Array<juce::var> list;
+    for (const auto* file : { "Polyphia_json", "CHON_json", "TechDeath_json", "Metal_json", "MidwestEmo_json" })
+    {
+        int size = 0;
+        if (const auto* data = BinaryData::getNamedResource (file, size))
+            list.add (juce::JSON::parse (juce::String::fromUTF8 (data, size)));
+    }
+    return list;
 }
 
 juce::File defaultFolder()

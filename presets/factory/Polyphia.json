@@ -1,0 +1,134 @@
+{
+  "format_version": 2,
+  "name": "Polyphia",
+  "notes": "Slot 1: a bright modern clean capture. Slot 2: a crunch. Slot 3: a high-gain capture. Load your own captures and cab IRs; these settings are starting points to tune by ear.",
+  "parameters": {
+    "amp_slot": 0,
+    "comp_pre_on": 1,
+    "comp_pre_threshold": -32.0,
+    "comp_pre_ratio": 8.0,
+    "comp_pre_attack": 8.0,
+    "comp_pre_mix": 80.0,
+    "chorus_on": 1,
+    "chorus_mode": 0,
+    "chorus_rate": 0.8,
+    "chorus_depth": 40.0,
+    "chorus_mix": 35.0,
+    "delay_on": 1,
+    "delay_mode": 0,
+    "delay_sync": 1,
+    "delay_note": 10,
+    "delay_feedback": 30.0,
+    "delay_mix": 25.0,
+    "delay_duck": 6.0,
+    "reverb_on": 1,
+    "reverb_engine": 1,
+    "reverb_mix": 18.0,
+    "reverb_decay": 1.8,
+    "tempo_bpm": 120.0
+  },
+  "amps": [
+    {
+      "path": "",
+      "hash": "",
+      "size": 0
+    },
+    {
+      "path": "",
+      "hash": "",
+      "size": 0
+    },
+    {
+      "path": "",
+      "hash": "",
+      "size": 0
+    }
+  ],
+  "cab": {
+    "mic1": {
+      "path": "",
+      "hash": "",
+      "size": 0
+    },
+    "mic2": {
+      "path": "",
+      "hash": "",
+      "size": 0
+    },
+    "room": {
+      "path": "",
+      "hash": "",
+      "size": 0
+    }
+  },
+  "midi": [],
+  "order": {
+    "pre": [
+      "gate",
+      "comp",
+      "boost",
+      "overdrive",
+      "eq"
+    ],
+    "post": [
+      "eq",
+      "comp",
+      "harmonizer",
+      "multivoicer",
+      "bloom",
+      "chorus",
+      "delay",
+      "reverb"
+    ],
+    "bloom": [
+      "bitcrush",
+      "phaser",
+      "flanger"
+    ]
+  },
+  "scenes": {
+    "parameters": [
+      "delay_mix"
+    ],
+    "list": [
+      {
+        "name": "Clean",
+        "values": {
+          "amp_slot": 0,
+          "chorus_on": 1,
+          "delay_on": 1,
+          "boost_on": 0,
+          "gate_a_on": 0,
+          "delay_mix": 25.0
+        }
+      },
+      {
+        "name": "Crunch",
+        "values": {
+          "amp_slot": 1,
+          "chorus_on": 0,
+          "delay_on": 1,
+          "boost_on": 0,
+          "gate_a_on": 1,
+          "delay_mix": 18.0
+        }
+      },
+      {
+        "name": "Lead",
+        "values": {
+          "amp_slot": 2,
+          "chorus_on": 0,
+          "delay_on": 1,
+          "boost_on": 1,
+          "gate_a_on": 1,
+          "delay_mix": 30.0
+        }
+      },
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  }
+}

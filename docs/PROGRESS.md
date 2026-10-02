@@ -15,7 +15,7 @@ Status key: Not started, In progress, Done. See `BUILD_PLAN.md` for what each ph
 | 8 | Bloom: bitcrush, phaser, flanger | Not started | |
 | 9 | Pitch shifter (granular + PSOLA), multivoicer, shimmer reverb | Not started | Pitch shifter is shared with the harmonizer |
 | 10 | Harmonizer | Not started | Depends on 7 and 9 |
-| 11 | Full preset system, scenes, undo/A-B, real GUI | In progress (branch `phase-11-presets`) | Format version 2 (library-relative files with content hashes, relinking, migration) and scenes done. Undo/redo, A/B, factory presets, and UI_DESIGN.md plus the real GUI to come |
+| 11 | Full preset system, scenes, undo/A-B, real GUI | In progress (branch `phase-11`) | Format version 2 (library-relative files with content hashes, relinking, migration), scenes, undo/redo, A/B, and the five factory presets done. UI_DESIGN.md and the real GUI to come |
 
 ## Workflow
 
@@ -38,6 +38,7 @@ Since 2026-10-01 the build runs to completion without stopping for questions: ph
 | 6.G | Sean checks the gates on the Solo: switch both on (linked), press Learn with the strings muted, then play legato and tapping in a heavy part, hard stops, ringing notes, and choked tremolo | Legato and taps never chop; hard stops are silent within about 80 ms; ringing notes fade over about 250 ms; adjust release and hold to taste and note the settings |
 | 6.M | Sean checks what his footswitch sends: press and release one switch while watching the MIDI monitor in the app (or Audio MIDI Setup's MIDI Studio) | Each switch sends 127 on press and 0 on release (momentary), 127 on every press (trigger), or alternates 127 and 0 (latching). Mappings learned on a latching controller need their action changed to momentary (ASSUMPTIONS M2) |
 | 6.L | Sean plays the Boost and Overdrive (once wired into the app): Screamer into a high-gain capture for the tech death tone, Tight with its frequency and mid knobs, Mid Drive, Distortion, Transparent, and Fuzz across drive and tone, Mix at 50%, and switching modes while playing. Also try 8x on Distortion and Transparent at full drive on high notes, and turn the Fuzz's Tone while playing (the real pedal thumps a little; ASSUMPTIONS V23) | The Screamer tightens the amp the way a real one does, the knobs behave like the pedals', there's no fizz or aliasing he can hear at 4x (or 8x fixes it), and mode switches don't click |
+| 11.F | Sean loads each factory preset, puts his captures and IRs in the slots its notes name, tunes it by ear, and saves it | Each style sounds like it should with his captures |
 | 3.C | Community captures: load several amp-only captures from TONE3000 and run the differential test against NAM core's render tool on them (the Phase 3 done criterion says "several community models"; only NAM core's own examples are tested so far) | Each matches within -100 dB |
 
 ## Log
@@ -209,3 +210,8 @@ Add a dated line here when something meaningful lands or a decision changes.
 - Moved inside the library, a capture and a pack are both found again by hash and loaded, with a warning saying where from and to; a deleted capture loads as an empty slot with a warning while the rest of the preset (here, delay_on) still applies; a file changed at its path loads with a warning. Version 1 presets migrate with a pure function that leaves the original untouched; the golden v1 file still loads the same.
 - Scenes: "Verse" and "Chorus" each hold 25 values (the amp slot, every block switch, and the chosen delay and reverb mix); CC 70 with value 0 or 1 switches the whole set (and the chain's amp slot) through the timer; empty scenes and out-of-range values change nothing; knobs no scene holds are untouched. Scenes come back from presets and the saved session. A scene bar in the header (click to recall or to store into an empty scene; Store, then a scene, to overwrite; right-click to store or clear) and a "Held by scenes" item on every knob's right-click menu.
 - The real-time test now stores scenes and recalls two from the footswitch while playing: 0 allocations, 0 frees, 0 blocking locks.
+
+2026-10-02: Phase 11, undo/redo, A/B, and the factory presets (branch `phase-11`, all phases together; 2047 checks pass).
+- Undo and redo: two gestures undone one at a time (the reverb mix, then the delay switch and mix together) and redone exactly; Undo/Redo buttons and cmd-Z; loading a preset clears the history.
+- A/B: B starts as a copy of A; each keeps its own settings (delay mix 40 against 70, the chorus off against on); copying makes them equal; loading a preset starts again on A.
+- Factory presets: Polyphia, CHON, Tech Death, Metal, and Midwest Emo load with no warnings, each with three scenes (Clean/Crunch/Lead, Rhythm/Lead/Clean, ...), and each says which captures to load where. The Load button offers them next to "Open a preset file".
