@@ -131,7 +131,9 @@ private:
 class OrderStrip final : public juce::Component
 {
 public:
-    OrderStrip (AmpSimProcessor& processor, ampsim::Chain::Section section);
+    /// A row of block names with arrows that move each one earlier or later: a chain section's order, or
+    /// the order inside Bloom.
+    OrderStrip (const juce::String& title, std::function<juce::StringArray()> getOrder, std::function<void (const juce::StringArray&)> setOrder);
     void refresh();
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -139,8 +141,9 @@ public:
 private:
     void move (int position, int by);
 
-    AmpSimProcessor& ampSim;
-    const ampsim::Chain::Section section;
+    const juce::String title;
+    std::function<juce::StringArray()> getOrder;
+    std::function<void (const juce::StringArray&)> setOrder;
     juce::StringArray shown;
     juce::OwnedArray<juce::Label> names;
     juce::OwnedArray<juce::TextButton> earlier, later;
@@ -332,6 +335,47 @@ private:
     int shownTight = -1;
 };
 
+/// Bloom's bitcrusher.
+class BitcrushPanel final : public EffectPanel
+{
+public:
+    explicit BitcrushPanel (AmpSimProcessor& processor);
+    void resized() override;
+
+private:
+    ToggleControl* dither = nullptr;
+};
+
+/// Bloom's phaser: the controls the mode doesn't use are dimmed, and the rate becomes a note when synced.
+class PhaserPanel final : public EffectPanel
+{
+public:
+    explicit PhaserPanel (AmpSimProcessor& processor);
+    void refresh();
+    void resized() override;
+
+private:
+    juce::ComboBox *mode = nullptr, *stages = nullptr, *shape = nullptr, *note = nullptr;
+    ToggleControl *sync = nullptr, *classicFeedback = nullptr;
+    Knob *rate = nullptr, *depth = nullptr, *low = nullptr, *high = nullptr, *feedback = nullptr, *stereo = nullptr, *mix = nullptr;
+    int shownMode = -1, shownSync = -1;
+};
+
+/// Bloom's flanger: the rate becomes a note when synced; through-zero adds 5 ms of latency while it's on.
+class FlangerPanel final : public EffectPanel
+{
+public:
+    explicit FlangerPanel (AmpSimProcessor& processor);
+    void refresh();
+    void resized() override;
+
+private:
+    juce::ComboBox *shape = nullptr, *note = nullptr;
+    ToggleControl *sync = nullptr, *negative = nullptr, *throughZero = nullptr;
+    Knob *manual = nullptr, *depth = nullptr, *rate = nullptr, *feedback = nullptr, *stereo = nullptr, *mix = nullptr;
+    int shownSync = -1;
+};
+
 /// The delay's controls, plus the tempo and its tap button.
 class DelayPanel final : public juce::Component
 {
@@ -405,8 +449,8 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
-    /// For tests and snapshots: show the Amps (0), Cab (1), Gates & Drive (2), Pre FX (3), Post FX (4), or
-    /// Time FX (5) tab, and refresh the status lines now.
+    /// For tests and snapshots: show the Amps (0), Cab (1), Gates & Drive (2), Pre FX (3), Post FX (4),
+    /// Bloom (5), or Time FX (6) tab, and refresh the status lines now.
     void showTab (int index) { tabs.setCurrentTabIndex (index); }
     void refresh() { timerCallback(); }
 
@@ -441,7 +485,15 @@ private:
     Knob inputKnob, outputKnob;
     juce::Label warningLabel;
 
-    PageComponent ampsPage, cabPage, gatesPage, preFxPage, postFxPage, timeFxPage;
+    PageComponent ampsPage, cabPage, gatesPage, preFxPage, postFxPage, bloomPage, timeFxPage;
+    std::unique_ptr<OrderStrip> bloomOrder;
+    std::unique_ptr<BitcrushPanel> bitcrushPanel;
+    std::unique_ptr<PhaserPanel> phaserPanel;
+    std::unique_ptr<FlangerPanel> flangerPanel;
+    ToggleControl bloomOnButton { "Bloom on" };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bloomOnAttachment;
+    std::unique_ptr<Knob> bloomMixKnob;
+    juce::Label bloomLatencyLabel;
     std::unique_ptr<GatePanel> gateAPanel, gateBPanel;
     std::unique_ptr<BoostPanel> boostPanel;
     std::unique_ptr<OverdrivePanel> overdrivePanel;

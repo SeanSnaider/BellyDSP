@@ -1,5 +1,6 @@
 #pragma once
 
+#include "dsp/Bloom.h"
 #include "dsp/Boost.h"
 #include "dsp/Chorus.h"
 #include "dsp/Compressor.h"
@@ -74,6 +75,24 @@ struct OverdriveParameters
     static constexpr int numModes = 2;
 
     Raw on, mode, drive, tone, level, mix, tightOn, tightHz;
+};
+
+/// Bloom ("bloom_*"): the container's switch and mix, and its three effects. The order inside Bloom is
+/// the processor's (saved by effect name, like the sections'). Synced rates are one LFO cycle per note
+/// length at the tempo.
+struct BloomParameters
+{
+    static void addTo (Layout& layout);
+    void bind (State& state);
+    bool isOn() const noexcept { return on.on(); }
+    ampsim::Bloom::Settings read (double bpm, const ampsim::Bloom::Order& order) const noexcept;
+
+    Raw on, mix;
+    Raw crushOn, crushBits, crushRate, crushDither, crushTone, crushMix;
+    Raw phaserOn, phaserMode, phaserStages, phaserShape, phaserSync, phaserRate, phaserNote, phaserDepth, phaserLow, phaserHigh, phaserFeedback,
+        phaserClassicFeedback, phaserStereo, phaserMix;
+    Raw flangerOn, flangerManual, flangerDepth, flangerShape, flangerSync, flangerRate, flangerNote, flangerFeedback, flangerNegative, flangerStereo,
+        flangerMix, flangerThroughZero;
 };
 
 /// The drive blocks' oversampling factor ("drive_oversampling": 4x or 8x), a global setting.

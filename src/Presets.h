@@ -13,7 +13,7 @@ class AmpSimProcessor;
 ///     "parameters": { "<parameter id>": <plain value>, ... },   every parameter except global settings
 ///     "amps": [ "<capture path>", "", "" ],                      one per slot, "" for an empty slot
 ///     "cab": { "mic1": "<IR file or pack folder>", "mic2": "", "room": "" },
-///     "order": { "pre": [ "comp", "eq" ], "post": [ "eq", "comp", "delay" ] },
+///     "order": { "pre": [ "gate", "comp", ... ], "post": [ "eq", "comp", "bloom", ... ], "bloom": [ "bitcrush", "phaser", "flanger" ] },
 ///     "midi": [ { "cc": 82, "action": "toggle", "parameter": "delay_on" }, ... ]
 ///   }
 ///

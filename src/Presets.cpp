@@ -60,6 +60,7 @@ juce::var capture (AmpSimProcessor& processor, const juce::String& name)
     auto* order = new juce::DynamicObject();
     order->setProperty ("pre", toVar (processor.getSectionOrder (ampsim::Chain::Section::pre)));
     order->setProperty ("post", toVar (processor.getSectionOrder (ampsim::Chain::Section::post)));
+    order->setProperty ("bloom", toVar (processor.getBloomOrder()));
     root->setProperty ("order", juce::var (order));
 
     return juce::var (root);
@@ -151,6 +152,7 @@ ApplyResult apply (AmpSimProcessor& processor, const juce::var& preset)
     const auto order = preset.getProperty ("order", {});
     processor.setSectionOrder (ampsim::Chain::Section::pre, toStrings (order.getProperty ("pre", {})));
     processor.setSectionOrder (ampsim::Chain::Section::post, toStrings (order.getProperty ("post", {})));
+    processor.setBloomOrder (toStrings (order.getProperty ("bloom", {})));
 
     processor.parameters.state.setProperty ("presetName", preset.getProperty ("name", {}).toString(), nullptr);
     return result;

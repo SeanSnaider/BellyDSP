@@ -2,6 +2,7 @@
 
 #include "AmpSection.h"
 #include "Block.h"
+#include "Bloom.h"
 #include "Boost.h"
 #include "Cab.h"
 #include "Chorus.h"
@@ -49,6 +50,7 @@ public:
     Cab cab;
     Equalizer postEq { true };
     Compressor postCompressor { true };
+    Bloom bloom;
     Chorus chorus;
     Delay delay;
     Reverb reverb;
@@ -67,6 +69,7 @@ public:
         cab,
         postEq,
         postCompressor,
+        bloom,
         chorus,
         delay,
         reverb,

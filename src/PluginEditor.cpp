@@ -381,6 +381,13 @@ namespace
 {
 juce::String displayName (const juce::String& blockName)
 {
+    if (blockName == "gate") return "Gate A";
+    if (blockName == "boost") return "Boost";
+    if (blockName == "overdrive") return "Overdrive";
+    if (blockName == "bloom") return "Bloom";
+    if (blockName == "bitcrush") return "Bitcrush";
+    if (blockName == "phaser") return "Phaser";
+    if (blockName == "flanger") return "Flanger";
     if (blockName == "comp") return "Compressor";
     if (blockName == "eq") return "EQ";
     if (blockName == "delay") return "Delay";
@@ -390,15 +397,15 @@ juce::String displayName (const juce::String& blockName)
 }
 } // namespace
 
-OrderStrip::OrderStrip (AmpSimProcessor& processor, ampsim::Chain::Section sectionToShow)
-    : ampSim (processor), section (sectionToShow)
+OrderStrip::OrderStrip (const juce::String& titleToShow, std::function<juce::StringArray()> getter, std::function<void (const juce::StringArray&)> setter)
+    : title (titleToShow), getOrder (std::move (getter)), setOrder (std::move (setter))
 {
     refresh();
 }
 
 void OrderStrip::refresh()
 {
-    const auto order = ampSim.getSectionOrder (section);
+    const auto order = getOrder();
     if (order == shown)
         return;
 
@@ -433,7 +440,7 @@ void OrderStrip::move (int position, int by)
 {
     auto order = shown;
     order.move (position, position + by);
-    ampSim.setSectionOrder (section, order);
+    setOrder (order);
     refresh();
 }
 
@@ -441,17 +448,17 @@ void OrderStrip::paint (juce::Graphics& g)
 {
     g.setColour (dimText);
     g.setFont (juce::FontOptions (13.0f));
-    g.drawText (section == ampsim::Chain::Section::pre ? "Order (before the amp):" : "Order (after the cab):",
-                getLocalBounds().removeFromLeft (170), juce::Justification::centredLeft);
+    g.drawText (title, getLocalBounds().removeFromLeft (170), juce::Justification::centredLeft);
 }
 
 void OrderStrip::resized()
 {
     auto area = getLocalBounds();
     area.removeFromLeft (175);
+    const auto cellWidth = juce::jmin (200, area.getWidth() / juce::jmax (1, names.size()));
     for (int i = 0; i < names.size(); ++i)
     {
-        auto cell = area.removeFromLeft (200).reduced (4, 2);
+        auto cell = area.removeFromLeft (cellWidth).reduced (4, 2);
         earlier[i]->setBounds (cell.removeFromLeft (28));
         later[i]->setBounds (cell.removeFromRight (28));
         names[i]->setBounds (cell);
@@ -1054,6 +1061,124 @@ void GatePanel::resized()
     layoutGrid (area, cells, 2, juce::jmin (110, area.getHeight() / 4));
 }
 
+// ---- Bloom's panels ----------------------------------------------------------------------------------
+
+BitcrushPanel::BitcrushPanel (AmpSimProcessor& processor) : EffectPanel (processor, "Bitcrush", "bloom_crush_on")
+{
+    addKnob ("bloom_crush_bits", "Bits", " bits");
+    addKnob ("bloom_crush_rate", "Rate", " Hz");
+    addKnob ("bloom_crush_tone", "Tone", " Hz");
+    addKnob ("bloom_crush_mix", "Mix", " %");
+    dither = &addToggle ("bloom_crush_dither", "Dither (hiss instead of gated decays)");
+}
+
+void BitcrushPanel::resized()
+{
+    auto area = layoutTitle();
+    dither->setBounds (area.removeFromBottom (28));
+    std::vector<juce::Component*> cells;
+    for (auto* knob : knobs)
+        cells.push_back (knob);
+    layoutGrid (area, cells, 2, juce::jmin (120, area.getHeight() / 2));
+}
+
+PhaserPanel::PhaserPanel (AmpSimProcessor& processor) : EffectPanel (processor, "Phaser", "bloom_phaser_on")
+{
+    mode = &addCombo ("bloom_phaser_mode", { "Classic", "Modern", "Vibe" });
+    stages = &addCombo ("bloom_phaser_stages", { "2 stages", "4 stages", "6 stages", "8 stages", "12 stages" });
+    shape = &addCombo ("bloom_phaser_shape", { "Sine", "Triangle" });
+    note = &addCombo ("bloom_phaser_note", noteNameList());
+    sync = &addToggle ("bloom_phaser_sync", "Sync");
+    classicFeedback = &addToggle ("bloom_phaser_classic_fb", "Feedback (later version)");
+    rate = &addKnob ("bloom_phaser_rate", "Rate", " Hz");
+    depth = &addKnob ("bloom_phaser_depth", "Depth", " %");
+    low = &addKnob ("bloom_phaser_low", "Low", " Hz");
+    high = &addKnob ("bloom_phaser_high", "High", " Hz");
+    feedback = &addKnob ("bloom_phaser_feedback", "Resonance", " %");
+    stereo = &addKnob ("bloom_phaser_stereo", "Stereo", " deg");
+    mix = &addKnob ("bloom_phaser_mix", "Mix", " %");
+}
+
+void PhaserPanel::refresh()
+{
+    // Classic: fixed 4 stages, triangle, its own range, optional feedback. Modern: everything. Vibe: its
+    // own stages, range, and sine.
+    const auto currentMode = juce::roundToInt (ampSim.parameters.getRawParameterValue ("bloom_phaser_mode")->load());
+    const auto currentSync = ampSim.parameters.getRawParameterValue ("bloom_phaser_sync")->load() >= 0.5f ? 1 : 0;
+    if (currentMode != shownMode)
+    {
+        shownMode = currentMode;
+        const auto modern = currentMode == 1;
+        for (auto* c : std::initializer_list<juce::Component*> { stages, shape, low, high, feedback })
+            c->setAlpha (modern ? 1.0f : 0.35f);
+        classicFeedback->setAlpha (currentMode == 0 ? 1.0f : 0.35f);
+    }
+    if (currentSync != shownSync)
+    {
+        shownSync = currentSync;
+        rate->setVisible (currentSync == 0);
+        note->setVisible (currentSync == 1);
+    }
+}
+
+void PhaserPanel::resized()
+{
+    auto area = layoutTitle();
+    auto row = area.removeFromTop (26);
+    const auto third = row.getWidth() / 3;
+    mode->setBounds (row.removeFromLeft (third).reduced (2, 0));
+    stages->setBounds (row.removeFromLeft (third).reduced (2, 0));
+    shape->setBounds (row.reduced (2, 0));
+    area.removeFromTop (6);
+    auto toggles = area.removeFromTop (26);
+    sync->setBounds (toggles.removeFromLeft (80));
+    classicFeedback->setBounds (toggles);
+    area.removeFromTop (6);
+    const auto rowHeight = juce::jmin (115, area.getHeight() / 4);
+    layoutGrid (area, { rate, depth, low, high, feedback, stereo, mix }, 2, rowHeight);
+    note->setBounds (rate->getBounds().withSizeKeepingCentre (rate->getWidth() - 12, 26));
+}
+
+FlangerPanel::FlangerPanel (AmpSimProcessor& processor) : EffectPanel (processor, "Flanger", "bloom_flanger_on")
+{
+    shape = &addCombo ("bloom_flanger_shape", { "Triangle", "Sine", "Random" });
+    note = &addCombo ("bloom_flanger_note", noteNameList());
+    sync = &addToggle ("bloom_flanger_sync", "Sync");
+    negative = &addToggle ("bloom_flanger_negative", "Negative");
+    throughZero = &addToggle ("bloom_flanger_tz", "Through-zero (+5 ms latency)");
+    manual = &addKnob ("bloom_flanger_manual", "Manual", " ms");
+    depth = &addKnob ("bloom_flanger_depth", "Depth", " %");
+    rate = &addKnob ("bloom_flanger_rate", "Rate", " Hz");
+    feedback = &addKnob ("bloom_flanger_feedback", "Feedback", " %");
+    stereo = &addKnob ("bloom_flanger_stereo", "Stereo", " deg");
+    mix = &addKnob ("bloom_flanger_mix", "Mix", " %");
+}
+
+void FlangerPanel::refresh()
+{
+    const auto currentSync = ampSim.parameters.getRawParameterValue ("bloom_flanger_sync")->load() >= 0.5f ? 1 : 0;
+    if (currentSync != shownSync)
+    {
+        shownSync = currentSync;
+        rate->setVisible (currentSync == 0);
+        note->setVisible (currentSync == 1);
+    }
+}
+
+void FlangerPanel::resized()
+{
+    auto area = layoutTitle();
+    shape->setBounds (area.removeFromTop (26).reduced (2, 0));
+    area.removeFromTop (6);
+    auto toggles = area.removeFromTop (26);
+    sync->setBounds (toggles.removeFromLeft (80));
+    negative->setBounds (toggles.removeFromLeft (100));
+    throughZero->setBounds (area.removeFromTop (26));
+    area.removeFromTop (6);
+    layoutGrid (area, { manual, depth, rate, feedback, stereo, mix }, 2, juce::jmin (115, area.getHeight() / 3));
+    note->setBounds (rate->getBounds().withSizeKeepingCentre (rate->getWidth() - 12, 26));
+}
+
 // ---- BoostPanel, OverdrivePanel -----------------------------------------------------------------
 
 BoostPanel::BoostPanel (AmpSimProcessor& processor) : EffectPanel (processor, "Boost", "boost_on")
@@ -1543,8 +1668,11 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p)
     };
 
     // Pre FX and Post FX: the section's order, its compressor, and its EQ.
-    preOrder = std::make_unique<OrderStrip> (p, ampsim::Chain::Section::pre);
-    postOrder = std::make_unique<OrderStrip> (p, ampsim::Chain::Section::post);
+    using Section = ampsim::Chain::Section;
+    preOrder = std::make_unique<OrderStrip> ("Order (before the amp):", [&p] { return p.getSectionOrder (Section::pre); },
+                                             [&p] (const juce::StringArray& order) { p.setSectionOrder (Section::pre, order); });
+    postOrder = std::make_unique<OrderStrip> ("Order (after the cab):", [&p] { return p.getSectionOrder (Section::post); },
+                                              [&p] (const juce::StringArray& order) { p.setSectionOrder (Section::post, order); });
     preComp = std::make_unique<CompressorPanel> (p, "comp_pre", "Compressor", false);
     postComp = std::make_unique<CompressorPanel> (p, "comp_post", "Compressor", true);
     preEq = std::make_unique<EqualizerPanel> (p, "eq_pre", "EQ (before the amp)");
@@ -1588,6 +1716,35 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p)
     tabs.addTab ("Gates & Drive", panel, &gatesPage, false);
     tabs.addTab ("Pre FX", panel, &preFxPage, false);
     tabs.addTab ("Post FX", panel, &postFxPage, false);
+
+    // Bloom: the container's switch, mix, and order, then its three effects side by side.
+    bloomOrder = std::make_unique<OrderStrip> ("Order inside Bloom:", [&p] { return p.getBloomOrder(); },
+                                               [&p] (const juce::StringArray& order) { p.setBloomOrder (order); });
+    bitcrushPanel = std::make_unique<BitcrushPanel> (p);
+    phaserPanel = std::make_unique<PhaserPanel> (p);
+    flangerPanel = std::make_unique<FlangerPanel> (p);
+    bloomOnAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.parameters, "bloom_on", tagged (bloomOnButton, "bloom_on"));
+    bloomMixKnob = std::make_unique<Knob> (p.parameters, "bloom_mix", "Bloom mix", " %");
+    bloomLatencyLabel.setColour (juce::Label::textColourId, warningColour);
+    for (auto* c : std::initializer_list<juce::Component*> { bloomOrder.get(), bitcrushPanel.get(), phaserPanel.get(), flangerPanel.get(), &bloomOnButton,
+                                                             bloomMixKnob.get(), &bloomLatencyLabel })
+        bloomPage.addAndMakeVisible (c);
+    bloomPage.layout = [this] (juce::Rectangle<int> area)
+    {
+        area.reduce (8, 8);
+        auto top = area.removeFromTop (100);
+        bloomOnButton.setBounds (top.removeFromLeft (120).withSizeKeepingCentre (120, 28));
+        bloomMixKnob->setBounds (top.removeFromLeft (100));
+        top.removeFromLeft (12);
+        bloomLatencyLabel.setBounds (top.removeFromBottom (24));
+        bloomOrder->setBounds (top.withSizeKeepingCentre (top.getWidth(), 34));
+        area.removeFromTop (6);
+        const auto width = area.getWidth() / 3;
+        bitcrushPanel->setBounds (area.removeFromLeft (width).reduced (4));
+        phaserPanel->setBounds (area.removeFromLeft (width).reduced (4));
+        flangerPanel->setBounds (area.reduced (4));
+    };
+    tabs.addTab ("Bloom", panel, &bloomPage, false);
 
     // Time FX: chorus, delay, and reverb side by side, in their default order.
     chorusPanel = std::make_unique<ChorusPanel> (p);
@@ -1724,6 +1881,13 @@ void AmpSimEditor::timerCallback()
     delayPanel->refresh();
     chorusPanel->refresh();
     reverbPanel->refresh();
+    bloomOrder->refresh();
+    phaserPanel->refresh();
+    flangerPanel->refresh();
+    bloomLatencyLabel.setText (ampSim.getLatencySamples() > 0 ? "Through-zero flanging adds " + juce::String (ampSim.getLatencySamples() * 1000.0 / 48000.0, 1)
+                                                                    + " ms of latency while it's on"
+                                                              : juce::String(),
+                               juce::dontSendNotification);
     gateAPanel->refresh();
     gateBPanel->refresh();
     boostPanel->refresh();

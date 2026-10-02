@@ -81,6 +81,12 @@ public:
     static juce::String blockName (ampsim::Chain::Slot slot);
     static juce::Identifier orderKey (ampsim::Chain::Section section) { return section == ampsim::Chain::Section::pre ? "preOrder" : "postOrder"; }
 
+    /// The order inside Bloom, by effect name ("bitcrush", "phaser", "flanger"), saved like the sections'.
+    /// Message thread. Unknown names are ignored and missing effects keep their default places at the end.
+    void setBloomOrder (const juce::StringArray& names);
+    juce::StringArray getBloomOrder() const;
+    static inline const juce::Identifier bloomOrderKey { "bloomOrder" };
+
     /// Message thread: loads a preset between songs (BUILD_PLAN "Presets and scenes", Loading): the
     /// output fades to silence over 20 ms, the preset is applied, and the output fades back in once its
     /// captures and IRs have loaded. A short gap, never a click. Returns the validation result; problems
@@ -249,6 +255,9 @@ private:
     void applyEffectParameters();
     params::GateParameters gateAParams, gateBParams;
     params::BoostParameters boostParams;
+    params::BloomParameters bloomParams;
+    std::atomic<int> bloomOrderCode { 0 + 3 * 1 + 9 * 2 }; // the order as three base-3 digits, first effect lowest
+    ampsim::Bloom::Order bloomOrder() const noexcept;
     params::OverdriveParameters overdriveParams;
     params::Raw driveOversampling;
     std::atomic<float>* gateLink = nullptr;

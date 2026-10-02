@@ -473,6 +473,154 @@ ampsim::Chorus::Settings ChorusParameters::read (double bpm) const noexcept
     return s;
 }
 
+// ---- Bloom ------------------------------------------------------------------------------------
+
+void BloomParameters::addTo (Layout& layout)
+{
+    // Defaults are the blocks' (Bloom.h, Bitcrush.h, Phaser.h, Flanger.h): everything off; 8 bits held at
+    // 12 kHz; a Classic phaser at 0.5 Hz, 50% mix, 90 degrees between the sides; a 2.5 ms flanger at 60%
+    // depth, 0.2 Hz, 50% feedback.
+    const ampsim::Bitcrush::Settings crush;
+    const ampsim::Phaser::Settings phaser;
+    const ampsim::Flanger::Settings flanger;
+    const auto notes = noteNames();
+    const auto degrees = juce::AudioParameterFloatAttributes().withLabel ("deg");
+
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "bloom_on", 1 }, "Bloom On", false));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "bloom_mix", 1 }, "Bloom Mix", juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f), 100.0f, percent()));
+
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "bloom_crush_on", 1 }, "Bitcrush On", crush.on));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "bloom_crush_bits", 1 }, "Bitcrush Bits", juce::NormalisableRange<float> (1.0f, 16.0f, 0.01f),
+                                         crush.bits, juce::AudioParameterFloatAttributes().withLabel ("bits")));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "bloom_crush_rate", 1 }, "Bitcrush Rate", skewedRange (100.0f, 48000.0f, 4000.0f, 1.0f),
+                                         crush.rateHz, hertz()));
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "bloom_crush_dither", 1 }, "Bitcrush Dither", crush.dither));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "bloom_crush_tone", 1 }, "Bitcrush Tone", skewedRange (1000.0f, 20000.0f, 5000.0f, 1.0f),
+                                         crush.toneHz, hertz()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "bloom_crush_mix", 1 }, "Bitcrush Mix", juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f),
+                                         crush.mix * 100.0f, percent()));
+
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "bloom_phaser_on", 1 }, "Phaser On", phaser.on));
+    layout.add (std::make_unique<Choice> (juce::ParameterID { "bloom_phaser_mode", 1 }, "Phaser Mode", juce::StringArray { "Classic", "Modern", "Vibe" }, 0));
+    layout.add (std::make_unique<Choice> (juce::ParameterID { "bloom_phaser_stages", 1 }, "Phaser Stages", juce::StringArray { "2", "4", "6", "8", "12" }, 1));
+    layout.add (std::make_unique<Choice> (juce::ParameterID { "bloom_phaser_shape", 1 }, "Phaser LFO Shape", juce::StringArray { "Sine", "Triangle" }, 0));
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "bloom_phaser_sync", 1 }, "Phaser Sync", false));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "bloom_phaser_rate", 1 }, "Phaser Rate", skewedRange (0.05f, 10.0f, 1.0f, 0.01f), phaser.rateHz, hertz()));
+    layout.add (std::make_unique<Choice> (juce::ParameterID { "bloom_phaser_note", 1 }, "Phaser Note", notes, notes.indexOf ("1/1")));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "bloom_phaser_depth", 1 }, "Phaser Depth", juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f),
+                                         phaser.depth * 100.0f, percent()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "bloom_phaser_low", 1 }, "Phaser Low", skewedRange (20.0f, 20000.0f, 600.0f, 1.0f), phaser.lowHz, hertz()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "bloom_phaser_high", 1 }, "Phaser High", skewedRange (20.0f, 20000.0f, 600.0f, 1.0f), phaser.highHz, hertz()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "bloom_phaser_feedback", 1 }, "Phaser Feedback", juce::NormalisableRange<float> (0.0f, 90.0f, 0.1f),
+                                         phaser.feedback * 100.0f, percent()));
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "bloom_phaser_classic_fb", 1 }, "Phaser Classic Feedback", phaser.classicFeedback));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "bloom_phaser_stereo", 1 }, "Phaser Stereo", juce::NormalisableRange<float> (0.0f, 180.0f, 1.0f),
+                                         phaser.stereoOffset * 360.0f, degrees));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "bloom_phaser_mix", 1 }, "Phaser Mix", juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f),
+                                         phaser.mix * 100.0f, percent()));
+
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "bloom_flanger_on", 1 }, "Flanger On", flanger.on));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "bloom_flanger_manual", 1 }, "Flanger Manual", skewedRange (0.5f, 10.0f, 2.5f, 0.01f),
+                                         flanger.manualMs, milliseconds()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "bloom_flanger_depth", 1 }, "Flanger Depth", juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f),
+                                         flanger.depth * 100.0f, percent()));
+    layout.add (std::make_unique<Choice> (juce::ParameterID { "bloom_flanger_shape", 1 }, "Flanger LFO Shape", juce::StringArray { "Triangle", "Sine", "Random" }, 0));
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "bloom_flanger_sync", 1 }, "Flanger Sync", false));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "bloom_flanger_rate", 1 }, "Flanger Rate", skewedRange (0.05f, 10.0f, 1.0f, 0.01f), flanger.rateHz, hertz()));
+    layout.add (std::make_unique<Choice> (juce::ParameterID { "bloom_flanger_note", 1 }, "Flanger Note", notes, notes.indexOf ("1/1")));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "bloom_flanger_feedback", 1 }, "Flanger Feedback", juce::NormalisableRange<float> (0.0f, 95.0f, 0.1f),
+                                         flanger.feedback * 100.0f, percent()));
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "bloom_flanger_negative", 1 }, "Flanger Negative", flanger.negative));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "bloom_flanger_stereo", 1 }, "Flanger Stereo", juce::NormalisableRange<float> (0.0f, 180.0f, 1.0f),
+                                         flanger.stereoPhase * 360.0f, degrees));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "bloom_flanger_mix", 1 }, "Flanger Mix", juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f),
+                                         flanger.mix * 100.0f, percent()));
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "bloom_flanger_tz", 1 }, "Flanger Through-Zero", flanger.throughZero));
+}
+
+void BloomParameters::bind (State& s)
+{
+    on.bind (s, "bloom_on");
+    mix.bind (s, "bloom_mix");
+    crushOn.bind (s, "bloom_crush_on");
+    crushBits.bind (s, "bloom_crush_bits");
+    crushRate.bind (s, "bloom_crush_rate");
+    crushDither.bind (s, "bloom_crush_dither");
+    crushTone.bind (s, "bloom_crush_tone");
+    crushMix.bind (s, "bloom_crush_mix");
+    phaserOn.bind (s, "bloom_phaser_on");
+    phaserMode.bind (s, "bloom_phaser_mode");
+    phaserStages.bind (s, "bloom_phaser_stages");
+    phaserShape.bind (s, "bloom_phaser_shape");
+    phaserSync.bind (s, "bloom_phaser_sync");
+    phaserRate.bind (s, "bloom_phaser_rate");
+    phaserNote.bind (s, "bloom_phaser_note");
+    phaserDepth.bind (s, "bloom_phaser_depth");
+    phaserLow.bind (s, "bloom_phaser_low");
+    phaserHigh.bind (s, "bloom_phaser_high");
+    phaserFeedback.bind (s, "bloom_phaser_feedback");
+    phaserClassicFeedback.bind (s, "bloom_phaser_classic_fb");
+    phaserStereo.bind (s, "bloom_phaser_stereo");
+    phaserMix.bind (s, "bloom_phaser_mix");
+    flangerOn.bind (s, "bloom_flanger_on");
+    flangerManual.bind (s, "bloom_flanger_manual");
+    flangerDepth.bind (s, "bloom_flanger_depth");
+    flangerShape.bind (s, "bloom_flanger_shape");
+    flangerSync.bind (s, "bloom_flanger_sync");
+    flangerRate.bind (s, "bloom_flanger_rate");
+    flangerNote.bind (s, "bloom_flanger_note");
+    flangerFeedback.bind (s, "bloom_flanger_feedback");
+    flangerNegative.bind (s, "bloom_flanger_negative");
+    flangerStereo.bind (s, "bloom_flanger_stereo");
+    flangerMix.bind (s, "bloom_flanger_mix");
+    flangerThroughZero.bind (s, "bloom_flanger_tz");
+}
+
+ampsim::Bloom::Settings BloomParameters::read (double bpm, const ampsim::Bloom::Order& order) const noexcept
+{
+    const auto syncedHz = [bpm] (const Raw& note, double lo, double hi) { return (float) juce::jlimit (lo, hi, 1000.0 / noteMs (note, bpm)); };
+
+    ampsim::Bloom::Settings s;
+    s.order = order;
+    s.mix = mix.get() / 100.0f;
+
+    auto& c = s.bitcrush;
+    c.on = crushOn.on();
+    c.bits = crushBits.get();
+    c.rateHz = crushRate.get();
+    c.dither = crushDither.on();
+    c.toneHz = crushTone.get();
+    c.mix = crushMix.get() / 100.0f;
+
+    auto& p = s.phaser;
+    p.on = phaserOn.on();
+    p.mode = (ampsim::Phaser::Mode) juce::jlimit (0, 2, phaserMode.index());
+    p.stages = ampsim::Phaser::stageChoices[(size_t) juce::jlimit (0, (int) ampsim::Phaser::stageChoices.size() - 1, phaserStages.index())];
+    p.shape = phaserShape.index() == 1 ? ampsim::Lfo::Shape::triangle : ampsim::Lfo::Shape::sine;
+    p.rateHz = phaserSync.on() ? syncedHz (phaserNote, ampsim::Phaser::minRateHz, ampsim::Phaser::maxRateHz) : phaserRate.get();
+    p.depth = phaserDepth.get() / 100.0f;
+    p.lowHz = phaserLow.get();
+    p.highHz = phaserHigh.get();
+    p.feedback = phaserFeedback.get() / 100.0f;
+    p.classicFeedback = phaserClassicFeedback.on();
+    p.stereoOffset = phaserStereo.get() / 360.0f;
+    p.mix = phaserMix.get() / 100.0f;
+
+    static constexpr ampsim::Lfo::Shape flangerShapes[] = { ampsim::Lfo::Shape::triangle, ampsim::Lfo::Shape::sine, ampsim::Lfo::Shape::random };
+    auto& f = s.flanger;
+    f.on = flangerOn.on();
+    f.manualMs = flangerManual.get();
+    f.depth = flangerDepth.get() / 100.0f;
+    f.shape = flangerShapes[juce::jlimit (0, 2, flangerShape.index())];
+    f.rateHz = flangerSync.on() ? syncedHz (flangerNote, ampsim::Flanger::minRateHz, ampsim::Flanger::maxRateHz) : flangerRate.get();
+    f.feedback = flangerFeedback.get() / 100.0f;
+    f.negative = flangerNegative.on();
+    f.stereoPhase = flangerStereo.get() / 360.0f;
+    f.mix = flangerMix.get() / 100.0f;
+    f.throughZero = flangerThroughZero.on();
+    return s;
+}
+
 // ---- Reverb -----------------------------------------------------------------------------------
 
 void ReverbParameters::addTo (Layout& layout)

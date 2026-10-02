@@ -521,7 +521,7 @@ public:
             AmpSimProcessor p;
             expectEquals (getParam (p, "chorus_on"), 0.0f);
             expectEquals (getParam (p, "reverb_on"), 0.0f);
-            expect (p.getSectionOrder (ampsim::Chain::Section::post) == juce::StringArray { "eq", "comp", "chorus", "delay", "reverb" });
+            expect (p.getSectionOrder (ampsim::Chain::Section::post) == juce::StringArray { "eq", "comp", "bloom", "chorus", "delay", "reverb" });
 
             // Synced: a quarter-note chorus cycle at 120 BPM is 2 Hz; a sixteenth-note pre-delay is 125 ms.
             setParam (p, "chorus_sync", 1.0f);
@@ -677,7 +677,7 @@ public:
                 for (auto* child : c.getChildren())
                     walk (*child);
             };
-            for (int tab = 0; tab < 6; ++tab)
+            for (int tab = 0; tab < 7; ++tab)
             {
                 ampSimEditor->showTab (tab);
                 walk (*editor);
@@ -1165,6 +1165,95 @@ public:
                         + "); a restored session starts with the tuner off; no tuner setting is in a preset");
         }
 
+        beginTest ("Bloom: through the processor it's exactly the block; through-zero reports its 5 ms to the host; its order is saved; synced rates follow the tempo");
+        {
+            const auto input = guitarDI ((int) (2.0 * fs));
+            using Settings = std::initializer_list<std::pair<const char*, float>>;
+            const Settings all { { "bloom_on", 1.0f }, { "bloom_crush_on", 1.0f }, { "bloom_crush_bits", 6.5f }, { "bloom_crush_mix", 40.0f },
+                                 { "bloom_phaser_on", 1.0f }, { "bloom_phaser_mode", 2.0f }, { "bloom_flanger_on", 1.0f }, { "bloom_flanger_feedback", 70.0f },
+                                 { "bloom_mix", 80.0f } };
+
+            AmpSimProcessor p;
+            for (const auto& [id, value] : all)
+                setParam (p, id, value);
+            p.setBloomOrder ({ "flanger", "phaser", "bitcrush" });
+            p.prepareToPlay (fs, blockSize);
+            const auto out = processAll (p, input);
+
+            // A lone Bloom with the same settings and order, set before prepare() as the processor does.
+            params::BloomParameters bp;
+            bp.bind (p.parameters);
+            const ampsim::Bloom::Order order { ampsim::Bloom::Effect::flanger, ampsim::Bloom::Effect::phaser, ampsim::Bloom::Effect::bitcrush };
+            ampsim::Bloom lone;
+            lone.setBypassed (false);
+            lone.setSettings (bp.read (p.getTempo(), order));
+            lone.prepare (fs, blockSize);
+            Stereo expected { input, input };
+            for (size_t start = 0; start + blockSize <= input.size(); start += blockSize)
+            {
+                float* channels[] = { expected.left.data() + start, expected.right.data() + start };
+                lone.setSettings (bp.read (p.getTempo(), order));
+                lone.process (juce::dsp::AudioBlock<float> (channels, 2, (size_t) blockSize), { input.data() + start, blockSize });
+            }
+            double worst = 0.0;
+            for (size_t n = 0; n < input.size() - blockSize; ++n)
+                worst = std::max ({ worst, std::abs ((double) out.left[n] - (double) expected.left[n]), std::abs ((double) out.right[n] - (double) expected.right[n]) });
+            expectEquals (worst, 0.0);
+
+            // Through-zero: 240 samples (5 ms) reported once the timer sees it, and 0 again after.
+            const auto latencyBefore = p.getLatencySamples();
+            setParam (p, "bloom_flanger_tz", 1.0f);
+            processAll (p, std::vector<float> ((size_t) (0.1 * fs), 0.0f));
+            p.runHousekeeping();
+            const auto latencyOn = p.getLatencySamples();
+            setParam (p, "bloom_flanger_tz", 0.0f);
+            processAll (p, std::vector<float> ((size_t) (0.1 * fs), 0.0f));
+            p.runHousekeeping();
+            expectEquals (latencyBefore, 0);
+            expectEquals (latencyOn, 240);
+            expectEquals (p.getLatencySamples(), 0);
+
+            // The order inside Bloom: saved with the state and in presets; odd orders repaired.
+            juce::MemoryBlock state;
+            p.getStateInformation (state);
+            AmpSimProcessor restored;
+            restored.setStateInformation (state.getData(), (int) state.getSize());
+            expect (restored.getBloomOrder() == juce::StringArray { "flanger", "phaser", "bitcrush" });
+            AmpSimProcessor fromPreset;
+            expect (fromPreset.loadPreset (p.capturePreset ("bloom")).ok);
+            expect (fromPreset.getBloomOrder() == juce::StringArray { "flanger", "phaser", "bitcrush" });
+            AmpSimProcessor odd;
+            odd.setBloomOrder ({ "flanger", "wah", "flanger" });
+            expect (odd.getBloomOrder() == juce::StringArray { "flanger", "bitcrush", "phaser" });
+
+            // Synced rates: a quarter note at 120 BPM is 2 Hz, a whole note 0.5 Hz.
+            AmpSimProcessor synced;
+            const auto notes = ampsim::tempo::notes;
+            const auto indexOf = [&notes] (const char* name)
+            {
+                for (size_t i = 0; i < notes.size(); ++i)
+                    if (juce::String (notes[i].name) == name)
+                        return (float) i;
+                return -1.0f;
+            };
+            setParam (synced, "bloom_phaser_sync", 1.0f);
+            setParam (synced, "bloom_phaser_note", indexOf ("1/4"));
+            setParam (synced, "bloom_flanger_sync", 1.0f);
+            setParam (synced, "bloom_flanger_note", indexOf ("1/1"));
+            params::BloomParameters sp;
+            sp.bind (synced.parameters);
+            const auto s = sp.read (120.0, ampsim::Bloom::defaultOrder);
+            expectWithinAbsoluteError ((double) s.phaser.rateHz, 2.0, 1.0e-5);
+            expectWithinAbsoluteError ((double) s.flanger.rateHz, 0.5, 1.0e-5);
+
+            logMessage ("  -> all three on (bitcrush 6.5 bits at 40%, Vibe, flanger 70% feedback, mix 80%), ordered flanger, phaser, bitcrush: the processor's "
+                        "output differs from a lone Bloom by " + juce::String (worst));
+            logMessage ("  -> latency reported to the host: " + juce::String (latencyBefore) + " samples, " + juce::String (latencyOn) + " with through-zero on (5.0 ms), "
+                        + juce::String (p.getLatencySamples()) + " after; the order survives the state and presets; \"flanger, wah, flanger\" becomes \""
+                        + odd.getBloomOrder().joinIntoString (", ") + "\"; synced: 1/4 at 120 BPM = " + juce::String (s.phaser.rateHz, 3) + " Hz, 1/1 = "
+                        + juce::String (s.flanger.rateHz, 3) + " Hz");
+        }
+
         beginTest ("the effect order is saved by block name and restored, and odd saved orders are repaired");
         {
             using Section = ampsim::Chain::Section;
@@ -1173,7 +1262,7 @@ public:
             expect (startsWith (p.getSectionOrder (Section::post), { "eq", "comp" }));
             p.setSectionOrder (Section::pre, { "eq", "gate", "comp", "boost", "overdrive" });
             p.setSectionOrder (Section::post, { "comp", "eq" });
-            expect (startsWith (p.getSectionOrder (Section::post), { "comp", "eq", "chorus" }));
+            expect (startsWith (p.getSectionOrder (Section::post), { "comp", "eq", "bloom", "chorus" }));
 
             juce::MemoryBlock state;
             p.getStateInformation (state);
@@ -1290,8 +1379,14 @@ public:
             setParam (p, "boost_mode", 1.0f);
             setParam (p, "od_on", 1.0f);
             setParam (p, "od_mode", 1.0f);
+            setParam (p, "bloom_on", 1.0f);
+            setParam (p, "bloom_phaser_on", 1.0f);
+            setParam (p, "bloom_phaser_mode", 1.0f);
+            setParam (p, "bloom_flanger_on", 1.0f);
+            setParam (p, "bloom_flanger_sync", 1.0f);
             for (auto [tab, name] : std::initializer_list<std::pair<int, const char*>> {
-                     { 2, "editor_gates.png" }, { 3, "editor_prefx.png" }, { 4, "editor_postfx.png" }, { 5, "editor_timefx.png" } })
+                     { 2, "editor_gates.png" }, { 3, "editor_prefx.png" }, { 4, "editor_postfx.png" }, { 5, "editor_bloom.png" },
+                     { 6, "editor_timefx.png" } })
             {
                 ampSimEditor->showTab (tab);
                 ampSimEditor->resized();

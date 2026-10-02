@@ -58,6 +58,7 @@ AmpSimProcessor::AmpSimProcessor()
     postEqParams.bind (parameters, "eq_post");
     delayParams.bind (parameters);
     chorusParams.bind (parameters);
+    bloomParams.bind (parameters);
     reverbParams.bind (parameters);
     tempoBpm = raw ("tempo_bpm");
     tapCc = raw ("midi_tap_cc");
@@ -199,6 +200,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout AmpSimProcessor::createParam
     params::EqualizerParameters::addTo (layout, "eq_pre", "Pre EQ", true);
     params::EqualizerParameters::addTo (layout, "eq_post", "Post EQ", true);
     params::CompressorParameters::addTo (layout, "comp_post", "Post Comp", false);
+    params::BloomParameters::addTo (layout);
     params::ChorusParameters::addTo (layout);
     params::DelayParameters::addTo (layout);
     params::ReverbParameters::addTo (layout);
@@ -345,6 +347,8 @@ void AmpSimProcessor::applyEffectParameters()
     chain.postEq.setSettings (postEqParams.read());
     chain.setBypassed (Slot::postCompressor, ! postCompParams.isOn());
     chain.postCompressor.setSettings (postCompParams.read());
+    chain.setBypassed (Slot::bloom, ! bloomParams.isOn()); // Bloom takes this as its own bypass and keeps running
+    chain.bloom.setSettings (bloomParams.read (getTempo(), bloomOrder()));
     chain.setBypassed (Slot::chorus, ! chorusParams.isOn());
     chain.chorus.setSettings (chorusParams.read (getTempo()));
     chain.setBypassed (Slot::delay, ! delayParams.isOn()); // the delay and reverb take this as spillover
@@ -391,6 +395,8 @@ juce::String AmpSimProcessor::blockName (ampsim::Chain::Slot slot)
         return "gate";
     if (slot == Slot::boost)
         return "boost";
+    if (slot == Slot::bloom)
+        return "bloom";
     if (slot == Slot::overdrive)
         return "overdrive";
     if (slot == Slot::preCompressor || slot == Slot::postCompressor)
@@ -440,6 +446,36 @@ void AmpSimProcessor::setSectionOrder (ampsim::Chain::Section section, const juc
 
     chain.requestOrder (section, order);
     parameters.state.setProperty (orderKey (section), getSectionOrder (section).joinIntoString (","), nullptr);
+}
+
+ampsim::Bloom::Order AmpSimProcessor::bloomOrder() const noexcept
+{
+    const auto code = bloomOrderCode.load (std::memory_order_relaxed);
+    return { (ampsim::Bloom::Effect) (code % 3), (ampsim::Bloom::Effect) (code / 3 % 3), (ampsim::Bloom::Effect) (code / 9 % 3) };
+}
+
+void AmpSimProcessor::setBloomOrder (const juce::StringArray& names)
+{
+    // Names to effects, skipping unknown and repeated names, then any effect not named, in default order.
+    std::vector<ampsim::Bloom::Effect> order;
+    for (const auto& name : names)
+        for (const auto effect : ampsim::Bloom::defaultOrder)
+            if (name.trim() == ampsim::Bloom::effectName (effect) && std::find (order.begin(), order.end(), effect) == order.end())
+                order.push_back (effect);
+    for (const auto effect : ampsim::Bloom::defaultOrder)
+        if (std::find (order.begin(), order.end(), effect) == order.end())
+            order.push_back (effect);
+
+    bloomOrderCode.store ((int) order[0] + 3 * (int) order[1] + 9 * (int) order[2], std::memory_order_relaxed);
+    parameters.state.setProperty (bloomOrderKey, getBloomOrder().joinIntoString (","), nullptr);
+}
+
+juce::StringArray AmpSimProcessor::getBloomOrder() const
+{
+    juce::StringArray names;
+    for (const auto effect : bloomOrder())
+        names.add (ampsim::Bloom::effectName (effect));
+    return names;
 }
 
 juce::StringArray AmpSimProcessor::getSectionOrder (ampsim::Chain::Section section) const
@@ -569,6 +605,7 @@ void AmpSimProcessor::setStateInformation (const void* data, int sizeInBytes)
     // Effect order: saved by block name (older states have none, so the default order applies).
     for (auto section : { ampsim::Chain::Section::pre, ampsim::Chain::Section::post })
         setSectionOrder (section, juce::StringArray::fromTokens (state.getProperty (orderKey (section)).toString(), ",", ""));
+    setBloomOrder (juce::StringArray::fromTokens (state.getProperty (bloomOrderKey).toString(), ",", ""));
 
     // Milestone 1 had one amp slot ("modelPath") and one cab IR ("irPath"): they become slot 1 and
     // close mic 1.
@@ -791,6 +828,10 @@ void AmpSimProcessor::timerCallback()
     };
     writeLearned (chain.gateA, gateALearnSeen, "gate_a_threshold");
     writeLearned (chain.gateB.gate, gateBLearnSeen, "gate_b_threshold");
+
+    // Bloom's through-zero flanger is the one latency the chain ever has (5 ms, while it's on): tell the host.
+    if (const auto latency = chain.latencySamples(); latency != getLatencySamples())
+        setLatencySamples (latency);
 
     // A tapped tempo: write it into the tempo knob (the audio thread already uses it).
     if (tapPending.load())

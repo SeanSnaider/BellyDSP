@@ -184,6 +184,14 @@ public:
                     case 2450: setParam (p, "boost_on", 1.0f); setParam (p, "boost_mode", 2.0f); break; // Screamer
                     case 2500: setParam (p, "od_on", 1.0f); setParam (p, "od_mode", 1.0f); setParam (p, "od_drive", 80.0f); break;
                     case 2550: setParam (p, "drive_oversampling", 1.0f); break;                        // 8x
+                    // Phase 8 Bloom: on with all three, re-moded, reordered, through-zero on and off, bypassed.
+                    case 3010: setParam (p, "bloom_on", 1.0f); setParam (p, "bloom_crush_on", 1.0f); setParam (p, "bloom_phaser_on", 1.0f);
+                               setParam (p, "bloom_flanger_on", 1.0f); break;
+                    case 3050: setParam (p, "bloom_phaser_mode", 2.0f); setParam (p, "bloom_flanger_shape", 2.0f); break;
+                    case 3150: p.setBloomOrder ({ "flanger", "bitcrush", "phaser" }); break;
+                    case 3200: setParam (p, "bloom_flanger_tz", 1.0f); break;
+                    case 3250: setParam (p, "bloom_flanger_tz", 0.0f); setParam (p, "bloom_phaser_stages", 4.0f); setParam (p, "bloom_phaser_mode", 1.0f); break;
+                    case 3350: setParam (p, "bloom_on", 0.0f); break;
                     case 3550: setParam (p, "od_tight", 1.0f); setParam (p, "od_mode", 0.0f); setParam (p, "boost_mode", 1.0f); break;
                     case 3600: setParam (p, "drive_oversampling", 0.0f); setParam (p, "od_on", 0.0f); setParam (p, "boost_on", 0.0f); break;
                     case 1500: setParam (p, "input_gain", 6.0f); break;
