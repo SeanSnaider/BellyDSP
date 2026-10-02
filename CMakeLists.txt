@@ -65,7 +65,11 @@ set(AMPSIM_DSP_SOURCES
     src/dsp/Compressor.cpp
     src/dsp/Tempo.cpp
     src/dsp/Delay.cpp
-    src/dsp/Oversampler.cpp)
+    src/dsp/Oversampler.cpp
+    src/dsp/DriveCircuits.cpp
+    src/dsp/DriveEngine.cpp
+    src/dsp/Overdrive.cpp
+    src/dsp/Boost.cpp)
 
 set(AMPSIM_JUCE_DEFINITIONS
     JUCE_WEB_BROWSER=0
@@ -157,6 +161,7 @@ target_sources(ampsim_tests PRIVATE
     tests/PrimitivesTests.cpp
     tests/DelayTests.cpp
     tests/OversamplerTests.cpp
+    tests/DriveTests.cpp
     tests/Plot.cpp
     tests/NamAmpTests.cpp
     tests/ChainTests.cpp
