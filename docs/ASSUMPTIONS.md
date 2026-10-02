@@ -155,3 +155,14 @@ Status key: **Open** (waiting for Sean), **Confirmed** (Sean agreed), **Changed*
 | T9 | `tuner_on` is a parameter, so a footswitch can be MIDI-learned to it (no dedicated tuner CC). It's global, never in presets, and a restored session always starts with the tuner off. Mute while tuning is on by default; A4 is global. | The plan's footswitch toggle and global settings; a session saved mid-tune shouldn't open silent. | `AmpSimProcessor::setStateInformation`, `presets::isGlobal`. |
 | T10 | While engaged, the tuner covers the tabs (needle or strobe, remembered in the session). Strobe draws two bands, the lower with stripes half as wide. | A basic display until the real GUI (Phase 11). | `TunerView`. |
 | T11 | Polyphonic strum tuning (the plan's stretch goal) isn't built. | It's a stretch goal; everything else came first. | A future task. |
+
+## Phase 10: harmonizer control logic
+
+| # | Assumption | Why | To change it |
+|---|---|---|---|
+| K1 | Scales: Major, Natural minor, Harmonic minor, Melodic minor (ascending), Dorian, Phrygian, Lydian, Mixolydian, Locrian, Phrygian dominant, Whole-half diminished, Custom. Ionian and Aeolian aren't listed twice. An empty custom mask counts as all 12 notes. | The plan's list, without duplicates. | `harmony::Scale`. |
+| K2 | Diatonic steps count notes of whatever scale is chosen, so in the 8-note diminished scale +8 steps is the octave, and in a custom pentatonic +5 is. | Consistent rule for every scale size. | `harmony::diatonicTarget`. |
+| K3 | Out-of-key notes: Parallel (default) applies the nearest key note's shift; Snap uses the nearest key note's harmony note itself. Ties go to the lower key note. | The plan's rules, read literally. | `harmony::shiftFor`. |
+| K4 | An onset needs two confident estimates in a row within 35 cents; a legato jump needs a move of more than 70 cents within 10 ms and three consecutive estimates within 6 cents (landed). On audio through the detector that re-evaluates 8 to 10.7 ms after the new note, with no intermediate notes. | One agreeing pair let a pull-off land on the blend the detector reads while its window straddles two notes (A#3 for 4 ms between B3 and A3). | `NoteTracker::Settings`. |
+| K5 | A slide, or a bend that's held, re-evaluates once the pitch stays within 25 cents of a new semitone for 30 ms. So a held bend gets the new note's in-key harmony, and a slow slide (a whole tone in 400 ms) re-evaluates on the note it passes. A quick bend and release (a semitone up and back in 80 ms) changes nothing. | The plan's 30 ms settle rule can't tell a held bend from a slide that landed. | `settleSeconds` (longer keeps more bends parallel but slows slides). |
+| K6 | Confidence lost for 5 ms (clarity under 0.9) releases the note and the voices fade out; a dip of 2.7 ms doesn't. A chord released 5.3 ms after it started. | The plan's confidence gating. | `loseSeconds`, `confidence`. |
