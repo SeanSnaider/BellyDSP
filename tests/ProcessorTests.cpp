@@ -660,6 +660,113 @@ public:
             logMessage ("  -> 300 controllers in one buffer: 255 queued, " + juce::String (300 - 255) + " dropped, the audio thread never waits");
         }
 
+        beginTest ("MIDI learn from the panel: a right-click menu on any control learns, switches, and forgets mappings, and never moves the control");
+        {
+            AmpSimProcessor p;
+            p.prepareToPlay (fs, blockSize);
+            std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+            auto* ampSimEditor = dynamic_cast<AmpSimEditor*> (editor.get());
+            expect (ampSimEditor != nullptr);
+
+            // Every control attached to a parameter carries its ID, on every tab.
+            juce::StringArray tagged;
+            std::function<void (juce::Component&)> walk = [&] (juce::Component& c)
+            {
+                if (const auto id = c.getProperties()["parameterId"].toString(); id.isNotEmpty())
+                    tagged.addIfNotAlreadyThere (id);
+                for (auto* child : c.getChildren())
+                    walk (*child);
+            };
+            for (int tab = 0; tab < 6; ++tab)
+            {
+                ampSimEditor->showTab (tab);
+                walk (*editor);
+            }
+            for (const auto* id : { "delay_on", "reverb_mix", "gate_a_threshold", "gate_link", "eq_pre_g3", "cab_bypass", "comp_post_mode" })
+                expect (tagged.contains (id), id);
+
+            juce::AudioBuffer<float> buffer (2, blockSize);
+            const auto send = [&] (int cc, int value)
+            {
+                juce::MidiBuffer midi;
+                midi.addEvent (juce::MidiMessage::controllerEvent (1, cc, value), 0);
+                buffer.clear();
+                p.processBlock (buffer, midi);
+                p.runHousekeeping();
+            };
+            const auto choose = [&] (const juce::String& id, const juce::String& itemStart)
+            {
+                const auto menu = ampSimEditor->midiMenuFor (id); // the iterator only holds a reference
+                for (juce::PopupMenu::MenuItemIterator it (menu); it.next();)
+                    if (it.getItem().text.startsWith (itemStart) && it.getItem().action)
+                    {
+                        it.getItem().action();
+                        return true;
+                    }
+                return false;
+            };
+            const auto& mappings = p.getMidiMap().getMappings();
+
+            // A switch: learn, then the footswitch's first press maps it.
+            expect (choose ("delay_on", "MIDI learn"));
+            expect (p.getMidiMap().isLearning());
+            send (85, 127);
+            send (85, 0);
+            expect (mappings.size() == 1 && mappings[0].cc == 85 && mappings[0].action == MidiMapping::Action::toggle);
+            expectEquals (getParam (p, "delay_on"), 0.0f); // learning doesn't flip it
+            send (85, 127);
+            expectEquals (getParam (p, "delay_on"), 1.0f);
+
+            // The menu now offers following the switch instead (a latching footswitch), and back, and forgetting it.
+            expect (choose ("delay_on", "Follow the switch"));
+            expect (mappings[0].action == MidiMapping::Action::momentary);
+            send (85, 0);
+            expectEquals (getParam (p, "delay_on"), 0.0f);
+            expect (choose ("delay_on", "Flip on each press"));
+            expect (mappings[0].action == MidiMapping::Action::toggle);
+            expect (choose ("delay_on", "Forget CC 85"));
+            expect (mappings.empty());
+
+            // A knob: a continuous mapping over its whole range. And a learn can be cancelled.
+            expect (choose ("reverb_mix", "MIDI learn"));
+            send (86, 127);
+            expect (mappings.size() == 1 && mappings[0].action == MidiMapping::Action::continuous && mappings[0].minimum == 0.0f
+                    && mappings[0].maximum == 100.0f);
+            expect (choose ("chorus_on", "MIDI learn"));
+            expect (choose ("chorus_on", "Cancel MIDI learn"));
+            expect (! p.getMidiMap().isLearning());
+
+            // Right-clicks (and ctrl-clicks) never reach the control itself: a JUCE button would flip and a
+            // linear slider would jump. Left-clicks still do.
+            struct Recorder : juce::Component
+            {
+                int downs = 0, drags = 0, ups = 0;
+                void mouseDown (const juce::MouseEvent&) override { ++downs; }
+                void mouseDrag (const juce::MouseEvent&) override { ++drags; }
+                void mouseUp (const juce::MouseEvent&) override { ++ups; }
+            };
+            IgnoresRightClick<Recorder> control;
+            const auto click = [&] (int modifiers)
+            {
+                const auto now = juce::Time::getCurrentTime();
+                const juce::MouseEvent e (juce::Desktop::getInstance().getMainMouseSource(), {}, juce::ModifierKeys (modifiers),
+                                          juce::MouseInputSource::defaultPressure, 0.0f, 0.0f, 0.0f, 0.0f, &control, &control, now, {}, now, 1, false);
+                control.mouseDown (e);
+                control.mouseDrag (e);
+                control.mouseUp (e);
+            };
+            click (juce::ModifierKeys::rightButtonModifier);
+            click (juce::ModifierKeys::leftButtonModifier | juce::ModifierKeys::ctrlModifier);
+            const auto reachedOnRightClick = control.downs + control.drags + control.ups;
+            click (juce::ModifierKeys::leftButtonModifier);
+            expectEquals (reachedOnRightClick, 0);
+            expect (control.downs == 1 && control.drags == 1 && control.ups == 1);
+
+            logMessage ("  -> " + juce::String (tagged.size()) + " parameters reachable by right-click across the 6 tabs; the delay switch learned CC 85 "
+                        "as a toggle (the learning press changed nothing), switched to follow the switch and back, and was forgotten; the reverb mix "
+                        "learned CC 86 over 0-100%; a learn was cancelled; right- and ctrl-clicks reached the control 0 times, a left-click 3 (down, drag, up)");
+        }
+
         beginTest ("a saved model that has gone missing is reported, not a crash");
         {
             AmpSimProcessor p;

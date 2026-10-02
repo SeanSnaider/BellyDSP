@@ -10,6 +10,17 @@ const auto dimText = juce::Colour (0xff9aa0a8);
 const auto errorColour = juce::Colour (0xffff6b5e);
 const auto warningColour = juce::Colour (0xffffc04d);
 
+const juce::Identifier parameterIdProperty { "parameterId" };
+
+/// Marks a control with the parameter it's attached to, so a right-click on it can offer MIDI learn.
+/// Returns the control, so it can wrap an attachment's argument.
+template <typename Control>
+Control& tagged (Control& control, const juce::String& parameterId)
+{
+    control.getProperties().set (parameterIdProperty, parameterId);
+    return control;
+}
+
 /// A combo box must have its items before a parameter attachment is made for it.
 juce::ComboBox& withItems (juce::ComboBox& box, const juce::StringArray& items)
 {
@@ -36,7 +47,7 @@ void styleStatus (juce::Label& label)
 
 Knob::Knob (juce::AudioProcessorValueTreeState& state, const juce::String& parameterId, const juce::String& caption,
             const juce::String& suffix)
-    : attachment (state, parameterId, slider)
+    : attachment (state, parameterId, tagged (slider, parameterId))
 {
     slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
     slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 70, 18);
@@ -285,16 +296,16 @@ MicPanel::MicPanel (AmpSimProcessor& processor, int micIndex, std::function<void
         knobs.add (new Knob (state, AmpSimProcessor::cabParamId (mic, "pan"), "Pan", ""));
         knobs.add (new Knob (state, AmpSimProcessor::cabParamId (mic, "delay"), "Delay", " smp"));
 
-        auto* invert = toggles.add (new juce::ToggleButton ("Invert"));
-        toggleAttachments.add (new juce::AudioProcessorValueTreeState::ButtonAttachment (state, AmpSimProcessor::cabParamId (mic, "invert"), *invert));
+        auto* invert = toggles.add (new ToggleControl ("Invert"));
+        toggleAttachments.add (new juce::AudioProcessorValueTreeState::ButtonAttachment (state, AmpSimProcessor::cabParamId (mic, "invert"), tagged (*invert, AmpSimProcessor::cabParamId (mic, "invert"))));
 
         withItems (channel, { "Left channel", "Right channel" });
-        channelAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (state, AmpSimProcessor::cabParamId (mic, "channel"), channel);
+        channelAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (state, AmpSimProcessor::cabParamId (mic, "channel"), tagged (channel, AmpSimProcessor::cabParamId (mic, "channel")));
         addAndMakeVisible (channel);
     }
 
-    auto* mute = toggles.add (new juce::ToggleButton ("Mute"));
-    toggleAttachments.add (new juce::AudioProcessorValueTreeState::ButtonAttachment (state, AmpSimProcessor::cabParamId (mic, "mute"), *mute));
+    auto* mute = toggles.add (new ToggleControl ("Mute"));
+    toggleAttachments.add (new juce::AudioProcessorValueTreeState::ButtonAttachment (state, AmpSimProcessor::cabParamId (mic, "mute"), tagged (*mute, AmpSimProcessor::cabParamId (mic, "mute"))));
 
     for (auto* knob : knobs)
         addAndMakeVisible (knob);
@@ -455,15 +466,15 @@ CompressorPanel::CompressorPanel (AmpSimProcessor& processor, const juce::String
     stylePanelTitle (titleLabel, title);
     addAndMakeVisible (titleLabel);
 
-    for (auto [button, id] : std::initializer_list<std::pair<juce::ToggleButton*, juce::String>> {
+    for (auto [button, id] : std::initializer_list<std::pair<ToggleControl*, juce::String>> {
              { &onButton, p + "_on" }, { &autoReleaseButton, p + "_auto_release" }, { &autoMakeupButton, p + "_auto_makeup" }, { &sidechainButton, p + "_sc_hpf" } })
     {
-        buttonAttachments.add (new juce::AudioProcessorValueTreeState::ButtonAttachment (state, id, *button));
+        buttonAttachments.add (new juce::AudioProcessorValueTreeState::ButtonAttachment (state, id, tagged (*button, id)));
         addAndMakeVisible (button);
     }
 
-    modeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (state, p + "_mode", withItems (mode, { "Studio", "Pedal" }));
-    detectorAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (state, p + "_detector", withItems (detector, { "Peak", "RMS" }));
+    modeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (state, p + "_mode", tagged (withItems (mode, { "Studio", "Pedal" }), p + "_mode"));
+    detectorAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (state, p + "_detector", tagged (withItems (detector, { "Peak", "RMS" }), p + "_detector"));
     addAndMakeVisible (mode);
     addAndMakeVisible (detector);
 
@@ -622,10 +633,10 @@ EqualizerPanel::EqualizerPanel (AmpSimProcessor& processor, const juce::String& 
     addAndMakeVisible (titleLabel);
     addAndMakeVisible (curve);
 
-    for (auto [button, id] : std::initializer_list<std::pair<juce::ToggleButton*, juce::String>> {
+    for (auto [button, id] : std::initializer_list<std::pair<ToggleControl*, juce::String>> {
              { &onButton, p + "_on" }, { &lowCutButton, p + "_lowcut_on" }, { &highCutButton, p + "_highcut_on" } })
     {
-        buttonAttachments.add (new juce::AudioProcessorValueTreeState::ButtonAttachment (state, id, *button));
+        buttonAttachments.add (new juce::AudioProcessorValueTreeState::ButtonAttachment (state, id, tagged (*button, id)));
         addAndMakeVisible (button);
     }
 
@@ -633,16 +644,16 @@ EqualizerPanel::EqualizerPanel (AmpSimProcessor& processor, const juce::String& 
     for (auto [box, id, items] : std::initializer_list<std::tuple<juce::ComboBox*, juce::String, juce::StringArray>> {
              { &mode, p + "_mode", { "Graphic", "Parametric" } }, { &lowCutSlope, p + "_lowcut_slope", slopes }, { &highCutSlope, p + "_highcut_slope", slopes } })
     {
-        comboAttachments.add (new juce::AudioProcessorValueTreeState::ComboBoxAttachment (state, id, withItems (*box, items)));
+        comboAttachments.add (new juce::AudioProcessorValueTreeState::ComboBoxAttachment (state, id, tagged (withItems (*box, items), id)));
         addAndMakeVisible (box);
     }
 
     static const char* sliderNames[] = { "63", "125", "250", "500", "1k", "2k", "4k", "8k", "16k" };
     for (int m = 0; m < ampsim::Equalizer::numGraphicBands; ++m)
     {
-        auto* slider = sliders.add (new juce::Slider (juce::Slider::LinearVertical, juce::Slider::TextBoxBelow));
+        auto* slider = sliders.add (new SliderControl (juce::Slider::LinearVertical, juce::Slider::TextBoxBelow));
         slider->setTextBoxStyle (juce::Slider::TextBoxBelow, false, 50, 18);
-        sliderAttachments.add (new juce::AudioProcessorValueTreeState::SliderAttachment (state, params::EqualizerParameters::sliderId (p, m), *slider));
+        sliderAttachments.add (new juce::AudioProcessorValueTreeState::SliderAttachment (state, params::EqualizerParameters::sliderId (p, m), tagged (*slider, params::EqualizerParameters::sliderId (p, m))));
         slider->setDoubleClickReturnValue (true, 0.0);
         addChildComponent (slider);
 
@@ -659,11 +670,11 @@ EqualizerPanel::EqualizerPanel (AmpSimProcessor& processor, const juce::String& 
         band->title.setJustificationType (juce::Justification::centred);
         band->title.setColour (juce::Label::textColourId, dimText);
         band->typeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
-            state, params::EqualizerParameters::bandId (p, b, "type"), withItems (band->type, { "Peak", "Low shelf", "High shelf", "Notch" }));
+            state, params::EqualizerParameters::bandId (p, b, "type"), tagged (withItems (band->type, { "Peak", "Low shelf", "High shelf", "Notch" }), params::EqualizerParameters::bandId (p, b, "type")));
         using Attachment = juce::AudioProcessorValueTreeState::SliderAttachment;
-        band->frequencyAttachment = std::make_unique<Attachment> (state, params::EqualizerParameters::bandId (p, b, "freq"), band->frequency);
-        band->gainAttachment = std::make_unique<Attachment> (state, params::EqualizerParameters::bandId (p, b, "gain"), band->gain);
-        band->qAttachment = std::make_unique<Attachment> (state, params::EqualizerParameters::bandId (p, b, "q"), band->q);
+        band->frequencyAttachment = std::make_unique<Attachment> (state, params::EqualizerParameters::bandId (p, b, "freq"), tagged (band->frequency, params::EqualizerParameters::bandId (p, b, "freq")));
+        band->gainAttachment = std::make_unique<Attachment> (state, params::EqualizerParameters::bandId (p, b, "gain"), tagged (band->gain, params::EqualizerParameters::bandId (p, b, "gain")));
+        band->qAttachment = std::make_unique<Attachment> (state, params::EqualizerParameters::bandId (p, b, "q"), tagged (band->q, params::EqualizerParameters::bandId (p, b, "q")));
         band->frequency.setTextValueSuffix (" Hz");
         band->gain.setTextValueSuffix (" dB");
         band->gain.setDoubleClickReturnValue (true, 0.0);
@@ -769,7 +780,7 @@ EffectPanel::EffectPanel (AmpSimProcessor& processor, const juce::String& title,
 {
     stylePanelTitle (titleLabel, title);
     addAndMakeVisible (titleLabel);
-    buttonAttachments.add (new juce::AudioProcessorValueTreeState::ButtonAttachment (processor.parameters, onParameterId, onButton));
+    buttonAttachments.add (new juce::AudioProcessorValueTreeState::ButtonAttachment (processor.parameters, onParameterId, tagged (onButton, onParameterId)));
     addAndMakeVisible (onButton);
 }
 
@@ -786,10 +797,10 @@ Knob& EffectPanel::addKnob (const juce::String& id, const juce::String& caption,
     return *knob;
 }
 
-juce::ToggleButton& EffectPanel::addToggle (const juce::String& id, const juce::String& text)
+ToggleControl& EffectPanel::addToggle (const juce::String& id, const juce::String& text)
 {
-    auto* toggle = toggles.add (new juce::ToggleButton (text));
-    buttonAttachments.add (new juce::AudioProcessorValueTreeState::ButtonAttachment (ampSim.parameters, id, *toggle));
+    auto* toggle = toggles.add (new ToggleControl (text));
+    buttonAttachments.add (new juce::AudioProcessorValueTreeState::ButtonAttachment (ampSim.parameters, id, tagged (*toggle, id)));
     addAndMakeVisible (toggle);
     return *toggle;
 }
@@ -797,7 +808,7 @@ juce::ToggleButton& EffectPanel::addToggle (const juce::String& id, const juce::
 juce::ComboBox& EffectPanel::addCombo (const juce::String& id, const juce::StringArray& items)
 {
     auto* box = combos.add (new juce::ComboBox());
-    comboAttachments.add (new juce::AudioProcessorValueTreeState::ComboBoxAttachment (ampSim.parameters, id, withItems (*box, items)));
+    comboAttachments.add (new juce::AudioProcessorValueTreeState::ComboBoxAttachment (ampSim.parameters, id, tagged (withItems (*box, items), id)));
     addAndMakeVisible (box);
     return *box;
 }
@@ -1050,9 +1061,9 @@ DelayPanel::DelayPanel (AmpSimProcessor& processor) : ampSim (processor)
     stylePanelTitle (titleLabel, "Delay");
     addAndMakeVisible (titleLabel);
 
-    for (auto [button, id] : std::initializer_list<std::pair<juce::ToggleButton*, const char*>> { { &onButton, "delay_on" }, { &syncButton, "delay_sync" } })
+    for (auto [button, id] : std::initializer_list<std::pair<ToggleControl*, const char*>> { { &onButton, "delay_on" }, { &syncButton, "delay_sync" } })
     {
-        buttonAttachments.add (new juce::AudioProcessorValueTreeState::ButtonAttachment (state, id, *button));
+        buttonAttachments.add (new juce::AudioProcessorValueTreeState::ButtonAttachment (state, id, tagged (*button, id)));
         addAndMakeVisible (button);
     }
 
@@ -1063,7 +1074,7 @@ DelayPanel::DelayPanel (AmpSimProcessor& processor) : ampSim (processor)
              { &mode, "delay_mode", { "Digital", "Analog", "Tape" } }, { &stereo, "delay_stereo", { "Stereo", "Ping-pong", "Dual" } },
              { &note, "delay_note", notes }, { &rightNote, "delay_note_right", notes } })
     {
-        comboAttachments.add (new juce::AudioProcessorValueTreeState::ComboBoxAttachment (state, id, withItems (*box, items)));
+        comboAttachments.add (new juce::AudioProcessorValueTreeState::ComboBoxAttachment (state, id, tagged (withItems (*box, items), id)));
         addAndMakeVisible (box);
     }
     for (auto [label, text] : std::initializer_list<std::pair<juce::Label*, const char*>> { { &noteLabel, "Time" }, { &rightNoteLabel, "Right time" } })
@@ -1167,16 +1178,16 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p)
       ampSim (p),
       inputKnob (p.parameters, "input_gain", "Input"),
       outputKnob (p.parameters, "output_gain", "Output"),
-      calibrateAttachment (p.parameters, "input_calibrate", calibrateButton),
-      interfaceLevelAttachment (p.parameters, "input_level_dbu", interfaceLevel),
+      calibrateAttachment (p.parameters, "input_calibrate", tagged (calibrateButton, "input_calibrate")),
+      interfaceLevelAttachment (p.parameters, "input_level_dbu", tagged (interfaceLevel, "input_level_dbu")),
       lowCutKnob (p.parameters, "cab_lowcut_freq", "Low cut", " Hz"),
       highCutKnob (p.parameters, "cab_highcut_freq", "High cut", " Hz"),
-      alignAttachment (p.parameters, "cab_align", alignButton),
-      lowCutAttachment (p.parameters, "cab_lowcut_on", lowCutButton),
-      highCutAttachment (p.parameters, "cab_highcut_on", highCutButton),
-      cabBypassAttachment (p.parameters, "cab_bypass", cabBypassButton),
-      lowCutSlopeAttachment (p.parameters, "cab_lowcut_slope", withItems (lowCutSlope, { "12 dB/oct", "24 dB/oct" })),
-      highCutSlopeAttachment (p.parameters, "cab_highcut_slope", withItems (highCutSlope, { "12 dB/oct", "24 dB/oct" }))
+      alignAttachment (p.parameters, "cab_align", tagged (alignButton, "cab_align")),
+      lowCutAttachment (p.parameters, "cab_lowcut_on", tagged (lowCutButton, "cab_lowcut_on")),
+      highCutAttachment (p.parameters, "cab_highcut_on", tagged (highCutButton, "cab_highcut_on")),
+      cabBypassAttachment (p.parameters, "cab_bypass", tagged (cabBypassButton, "cab_bypass")),
+      lowCutSlopeAttachment (p.parameters, "cab_lowcut_slope", tagged (withItems (lowCutSlope, { "12 dB/oct", "24 dB/oct" }), "cab_lowcut_slope")),
+      highCutSlopeAttachment (p.parameters, "cab_highcut_slope", tagged (withItems (highCutSlope, { "12 dB/oct", "24 dB/oct" }), "cab_highcut_slope"))
 {
     for (int s = 0; s < AmpSimProcessor::numAmpSlots; ++s)
     {
@@ -1226,8 +1237,12 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p)
     addAndMakeVisible (presetLabel);
     savePresetButton.onClick = [this] { savePreset(); };
     loadPresetButton.onClick = [this] { loadPreset(); };
+    midiButton.onClick = [this] { showMidiMappings(); };
+    midiButton.setTooltip ("MIDI mappings. Right-click any control to learn one.");
     addAndMakeVisible (savePresetButton);
     addAndMakeVisible (loadPresetButton);
+    addAndMakeVisible (midiButton);
+    addMouseListener (this, true); // right-clicks anywhere in the panel, for MIDI learn
 
     warningLabel.setColour (juce::Label::textColourId, warningColour);
     warningLabel.setJustificationType (juce::Justification::topLeft);
@@ -1440,8 +1455,12 @@ void AmpSimEditor::timerCallback()
 
     alignmentLabel.setText (status.alignment, juce::dontSendNotification);
 
-    // The warning line: the sample rate first, then a preset that couldn't load or loaded with gaps.
+    // The warning line: the sample rate first, then MIDI learn waiting for a controller, then a preset
+    // that couldn't load or loaded with gaps.
     auto warning = status.warning;
+    if (const auto& midi = ampSim.getMidiMap(); warning.isEmpty() && midi.isLearning())
+        if (auto* parameter = ampSim.parameters.getParameter (midi.getLearnTarget()))
+            warning = "MIDI learn: press a footswitch or move a pedal for " + parameter->getName (64) + " (right-click it again to cancel)";
     if (warning.isEmpty())
         warning = presetMessage.isNotEmpty() ? presetMessage : ampSim.getPresetWarnings().joinIntoString ("; ");
     warningLabel.setText (warning, juce::dontSendNotification);
@@ -1462,6 +1481,117 @@ void AmpSimEditor::timerCallback()
     reverbPanel->refresh();
     gateAPanel->refresh();
     gateBPanel->refresh();
+}
+
+void AmpSimEditor::mouseDown (const juce::MouseEvent& e)
+{
+    if (! e.mods.isPopupMenu())
+        return;
+
+    // The control under the click, or the nearest parent that is one (a slider's text box, a knob).
+    for (auto* c = e.eventComponent; c != nullptr && c != this; c = c->getParentComponent())
+        if (const auto id = c->getProperties()[parameterIdProperty].toString(); id.isNotEmpty())
+        {
+            midiMenuFor (id).showMenuAsync (juce::PopupMenu::Options().withMousePosition());
+            return;
+        }
+}
+
+juce::PopupMenu AmpSimEditor::midiMenuFor (const juce::String& parameterId)
+{
+    juce::PopupMenu menu;
+    auto* parameter = ampSim.parameters.getParameter (parameterId);
+    if (parameter == nullptr)
+        return menu;
+
+    // Menu actions run later, on the message thread; the editor may be gone by then.
+    const auto map = [safe = juce::Component::SafePointer<AmpSimEditor> (this)] () -> MidiMap*
+    { return safe != nullptr ? &safe->ampSim.getMidiMap() : nullptr; };
+    const auto learning = ampSim.getMidiMap().isLearning() && ampSim.getMidiMap().getLearnTarget() == parameterId;
+    const auto isSwitch = dynamic_cast<juce::AudioParameterBool*> (parameter) != nullptr;
+
+    menu.addSectionHeader (parameter->getName (64));
+    menu.addItem (learning ? "Cancel MIDI learn" : "MIDI learn: then press a footswitch or move a pedal", [map, parameterId, learning]
+    {
+        if (auto* m = map())
+        {
+            if (learning)
+                m->cancelLearn();
+            else
+                m->startLearn (parameterId);
+        }
+    });
+
+    for (const auto& mapping : ampSim.getMidiMap().getMappings())
+    {
+        if (mapping.parameterId != parameterId)
+            continue;
+
+        const auto cc = mapping.cc;
+        menu.addSeparator();
+        menu.addSectionHeader ("CC " + juce::String (cc) + ": " + MidiMapping::actionName (mapping.action));
+        if (isSwitch)
+        {
+            // Toggle suits switches that leave the state to the app; momentary follows the switch,
+            // which also suits a latching controller that alternates 127 and 0 itself.
+            auto changed = mapping;
+            const auto toToggle = mapping.action != MidiMapping::Action::toggle;
+            changed.action = toToggle ? MidiMapping::Action::toggle : MidiMapping::Action::momentary;
+            menu.addItem (toToggle ? "Flip on each press (toggle)" : "Follow the switch (momentary, or a latching footswitch)", [map, changed]
+            {
+                if (auto* m = map())
+                    m->set (changed);
+            });
+        }
+        menu.addItem ("Forget CC " + juce::String (cc), [map, cc]
+        {
+            if (auto* m = map())
+                m->remove (cc);
+        });
+    }
+    return menu;
+}
+
+void AmpSimEditor::showMidiMappings()
+{
+    juce::PopupMenu menu;
+    const auto map = [safe = juce::Component::SafePointer<AmpSimEditor> (this)] () -> MidiMap*
+    { return safe != nullptr ? &safe->ampSim.getMidiMap() : nullptr; };
+    const auto& mappings = ampSim.getMidiMap().getMappings();
+
+    if (mappings.empty())
+        menu.addItem ("No mappings yet: right-click a control to learn one", false, false, nullptr);
+
+    for (const auto& mapping : mappings)
+    {
+        const auto cc = mapping.cc;
+        auto* parameter = ampSim.parameters.getParameter (mapping.parameterId);
+        juce::PopupMenu forget;
+        forget.addItem ("Forget", [map, cc]
+        {
+            if (auto* m = map())
+                m->remove (cc);
+        });
+        menu.addSubMenu ("CC " + juce::String (cc) + ": " + (parameter != nullptr ? parameter->getName (64) : mapping.parameterId) + " ("
+                             + MidiMapping::actionName (mapping.action) + ")",
+                         forget);
+    }
+
+    if (! mappings.empty())
+    {
+        menu.addSeparator();
+        menu.addItem ("Forget all", [map]
+        {
+            if (auto* m = map())
+                m->clear();
+        });
+    }
+
+    menu.addSeparator();
+    const auto value = [this] (const char* id) { return juce::String (juce::roundToInt (ampSim.parameters.getRawParameterValue (id)->load())); };
+    menu.addSectionHeader ("Built in: program change 1 to 3 picks the amp, CC " + value ("midi_tap_cc") + " taps the tempo, CC "
+                           + value ("midi_freeze_cc") + " freezes the reverb");
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (midiButton));
 }
 
 void AmpSimEditor::paint (juce::Graphics& g)
@@ -1492,6 +1622,7 @@ void AmpSimEditor::resized()
     presetLabel.setBounds (presetRow.removeFromLeft (300));
     savePresetButton.setBounds (presetRow.removeFromLeft (80).reduced (2, 0));
     loadPresetButton.setBounds (presetRow.removeFromLeft (80).reduced (2, 0));
+    midiButton.setBounds (presetRow.removeFromLeft (80).reduced (2, 0));
 
     warningLabel.setBounds (area.removeFromBottom (40));
     area.removeFromBottom (6);
