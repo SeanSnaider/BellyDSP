@@ -1053,6 +1053,12 @@ public:
             expectEquals (maxDifference (render (at8x), lone (od8, at8x, overdriveSettings), afterFade, end), 0.0);
             AmpSimProcessor p;
             setParam (p, "drive_oversampling", 1.0f);
+            // The mode list grows at the end: Transparent and Fuzz are 2 and 3.
+            for (const auto [index, mode] : { std::pair { 2.0f, ampsim::Overdrive::Mode::transparent }, std::pair { 3.0f, ampsim::Overdrive::Mode::fuzz } })
+            {
+                setParam (p, "od_mode", index);
+                expect (overdriveSettings (p).mode == mode);
+            }
             const auto preset = p.capturePreset ("x");
             expect (! preset["parameters"].hasProperty ("drive_oversampling"));
             expect (preset["parameters"].hasProperty ("od_drive") && preset["parameters"].hasProperty ("boost_mode"));

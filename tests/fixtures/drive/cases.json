@@ -145,6 +145,384 @@
       "opamp_fastest_volts_per_us": 0.22184949061558326,
       "half_slew_fraction": 0.000651045905246779,
       "diode_peak_volts": 0.6410911422010563
+    },
+    "transparent_sine220_d0": {
+      "circuit": "transparent",
+      "input": "input_sine220.wav",
+      "drive": 0.0,
+      "tone": 0.5,
+      "expected": "expected_transparent_sine220_d0.wav",
+      "peak_volts": 0.975516168167615,
+      "gain_stage_peak_volts": 2.620450760047101e-08,
+      "gain_stage_saturated_fraction": 0.0,
+      "gain_stage_fastest_volts_per_us": 8.346204608738277e-10,
+      "gain_stage_input_peak_volts": 7.046970244014282e-09,
+      "summing_peak_volts": 1.0159195358746056,
+      "treble_peak_volts": 1.0420162367405434,
+      "diode_peak_volts": 0.00012234797163129387
+    },
+    "transparent_sine220_d50": {
+      "circuit": "transparent",
+      "input": "input_sine220.wav",
+      "drive": 0.5,
+      "tone": 0.5,
+      "expected": "expected_transparent_sine220_d50.wav",
+      "peak_volts": 1.8202328358658266,
+      "gain_stage_peak_volts": 0.30583698880177357,
+      "gain_stage_saturated_fraction": 0.0,
+      "gain_stage_fastest_volts_per_us": 0.0005786214454974968,
+      "gain_stage_input_peak_volts": 0.036797286255662275,
+      "summing_peak_volts": 1.9103489806942018,
+      "treble_peak_volts": 1.9451751388000436,
+      "diode_peak_volts": 0.20669540429950312
+    },
+    "transparent_sine220_d100": {
+      "circuit": "transparent",
+      "input": "input_sine220.wav",
+      "drive": 1.0,
+      "tone": 0.5,
+      "expected": "expected_transparent_sine220_d100.wav",
+      "peak_volts": 2.3019528111499565,
+      "gain_stage_peak_volts": 2.2649121537727517,
+      "gain_stage_saturated_fraction": 0.0,
+      "gain_stage_fastest_volts_per_us": 0.004073422043056269,
+      "gain_stage_input_peak_volts": 0.039025585667202364,
+      "summing_peak_volts": 2.4025301937327277,
+      "treble_peak_volts": 2.4484287221523875,
+      "diode_peak_volts": 0.3142942761525914
+    },
+    "transparent_sine110_d100": {
+      "circuit": "transparent",
+      "input": "input_sine110.wav",
+      "drive": 1.0,
+      "tone": 0.5,
+      "expected": "expected_transparent_sine110_d100.wav",
+      "peak_volts": 3.7421679389159603,
+      "gain_stage_peak_volts": 2.9943204858433217,
+      "gain_stage_saturated_fraction": 0.5653645833333333,
+      "gain_stage_fastest_volts_per_us": 0.009854589819973341,
+      "gain_stage_input_peak_volts": 0.15046363031465773,
+      "summing_peak_volts": 4.031779087714769,
+      "treble_peak_volts": 4.058349385456637,
+      "diode_peak_volts": 0.32831075571903773
+    },
+    "transparent_chord_d50_t0": {
+      "circuit": "transparent",
+      "input": "input_chord.wav",
+      "drive": 0.5,
+      "tone": 0.0,
+      "expected": "expected_transparent_chord_d50_t0.wav",
+      "peak_volts": 3.25908380919468,
+      "gain_stage_peak_volts": 1.8308395477094022,
+      "gain_stage_saturated_fraction": 0.0,
+      "gain_stage_fastest_volts_per_us": 0.006940421625617872,
+      "gain_stage_input_peak_volts": 0.2598752561573986,
+      "summing_peak_volts": 3.555836197244593,
+      "treble_peak_volts": 3.127334527435373,
+      "diode_peak_volts": 0.3022243856458335
+    },
+    "transparent_chord_d50_t100": {
+      "circuit": "transparent",
+      "input": "input_chord.wav",
+      "drive": 0.5,
+      "tone": 1.0,
+      "expected": "expected_transparent_chord_d50_t100.wav",
+      "peak_volts": 4.526414815189571,
+      "gain_stage_peak_volts": 1.8308395477095432,
+      "gain_stage_saturated_fraction": 0.0,
+      "gain_stage_fastest_volts_per_us": 0.0069404216256226045,
+      "gain_stage_input_peak_volts": 0.2598752561573734,
+      "summing_peak_volts": 3.555836197244485,
+      "treble_peak_volts": 4.5019848024318625,
+      "diode_peak_volts": 0.30222438564583287
+    },
+    "fuzz_sine220_d0": {
+      "circuit": "fuzz",
+      "input": "input_sine220.wav",
+      "drive": 0.0,
+      "tone": 0.5,
+      "expected": "expected_fuzz_sine220_d0.wav",
+      "peak_volts": 0.4283547837581933,
+      "q4": {
+        "vce_min": 5.596305555934672,
+        "vbc_max": -4.955402767967483,
+        "ic_min_ma": 0.03938226378130165,
+        "ic_max_ma": 0.34115127449389004,
+        "collector_swing": 2.6880728758480315,
+        "base_swing": 0.08604660151854804
+      },
+      "q3": {
+        "vce_min": 4.049516133074015,
+        "vbc_max": -3.3991629097581635,
+        "ic_min_ma": 0.4324691230097625,
+        "ic_max_ma": 0.4930062543151407,
+        "collector_swing": 0.3456274473756151,
+        "base_swing": 0.012477260503630516
+      },
+      "q2": {
+        "vce_min": 3.801092703328894,
+        "vbc_max": -3.150544800126921,
+        "ic_min_ma": 0.3858096935917406,
+        "ic_max_ma": 0.49563292048173746,
+        "collector_swing": 0.7528164240622992,
+        "base_swing": 0.022967124856916765
+      },
+      "q1": {
+        "vce_min": 2.7261129405177607,
+        "vbc_max": -2.0847996499914507,
+        "ic_min_ma": 0.28167712380226256,
+        "ic_max_ma": 0.3466099041558444,
+        "collector_swing": 0.8360293781114656,
+        "base_swing": 0.21983454696199867
+      },
+      "base_to_previous_collector_swing": [
+        0.004641712140967978,
+        0.06645052362394398,
+        0.2920161409015783
+      ]
+    },
+    "fuzz_sine220_d50": {
+      "circuit": "fuzz",
+      "input": "input_sine220.wav",
+      "drive": 0.5,
+      "tone": 0.5,
+      "expected": "expected_fuzz_sine220_d50.wav",
+      "peak_volts": 0.502856075619358,
+      "q4": {
+        "vce_min": 5.624301324553817,
+        "vbc_max": -4.982922572322864,
+        "ic_min_ma": 0.03655181942269351,
+        "ic_max_ma": 0.3475098709517852,
+        "collector_swing": 2.6111294043573317,
+        "base_swing": 0.08937310589130532
+      },
+      "q3": {
+        "vce_min": 3.829108818685296,
+        "vbc_max": -3.176446569272401,
+        "ic_min_ma": 0.3757452640085038,
+        "ic_max_ma": 0.5508969510193302,
+        "collector_swing": 0.7693133139020358,
+        "base_swing": 0.036193058019483915
+      },
+      "q2": {
+        "vce_min": 3.755960994667933,
+        "vbc_max": -3.10397471387291,
+        "ic_min_ma": 0.33665307757299046,
+        "ic_max_ma": 0.5439330464015675,
+        "collector_swing": 0.8327755575569555,
+        "base_swing": 0.043529040400170915
+      },
+      "q1": {
+        "vce_min": 2.6562770236821835,
+        "vbc_max": -2.0146320555023545,
+        "ic_min_ma": 0.277670851120776,
+        "ic_max_ma": 0.3510854439349677,
+        "collector_swing": 0.9422480806092364,
+        "base_swing": 0.24855183077974696
+      },
+      "base_to_previous_collector_swing": [
+        0.013861074046765594,
+        0.056581680849103165,
+        0.29846196676197223
+      ]
+    },
+    "fuzz_sine220_d100": {
+      "circuit": "fuzz",
+      "input": "input_sine220.wav",
+      "drive": 1.0,
+      "tone": 0.5,
+      "expected": "expected_fuzz_sine220_d100.wav",
+      "peak_volts": 0.5090847350483615,
+      "q4": {
+        "vce_min": 5.827108847440392,
+        "vbc_max": -5.1830023588458305,
+        "ic_min_ma": 0.02192174369362586,
+        "ic_max_ma": 0.3928568086990442,
+        "collector_swing": 2.1072639099798502,
+        "base_swing": 0.11177208181855247
+      },
+      "q3": {
+        "vce_min": 3.746425452886347,
+        "vbc_max": -3.092031200182058,
+        "ic_min_ma": 0.30163933059941284,
+        "ic_max_ma": 0.6125148248968497,
+        "collector_swing": 0.9379346918464369,
+        "base_swing": 0.06499412776509295
+      },
+      "q2": {
+        "vce_min": 3.747063291417777,
+        "vbc_max": -3.0952302104428466,
+        "ic_min_ma": 0.3130169049617673,
+        "ic_max_ma": 0.5658576534814808,
+        "collector_swing": 0.8478550327209406,
+        "base_swing": 0.05327420203199085
+      },
+      "q1": {
+        "vce_min": 2.6462105917218257,
+        "vbc_max": -2.004521686318042,
+        "ic_min_ma": 0.27626700351959216,
+        "ic_max_ma": 0.35168365701083343,
+        "collector_swing": 0.9690181194388043,
+        "base_swing": 0.2553396529736143
+      },
+      "base_to_previous_collector_swing": [
+        0.0308428989161184,
+        0.05679947921226178,
+        0.30115956516077635
+      ]
+    },
+    "fuzz_sine110_d100": {
+      "circuit": "fuzz",
+      "input": "input_sine110.wav",
+      "drive": 1.0,
+      "tone": 0.5,
+      "expected": "expected_fuzz_sine110_d100.wav",
+      "peak_volts": 0.6169133891130083,
+      "q4": {
+        "vce_min": 0.1560202349468593,
+        "vbc_max": 0.5156046938272926,
+        "ic_min_ma": 1.5671647777667522e-10,
+        "ic_max_ma": 1.2691427485971056,
+        "collector_swing": 8.139240670601176,
+        "base_swing": 0.7180242304827958
+      },
+      "q3": {
+        "vce_min": 3.611498549380386,
+        "vbc_max": -2.9579382848553575,
+        "ic_min_ma": 0.037423647933146544,
+        "ic_max_ma": 0.7828301151999036,
+        "collector_swing": 1.5269584258797555,
+        "base_swing": 0.190556075974179
+      },
+      "q2": {
+        "vce_min": 3.6939177248740664,
+        "vbc_max": -3.0422035224932826,
+        "ic_min_ma": 0.30420664514223067,
+        "ic_max_ma": 0.5700221808262725,
+        "collector_swing": 0.891678961167341,
+        "base_swing": 0.05615026067373263
+      },
+      "q1": {
+        "vce_min": 2.561158132731289,
+        "vbc_max": -1.9190163404029352,
+        "ic_min_ma": 0.2682781976607178,
+        "ic_max_ma": 0.35788730003137376,
+        "collector_swing": 1.13456644713815,
+        "base_swing": 0.30342771777035393
+      },
+      "base_to_previous_collector_swing": [
+        0.023412021303469366,
+        0.03677261916373507,
+        0.34028807562434993
+      ]
+    },
+    "fuzz_chord_d50_t0": {
+      "circuit": "fuzz",
+      "input": "input_chord.wav",
+      "drive": 0.5,
+      "tone": 0.0,
+      "expected": "expected_fuzz_chord_d50_t0.wav",
+      "peak_volts": 1.1083779378857013,
+      "q4": {
+        "vce_min": 2.674540929837909,
+        "vbc_max": -2.015221977013089,
+        "ic_min_ma": 6.198942485680796e-05,
+        "ic_max_ma": 0.6953531630574178,
+        "collector_swing": 5.87163180650413,
+        "base_swing": 0.31078767893179315
+      },
+      "q3": {
+        "vce_min": 3.813424537623834,
+        "vbc_max": -3.1615704318560587,
+        "ic_min_ma": 0.3117209889811495,
+        "ic_max_ma": 0.5467124369378504,
+        "collector_swing": 0.8470963447011561,
+        "base_swing": 0.04981146336256992
+      },
+      "q2": {
+        "vce_min": 3.7356244642665892,
+        "vbc_max": -3.083314383308698,
+        "ic_min_ma": 0.3414155939296221,
+        "ic_max_ma": 0.5675731972630945,
+        "collector_swing": 0.8498127519563483,
+        "base_swing": 0.04710025916991767
+      },
+      "q1": {
+        "vce_min": 2.088349974478634,
+        "vbc_max": -1.4442065572220457,
+        "ic_min_ma": 0.2337839821558783,
+        "ic_max_ma": 0.3866995630972536,
+        "collector_swing": 1.948756688838169,
+        "base_swing": 0.5180877357555904
+      },
+      "base_to_previous_collector_swing": [
+        0.008483410575471152,
+        0.05560200969410863,
+        0.6096492839898013
+      ]
+    },
+    "fuzz_chord_d50_t100": {
+      "circuit": "fuzz",
+      "input": "input_chord.wav",
+      "drive": 0.5,
+      "tone": 1.0,
+      "expected": "expected_fuzz_chord_d50_t100.wav",
+      "peak_volts": 2.0003233861502023,
+      "q4": {
+        "vce_min": 2.6745406425148124,
+        "vbc_max": -2.0152216923774513,
+        "ic_min_ma": 6.198940704508231e-05,
+        "ic_max_ma": 0.695353090254541,
+        "collector_swing": 5.871631925315247,
+        "base_swing": 0.3107876763706755
+      },
+      "q3": {
+        "vce_min": 3.8134245996595726,
+        "vbc_max": -3.161570542204677,
+        "ic_min_ma": 0.311682617650008,
+        "ic_max_ma": 0.5467456009796006,
+        "collector_swing": 0.8470920444587069,
+        "base_swing": 0.04982695622849587
+      },
+      "q2": {
+        "vce_min": 3.7355316915638253,
+        "vbc_max": -3.0833201451493766,
+        "ic_min_ma": 0.3407514781793645,
+        "ic_max_ma": 0.5721455325721713,
+        "collector_swing": 0.8507080997940819,
+        "base_swing": 0.0481443200986017
+      },
+      "q1": {
+        "vce_min": 1.0602604079960982,
+        "vbc_max": -0.41222570108569156,
+        "ic_min_ma": 0.14999820754267254,
+        "ic_max_ma": 0.44946216324351984,
+        "collector_swing": 3.855184421457786,
+        "base_swing": 1.0174967979449947
+      },
+      "base_to_previous_collector_swing": [
+        0.008486049000052173,
+        0.056834815547543,
+        1.1960586694675703
+      ]
+    }
+  },
+  "bias": {
+    "fuzz": {
+      "b4": 0.6408903557532655,
+      "e4": 0.01740984825167308,
+      "c4": 7.122655524672414,
+      "b3": 0.7184152487839052,
+      "e3": 0.06958558468612945,
+      "c3": 4.289119496046323,
+      "d3": 4.289119496046323,
+      "b2": 0.7137059395909573,
+      "e2": 0.06617580010667157,
+      "c2": 4.25276265045408,
+      "d2": 4.25276265045408,
+      "b1": 1.6754178673969926,
+      "e1": 1.0366711521271008,
+      "c1": 4.292054398357021
     }
   }
 }
