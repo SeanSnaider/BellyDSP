@@ -28,6 +28,8 @@ bool writeWav (const juce::File& file, const std::vector<float>& mono, double sa
 // ---- Signals --------------------------------------------------------------------------------
 std::vector<float> sine (double frequency, double amplitude, int numSamples);
 std::vector<float> whiteNoise (int numSamples, float amplitude, juce::int64 seed);
+/// Pink noise (Paul Kellet's refined filter: within ~0.05 dB of -3 dB/octave above 10 Hz). For comparisons.
+std::vector<float> pinkNoise (int numSamples, juce::int64 seed = 1);
 /// NAM core's example_audio/input.wav: 1 s of digital silence, then 1 s of a steady -9 dB RMS test
 /// tone. Not a guitar. Looped if minimumSamples is longer. Use guitarDI() for anything musical.
 std::vector<float> exampleInput (int minimumSamples = 0);
@@ -44,7 +46,7 @@ std::vector<float> richStimulus();
 /// The crude 4x12 "cab" from prototypes/amp_sim.py (90 Hz high-pass, +3 dB at 120 Hz, -3 dB at
 /// 400 Hz, +4 dB at 2.5 kHz, two 5 kHz low-passes, all RBJ cookbook biquads) rendered as an
 /// impulse response. A stand-in for a real cab IR in tests.
-std::vector<double> syntheticCabIR (int length = 4096);
+std::vector<double> syntheticCabIR (int length = 4096, double presenceDb = 4.0, double lowpassHz = 5000.0);
 std::vector<double> unitEnergy (const std::vector<double>& h);
 juce::AudioBuffer<float> toBuffer (const std::vector<double>& samples);
 juce::AudioBuffer<float> toBuffer (const std::vector<float>& samples);

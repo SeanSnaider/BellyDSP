@@ -1,4 +1,6 @@
 #include "CabIR.h"
+#include "Loudness.h"
+#include "ReferenceSignals.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
 
@@ -56,10 +58,6 @@ CabIR::LoadResult CabIR::loadSamples (juce::AudioBuffer<float> samples, double s
         samples.applyGainRamp (0, cap - fadeSamples, fadeSamples, 1.0f, 0.0f);
     }
 
-    // Normalize to unit energy: sum of h[n]^2 = 1. By Parseval's theorem the energy of h equals
-    // its power gain averaged over all frequencies, so white noise leaves every cab at the level it
-    // went in, and swapping IRs doesn't jump in volume. A stand-in for the planned pink-noise
-    // loudness measurement.
     const auto* h = samples.getReadPointer (0);
     double energy = 0.0;
 
@@ -69,7 +67,21 @@ CabIR::LoadResult CabIR::loadSamples (juce::AudioBuffer<float> samples, double s
     if (energy < 1.0e-12)
         return { false, name + " is silent" };
 
-    samples.applyGain ((float) (1.0 / std::sqrt (energy)));
+    // Loudness matching (BUILD_PLAN "Cab: Normalization"): measure white noise with the same BS.1770
+    // method the amps use, before and after the IR, and scale the IR by the difference, so every cab
+    // changes white noise's loudness by exactly 0 LU. The plan said pink noise; measured on clean and
+    // distorted guitar through very different cabs, white noise keeps swaps within 2.1 LU and pink
+    // within only 6.6 LU (see referenceWhiteNoise and the "Cab normalization study" test).
+    const auto noise = referenceWhiteNoise ((int) (4.0 * sampleRate));
+    const auto through = loudness::fftConvolve (noise, h, samples.getNumSamples());
+    const auto before = loudness::integratedMono (noise.data(), (int) noise.size(), sampleRate);
+    const auto after = loudness::integratedMono (through.data(), (int) through.size(), sampleRate);
+
+    if (! std::isfinite (after))
+        return { false, name + " is effectively silent" };
+
+    const auto gain = std::pow (10.0, (before - after) / 20.0);
+    samples.applyGain ((float) gain);
 
     const auto numSamples = samples.getNumSamples();
     auto pending = std::make_unique<PendingIR>();
@@ -77,11 +89,11 @@ CabIR::LoadResult CabIR::loadSamples (juce::AudioBuffer<float> samples, double s
     pending->sampleRate = sampleRate;
     handoff.publish (std::move (pending));
 
-    LoadResult result { true, name, numSamples, sampleRate };
+    LoadResult result { true, name, numSamples, sampleRate, gain };
     result.message << " (" << juce::String (juce::roundToInt (1000.0 * numSamples / sampleRate)) << " ms";
     if (cut)
         result.message << ", cut to 1 s";
-    result.message << ")";
+    result.message << ", loudness matched " << juce::String (juce::Decibels::gainToDecibels (gain), 1) << " dB)";
     return result;
 }
 

@@ -28,16 +28,20 @@ public:
     /// NAM captures are trained at 48 kHz, and v1 only runs at that rate (BUILD_PLAN "Sample rate").
     static constexpr double requiredSampleRate = 48000.0;
 
-    /// Every model is normalized to this loudness, in dB (the official NAM plugin's target too).
-    static constexpr double targetLoudnessDb = -18.0;
+    /// Every model is normalized so the reference guitar DI comes out at this loudness (BS.1770 LUFS).
+    static constexpr double targetLoudnessLufs = -18.0;
+
+    /// Seconds of the reference guitar DI rendered through each model to measure its loudness.
+    static constexpr double loudnessProbeSeconds = 4.0;
 
     static constexpr double switchFadeSeconds = 0.020;
 
     struct LoadResult
     {
         bool ok = false;
-        juce::String message; // why it failed, or a short description of what loaded
-        double normalizationDb = 0.0;
+        juce::String message;          // why it failed, or a short description of what loaded
+        double normalizationDb = 0.0;  // gain applied to the model's output
+        double measuredLufs = 0.0;     // the model's output loudness on the reference DI, before normalizing
     };
 
     NamAmp() = default;

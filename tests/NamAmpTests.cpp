@@ -1,5 +1,7 @@
 #include "TestHelpers.h"
+#include "dsp/Loudness.h"
 #include "dsp/NamAmp.h"
+#include "dsp/ReferenceSignals.h"
 
 #include <NAM/get_dsp.h>
 
@@ -159,27 +161,49 @@ public:
             }
         }
 
-        beginTest ("normalizes each model's loudness to -18 dB from its metadata");
+        beginTest ("normalizes every model to -18 LUFS on the reference DI, measured rather than taken from the file");
         {
-            const auto file = exampleModel ("wavenet.nam"); // metadata loudness: -20.02 dB
-            ampsim::NamAmp raw, normalized;
-            expect (raw.loadModel (file, false).ok);
-            const auto result = normalized.loadModel (file, true);
-            raw.prepare (fs, blockSize);
-            normalized.prepare (fs, blockSize);
+            const auto reference = ampsim::referenceGuitarDI ((int) (ampsim::NamAmp::loudnessProbeSeconds * fs));
+            const auto otherTake = ampsim::referenceGuitarDI ((int) (6.0 * fs), fs, 7); // different plucks, not used for measuring
+            juce::StringArray results;
+            std::vector<double> otherLoudness;
 
-            const auto rawOut = runAmp (raw, input);
-            const auto normOut = runAmp (normalized, input);
-            const auto gain = std::pow (10.0, result.normalizationDb / 20.0);
+            for (auto name : { "wavenet_a1_standard.nam", "lstm.nam", "wavenet.nam", "A2.nam" })
+            {
+                ampsim::NamAmp amp;
+                const auto result = amp.loadModel (exampleModel (name), true);
+                amp.prepare (fs, blockSize);
+                const auto out = runAmp (amp, reference);
+                const auto onReference = ampsim::loudness::integratedMono (out.data(), (int) out.size(), fs);
 
-            double worst = 0.0;
-            for (size_t i = 0; i < rawOut.size(); ++i)
-                worst = std::max (worst, std::abs (normOut[i] - rawOut[i] * gain));
+                ampsim::NamAmp again;
+                again.loadModel (exampleModel (name), true);
+                again.prepare (fs, blockSize);
+                const auto outOther = runAmp (again, otherTake);
+                const auto onOther = ampsim::loudness::integratedMono (outOther.data(), (int) outOther.size(), fs);
+                otherLoudness.push_back (onOther);
 
-            expectWithinAbsoluteError (result.normalizationDb, -18.0 - (-20.020729064941406), 1.0e-4);
-            expectLessThan (worst, 1.0e-5);
-            logMessage ("  -> metadata loudness -20.02 dB, so gain " + juce::String (result.normalizationDb, 3)
-                        + " dB; measured output change " + juce::String (toDb (rms (normOut) / rms (rawOut)), 3) + " dB");
+                expectWithinAbsoluteError (onReference, ampsim::NamAmp::targetLoudnessLufs, 0.01, name);
+
+                juce::String metadata = "none";
+                auto json = juce::JSON::parse (exampleModel (name));
+                if (auto* metadataObject = json.getProperty ("metadata", {}).getDynamicObject())
+                    if (metadataObject->hasProperty ("loudness"))
+                        metadata = juce::String ((double) metadataObject->getProperty ("loudness"), 1) + " dB";
+
+                results.add (juce::String (name) + ": measured " + juce::String (result.measuredLufs, 1) + " LUFS, gain "
+                             + juce::String (result.normalizationDb, 1) + " dB, now " + juce::String (onReference, 2)
+                             + " LUFS (file's own loudness field: " + metadata + ")");
+            }
+
+            const auto spread = *std::max_element (otherLoudness.begin(), otherLoudness.end())
+                                - *std::min_element (otherLoudness.begin(), otherLoudness.end());
+            expectLessThan (spread, 1.0);
+
+            for (const auto& r : results)
+                logMessage ("  -> " + r);
+            logMessage ("  -> on a different take of the riff (not the one measured), the four normalized models span "
+                        + juce::String (spread, 2) + " LU");
         }
 
         beginTest ("switching models crossfades over 20 ms at equal power instead of jumping");

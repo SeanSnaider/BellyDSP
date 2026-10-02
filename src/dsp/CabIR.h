@@ -29,6 +29,7 @@ public:
         juce::String message;
         int numSamples = 0;
         double sampleRate = 0.0;
+        double gain = 1.0; // linear gain applied to the file's samples by the loudness matching
     };
 
     /// Message thread (or any non-audio thread). Reads the file, keeps the left channel, caps the

@@ -1,5 +1,8 @@
 #include "TestHelpers.h"
 #include "dsp/CabIR.h"
+#include "dsp/Loudness.h"
+#include "dsp/NamAmp.h"
+#include "dsp/ReferenceSignals.h"
 
 namespace
 {
@@ -27,18 +30,19 @@ public:
     void runTest() override
     {
         const auto ir = syntheticCabIR (4096);
-        const auto irNormalized = unitEnergy (ir);
+        const auto scaled = [] (std::vector<double> h, double gain) { for (auto& v : h) v *= gain; return h; };
 
         beginTest ("matches brute-force direct convolution (BUILD_PLAN target: error below -100 dB)");
         {
             ampsim::CabIR cab;
-            expect (cab.loadSamples (toBuffer (ir), fs, "synthetic").ok);
+            const auto loaded = cab.loadSamples (toBuffer (ir), fs, "synthetic");
+            expect (loaded.ok);
             cab.prepare (fs, blockSize);
 
             const auto input = whiteNoise ((int) fs * 2, 0.5f, 1);
             std::vector<float> right;
             const auto out = runCab (cab, input, blockSize, &right);
-            const auto expected = directConvolution (input, irNormalized);
+            const auto expected = directConvolution (input, scaled (ir, loaded.gain));
             const auto error = relativeErrorDb (out, expected);
 
             expectLessThan (error, -100.0);
@@ -50,33 +54,77 @@ public:
         beginTest ("zero latency: an impulse at sample 0 produces the IR starting at sample 0");
         {
             ampsim::CabIR cab;
-            cab.loadSamples (toBuffer (ir), fs, "synthetic");
+            const auto loaded = cab.loadSamples (toBuffer (ir), fs, "synthetic");
             cab.prepare (fs, blockSize);
 
             std::vector<float> impulse (8192, 0.0f);
             impulse[0] = 1.0f;
             const auto out = runCab (cab, impulse, blockSize);
+            const auto expected = scaled (ir, loaded.gain);
 
             size_t firstNonZero = 0;
             while (firstNonZero < out.size() && std::abs (out[firstNonZero]) < 1.0e-9f)
                 ++firstNonZero;
 
-            double energy = 0.0;
-            for (auto v : out)
-                energy += (double) v * v;
-
             expectEquals ((int) firstNonZero, 0);
-            expectWithinAbsoluteError ((double) out[0], irNormalized[0], 1.0e-6);
-            expectWithinAbsoluteError (energy, 1.0, 1.0e-4);
+            expectWithinAbsoluteError ((double) out[0], expected[0], 1.0e-6);
+            expectLessThan (relativeErrorDb (std::vector<float> (out.begin(), out.begin() + 4096), expected), -100.0);
             logMessage ("  -> first output sample index " + juce::String ((int) firstNonZero) + " (0 = no latency); h[0] = "
-                        + juce::String (out[0], 6) + " vs expected " + juce::String (irNormalized[0], 6)
-                        + "; IR energy after normalization " + juce::String (energy, 6) + " (target 1.0)");
+                        + juce::String (out[0], 6) + " vs expected " + juce::String (expected[0], 6));
+        }
+
+        beginTest ("IRs are loudness-matched: white noise keeps its loudness through any cab, and guitar stays close");
+        {
+            // Three deliberately different cabs: the stock synthetic one, a dark one, and a bright one.
+            const std::vector<std::pair<juce::String, std::vector<double>>> cabs {
+                { "stock",  syntheticCabIR (4096) },
+                { "dark",   syntheticCabIR (4096, 0.0, 2500.0) },
+                { "bright", syntheticCabIR (4096, 8.0, 8000.0) },
+            };
+
+            // A distorted guitar: the reference DI through the A1 capture, as the cab would really get it.
+            ampsim::NamAmp amp;
+            amp.loadModel (exampleModel ("wavenet_a1_standard.nam"), true);
+            amp.prepare (fs, blockSize);
+            const ampsim::BlockContext context;
+            const auto take = ampsim::referenceGuitarDI ((int) (6.0 * fs), fs, 7);
+            const auto distorted = runInBlocks (take, blockSize, [&] (juce::dsp::AudioBlock<float>& b, size_t)
+                                                { amp.process (b.getSubsetChannelBlock (0, 1), context); }).left;
+
+            const auto noise = whiteNoise ((int) (4.0 * fs), 0.3f, 99); // a different seed than the loader's
+            const auto lufs = [] (const std::vector<float>& x) { return ampsim::loudness::integratedMono (x.data(), (int) x.size(), fs); };
+            const auto noiseLoudness = lufs (noise);
+            std::vector<double> distortedLevels, cleanLevels;
+            double worstNoiseChange = 0.0;
+
+            for (const auto& [name, h] : cabs)
+            {
+                const auto loaded = ampsim::CabIR().loadSamples (toBuffer (h), fs, name);
+                const auto matched = scaled (h, loaded.gain);
+                const std::vector<float> hm (matched.begin(), matched.end());
+
+                worstNoiseChange = std::max (worstNoiseChange, std::abs (lufs (ampsim::loudness::fftConvolve (noise, hm.data(), (int) hm.size())) - noiseLoudness));
+                distortedLevels.push_back (lufs (ampsim::loudness::fftConvolve (distorted, hm.data(), (int) hm.size())));
+                cleanLevels.push_back (lufs (ampsim::loudness::fftConvolve (take, hm.data(), (int) hm.size())));
+            }
+
+            const auto spread = [] (const std::vector<double>& v) { return *std::max_element (v.begin(), v.end()) - *std::min_element (v.begin(), v.end()); };
+
+            // No single reference gets every tone within 1 LU through cabs this different (see the
+            // study test); 2.5 LU is the bound white noise achieves on the study's signals.
+            expectLessThan (worstNoiseChange, 0.05);
+            expectLessThan (spread (distortedLevels), 2.5);
+            expectLessThan (spread (cleanLevels), 2.5);
+            logMessage ("  -> white noise changes loudness by at most " + juce::String (worstNoiseChange, 3) + " LU through any of the three cabs");
+            logMessage ("  -> across stock, dark, and bright cabs: distorted guitar spans " + juce::String (spread (distortedLevels), 2)
+                        + " LU, clean guitar " + juce::String (spread (cleanLevels), 2) + " LU");
         }
 
         beginTest ("any buffer size from 1 to 512 gives the same result");
         {
             const auto input = whiteNoise ((int) fs, 0.5f, 2);
-            const auto expected = directConvolution (input, irNormalized);
+            const auto gain = ampsim::CabIR().loadSamples (toBuffer (ir), fs, "probe").gain; // the same IR always gets the same gain
+            const auto expected = directConvolution (input, scaled (ir, gain));
             juce::StringArray results;
 
             for (auto size : { 1, 7, 64, 128, 512 })
@@ -138,7 +186,7 @@ public:
             std::vector<float> impulse (4096, 0.0f);
             impulse[0] = 1.0f;
             const auto out = runCab (cab, impulse, blockSize);
-            const auto expected = unitEnergy (left);
+            const auto expected = scaled (left, result.gain);
             const auto error = relativeErrorDb (std::vector<float> (out.begin(), out.begin() + 2048), expected);
             expectLessThan (error, -100.0);
             logMessage ("  -> measured IR vs. the file's left channel: " + dB (error));
@@ -171,7 +219,9 @@ public:
             cab.loadSamples (toBuffer (ir), fs, "first");
             cab.prepare (fs, blockSize);
 
-            const auto secondIR = unitEnergy (syntheticCabIR (1024)); // shorter, so a different response
+            const auto secondRaw = syntheticCabIR (1024); // shorter, so a different response
+            const auto secondGain = ampsim::CabIR().loadSamples (toBuffer (secondRaw), fs, "probe").gain;
+            const auto secondIR = scaled (secondRaw, secondGain);
             const auto input = sine (220.0, 0.5, (int) (2.0 * fs));
             const ampsim::BlockContext context;
             const size_t switchAt = (size_t) (0.5 * fs) / blockSize * blockSize;
@@ -179,12 +229,7 @@ public:
             auto out = runInBlocks (input, blockSize, [&] (juce::dsp::AudioBlock<float>& block, size_t start)
             {
                 if (start == switchAt)
-                {
-                    juce::AudioBuffer<float> b (1, (int) secondIR.size());
-                    for (size_t i = 0; i < secondIR.size(); ++i)
-                        b.setSample (0, (int) i, (float) secondIR[i]);
-                    cab.loadSamples (std::move (b), fs, "second");
-                }
+                    cab.loadSamples (toBuffer (secondRaw), fs, "second"); // normalized the same way as the probe
 
                 cab.process (block, context);
 

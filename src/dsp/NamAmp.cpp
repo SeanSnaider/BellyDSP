@@ -1,4 +1,6 @@
 #include "NamAmp.h"
+#include "Loudness.h"
+#include "ReferenceSignals.h"
 
 #include <NAM/get_dsp.h>
 
@@ -49,22 +51,41 @@ NamAmp::LoadResult NamAmp::loadModel (const juce::File& file, bool normalize)
     // Reset() sizes the model's internal buffers for our largest block, then prewarms it: runs
     // silence through until its receptive field (the window of past samples each output sample
     // depends on) holds settled history, so the model doesn't start with a burst.
-    dsp->Reset (requiredSampleRate, loaderMaxBlockSize.load());
+    const auto maxBlock = loaderMaxBlockSize.load();
+    dsp->Reset (requiredSampleRate, maxBlock);
+
+    // Measure the model's loudness (BUILD_PLAN "Loudness matching"): render the reference guitar DI
+    // through it and K-weight and gate the result (BS.1770). Every model gets the same signal and the
+    // same method, so captures land at the same perceived level. A file's own loudness field can't
+    // promise that, because it depends on whatever signal its trainer used. Then reset again so the
+    // model starts clean.
+    static const auto referenceDI = referenceGuitarDI ((int) (loudnessProbeSeconds * requiredSampleRate));
+    std::vector<float> input (referenceDI), rendered (referenceDI.size());
+
+    for (size_t start = 0; start < input.size(); start += (size_t) maxBlock)
+    {
+        const auto len = (int) std::min ((size_t) maxBlock, input.size() - start);
+        NAM_SAMPLE* in = input.data() + start;
+        NAM_SAMPLE* out = rendered.data() + start;
+        dsp->process (&in, &out, len);
+    }
+
+    dsp->Reset (requiredSampleRate, maxBlock);
 
     auto model = std::make_unique<Model>();
-    LoadResult result { true, file.getFileNameWithoutExtension(), 0.0 };
+    LoadResult result { true, file.getFileNameWithoutExtension(), 0.0, 0.0 };
+    result.measuredLufs = loudness::integratedMono (rendered.data(), (int) rendered.size(), requiredSampleRate);
 
-    if (normalize && dsp->HasLoudness())
+    if (normalize && std::isfinite (result.measuredLufs))
     {
-        // The trainer measures each capture's loudness on a standard input signal. Scaling every
-        // model to the same target means switching amps doesn't jump in volume.
-        result.normalizationDb = targetLoudnessDb - dsp->GetLoudness();
+        result.normalizationDb = targetLoudnessLufs - result.measuredLufs;
         model->normalizationGain = juce::Decibels::decibelsToGain ((float) result.normalizationDb);
-        result.message << " (normalized " << juce::String (result.normalizationDb, 1) << " dB)";
+        result.message << " (" << juce::String (result.measuredLufs, 1) << " LUFS on the reference DI, normalized "
+                       << juce::String (result.normalizationDb, 1) << " dB)";
     }
     else if (normalize)
     {
-        result.message << " (the file has no loudness data, so it isn't normalized)";
+        result.message << " (silent on the reference DI, so not normalized)";
     }
 
     model->dsp = std::move (dsp);

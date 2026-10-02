@@ -27,7 +27,6 @@ public:
     void runTest() override
     {
         const auto ir = syntheticCabIR (4096);
-        const auto irNormalized = unitEnergy (ir);
 
         beginTest ("the DI snapshot is the untouched guitar, even after the input gain changes the buffer");
         {
@@ -49,7 +48,7 @@ public:
         beginTest ("zero latency end to end, and left == right for the one-mic chain");
         {
             ampsim::Chain chain;
-            chain.cab.loadSamples (toBuffer (ir), fs, "synthetic");
+            const auto loaded = chain.cab.loadSamples (toBuffer (ir), fs, "synthetic");
             chain.prepare (fs, blockSize);
 
             std::vector<float> impulse (8192, 0.0f);
@@ -57,7 +56,7 @@ public:
             const auto out = runChain (chain, impulse);
 
             expectEquals (chain.latencySamples(), 0);
-            expectWithinAbsoluteError ((double) out.left[0], irNormalized[0], 1.0e-6);
+            expectWithinAbsoluteError ((double) out.left[0], ir[0] * loaded.gain, 1.0e-6);
             expectEquals (maxAbsDifference (out.left, out.right), 0.0);
             logMessage ("  -> reported latency " + juce::String (chain.latencySamples()) + " samples; impulse in at sample 0 "
                         + "comes out at sample 0 (" + juce::String (out.left[0], 6) + " = h[0]); left/right difference "

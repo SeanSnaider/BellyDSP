@@ -1,4 +1,5 @@
 #include "TestHelpers.h"
+#include "dsp/ReferenceSignals.h"
 
 #include <cmath>
 
@@ -90,6 +91,29 @@ std::vector<float> whiteNoise (int numSamples, float amplitude, juce::int64 seed
     return x;
 }
 
+std::vector<float> pinkNoise (int numSamples, juce::int64 seed)
+{
+    // Six parallel one-pole low-passes plus a direct path approximate a -3 dB/octave slope.
+    juce::Random random (seed);
+    double b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+    std::vector<float> out ((size_t) numSamples);
+
+    for (auto& sample : out)
+    {
+        const auto white = 2.0 * random.nextDouble() - 1.0;
+        b0 = 0.99886 * b0 + white * 0.0555179;
+        b1 = 0.99332 * b1 + white * 0.0750759;
+        b2 = 0.96900 * b2 + white * 0.1538520;
+        b3 = 0.86650 * b3 + white * 0.3104856;
+        b4 = 0.55000 * b4 + white * 0.5329522;
+        b5 = -0.7616 * b5 - white * 0.0168980;
+        sample = (float) (0.11 * (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362));
+        b6 = white * 0.115926;
+    }
+
+    return out;
+}
+
 std::vector<float> exampleInput (int minimumSamples)
 {
     const auto buffer = readWav (exampleInputFile());
@@ -108,68 +132,7 @@ std::vector<float> exampleInput (int minimumSamples)
 
 std::vector<float> guitarDI (int numSamples)
 {
-    // Karplus-Strong: a burst of noise circulates in a delay line one period long, through a
-    // two-point average (a gentle low-pass) and a decay factor, so it rings at the string's pitch and
-    // loses its highs over time, roughly like a plucked string.
-    struct Note
-    {
-        double start, length;
-        std::vector<double> frequencies;
-        double decay;
-        double level;
-    };
-
-    const std::vector<Note> phrase {
-        { 0.00, 0.12, { 82.41 }, 0.985, 0.8 },                  // palm-muted chugs on low E
-        { 0.15, 0.12, { 82.41 }, 0.985, 0.8 },
-        { 0.30, 0.12, { 82.41 }, 0.985, 0.8 },
-        { 0.45, 0.12, { 82.41 }, 0.985, 0.8 },
-        { 0.60, 0.50, { 82.41, 123.47, 164.81 }, 0.997, 0.6 },  // E5 power chord
-        { 1.10, 0.20, { 196.00 }, 0.996, 0.7 },                 // G3
-        { 1.30, 0.20, { 220.00 }, 0.996, 0.7 },                 // A3
-        { 1.50, 0.20, { 246.94 }, 0.996, 0.7 },                 // B3
-        { 1.70, 0.30, { 110.00, 164.81, 220.00 }, 0.997, 0.6 }, // A5 power chord
-    };
-
-    std::vector<double> mix ((size_t) numSamples, 0.0);
-    juce::Random random (42);
-    const auto release = (int) (0.010 * fs); // each note ends with a 10 ms release instead of a click
-
-    for (double phraseStart = 0.0; phraseStart * fs < numSamples; phraseStart += 2.0)
-    {
-        for (const auto& note : phrase)
-        {
-            for (const auto frequency : note.frequencies)
-            {
-                const auto start = (int) ((phraseStart + note.start) * fs);
-                const auto length = (int) (note.length * fs);
-                const auto period = std::max (2, juce::roundToInt (fs / frequency));
-                std::vector<double> loop ((size_t) period);
-
-                for (auto& v : loop)
-                    v = 2.0 * random.nextDouble() - 1.0; // the pluck
-
-                for (int i = 0; i < length && start + i < numSamples; ++i)
-                {
-                    const auto index = (size_t) (i % period);
-                    const auto y = loop[index];
-                    loop[index] = note.decay * 0.5 * (loop[index] + loop[(index + 1) % (size_t) period]);
-                    const auto envelope = i > length - release ? (double) (length - i) / release : 1.0;
-                    mix[(size_t) (start + i)] += note.level * y * envelope;
-                }
-            }
-        }
-    }
-
-    double peak = 1.0e-9;
-    for (auto v : mix)
-        peak = std::max (peak, std::abs (v));
-
-    std::vector<float> out ((size_t) numSamples);
-    for (size_t i = 0; i < out.size(); ++i)
-        out[i] = (float) (mix[i] * 0.5 / peak); // peaks at -6 dBFS, a typical DI level
-
-    return out;
+    return ampsim::referenceGuitarDI (numSamples, fs);
 }
 
 std::vector<float> richStimulus()
@@ -239,15 +202,15 @@ struct Biquad
 };
 } // namespace
 
-std::vector<double> syntheticCabIR (int length)
+std::vector<double> syntheticCabIR (int length, double presenceDb, double lowpassHz)
 {
     std::vector<Biquad> cab {
         Biquad::make ("highpass", 90, 0.707),
         Biquad::make ("peak", 120, 1.2, 3.0),
         Biquad::make ("peak", 400, 1.0, -3.0),
-        Biquad::make ("peak", 2500, 1.5, 4.0),
-        Biquad::make ("lowpass", 5000, 0.707),
-        Biquad::make ("lowpass", 5000, 0.707),
+        Biquad::make ("peak", 2500, 1.5, presenceDb),
+        Biquad::make ("lowpass", lowpassHz, 0.707),
+        Biquad::make ("lowpass", lowpassHz, 0.707),
     };
 
     std::vector<double> h ((size_t) length);

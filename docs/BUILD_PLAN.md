@@ -145,7 +145,7 @@ The original round 2 plan was a hand-written Rust engine: channel-major, time-co
 
 **Input level.** Per-slot input trim (the input gain knob for now). Input calibration from model metadata (`input_level_dbu`) is still to do.
 
-**Loudness matching.** For now: the trainer's loudness metadata, normalized to -18 dB (what the official plugin does). Planned: measured K-weighted loudness of a fixed reference DI for files without it, plus a manual per-slot trim.
+**Loudness matching.** Built as planned: at load, 4 s of the reference guitar DI is rendered through the model, its BS.1770 integrated loudness measured, and the slot normalized to -18 LUFS, for every model, preferred over the file's own loudness field. The per-slot output trim is the manual adjustment. The reference DI is a deterministic Karplus-Strong riff (`ampsim::referenceGuitarDI`) until Sean records a real one.
 
 **Differential testing.** See above. Synthetic random-weight models from the trainer, as a trainer-vs-core fuzzer, are still a good upstream contribution.
 
@@ -306,7 +306,7 @@ Movement never touches the audio thread's math. While the mic is dragged or auto
 
 **IR loading.** `.wav` in 16 or 24-bit integer or 32-bit float, mono or stereo. Close mics take the left channel of a stereo IR by default, with an option to pick the right. IRs not at 48 kHz are resampled at load by JUCE's convolution. Full length is kept up to a 1 second cap, with an optional trim that applies a short fade-out.
 
-**Normalization.** For now, unit energy (sum of h[n]^2 = 1, so white noise passes at equal power). Planned: at load, the loudness of pink noise through each IR is measured with the same K-weighted LUFS-style method used for the amps, and a normalization gain is applied so swapping cabs or moving mics doesn't jump in volume.
+**Normalization.** Built with white noise rather than the pink noise originally planned: at load, the BS.1770 loudness of white noise before and after the IR is measured and the IR scaled by the difference. Measured on clean and distorted guitar through very different cabs, pink noise left up to 6.6 LU of difference and white noise 2.1 LU (decision log). The original plan read: at load, the loudness of pink noise through each IR is measured with the same K-weighted LUFS-style method used for the amps, and a normalization gain is applied so swapping cabs or moving mics doesn't jump in volume.
 
 **Switching and memory.** Each mic slot preallocates room for two convolvers. A new IR (file change, position move, or morph update) is built on the loader thread, then old and new run together for about 30 ms while crossfading, and the old one goes back to the loader to be dropped.
 
@@ -685,4 +685,5 @@ The compiler is Apple clang from the command line tools (`xcode-select --install
 2026-10-01: Amp tone controls are five SVF bands after the model: Depth (90 Hz bell), Bass (180 Hz low shelf), Mid (800 Hz bell), Treble (2.8 kHz high shelf), Presence (5 kHz bell), each +-12 dB, coefficients every 32 samples. Frequencies are starting points to tune by ear.
 2026-10-01: Footswitch: Program Change 0/1/2 selects slot 1/2/3 on the audio thread immediately; the slot parameter syncs from the message thread.
 2026-10-01: Test signals: NAM core's example input is silence plus a test tone, not a DI. Tests use a deterministic Karplus-Strong guitar DI until Sean records real DI clips for tests/fixtures, and NAM differential tests also use a broadband stimulus.
+2026-10-01: Loudness: models are normalized to -18 LUFS on a reference guitar DI with a hand-written BS.1770-4 meter (verified against the standard's coefficients and the EBU Tech 3341 cases). Cab IRs are loudness-matched with K-weighted white noise instead of pink noise, because a study across clean and distorted guitar through stock, dark, and bright cabs found pink noise leaves up to 6.6 LU of difference and white noise 2.1 LU. Normalizing whole amp-plus-cab combinations would be exact but takes away a cab's own effect on loudness; that's Sean's call (PROGRESS task 3.3.Q).
 
