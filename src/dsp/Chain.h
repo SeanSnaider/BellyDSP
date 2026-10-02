@@ -2,7 +2,7 @@
 
 #include "AmpSection.h"
 #include "Block.h"
-#include "CabIR.h"
+#include "Cab.h"
 #include "Gain.h"
 
 #include <array>
@@ -22,7 +22,7 @@ class Chain
 public:
     Gain inputGain { false };
     AmpSection amp;
-    CabIR cab;
+    Cab cab;
     Gain outputGain { true };
 
     enum class Slot : size_t

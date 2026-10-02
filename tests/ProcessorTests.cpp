@@ -50,6 +50,14 @@ juce::File writeSyntheticIR (const juce::String& name, int length)
     return file;
 }
 
+/// A brighter cab than the stock synthetic one, arriving 9 samples later, so the snapshot shows a real alignment.
+std::vector<double> scaledBright()
+{
+    auto h = syntheticCabIR (2048, 8.0, 7000.0);
+    h.insert (h.begin(), 9, 0.0);
+    return h;
+}
+
 bool savePng (const juce::Image& image, const juce::File& file)
 {
     file.deleteFile();
@@ -141,7 +149,7 @@ public:
             setParam (original, "input_gain", 3.5f);
             setParam (original, "output_gain", -2.0f);
             original.loadModel (0, a1);
-            original.loadImpulseResponse (irFile);
+            original.loadCabIR (0, irFile);
             waitForLoads (original);
 
             juce::MemoryBlock state;
@@ -155,7 +163,7 @@ public:
                 expectEquals (getParam (restored, id), getParam (original, id), id);
 
             expectEquals (restored.getStatus().model[0], original.getStatus().model[0]);
-            expectEquals (restored.getStatus().cab, original.getStatus().cab);
+            expectEquals (restored.getStatus().cab[0], original.getStatus().cab[0]);
 
             original.prepareToPlay (fs, blockSize);
             restored.prepareToPlay (fs, blockSize);
@@ -168,7 +176,7 @@ public:
             logMessage ("  -> state is " + juce::String ((int) state.getSize()) + " bytes; restored: input_gain "
                         + juce::String (getParam (restored, "input_gain"), 1) + " dB, output_gain "
                         + juce::String (getParam (restored, "output_gain"), 1) + " dB, model \"" + restored.getStatus().model[0]
-                        + "\", cab \"" + restored.getStatus().cab + "\"; 2 s through both: max difference " + juce::String (difference));
+                        + "\", cab \"" + restored.getStatus().cab[0] + "\"; 2 s through both: max difference " + juce::String (difference));
         }
 
         beginTest ("a saved model that has gone missing is reported, not a crash");
@@ -191,7 +199,7 @@ public:
             AmpSimProcessor p;
             p.loadModel (0, a1);
             p.loadModel (1, exampleModel ("lstm.nam"));
-            p.loadImpulseResponse (irFile);
+            p.loadCabIR (0, irFile);
             waitForLoads (p);
             p.prepareToPlay (fs, blockSize);
 
@@ -200,6 +208,33 @@ public:
             const auto file = proofDir().getChildFile ("editor.png");
             expect (savePng (image, file));
             expectEquals (image.getWidth(), editor->getWidth() * 2);
+
+            // The Cab tab, with IRs in all three mics.
+            const auto room = tempDir().getChildFile ("snapshot_room.wav");
+            {
+                juce::AudioBuffer<float> stereoRoom (2, 24000);
+                juce::Random random (9);
+                for (int ch = 0; ch < 2; ++ch)
+                    for (int i = 0; i < stereoRoom.getNumSamples(); ++i)
+                        stereoRoom.setSample (ch, i, (2.0f * random.nextFloat() - 1.0f) * std::exp (-(float) i / 4800.0f));
+                writeWav (room, stereoRoom);
+            }
+            const auto mic2 = tempDir().getChildFile ("synthetic_bright.wav");
+            {
+                auto bright = scaledBright();
+                writeWav (mic2, toBuffer (bright));
+            }
+            p.loadCabIR (1, mic2);
+            p.loadCabIR (AmpSimProcessor::roomMic, room);
+            waitForLoads (p);
+            auto* ampSimEditor = dynamic_cast<AmpSimEditor*> (editor.get());
+            expect (ampSimEditor != nullptr);
+            ampSimEditor->showTab (1);
+            ampSimEditor->resized();
+            ampSimEditor->refresh(); // what the status timer would do
+            const auto cabFile = proofDir().getChildFile ("editor_cab.png");
+            expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), cabFile));
+            logMessage ("  -> " + cabFile.getFullPathName());
 
             AmpSimProcessor wrongRate;
             wrongRate.prepareToPlay (44100.0, blockSize);
@@ -220,7 +255,7 @@ public:
             {
                 AmpSimProcessor p;
                 p.loadModel (0, exampleModel (juce::String (modelName) + ".nam"));
-                p.loadImpulseResponse (irFile);
+                p.loadCabIR (0, irFile);
                 waitForLoads (p);
                 p.prepareToPlay (fs, blockSize);
 

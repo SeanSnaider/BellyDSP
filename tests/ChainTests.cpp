@@ -48,7 +48,7 @@ public:
         beginTest ("zero latency end to end, and left == right for the one-mic chain");
         {
             ampsim::Chain chain;
-            const auto loaded = chain.cab.loadSamples (toBuffer (ir), fs, "synthetic");
+            const auto loaded = chain.cab.loadCloseMicSamples (0, toBuffer (ir), fs, "synthetic");
             chain.prepare (fs, blockSize);
 
             std::vector<float> impulse (8192, 0.0f);
@@ -70,8 +70,8 @@ public:
             const int fade = juce::roundToInt (fs * ampsim::Chain::bypassFadeSeconds); // 480
 
             ampsim::Chain chain, wetRef, dryRef;
-            chain.cab.loadSamples (toBuffer (ir), fs, "synthetic");
-            wetRef.cab.loadSamples (toBuffer (ir), fs, "synthetic");
+            chain.cab.loadCloseMicSamples (0, toBuffer (ir), fs, "synthetic");
+            wetRef.cab.loadCloseMicSamples (0, toBuffer (ir), fs, "synthetic");
             for (auto* c : { &chain, &wetRef, &dryRef })
                 c->prepare (fs, blockSize);
 
@@ -121,8 +121,8 @@ public:
                 longIR[n] = ringing[n] * std::exp (-(double) n / (0.1 * fs));
 
             ampsim::Chain chain, control;
-            chain.cab.loadSamples (toBuffer (longIR), fs, "ringing");
-            control.cab.loadSamples (toBuffer (longIR), fs, "ringing");
+            chain.cab.loadCloseMicSamples (0, toBuffer (longIR), fs, "ringing");
+            control.cab.loadCloseMicSamples (0, toBuffer (longIR), fs, "ringing");
             chain.prepare (fs, blockSize);
             control.prepare (fs, blockSize);
 
@@ -154,7 +154,7 @@ public:
         beginTest ("toggling bypass back mid-fade reverses smoothly with no reset");
         {
             ampsim::Chain chain;
-            chain.cab.loadSamples (toBuffer (ir), fs, "synthetic");
+            chain.cab.loadCloseMicSamples (0, toBuffer (ir), fs, "synthetic");
             chain.prepare (fs, blockSize);
 
             const auto signal = sine (220.0, 0.5, (int) (0.5 * fs));

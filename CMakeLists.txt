@@ -51,6 +51,7 @@ set(NAM_CORE_WHOLE "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>")
 # linked into a shared static library and then again into the app.
 set(AMPSIM_DSP_SOURCES
     src/dsp/AmpSection.cpp
+    src/dsp/Cab.cpp
     src/dsp/Loudness.cpp
     src/dsp/ReferenceSignals.cpp
     src/dsp/Chain.cpp
@@ -138,6 +139,7 @@ target_sources(ampsim_tests PRIVATE
     tests/CabNormalizationStudy.cpp
     tests/GainTests.cpp
     tests/CabIRTests.cpp
+    tests/CabTests.cpp
     tests/NamAmpTests.cpp
     tests/ChainTests.cpp
     tests/ProcessorTests.cpp

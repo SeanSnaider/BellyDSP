@@ -47,15 +47,26 @@ public:
         {
             const auto irA = tempDir().getChildFile ("rt_ir_a.wav");
             const auto irB = tempDir().getChildFile ("rt_ir_b.wav");
+            const auto irC = tempDir().getChildFile ("rt_ir_c.wav");
+            const auto roomIR = tempDir().getChildFile ("rt_room.wav");
             writeWav (irA, toBuffer (syntheticCabIR (4096)));
             writeWav (irB, toBuffer (syntheticCabIR (1024)));
+            writeWav (irC, toBuffer (syntheticCabIR (2048, 8.0, 7000.0)));
+            {
+                juce::AudioBuffer<float> stereoRoom (2, 24000);
+                juce::Random random (3);
+                for (int ch = 0; ch < 2; ++ch)
+                    for (int i = 0; i < stereoRoom.getNumSamples(); ++i)
+                        stereoRoom.setSample (ch, i, (2.0f * random.nextFloat() - 1.0f) * std::exp (-(float) i / 4800.0f));
+                writeWav (roomIR, stereoRoom);
+            }
             const auto a1 = exampleModel ("wavenet_a1_standard.nam");
             const auto lstm = exampleModel ("lstm.nam");
             const auto small = exampleModel ("wavenet.nam");
 
             AmpSimProcessor p;
             p.loadModel (0, a1);
-            p.loadImpulseResponse (irA);
+            p.loadCabIR (0, irA);
             while (p.isLoading())
                 juce::Thread::sleep (5);
             p.prepareToPlay (fs, blockSize);
@@ -76,7 +87,21 @@ public:
                     case 200:  p.loadModel (0, lstm); break;                                // new capture in the playing slot
                     case 300:  p.loadModel (1, small); break;                               // capture into a slot that isn't playing
                     case 450:  setParam (p, AmpSimProcessor::slotParamId, 1.0f); break;     // slot 2 from the GUI
-                    case 600:  p.loadImpulseResponse (irB); break;                          // IR swap
+                    case 600:  p.loadCabIR (0, irB); break;                                 // IR swap on close mic 1
+                    case 650:  p.loadCabIR (1, irC); break;                                 // close mic 2 (and auto alignment)
+                    case 680:  p.loadCabIR (AmpSimProcessor::roomMic, roomIR); break;       // stereo room mic
+                    case 720:  setParam (p, AmpSimProcessor::cabParamId (0, "pan"), -0.6f); break;
+                    case 740:  setParam (p, AmpSimProcessor::cabParamId (1, "level"), -6.0f); break;
+                    case 760:  setParam (p, "cab_align", 0.0f); break;                      // manual delay and polarity
+                    case 770:  setParam (p, AmpSimProcessor::cabParamId (1, "delay"), 40.0f); break;
+                    case 780:  setParam (p, AmpSimProcessor::cabParamId (1, "invert"), 1.0f); break;
+                    case 790:  setParam (p, AmpSimProcessor::cabParamId (AmpSimProcessor::roomMic, "predelay"), 20.0f); break;
+                    case 820:  setParam (p, "cab_lowcut_on", 1.0f); break;                  // cuts on, slope change, sweep
+                    case 830:  setParam (p, "cab_highcut_on", 1.0f); break;
+                    case 840:  setParam (p, "cab_lowcut_slope", 1.0f); break;
+                    case 850:  setParam (p, "cab_highcut_freq", 4000.0f); break;
+                    case 870:  setParam (p, AmpSimProcessor::cabParamId (0, "mute"), 1.0f); break;
+                    case 890:  setParam (p, "cab_lowcut_on", 0.0f); break;
                     case 700:  setParam (p, AmpSimProcessor::ampParamId (1, "bass"), 6.0f); break;     // tone knobs
                     case 710:  setParam (p, AmpSimProcessor::ampParamId (1, "presence"), -4.0f); break;
                     case 800:  setParam (p, AmpSimProcessor::ampParamId (1, "output_trim"), -3.0f); break;
@@ -112,7 +137,10 @@ public:
             expectGreaterThan (modelFadeBlocks, 16, "the model loads must have crossfaded during the measurement");
             expectGreaterThan (slotSwitchBlocks, 16, "the slot switches must have crossfaded during the measurement");
             expectEquals (p.getChain().amp.getSelectedSlot(), 0);
-            expect (p.getStatus().cab.contains ("rt_ir_b"));
+            expect (p.getStatus().cab[0].contains ("rt_ir_b"));
+            expect (p.getStatus().cab[1].contains ("rt_ir_c") && p.getStatus().cab[2].contains ("rt_room"));
+            expect (p.getChain().cab.closeMic (1).hasImpulseResponse() && p.getChain().cab.roomMic().hasImpulseResponse(),
+                    "the IRs loaded during playback must have reached the audio thread");
             expectEquals (total.allocations, 0L);
             expectEquals (total.frees, 0L);
             expectEquals (total.blockingLocks, 0L);
@@ -120,7 +148,7 @@ public:
             logMessage ("  -> " + juce::String (blocks) + " blocks (" + juce::String (blocks * blockSize / fs, 1)
                         + " s of audio): 3 capture loads (" + juce::String (modelFadeBlocks) + " blocks mid-crossfade), "
                         "3 slot switches from the GUI and the footswitch (" + juce::String (slotSwitchBlocks)
-                        + " blocks mid-crossfade), 1 IR swap, cab bypass off and on, 5 knob ramps");
+                        + " blocks mid-crossfade), 3 IR loads into the three cab mics plus an IR swap, auto alignment, 6 cab mic changes, cuts on, off, re-sloped and swept, cab bypass off and on, 5 knob ramps");
             logMessage ("  -> audio thread: " + describe (total));
         }
     }

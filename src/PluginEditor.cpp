@@ -9,17 +9,42 @@ const auto textColour = juce::Colour (0xffe6e6e6);
 const auto dimText = juce::Colour (0xff9aa0a8);
 const auto errorColour = juce::Colour (0xffff6b5e);
 const auto warningColour = juce::Colour (0xffffc04d);
+
+/// A combo box must have its items before a parameter attachment is made for it.
+juce::ComboBox& withItems (juce::ComboBox& box, const juce::StringArray& items)
+{
+    box.addItemList (items, 1);
+    return box;
+}
+
+void stylePanelTitle (juce::Label& label, const juce::String& text)
+{
+    label.setText (text, juce::dontSendNotification);
+    label.setFont (juce::FontOptions (17.0f, juce::Font::bold));
+    label.setColour (juce::Label::textColourId, textColour);
+}
+
+void styleStatus (juce::Label& label)
+{
+    label.setColour (juce::Label::textColourId, textColour);
+    label.setJustificationType (juce::Justification::topLeft);
+    label.setMinimumHorizontalScale (0.8f);
+}
 } // namespace
 
 // ---- Knob -------------------------------------------------------------------------------------
 
-Knob::Knob (juce::AudioProcessorValueTreeState& state, const juce::String& parameterId, const juce::String& caption)
+Knob::Knob (juce::AudioProcessorValueTreeState& state, const juce::String& parameterId, const juce::String& caption,
+            const juce::String& suffix)
     : attachment (state, parameterId, slider)
 {
     slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-    slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 64, 18);
-    slider.setTextValueSuffix (" dB");
-    slider.setDoubleClickReturnValue (true, 0.0); // double-click resets to 0 dB
+    slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 70, 18);
+    slider.setTextValueSuffix (suffix);
+
+    if (auto* param = state.getParameter (parameterId))
+        slider.setDoubleClickReturnValue (true, param->convertFrom0to1 (param->getDefaultValue()));
+
     addAndMakeVisible (slider);
 
     label.setText (caption, juce::dontSendNotification);
@@ -40,14 +65,9 @@ void Knob::resized()
 SlotPanel::SlotPanel (AmpSimProcessor& processor, int slotIndex, std::function<void()> onLoad)
     : slot (slotIndex)
 {
-    title.setText ("Amp " + juce::String (slot + 1), juce::dontSendNotification);
-    title.setFont (juce::FontOptions (17.0f, juce::Font::bold));
-    title.setColour (juce::Label::textColourId, textColour);
+    stylePanelTitle (title, "Amp " + juce::String (slot + 1));
     addAndMakeVisible (title);
-
-    status.setColour (juce::Label::textColourId, textColour);
-    status.setJustificationType (juce::Justification::topLeft);
-    status.setMinimumHorizontalScale (0.8f);
+    styleStatus (status);
     addAndMakeVisible (status);
 
     loadButton.onClick = std::move (onLoad);
@@ -115,6 +135,83 @@ void SlotPanel::resized()
     }
 }
 
+// ---- MicPanel ---------------------------------------------------------------------------------
+
+MicPanel::MicPanel (AmpSimProcessor& processor, int micIndex, std::function<void()> onLoad)
+    : mic (micIndex)
+{
+    const bool isRoom = mic == AmpSimProcessor::roomMic;
+    stylePanelTitle (title, isRoom ? juce::String ("Room mic") : "Close mic " + juce::String (mic + 1));
+    addAndMakeVisible (title);
+    styleStatus (status);
+    addAndMakeVisible (status);
+
+    loadButton.onClick = std::move (onLoad);
+    addAndMakeVisible (loadButton);
+
+    auto& state = processor.parameters;
+    knobs.add (new Knob (state, AmpSimProcessor::cabParamId (mic, "level"), "Level"));
+
+    if (isRoom)
+    {
+        knobs.add (new Knob (state, AmpSimProcessor::cabParamId (mic, "predelay"), "Pre-delay", " ms"));
+    }
+    else
+    {
+        knobs.add (new Knob (state, AmpSimProcessor::cabParamId (mic, "pan"), "Pan", ""));
+        knobs.add (new Knob (state, AmpSimProcessor::cabParamId (mic, "delay"), "Delay", " smp"));
+
+        auto* invert = toggles.add (new juce::ToggleButton ("Invert"));
+        toggleAttachments.add (new juce::AudioProcessorValueTreeState::ButtonAttachment (state, AmpSimProcessor::cabParamId (mic, "invert"), *invert));
+
+        withItems (channel, { "Left channel", "Right channel" });
+        channelAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (state, AmpSimProcessor::cabParamId (mic, "channel"), channel);
+        addAndMakeVisible (channel);
+    }
+
+    auto* mute = toggles.add (new juce::ToggleButton ("Mute"));
+    toggleAttachments.add (new juce::AudioProcessorValueTreeState::ButtonAttachment (state, AmpSimProcessor::cabParamId (mic, "mute"), *mute));
+
+    for (auto* knob : knobs)
+        addAndMakeVisible (knob);
+    for (auto* toggle : toggles)
+        addAndMakeVisible (toggle);
+}
+
+void MicPanel::setStatus (const juce::String& text, bool isError)
+{
+    status.setText (text == "No IR" ? juce::String ("No IR: this mic is silent") : text, juce::dontSendNotification);
+    status.setColour (juce::Label::textColourId, isError ? errorColour : textColour);
+}
+
+void MicPanel::paint (juce::Graphics& g)
+{
+    g.setColour (panel);
+    g.fillRoundedRectangle (getLocalBounds().toFloat().reduced (1.0f), 6.0f);
+}
+
+void MicPanel::resized()
+{
+    auto area = getLocalBounds().reduced (10);
+    auto top = area.removeFromTop (28);
+    title.setBounds (top.removeFromLeft (120));
+    loadButton.setBounds (top.removeFromRight (100));
+    area.removeFromTop (4);
+    status.setBounds (area.removeFromTop (38));
+    area.removeFromTop (4);
+
+    auto switches = area.removeFromBottom (28);
+    if (mic != AmpSimProcessor::roomMic)
+        channel.setBounds (switches.removeFromRight (130));
+    for (auto* toggle : toggles)
+        toggle->setBounds (switches.removeFromLeft (80));
+
+    area.removeFromBottom (6);
+    const auto width = area.getWidth() / 3;
+    for (auto* knob : knobs)
+        knob->setBounds (area.removeFromLeft (width));
+}
+
 // ---- AmpSimEditor -----------------------------------------------------------------------------
 
 AmpSimEditor::AmpSimEditor (AmpSimProcessor& p)
@@ -122,7 +219,14 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p)
       ampSim (p),
       inputKnob (p.parameters, "input_gain", "Input"),
       outputKnob (p.parameters, "output_gain", "Output"),
-      cabBypassAttachment (p.parameters, "cab_bypass", cabBypassButton)
+      lowCutKnob (p.parameters, "cab_lowcut_freq", "Low cut", " Hz"),
+      highCutKnob (p.parameters, "cab_highcut_freq", "High cut", " Hz"),
+      alignAttachment (p.parameters, "cab_align", alignButton),
+      lowCutAttachment (p.parameters, "cab_lowcut_on", lowCutButton),
+      highCutAttachment (p.parameters, "cab_highcut_on", highCutButton),
+      cabBypassAttachment (p.parameters, "cab_bypass", cabBypassButton),
+      lowCutSlopeAttachment (p.parameters, "cab_lowcut_slope", withItems (lowCutSlope, { "12 dB/oct", "24 dB/oct" })),
+      highCutSlopeAttachment (p.parameters, "cab_highcut_slope", withItems (highCutSlope, { "12 dB/oct", "24 dB/oct" }))
 {
     for (int s = 0; s < AmpSimProcessor::numAmpSlots; ++s)
     {
@@ -144,22 +248,27 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p)
         ampsPage.addAndMakeVisible (slotPanels.getLast());
     }
 
+    for (int m = 0; m < AmpSimProcessor::numCabMics; ++m)
+    {
+        micPanels.add (new MicPanel (p, m, [this, m]
+        {
+            chooseFile ("Choose an impulse response", "*.wav;*.aif;*.aiff;*.flac", AmpSimProcessor::cabPathKey (m),
+                        [this, m] (const juce::File& f) { ampSim.loadCabIR (m, f); });
+        }));
+        cabPage.addAndMakeVisible (micPanels.getLast());
+    }
+
+    alignmentLabel.setColour (juce::Label::textColourId, dimText);
+    for (auto* c : std::initializer_list<juce::Component*> { &alignButton, &alignmentLabel, &lowCutButton, &lowCutKnob, &lowCutSlope,
+                                                              &highCutButton, &highCutKnob, &highCutSlope, &cabBypassButton })
+        cabPage.addAndMakeVisible (c);
+
     addAndMakeVisible (inputKnob);
     addAndMakeVisible (outputKnob);
 
     warningLabel.setColour (juce::Label::textColourId, warningColour);
     warningLabel.setJustificationType (juce::Justification::topLeft);
     addAndMakeVisible (warningLabel);
-
-    loadIRButton.onClick = [this]
-    {
-        chooseFile ("Choose a cab impulse response", "*.wav;*.aif;*.aiff;*.flac", AmpSimProcessor::irPathKey,
-                    [this] (const juce::File& f) { ampSim.loadImpulseResponse (f); });
-    };
-    irLabel.setColour (juce::Label::textColourId, textColour);
-    cabPage.addAndMakeVisible (loadIRButton);
-    cabPage.addAndMakeVisible (irLabel);
-    cabPage.addAndMakeVisible (cabBypassButton);
 
     ampsPage.layout = [this] (juce::Rectangle<int> amps)
     {
@@ -172,11 +281,27 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p)
 
     cabPage.layout = [this] (juce::Rectangle<int> cab)
     {
-        auto row = cab.reduced (16).removeFromTop (34);
-        loadIRButton.setBounds (row.removeFromLeft (150));
-        row.removeFromLeft (10);
-        cabBypassButton.setBounds (row.removeFromRight (120));
-        irLabel.setBounds (row);
+        cab.reduce (8, 8);
+
+        // Bottom: alignment, cuts, bypass.
+        auto global = cab.removeFromBottom (150).reduced (4);
+        auto alignRow = global.removeFromTop (26);
+        alignButton.setBounds (alignRow.removeFromLeft (190));
+        alignmentLabel.setBounds (alignRow);
+        global.removeFromTop (4);
+        lowCutButton.setBounds (global.removeFromLeft (90).withSizeKeepingCentre (90, 26));
+        lowCutKnob.setBounds (global.removeFromLeft (90));
+        lowCutSlope.setBounds (global.removeFromLeft (110).withSizeKeepingCentre (110, 26));
+        global.removeFromLeft (20);
+        highCutButton.setBounds (global.removeFromLeft (90).withSizeKeepingCentre (90, 26));
+        highCutKnob.setBounds (global.removeFromLeft (90));
+        highCutSlope.setBounds (global.removeFromLeft (110).withSizeKeepingCentre (110, 26));
+        cabBypassButton.setBounds (global.removeFromRight (120).withSizeKeepingCentre (120, 26));
+
+        // Top: the three mics.
+        const auto panelWidth = cab.getWidth() / AmpSimProcessor::numCabMics;
+        for (auto* micPanel : micPanels)
+            micPanel->setBounds (cab.removeFromLeft (panelWidth).reduced (4));
     };
 
     tabs.addTab ("Amps", panel, &ampsPage, false);
@@ -184,7 +309,7 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p)
     tabs.setTabBarDepth (30);
     addAndMakeVisible (tabs);
 
-    setSize (920, 640);
+    setSize (960, 720);
     timerCallback(); // show the current state right away
     startTimerHz (10);
 }
@@ -226,8 +351,10 @@ void AmpSimEditor::timerCallback()
         slotPanels[s]->setStatus (status.model[(size_t) s], status.modelError[(size_t) s]);
     }
 
-    irLabel.setText ("Cab: " + status.cab, juce::dontSendNotification);
-    irLabel.setColour (juce::Label::textColourId, status.cabError ? errorColour : textColour);
+    for (int m = 0; m < AmpSimProcessor::numCabMics; ++m)
+        micPanels[m]->setStatus (status.cab[(size_t) m], status.cabError[(size_t) m]);
+
+    alignmentLabel.setText (status.alignment, juce::dontSendNotification);
     warningLabel.setText (status.warning, juce::dontSendNotification);
 }
 

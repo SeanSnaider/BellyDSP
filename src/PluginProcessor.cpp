@@ -7,22 +7,45 @@ AmpSimProcessor::AmpSimProcessor()
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       parameters (*this, nullptr, "AmpSim", createParameterLayout())
 {
-    inputGainDb = parameters.getRawParameterValue ("input_gain");
-    outputGainDb = parameters.getRawParameterValue ("output_gain");
-    cabBypass = parameters.getRawParameterValue ("cab_bypass");
-    ampSlot = parameters.getRawParameterValue (slotParamId);
+    inputGainDb = raw ("input_gain");
+    outputGainDb = raw ("output_gain");
+    cabBypass = raw ("cab_bypass");
+    ampSlot = raw (slotParamId);
 
     for (int s = 0; s < numAmpSlots; ++s)
     {
         auto& p = slotParameters[(size_t) s];
-        p.inputTrim = parameters.getRawParameterValue (ampParamId (s, "input_trim"));
-        p.outputTrim = parameters.getRawParameterValue (ampParamId (s, "output_trim"));
+        p.inputTrim = raw (ampParamId (s, "input_trim"));
+        p.outputTrim = raw (ampParamId (s, "output_trim"));
 
         for (int b = 0; b < ampsim::AmpTone::numBands; ++b)
-            p.tone[(size_t) b] = parameters.getRawParameterValue (ampParamId (s, juce::String (ampsim::AmpTone::bands[(size_t) b].name).toLowerCase()));
+            p.tone[(size_t) b] = raw (ampParamId (s, juce::String (ampsim::AmpTone::bands[(size_t) b].name).toLowerCase()));
     }
 
-    // Frees models and IRs the audio thread has handed back, and syncs footswitch slot changes.
+    for (int m = 0; m < ampsim::Cab::numCloseMics; ++m)
+    {
+        auto& p = micParameters[(size_t) m];
+        p.level = raw (cabParamId (m, "level"));
+        p.pan = raw (cabParamId (m, "pan"));
+        p.invert = raw (cabParamId (m, "invert"));
+        p.delay = raw (cabParamId (m, "delay"));
+        p.mute = raw (cabParamId (m, "mute"));
+        p.channel = raw (cabParamId (m, "channel"));
+    }
+
+    roomLevel = raw (cabParamId (roomMic, "level"));
+    roomPreDelay = raw (cabParamId (roomMic, "predelay"));
+    roomMute = raw (cabParamId (roomMic, "mute"));
+    cabAlign = raw ("cab_align");
+    lowCutOn = raw ("cab_lowcut_on");
+    lowCutFreq = raw ("cab_lowcut_freq");
+    lowCutSlope = raw ("cab_lowcut_slope");
+    highCutOn = raw ("cab_highcut_on");
+    highCutFreq = raw ("cab_highcut_freq");
+    highCutSlope = raw ("cab_highcut_slope");
+
+    // Frees models and IRs the audio thread has handed back, syncs footswitch slot changes, and
+    // re-reads an IR whose channel choice changed.
     startTimerHz (20);
 }
 
@@ -35,30 +58,81 @@ AmpSimProcessor::~AmpSimProcessor()
 juce::AudioProcessorValueTreeState::ParameterLayout AmpSimProcessor::createParameterLayout()
 {
     // Parameter IDs are permanent once presets exist. Never rename one; add a new ID instead.
+    using Float = juce::AudioParameterFloat;
+    using Bool = juce::AudioParameterBool;
+    using Choice = juce::AudioParameterChoice;
+    using Int = juce::AudioParameterInt;
+
     const auto levelRange = juce::NormalisableRange<float> (-24.0f, 24.0f, 0.1f);
     const auto toneRange = juce::NormalisableRange<float> (-ampsim::AmpTone::rangeDb, ampsim::AmpTone::rangeDb, 0.1f);
+    const auto micLevelRange = juce::NormalisableRange<float> (-40.0f, 12.0f, 0.1f);
     const auto dB = juce::AudioParameterFloatAttributes().withLabel ("dB");
+    const auto hz = juce::AudioParameterFloatAttributes().withLabel ("Hz");
+    const auto ms = juce::AudioParameterFloatAttributes().withLabel ("ms");
+    const auto skewed = [] (float lo, float hi, float centre)
+    {
+        juce::NormalisableRange<float> range (lo, hi, 1.0f);
+        range.setSkewForCentre (centre);
+        return range;
+    };
 
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
-    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "input_gain", 1 }, "Input Gain", levelRange, 0.0f, dB));
-    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "output_gain", 1 }, "Output Level", levelRange, 0.0f, dB));
-    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "cab_bypass", 1 }, "Cab Bypass", false));
-    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { slotParamId, 1 }, "Amp Slot",
-                                                              juce::StringArray { "Amp 1", "Amp 2", "Amp 3" }, 0));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "input_gain", 1 }, "Input Gain", levelRange, 0.0f, dB));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "output_gain", 1 }, "Output Level", levelRange, 0.0f, dB));
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "cab_bypass", 1 }, "Cab Bypass", false));
+    layout.add (std::make_unique<Choice> (juce::ParameterID { slotParamId, 1 }, "Amp Slot", juce::StringArray { "Amp 1", "Amp 2", "Amp 3" }, 0));
 
     for (int s = 0; s < numAmpSlots; ++s)
     {
         const auto prefix = "Amp " + juce::String (s + 1) + " ";
-        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { ampParamId (s, "input_trim"), 1 },
-                                                                 prefix + "Input Trim", levelRange, 0.0f, dB));
-        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { ampParamId (s, "output_trim"), 1 },
-                                                                 prefix + "Output Trim", levelRange, 0.0f, dB));
+        layout.add (std::make_unique<Float> (juce::ParameterID { ampParamId (s, "input_trim"), 1 }, prefix + "Input Trim", levelRange, 0.0f, dB));
+        layout.add (std::make_unique<Float> (juce::ParameterID { ampParamId (s, "output_trim"), 1 }, prefix + "Output Trim", levelRange, 0.0f, dB));
 
         for (const auto& band : ampsim::AmpTone::bands)
-            layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { ampParamId (s, juce::String (band.name).toLowerCase()), 1 },
-                                                                     prefix + band.name, toneRange, 0.0f, dB));
+            layout.add (std::make_unique<Float> (juce::ParameterID { ampParamId (s, juce::String (band.name).toLowerCase()), 1 },
+                                                 prefix + band.name, toneRange, 0.0f, dB));
     }
 
+    for (int m = 0; m < ampsim::Cab::numCloseMics; ++m)
+    {
+        const auto prefix = "Cab Mic " + juce::String (m + 1) + " ";
+        layout.add (std::make_unique<Float> (juce::ParameterID { cabParamId (m, "level"), 1 }, prefix + "Level", micLevelRange, 0.0f, dB));
+        // Pan reads C, L 50, R 70, and accepts the same when typed (or a plain number from -1 to 1).
+        const auto panAttributes = juce::AudioParameterFloatAttributes()
+            .withStringFromValueFunction ([] (float v, int)
+            {
+                const auto percent = juce::roundToInt (std::abs (v) * 100.0f);
+                return percent == 0 ? juce::String ("C") : (v < 0.0f ? "L " : "R ") + juce::String (percent);
+            })
+            .withValueFromStringFunction ([] (const juce::String& text)
+            {
+                const auto t = text.trim().toUpperCase();
+                if (t.startsWith ("C")) return 0.0f;
+                if (t.startsWith ("L")) return -juce::jlimit (0.0f, 100.0f, t.substring (1).trim().getFloatValue()) / 100.0f;
+                if (t.startsWith ("R")) return juce::jlimit (0.0f, 100.0f, t.substring (1).trim().getFloatValue()) / 100.0f;
+                return juce::jlimit (-1.0f, 1.0f, t.getFloatValue());
+            });
+        layout.add (std::make_unique<Float> (juce::ParameterID { cabParamId (m, "pan"), 1 }, prefix + "Pan",
+                                             juce::NormalisableRange<float> (-1.0f, 1.0f, 0.01f), 0.0f, panAttributes));
+        layout.add (std::make_unique<Bool> (juce::ParameterID { cabParamId (m, "invert"), 1 }, prefix + "Invert", false));
+        layout.add (std::make_unique<Int> (juce::ParameterID { cabParamId (m, "delay"), 1 }, prefix + "Delay", 0, ampsim::Cab::maxMicDelaySamples, 0,
+                                           juce::AudioParameterIntAttributes().withLabel ("samples")));
+        layout.add (std::make_unique<Bool> (juce::ParameterID { cabParamId (m, "mute"), 1 }, prefix + "Mute", false));
+        layout.add (std::make_unique<Choice> (juce::ParameterID { cabParamId (m, "channel"), 1 }, prefix + "IR Channel",
+                                              juce::StringArray { "Left", "Right" }, 0));
+    }
+
+    layout.add (std::make_unique<Float> (juce::ParameterID { cabParamId (roomMic, "level"), 1 }, "Cab Room Level", micLevelRange, -6.0f, dB));
+    layout.add (std::make_unique<Float> (juce::ParameterID { cabParamId (roomMic, "predelay"), 1 }, "Cab Room Pre-delay",
+                                         juce::NormalisableRange<float> (0.0f, (float) ampsim::Cab::maxRoomPreDelayMs, 0.1f), 0.0f, ms));
+    layout.add (std::make_unique<Bool> (juce::ParameterID { cabParamId (roomMic, "mute"), 1 }, "Cab Room Mute", false));
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "cab_align", 1 }, "Cab Auto Align", true));
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "cab_lowcut_on", 1 }, "Cab Low Cut", false));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "cab_lowcut_freq", 1 }, "Cab Low Cut Frequency", skewed (20.0f, 500.0f, 100.0f), 80.0f, hz));
+    layout.add (std::make_unique<Choice> (juce::ParameterID { "cab_lowcut_slope", 1 }, "Cab Low Cut Slope", juce::StringArray { "12 dB/oct", "24 dB/oct" }, 0));
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "cab_highcut_on", 1 }, "Cab High Cut", false));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "cab_highcut_freq", 1 }, "Cab High Cut Frequency", skewed (2000.0f, 20000.0f, 8000.0f), 8000.0f, hz));
+    layout.add (std::make_unique<Choice> (juce::ParameterID { "cab_highcut_slope", 1 }, "Cab High Cut Slope", juce::StringArray { "12 dB/oct", "24 dB/oct" }, 0));
     return layout;
 }
 
@@ -68,9 +142,10 @@ void AmpSimProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     sampleRateOk = std::abs (sampleRate - ampsim::NamAmp::requiredSampleRate) < 0.5;
     preparedBlockSize = juce::jmax (1, samplesPerBlock);
 
-    // Start on the saved slot without a crossfade: prepare() snaps the fade to the selection.
+    // Start on the saved slot and cab settings without ramps: prepare() snaps fades to the targets.
     lastSlotParameter = juce::roundToInt (ampSlot->load());
     chain.amp.selectSlot (lastSlotParameter);
+    applyCabParameters();
 
     chain.prepare (sampleRate, preparedBlockSize);
     setLatencySamples (chain.latencySamples());
@@ -101,6 +176,40 @@ void AmpSimProcessor::handleMidi (const juce::MidiBuffer& midi)
             midiSlotRequest.store (data[1]);
         }
     }
+}
+
+void AmpSimProcessor::applyCabParameters()
+{
+    const auto on = [] (const std::atomic<float>* p) { return p->load (std::memory_order_relaxed) >= 0.5f; };
+    const auto value = [] (const std::atomic<float>* p) { return p->load (std::memory_order_relaxed); };
+
+    for (int m = 0; m < ampsim::Cab::numCloseMics; ++m)
+    {
+        const auto& p = micParameters[(size_t) m];
+        ampsim::Cab::CloseMicSettings settings;
+        settings.levelDb = value (p.level);
+        settings.pan = value (p.pan);
+        settings.invert = on (p.invert);
+        settings.delaySamples = juce::roundToInt (value (p.delay));
+        settings.mute = on (p.mute);
+        chain.cab.setCloseMic (m, settings);
+    }
+
+    ampsim::Cab::RoomSettings room;
+    room.levelDb = value (roomLevel);
+    room.preDelayMs = value (roomPreDelay);
+    room.mute = on (roomMute);
+    chain.cab.setRoom (room);
+    chain.cab.setAutoAlign (on (cabAlign));
+
+    ampsim::Cab::CutSettings cuts;
+    cuts.lowCutOn = on (lowCutOn);
+    cuts.lowCutHz = value (lowCutFreq);
+    cuts.lowCutSlope = value (lowCutSlope) >= 0.5f ? ampsim::Cab::Slope::db24 : ampsim::Cab::Slope::db12;
+    cuts.highCutOn = on (highCutOn);
+    cuts.highCutHz = value (highCutFreq);
+    cuts.highCutSlope = value (highCutSlope) >= 0.5f ? ampsim::Cab::Slope::db24 : ampsim::Cab::Slope::db12;
+    chain.cab.setCuts (cuts);
 }
 
 void AmpSimProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
@@ -148,6 +257,8 @@ void AmpSimProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             slot.tone.setGainDb ((ampsim::AmpTone::Band) b, p.tone[(size_t) b]->load (std::memory_order_relaxed));
     }
 
+    applyCabParameters();
+
     // Hosts may occasionally send more samples than promised, so feed the chain in pieces that fit.
     auto io = juce::dsp::AudioBlock<float> (buffer).getSubsetChannelBlock (0, 2);
     const auto maxChunk = (size_t) preparedBlockSize;
@@ -177,12 +288,16 @@ void AmpSimProcessor::setStateInformation (const void* data, int sizeInBytes)
     parameters.replaceState (juce::ValueTree::fromXml (*xml));
     auto& state = parameters.state;
 
-    // Milestone 1 had one slot, saved as "modelPath". It becomes slot 1.
+    // Milestone 1 had one amp slot ("modelPath") and one cab IR ("irPath"): they become slot 1 and
+    // close mic 1.
     if (state.hasProperty (legacyModelPathKey) && ! state.hasProperty (modelPathKey (0)))
         state.setProperty (modelPathKey (0), state.getProperty (legacyModelPathKey), nullptr);
+    if (state.hasProperty (legacyIRPathKey) && ! state.hasProperty (cabPathKey (0)))
+        state.setProperty (cabPathKey (0), state.getProperty (legacyIRPathKey), nullptr);
     state.removeProperty (legacyModelPathKey, nullptr);
+    state.removeProperty (legacyIRPathKey, nullptr);
 
-    // Reload the captures and IR this state was saved with.
+    // Reload the captures and IRs this state was saved with.
     for (int s = 0; s < numAmpSlots; ++s)
     {
         const auto path = state.getProperty (modelPathKey (s)).toString();
@@ -196,14 +311,17 @@ void AmpSimProcessor::setStateInformation (const void* data, int sizeInBytes)
             setModelStatus (s, "Saved model is missing: " + path, true);
     }
 
-    const auto irPath = state.getProperty (irPathKey).toString();
-
-    if (juce::File::isAbsolutePath (irPath))
+    for (int m = 0; m < numCabMics; ++m)
     {
-        if (juce::File (irPath).existsAsFile())
-            loadImpulseResponse (juce::File (irPath));
+        const auto path = state.getProperty (cabPathKey (m)).toString();
+
+        if (! juce::File::isAbsolutePath (path))
+            continue;
+
+        if (juce::File (path).existsAsFile())
+            loadCabIR (m, juce::File (path));
         else
-            setCabStatus ("Saved IR is missing: " + irPath, true);
+            setCabStatus (m, "Saved IR is missing: " + path, true);
     }
 }
 
@@ -222,16 +340,25 @@ void AmpSimProcessor::loadModel (int slot, const juce::File& file)
     });
 }
 
-void AmpSimProcessor::loadImpulseResponse (const juce::File& file)
+void AmpSimProcessor::loadCabIR (int mic, const juce::File& file)
 {
-    parameters.state.setProperty (irPathKey, file.getFullPathName(), nullptr);
-    setCabStatus ("Loading " + file.getFileName() + "...", false);
+    mic = juce::jlimit (0, numCabMics - 1, mic);
+    parameters.state.setProperty (cabPathKey (mic), file.getFullPathName(), nullptr);
+    setCabStatus (mic, "Loading " + file.getFileName() + "...", false);
+
+    auto channel = ampsim::CabIR::Channel::left;
+    if (mic != roomMic)
+    {
+        const auto useRight = micParameters[(size_t) mic].channel->load() >= 0.5f;
+        loadedChannel[(size_t) mic] = useRight ? 1 : 0;
+        channel = useRight ? ampsim::CabIR::Channel::right : ampsim::CabIR::Channel::left;
+    }
 
     ++loadsInFlight;
-    loader.addJob ([this, file]
+    loader.addJob ([this, mic, file, channel]
     {
-        const auto result = chain.cab.loadFile (file);
-        setCabStatus (result.message, ! result.ok);
+        const auto result = mic == roomMic ? chain.cab.loadRoom (file) : chain.cab.loadCloseMic (mic, file, channel);
+        setCabStatus (mic, result.message, ! result.ok);
         --loadsInFlight;
     });
 }
@@ -240,6 +367,16 @@ AmpSimProcessor::Status AmpSimProcessor::getStatus() const
 {
     const std::scoped_lock lock (statusMutex);
     auto copy = status;
+
+    const auto alignment = chain.cab.getAlignment();
+    if (! alignment.valid)
+        copy.alignment = "Alignment needs IRs in both close mics";
+    else if (alignment.delayMic1 == 0 && alignment.delayMic2 == 0 && ! alignment.invertMic2)
+        copy.alignment = "Close mics already line up (match " + juce::String (alignment.correlation, 2) + ")";
+    else
+        copy.alignment = "Close mics aligned: mic " + juce::String (alignment.delayMic1 > 0 ? 1 : 2) + " delayed "
+                         + juce::String (juce::jmax (alignment.delayMic1, alignment.delayMic2)) + " samples"
+                         + (alignment.invertMic2 ? ", mic 2 inverted" : "") + " (match " + juce::String (alignment.correlation, 2) + ")";
 
     if (! sampleRateOk.load())
         copy.warning = "Output muted: the audio device runs at " + juce::String (juce::roundToInt (deviceSampleRate.load()))
@@ -255,11 +392,11 @@ void AmpSimProcessor::setModelStatus (int slot, const juce::String& text, bool i
     status.modelError[(size_t) slot] = isError;
 }
 
-void AmpSimProcessor::setCabStatus (const juce::String& text, bool isError)
+void AmpSimProcessor::setCabStatus (int mic, const juce::String& text, bool isError)
 {
     const std::scoped_lock lock (statusMutex);
-    status.cab = text;
-    status.cabError = isError;
+    status.cab[(size_t) mic] = text;
+    status.cabError[(size_t) mic] = isError;
 }
 
 void AmpSimProcessor::timerCallback()
@@ -273,6 +410,16 @@ void AmpSimProcessor::timerCallback()
     if (const auto slot = midiSlotRequest.exchange (-1); slot >= 0)
         if (auto* param = parameters.getParameter (slotParamId))
             param->setValueNotifyingHost (param->convertTo0to1 ((float) slot));
+
+    // A close mic's left/right choice changed: read its file again with the other channel.
+    for (int m = 0; m < ampsim::Cab::numCloseMics; ++m)
+    {
+        const auto wanted = micParameters[(size_t) m].channel->load() >= 0.5f ? 1 : 0;
+        const auto path = parameters.state.getProperty (cabPathKey (m)).toString();
+
+        if (wanted != loadedChannel[(size_t) m] && juce::File::isAbsolutePath (path) && juce::File (path).existsAsFile())
+            loadCabIR (m, juce::File (path));
+    }
 }
 
 // JUCE's plugin wrappers (here, the standalone app) call this to create the plugin.

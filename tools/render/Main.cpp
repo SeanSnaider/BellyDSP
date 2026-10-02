@@ -19,7 +19,7 @@ namespace
 {
 struct Options
 {
-    juce::File model, ir, input, output, compare;
+    juce::File model, ir, ir2, room, input, output, compare;
     float inputGainDb = 0.0f, outputGainDb = 0.0f;
     int blockSize = 128;
     int slots = 1;
@@ -30,7 +30,9 @@ void printUsage()
 {
     std::cerr << "Usage: ampsim_render [options] <input.wav> <output.wav>\n"
                  "  --model <file.nam>     amp capture (omit for passthrough)\n"
-                 "  --ir <file.wav>        cab impulse response (omit for no cab)\n"
+                 "  --ir <file.wav>        cab close mic 1 impulse response (omit for no cab)\n"
+                 "  --ir2 <file.wav>       cab close mic 2 impulse response (auto-aligned to mic 1)\n"
+                 "  --room <file.wav>      cab room mic impulse response (mono or stereo)\n"
                  "  --input-gain <dB>      input trim (default 0)\n"
                  "  --output-gain <dB>     output level (default 0)\n"
                  "  --block <samples>      block size (default 128)\n"
@@ -55,6 +57,8 @@ bool parse (int argc, char* argv[], Options& o)
 
         if (a == "--model" && hasValue)              o.model = fileArg (argv[++i]);
         else if (a == "--ir" && hasValue)            o.ir = fileArg (argv[++i]);
+        else if (a == "--ir2" && hasValue)           o.ir2 = fileArg (argv[++i]);
+        else if (a == "--room" && hasValue)          o.room = fileArg (argv[++i]);
         else if (a == "--compare" && hasValue)       o.compare = fileArg (argv[++i]);
         else if (a == "--input-gain" && hasValue)    o.inputGainDb = juce::String (argv[++i]).getFloatValue();
         else if (a == "--output-gain" && hasValue)   o.outputGainDb = juce::String (argv[++i]).getFloatValue();
@@ -176,9 +180,13 @@ int main (int argc, char* argv[])
         }
     }
 
-    if (o.ir != juce::File())
+    const std::array<std::pair<juce::File, int>, 3> irs { { { o.ir, 0 }, { o.ir2, 1 }, { o.room, 2 } } };
+    for (const auto& [file, mic] : irs)
     {
-        const auto result = chain.cab.loadFile (o.ir);
+        if (file == juce::File())
+            continue;
+
+        const auto result = mic == 2 ? chain.cab.loadRoom (file) : chain.cab.loadCloseMic (mic, file);
 
         if (! result.ok)
         {
@@ -186,7 +194,14 @@ int main (int argc, char* argv[])
             return 1;
         }
 
-        std::cout << "IR: " << result.message << "\n";
+        std::cout << (mic == 2 ? "Room IR: " : "IR " + juce::String (mic + 1) + ": ") << result.message << "\n";
+    }
+
+    if (chain.cab.getAlignment().valid)
+    {
+        const auto a = chain.cab.getAlignment();
+        std::cout << "Close mics aligned: mic 1 +" << a.delayMic1 << ", mic 2 +" << a.delayMic2 << " samples"
+                  << (a.invertMic2 ? ", mic 2 inverted" : "") << "\n";
     }
 
     // Set the gains before prepare(), which snaps them, so the render doesn't start with a ramp.

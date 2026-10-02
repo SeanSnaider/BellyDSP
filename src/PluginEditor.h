@@ -16,11 +16,12 @@ public:
     }
 };
 
-/// A rotary knob with a caption, attached to one parameter.
+/// A rotary knob with a caption, attached to one parameter. Double-click resets it to the default.
 class Knob final : public juce::Component
 {
 public:
-    Knob (juce::AudioProcessorValueTreeState& state, const juce::String& parameterId, const juce::String& caption);
+    Knob (juce::AudioProcessorValueTreeState& state, const juce::String& parameterId, const juce::String& caption,
+          const juce::String& suffix = " dB");
     void resized() override;
 
 private:
@@ -47,8 +48,28 @@ private:
     juce::OwnedArray<Knob> knobs;
 };
 
+/// One cab mic's controls: load an IR, its status, and its knobs and switches.
+class MicPanel final : public juce::Component
+{
+public:
+    MicPanel (AmpSimProcessor& processor, int micIndex, std::function<void()> onLoad);
+    void setStatus (const juce::String& text, bool isError);
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+private:
+    const int mic;
+    juce::Label title, status;
+    juce::TextButton loadButton { "Load IR..." };
+    juce::OwnedArray<Knob> knobs;
+    juce::OwnedArray<juce::ToggleButton> toggles;
+    juce::OwnedArray<juce::AudioProcessorValueTreeState::ButtonAttachment> toggleAttachments;
+    juce::ComboBox channel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> channelAttachment;
+};
+
 /// A basic panel: header with the slot selector and global levels, then an Amps tab (three slots)
-/// and a Cab tab. The real UI comes in Phase 11 (BUILD_PLAN "GUI").
+/// and a Cab tab (three mics, alignment, cuts). The real UI comes in Phase 11 (BUILD_PLAN "GUI").
 class AmpSimEditor final : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
@@ -57,6 +78,10 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
+
+    /// For tests and snapshots: show the Amps (0) or Cab (1) tab, and refresh the status lines now.
+    void showTab (int index) { tabs.setCurrentTabIndex (index); }
+    void refresh() { timerCallback(); }
 
 private:
     void timerCallback() override;
@@ -71,12 +96,17 @@ private:
 
     PageComponent ampsPage, cabPage;
     juce::OwnedArray<SlotPanel> slotPanels;
+    juce::OwnedArray<MicPanel> micPanels;
     juce::TabbedComponent tabs { juce::TabbedButtonBar::TabsAtTop };
 
-    juce::TextButton loadIRButton { "Load cab IR..." };
-    juce::Label irLabel;
-    juce::ToggleButton cabBypassButton { "Bypass cab" };
-    juce::AudioProcessorValueTreeState::ButtonAttachment cabBypassAttachment;
+    // Cab page, global section.
+    juce::ToggleButton alignButton { "Auto-align close mics" }, lowCutButton { "Low cut" }, highCutButton { "High cut" },
+        cabBypassButton { "Bypass cab" };
+    juce::Label alignmentLabel;
+    Knob lowCutKnob, highCutKnob;
+    juce::ComboBox lowCutSlope, highCutSlope;
+    juce::AudioProcessorValueTreeState::ButtonAttachment alignAttachment, lowCutAttachment, highCutAttachment, cabBypassAttachment;
+    juce::AudioProcessorValueTreeState::ComboBoxAttachment lowCutSlopeAttachment, highCutSlopeAttachment;
 
     std::unique_ptr<juce::FileChooser> chooser;
 
