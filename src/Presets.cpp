@@ -355,6 +355,9 @@ ApplyResult apply (AmpSimProcessor& processor, const juce::var& saved)
     processor.setBloomOrder (toStrings (order.getProperty ("bloom", {})));
 
     processor.parameters.state.setProperty ("presetName", preset.getProperty ("name", {}).toString(), nullptr);
+    processor.parameters.copyState(); // write the new values into the tree now, so they aren't recorded as an edit
+    processor.undoManager.clearUndoHistory();
+    processor.resetAB();
     return result;
 }
 

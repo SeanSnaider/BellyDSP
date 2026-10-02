@@ -1861,7 +1861,16 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p)
     addAndMakeVisible (savePresetButton);
     addAndMakeVisible (loadPresetButton);
     addAndMakeVisible (midiButton);
-    addMouseListener (this, true); // right-clicks anywhere in the panel, for MIDI learn
+    addMouseListener (this, true); // right-clicks anywhere in the panel, for MIDI learn; transactions for undo
+
+    undoButton.onClick = [this] { ampSim.parameters.copyState(); ampSim.undoManager.undo(); };
+    redoButton.onClick = [this] { ampSim.undoManager.redo(); };
+    abButton.onClick = [this] { ampSim.parameters.copyState(); ampSim.abSwitch(); timerCallback(); };
+    abButton.setTooltip ("Switch between two versions of the settings (captures and IRs stay)");
+    abCopyButton.onClick = [this] { ampSim.abCopyToOther(); };
+    for (auto* b : { &undoButton, &redoButton, &abButton, &abCopyButton })
+        addAndMakeVisible (b);
+    setWantsKeyboardFocus (true);
 
     scenesLabel.setText ("Scenes", juce::dontSendNotification);
     scenesLabel.setColour (juce::Label::textColourId, dimText);
@@ -2188,6 +2197,11 @@ void AmpSimEditor::timerCallback()
         button.setTooltip (scene.stored ? scene.name : "Empty: click to store the current sound");
     }
 
+    undoButton.setEnabled (ampSim.undoManager.canUndo());
+    redoButton.setEnabled (ampSim.undoManager.canRedo());
+    abButton.setButtonText (ampSim.isOnB() ? "B" : "A");
+    abCopyButton.setButtonText (ampSim.isOnB() ? "Copy to A" : "Copy to B");
+
     // The tuner covers the tabs while it's engaged.
     if (const auto tuning = ampSim.parameters.getRawParameterValue ("tuner_on")->load() >= 0.5f; tunerView.isVisible() != tuning)
     {
@@ -2237,10 +2251,28 @@ void AmpSimEditor::sceneMenu (int index)
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (sceneButtons[(size_t) index]));
 }
 
+bool AmpSimEditor::keyPressed (const juce::KeyPress& key)
+{
+    if (key == juce::KeyPress ('z', juce::ModifierKeys::commandModifier, 0))
+    {
+        ampSim.parameters.copyState();
+        return ampSim.undoManager.undo();
+    }
+    if (key == juce::KeyPress ('z', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier, 0))
+        return ampSim.undoManager.redo();
+    return false;
+}
+
 void AmpSimEditor::mouseDown (const juce::MouseEvent& e)
 {
+    // Every press starts a new undo step: whatever this gesture changes undoes together. (The tree catches
+    // up with the last gesture's values first, so they land in the step they belong to.)
     if (! e.mods.isPopupMenu())
+    {
+        ampSim.parameters.copyState();
+        ampSim.undoManager.beginNewTransaction();
         return;
+    }
 
     for (int i = 0; i < Scenes::count; ++i)
         if (e.eventComponent == &sceneButtons[(size_t) i])
@@ -2397,6 +2429,12 @@ void AmpSimEditor::resized()
     loadPresetButton.setBounds (presetRow.removeFromLeft (80).reduced (2, 0));
     midiButton.setBounds (presetRow.removeFromLeft (80).reduced (2, 0));
     tunerButton.setBounds (presetRow.removeFromLeft (80).reduced (2, 0));
+    presetRow.removeFromLeft (12);
+    undoButton.setBounds (presetRow.removeFromLeft (64).reduced (2, 0));
+    redoButton.setBounds (presetRow.removeFromLeft (64).reduced (2, 0));
+    presetRow.removeFromLeft (12);
+    abButton.setBounds (presetRow.removeFromLeft (44).reduced (2, 0));
+    abCopyButton.setBounds (presetRow.removeFromLeft (90).reduced (2, 0));
 
     auto sceneRow = getLocalBounds().reduced (16).removeFromTop (96).withTrimmedTop (70).removeFromTop (26);
     scenesLabel.setBounds (sceneRow.removeFromLeft (60));

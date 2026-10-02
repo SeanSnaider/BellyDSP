@@ -614,6 +614,50 @@ public:
             logMessage ("  -> scenes come back from a preset and from the saved session; a preset without scenes has none");
         }
 
+        beginTest ("undo, redo, and A/B: one step per gesture, back and forth exactly; A and B hold two versions; a preset starts both afresh");
+        {
+            AmpSimProcessor p;
+            auto& um = p.undoManager;
+            p.parameters.copyState();
+            um.clearUndoHistory();
+            const auto gesture = [&p, &um] (std::initializer_list<std::pair<const char*, float>> values)
+            {
+                um.beginNewTransaction(); // what the panel does at each mouse press
+                for (const auto& [id, value] : values)
+                    setParam (p, id, value);
+                p.parameters.copyState(); // the tree catches up (the parameter tree's own timer does this in the app)
+            };
+            gesture ({ { "delay_on", 1.0f }, { "delay_mix", 40.0f } });
+            gesture ({ { "reverb_mix", 50.0f } });
+
+            const auto near = [&p] (const char* id, float v) { return std::abs (getParam (p, id) - v) < 1.0e-3f; };
+            expect (um.undo());
+            const auto afterOne = near ("reverb_mix", 25.0f) && near ("delay_mix", 40.0f) && near ("delay_on", 1.0f);
+            expect (um.undo());
+            const auto afterTwo = near ("delay_on", 0.0f) && near ("delay_mix", 25.0f);
+            expect (um.redo());
+            const auto redone = near ("delay_on", 1.0f) && near ("delay_mix", 40.0f) && near ("reverb_mix", 25.0f);
+            expect (afterOne && afterTwo && redone);
+
+            // A/B: B starts as a copy of A; each keeps its own changes; copying overwrites the other.
+            p.abSwitch();
+            const auto bStartsAsA = p.isOnB() && near ("delay_mix", 40.0f);
+            gesture ({ { "delay_mix", 70.0f }, { "chorus_on", 1.0f } });
+            p.abSwitch();
+            const auto backToA = ! p.isOnB() && near ("delay_mix", 40.0f) && near ("chorus_on", 0.0f);
+            p.abSwitch();
+            const auto backToB = p.isOnB() && near ("delay_mix", 70.0f) && near ("chorus_on", 1.0f);
+            p.abCopyToOther();
+            p.abSwitch();
+            const auto copied = ! p.isOnB() && near ("delay_mix", 70.0f) && near ("chorus_on", 1.0f);
+            expect (bStartsAsA && backToA && backToB && copied);
+
+            expect (p.loadPreset (juce::JSON::parse (R"({ "format_version": 2, "parameters": {} })")).ok);
+            expect (! um.canUndo() && ! p.isOnB());
+            logMessage ("  -> two gestures undone one at a time (reverb mix, then delay on and mix together) and redone exactly; A/B: B starts as A, each keeps "
+                        "its own delay mix (40 and 70) and chorus switch, copying B to A makes them equal; loading a preset clears the history and starts on A");
+        }
+
         beginTest ("presets: the golden v1 file loads the same on every build");
         {
             AmpSimProcessor p;

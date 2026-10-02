@@ -5,7 +5,7 @@ AmpSimProcessor::AmpSimProcessor()
     : AudioProcessor (BusesProperties()
                           .withInput ("Input", juce::AudioChannelSet::mono(), true)
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
-      parameters (*this, nullptr, "AmpSim", createParameterLayout())
+      parameters (*this, &undoManager, "AmpSim", createParameterLayout())
 {
     // Give every parameter its default through the path a preset or a host uses (normalized value to
     // plain value, snapped to its step). Constructed defaults on skewed ranges are off in their last
@@ -491,6 +491,46 @@ juce::StringArray AmpSimProcessor::getBloomOrder() const
     for (const auto effect : bloomOrder())
         names.add (ampsim::Bloom::effectName (effect));
     return names;
+}
+
+AmpSimProcessor::Snapshot AmpSimProcessor::captureSnapshot() const
+{
+    Snapshot s;
+    s.stored = true;
+    for (auto* parameter : getParameters())
+        if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (parameter); ranged != nullptr && ! presets::isGlobal (ranged->paramID))
+            s.values[ranged->paramID] = ranged->getValue();
+    s.pre = getSectionOrder (ampsim::Chain::Section::pre);
+    s.post = getSectionOrder (ampsim::Chain::Section::post);
+    s.bloom = getBloomOrder();
+    return s;
+}
+
+void AmpSimProcessor::applySnapshot (const Snapshot& s)
+{
+    for (const auto& [id, value] : s.values)
+        if (auto* parameter = parameters.getParameter (id); parameter != nullptr && std::abs (parameter->getValue() - value) > 1.0e-9f)
+            parameter->setValueNotifyingHost (value);
+    setSectionOrder (ampsim::Chain::Section::pre, s.pre);
+    setSectionOrder (ampsim::Chain::Section::post, s.post);
+    setBloomOrder (s.bloom);
+}
+
+void AmpSimProcessor::abSwitch()
+{
+    undoManager.beginNewTransaction ("A/B");
+    auto& leaving = abSlots[abOnB ? 1 : 0];
+    auto& arriving = abSlots[abOnB ? 0 : 1];
+    leaving = captureSnapshot();
+    if (! arriving.stored)
+        arriving = leaving; // B starts as a copy of A
+    applySnapshot (arriving);
+    abOnB = ! abOnB;
+}
+
+void AmpSimProcessor::abCopyToOther()
+{
+    abSlots[abOnB ? 0 : 1] = captureSnapshot();
 }
 
 juce::StringArray AmpSimProcessor::getSectionOrder (ampsim::Chain::Section section) const

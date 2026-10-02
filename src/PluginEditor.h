@@ -533,6 +533,8 @@ private:
     juce::Label presetLabel;
     juce::TextButton savePresetButton { "Save..." }, loadPresetButton { "Load..." }, midiButton { "MIDI..." };
     IgnoresRightClick<juce::TextButton> tunerButton { "Tuner" };
+    juce::TextButton undoButton { "Undo" }, redoButton { "Redo" }, abButton { "A" }, abCopyButton { "Copy to B" };
+    bool keyPressed (const juce::KeyPress& key) override;
 
     // Scenes: click one to recall it (or to store the current sound in an empty one); Store, then a scene,
     // overwrites it; right-click a scene to store over it or clear it.

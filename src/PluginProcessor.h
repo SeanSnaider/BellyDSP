@@ -177,7 +177,22 @@ public:
     /// to the slot parameter, reloads an IR whose channel choice changed).
     void runHousekeeping() { timerCallback(); }
 
+    /// Undo and redo (BUILD_PLAN "Presets and scenes", Editing), entirely on the GUI thread: the parameter
+    /// tree records every parameter change into it, and the editor starts a new transaction at each mouse
+    /// press, so one knob drag is one step. Loading a preset clears it. (Declared before `parameters`,
+    /// which is built with it.)
+    juce::UndoManager undoManager;
+
     juce::AudioProcessorValueTreeState parameters;
+
+    /// A/B compare: two snapshots of the sound's settings (every parameter but the global ones, and the
+    /// three orders), switched on the GUI thread. Switching saves the current settings into the slot being
+    /// left and applies the other one; the first switch starts B as a copy of A. Captures and IRs are
+    /// whatever is loaded, in both. Loading a preset starts again from A.
+    void abSwitch();
+    void abCopyToOther();
+    bool isOnB() const noexcept { return abOnB; }
+    void resetAB() { abSlots = {}; abOnB = false; }
 
     // Parameter IDs. Permanent once presets exist: never rename one, add a new ID instead.
     static juce::String ampParamId (int slot, const juce::String& name) { return "amp" + juce::String (slot + 1) + "_" + name; }
@@ -293,6 +308,17 @@ private:
     CcFifo ccFifo;
     MidiMap midiMap; // message thread
     Scenes scenes;   // message thread
+
+    struct Snapshot
+    {
+        bool stored = false;
+        std::map<juce::String, float> values; // normalized
+        juce::StringArray pre, post, bloom;
+    };
+    Snapshot captureSnapshot() const;
+    void applySnapshot (const Snapshot& snapshot);
+    std::array<Snapshot, 2> abSlots;
+    bool abOnB = false;
     std::atomic<float>* sceneCc = nullptr;
 
     // Tempo and tap tempo. The TapTempo and the sample clock belong to the audio thread.
