@@ -57,6 +57,10 @@ public:
     /// only for a stereo mic; otherwise the first channel is used.
     LoadResult loadSamples (juce::AudioBuffer<float> samples, double sampleRate, const juce::String& name);
 
+    /// Any non-audio thread: removes the IR, so the mic goes back to passthrough. (Abrupt: the processor
+    /// only does it inside a preset change, while the output is muted.)
+    void clear();
+
     /// Any non-audio thread: the most recently loaded IR's first channel, after loudness matching.
     /// The cab uses it to align its close mics.
     std::vector<float> getLoadedIR() const;

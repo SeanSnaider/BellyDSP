@@ -7,6 +7,13 @@ AmpSimProcessor::AmpSimProcessor()
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       parameters (*this, nullptr, "AmpSim", createParameterLayout())
 {
+    // Give every parameter its default through the path a preset or a host uses (normalized value to
+    // plain value, snapped to its step). Constructed defaults on skewed ranges are off in their last
+    // bits (an 8 kHz default reads 7999.9995 Hz), so without this a fresh processor and the same sound
+    // loaded from a preset would differ by about 1e-5.
+    for (auto* parameter : getParameters())
+        parameter->setValueNotifyingHost (parameter->getDefaultValue());
+
     inputGainDb = raw ("input_gain");
     outputGainDb = raw ("output_gain");
     cabBypass = raw ("cab_bypass");
@@ -189,6 +196,9 @@ void AmpSimProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 
     chain.prepare (sampleRate, preparedBlockSize);
     setLatencySamples (chain.latencySamples());
+
+    presetGain.reset (sampleRate, presetFadeSeconds);
+    presetGain.setCurrentAndTargetValue (presetMute.load() ? 0.0f : 1.0f);
 }
 
 bool AmpSimProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -381,6 +391,22 @@ void AmpSimProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         chain.process (io.getSubBlock (start, juce::jmin (maxChunk, (size_t) numSamples - start)));
 
     samplesProcessed += numSamples;
+
+    // Preset changes: fade the whole output out, and back in once the new sound is ready.
+    presetGain.setTargetValue (presetMute.load (std::memory_order_relaxed) ? 0.0f : 1.0f);
+    if (presetGain.isSmoothing() || presetGain.getCurrentValue() < 1.0f)
+    {
+        auto* left = buffer.getWritePointer (0);
+        auto* right = buffer.getWritePointer (1);
+        for (int n = 0; n < numSamples; ++n)
+        {
+            const auto g = presetGain.getNextValue();
+            left[n] *= g;
+            right[n] *= g;
+        }
+    }
+    presetSilent.store (presetMute.load (std::memory_order_relaxed) && ! presetGain.isSmoothing() && presetGain.getCurrentValue() <= 0.0f);
+    lastProcessMs.store (juce::Time::getMillisecondCounter(), std::memory_order_relaxed);
 }
 
 juce::AudioProcessorEditor* AmpSimProcessor::createEditor()
@@ -520,6 +546,51 @@ ampsim::NamAmp::Calibration AmpSimProcessor::currentCalibration() const
     return { calibrateInput->load() >= 0.5f, (double) interfaceInputDbu->load() };
 }
 
+presets::ApplyResult AmpSimProcessor::loadPreset (const juce::var& preset)
+{
+    auto check = presets::validate (preset);
+    if (! check.ok)
+        return check;
+
+    pendingPreset = preset;
+    presetWarnings.clear();
+    presetStage = PresetStage::fadingOut;
+    presetMute = true;
+    timerCallback(); // applies straight away if no audio is running to fade
+    return check;
+}
+
+void AmpSimProcessor::clearModel (int slot)
+{
+    slot = juce::jlimit (0, numAmpSlots - 1, slot);
+    parameters.state.removeProperty (modelPathKey (slot), nullptr);
+    ++loadsInFlight;
+    loader.addJob ([this, slot]
+    {
+        chain.amp.slot (slot).model.clearModel();
+        setModelStatus (slot, "Empty", false);
+        --loadsInFlight;
+    });
+}
+
+void AmpSimProcessor::clearCabIR (int mic)
+{
+    mic = juce::jlimit (0, numCabMics - 1, mic);
+    parameters.state.removeProperty (cabPathKey (mic), nullptr);
+    if (mic != roomMic)
+        packActive[(size_t) mic] = false;
+    ++loadsInFlight;
+    loader.addJob ([this, mic]
+    {
+        if (mic == roomMic)
+            chain.cab.clearRoom();
+        else
+            chain.cab.clearCloseMic (mic);
+        setCabStatus (mic, "No IR", false);
+        --loadsInFlight;
+    });
+}
+
 AmpSimProcessor::Status AmpSimProcessor::getStatus() const
 {
     const std::scoped_lock lock (statusMutex);
@@ -577,6 +648,24 @@ void AmpSimProcessor::timerCallback()
             param->setValueNotifyingHost (param->convertTo0to1 ((float) slot));
 
     const auto now = juce::Time::getMillisecondCounterHiRes();
+
+    // A preset change, stage by stage: once the fade has reached silence (or no audio is running),
+    // apply it; once its loads are done and the new sound has settled (JUCE's 50 ms engine swaps, the
+    // cab's 60 ms fade-ins, 25 ms knob ramps), fade back in.
+    const bool audioRunning = juce::Time::getMillisecondCounter() - lastProcessMs.load() < 200;
+    if (presetStage == PresetStage::fadingOut && (presetSilent.load() || ! audioRunning))
+    {
+        presetWarnings = presets::apply (*this, pendingPreset).warnings;
+        pendingPreset = juce::var();
+        presetStage = PresetStage::loading;
+        presetStageMs = now;
+    }
+    else if (presetStage == PresetStage::loading
+             && ((! isLoading() && now - presetStageMs >= presetSettleMs) || now - presetStageMs >= presetTimeoutMs))
+    {
+        presetMute = false;
+        presetStage = PresetStage::idle;
+    }
 
     // The input calibration changed: once it has settled, reload every capture with it (a reload
     // crossfades like any capture change).

@@ -92,6 +92,7 @@ target_sources(AmpSim PRIVATE
     src/PluginProcessor.cpp
     src/PluginEditor.cpp
     src/BlockParameters.cpp
+    src/Presets.cpp
     ${AMPSIM_DSP_SOURCES})
 target_include_directories(AmpSim PRIVATE src)
 target_compile_definitions(AmpSim PUBLIC ${AMPSIM_JUCE_DEFINITIONS})
@@ -162,6 +163,7 @@ target_sources(ampsim_tests PRIVATE
     src/PluginProcessor.cpp
     src/PluginEditor.cpp
     src/BlockParameters.cpp
+    src/Presets.cpp
     ${AMPSIM_DSP_SOURCES})
 target_include_directories(ampsim_tests PRIVATE src tests)
 target_compile_definitions(ampsim_tests PRIVATE

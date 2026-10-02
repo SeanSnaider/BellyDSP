@@ -101,6 +101,10 @@ public:
     /// audio thread crossfades as for any IR change). Does nothing for a mic without a pack.
     CabIR::LoadResult moveCloseMic (int index, double x, double y);
 
+    /// Loader thread: empties a close mic (and its pack) or the room mic.
+    void clearCloseMic (int index);
+    void clearRoom() { room.clear(); }
+
     /// Any non-audio thread.
     bool hasPack (int index) const;
     std::vector<CabPack::Point> getPackPoints (int index) const;

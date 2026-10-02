@@ -939,6 +939,14 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p)
     addAndMakeVisible (inputKnob);
     addAndMakeVisible (outputKnob);
 
+    presetLabel.setColour (juce::Label::textColourId, textColour);
+    presetLabel.setFont (juce::FontOptions (14.0f));
+    addAndMakeVisible (presetLabel);
+    savePresetButton.onClick = [this] { savePreset(); };
+    loadPresetButton.onClick = [this] { loadPreset(); };
+    addAndMakeVisible (savePresetButton);
+    addAndMakeVisible (loadPresetButton);
+
     warningLabel.setColour (juce::Label::textColourId, warningColour);
     warningLabel.setJustificationType (juce::Justification::topLeft);
     addAndMakeVisible (warningLabel);
@@ -1069,6 +1077,46 @@ void AmpSimEditor::chooseFile (const juce::String& title, const juce::String& pa
                           });
 }
 
+void AmpSimEditor::savePreset()
+{
+    const auto folder = presets::defaultFolder();
+    folder.createDirectory();
+    const auto name = ampSim.getPresetName();
+    chooser = std::make_unique<juce::FileChooser> ("Save preset", folder.getChildFile ((name.isEmpty() ? juce::String ("My tone") : name) + ".json"), "*.json");
+    chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+                              | juce::FileBrowserComponent::warnAboutOverwriting,
+                          [this] (const juce::FileChooser& fc)
+                          {
+                              auto file = fc.getResult();
+                              if (file == juce::File())
+                                  return;
+                              file = file.withFileExtension ("json");
+                              const auto preset = ampSim.capturePreset (file.getFileNameWithoutExtension());
+                              presetMessage = presets::save (preset, file) ? juce::String() : "Couldn't write " + file.getFullPathName();
+                              ampSim.parameters.state.setProperty ("presetName", file.getFileNameWithoutExtension(), nullptr);
+                              timerCallback();
+                          });
+}
+
+void AmpSimEditor::loadPreset()
+{
+    const auto folder = presets::defaultFolder();
+    folder.createDirectory();
+    chooser = std::make_unique<juce::FileChooser> ("Load preset", folder, "*.json");
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                          [this] (const juce::FileChooser& fc)
+                          {
+                              const auto file = fc.getResult();
+                              if (! file.existsAsFile())
+                                  return;
+                              juce::String error;
+                              const auto preset = presets::load (file, error);
+                              const auto result = error.isEmpty() ? ampSim.loadPreset (preset) : presets::ApplyResult { false, error, {} };
+                              presetMessage = result.ok ? juce::String() : result.error;
+                              timerCallback();
+                          });
+}
+
 void AmpSimEditor::timerCallback()
 {
     const auto status = ampSim.getStatus();
@@ -1089,7 +1137,17 @@ void AmpSimEditor::timerCallback()
     }
 
     alignmentLabel.setText (status.alignment, juce::dontSendNotification);
-    warningLabel.setText (status.warning, juce::dontSendNotification);
+
+    // The warning line: the sample rate first, then a preset that couldn't load or loaded with gaps.
+    auto warning = status.warning;
+    if (warning.isEmpty())
+        warning = presetMessage.isNotEmpty() ? presetMessage : ampSim.getPresetWarnings().joinIntoString ("; ");
+    warningLabel.setText (warning, juce::dontSendNotification);
+
+    const auto presetName = ampSim.getPresetName();
+    presetLabel.setText ("Preset: " + (presetName.isEmpty() ? juce::String ("(unsaved)") : presetName)
+                             + (ampSim.isChangingPreset() ? "  (loading...)" : ""),
+                         juce::dontSendNotification);
 
     for (auto* strip : { preOrder.get(), postOrder.get() })
         strip->refresh();
@@ -1108,10 +1166,7 @@ void AmpSimEditor::paint (juce::Graphics& g)
     g.setColour (textColour);
     g.setFont (juce::FontOptions (22.0f, juce::Font::bold));
     g.drawText ("Amp Sim", header.removeFromTop (30).removeFromLeft (200), juce::Justification::centredLeft);
-    g.setColour (dimText);
-    g.setFont (juce::FontOptions (13.0f));
-    g.drawText ("Three NAM slots, always running. Footswitch: program change 1/2/3.", header.removeFromTop (20),
-                juce::Justification::centredLeft);
+
 }
 
 void AmpSimEditor::resized()
@@ -1126,6 +1181,11 @@ void AmpSimEditor::resized()
     auto buttons = header.removeFromRight (300).withSizeKeepingCentre (300, 34);
     for (auto& button : slotButtons)
         button.setBounds (buttons.removeFromLeft (100).reduced (3, 0));
+
+    auto presetRow = getLocalBounds().reduced (16).removeFromTop (96).withTrimmedTop (36).removeFromTop (30);
+    presetLabel.setBounds (presetRow.removeFromLeft (300));
+    savePresetButton.setBounds (presetRow.removeFromLeft (80).reduced (2, 0));
+    loadPresetButton.setBounds (presetRow.removeFromLeft (80).reduced (2, 0));
 
     warningLabel.setBounds (area.removeFromBottom (40));
     area.removeFromBottom (6);

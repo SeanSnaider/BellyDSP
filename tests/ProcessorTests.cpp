@@ -345,6 +345,175 @@ public:
                         + juce::String (p.getTempo(), 2) + " BPM");
         }
 
+        beginTest ("presets: saving and loading brings back the whole sound, bit for bit");
+        {
+            AmpSimProcessor a;
+            for (auto [id, value] : std::initializer_list<std::pair<const char*, float>> {
+                     { "input_gain", 1.5f }, { "amp_slot", 1.0f }, { "amp2_mid", 3.0f }, { "cab_mic1_pan", 0.3f }, { "cab_lowcut_on", 1.0f },
+                     { "comp_pre_on", 1.0f }, { "comp_pre_threshold", -32.0f }, { "eq_pre_g3", 4.5f }, { "eq_post_mode", 1.0f },
+                     { "eq_post_b2_type", 3.0f }, { "delay_on", 1.0f }, { "delay_mode", 1.0f }, { "delay_feedback", 55.0f }, { "tempo_bpm", 104.0f } })
+                setParam (a, id, value);
+            a.loadModel (0, a1);
+            a.loadModel (1, exampleModel ("lstm.nam"));
+            a.loadCabIR (0, irFile);
+            a.loadCabIR (1, writeTestPack ("preset_pack"));
+            a.setSectionOrder (ampsim::Chain::Section::post, { "delay", "eq", "comp" });
+            waitForLoads (a);
+
+            const auto file = tempDir().getChildFile ("round_trip.json");
+            expect (presets::save (a.capturePreset ("Round trip"), file));
+            juce::String error;
+            const auto loaded = presets::load (file, error);
+            expect (error.isEmpty(), error);
+
+            AmpSimProcessor b;
+            setParam (b, "delay_feedback", 90.0f); // anything set before must be overwritten
+            setParam (b, "output_gain", -12.0f);
+            expect (b.loadPreset (loaded).ok);
+            waitForLoads (b);
+            for (int i = 0; i < 50 && b.isChangingPreset(); ++i)
+            {
+                juce::Thread::sleep (10);
+                b.runHousekeeping();
+            }
+            expect (! b.isChangingPreset());
+
+            int compared = 0, mismatched = 0;
+            for (auto* parameter : a.getParameters())
+                if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (parameter))
+                {
+                    ++compared;
+                    if (std::abs (ranged->getValue() - b.parameters.getParameter (ranged->paramID)->getValue()) > 1.0e-6f)
+                        ++mismatched;
+                }
+            expectEquals (mismatched, 0);
+            for (int s = 0; s < AmpSimProcessor::numAmpSlots; ++s)
+                expectEquals (b.getStatus().model[(size_t) s], a.getStatus().model[(size_t) s]);
+            for (int m = 0; m < AmpSimProcessor::numCabMics; ++m)
+                expectEquals (b.getStatus().cab[(size_t) m], a.getStatus().cab[(size_t) m]);
+            expect (b.getSectionOrder (ampsim::Chain::Section::post) == a.getSectionOrder (ampsim::Chain::Section::post));
+            expectEquals (b.getPresetName(), juce::String ("Round trip"));
+
+            a.prepareToPlay (fs, blockSize);
+            b.prepareToPlay (fs, blockSize);
+            const auto input = guitarDI ((int) (2.0 * fs));
+            const auto difference = maxAbsDifference (processAll (a, input).left, processAll (b, input).left);
+            expectEquals (difference, 0.0);
+            logMessage ("  -> " + file.getFileName() + " (" + juce::String ((int) file.getSize()) + " bytes): " + juce::String (compared)
+                        + " parameters, 2 captures, an IR and a cab pack, and the effect order all come back; 2 s through both: max difference "
+                        + juce::String (difference));
+        }
+
+        beginTest ("presets: unmentioned parameters take their defaults, problems are reported, newer formats are refused, global settings stay put");
+        {
+            AmpSimProcessor p;
+            setParam (p, "delay_feedback", 80.0f);
+            setParam (p, "input_level_dbu", 18.0f); // global: a preset never touches it
+            const auto sparse = juce::JSON::parse (R"({ "format_version": 1, "name": "Sparse", "parameters": { "delay_on": 1, "made_up_id": 3 },
+                                                       "amps": [ "/nowhere/amp.nam", "", "" ], "cab": { "mic1": "/nowhere/cab.wav" }, "order": {} })");
+            expect (p.loadPreset (sparse).ok);
+            waitForLoads (p);
+            expectWithinAbsoluteError (getParam (p, "delay_feedback"), 35.0f, 1.0e-3f);
+            expectEquals (getParam (p, "delay_on"), 1.0f);
+            expectWithinAbsoluteError (getParam (p, "input_level_dbu"), 18.0f, 1.0e-3f);
+            const auto warnings = p.getPresetWarnings().joinIntoString ("; ");
+            expect (warnings.contains ("made_up_id") && warnings.contains ("/nowhere/amp.nam") && warnings.contains ("/nowhere/cab.wav"), warnings);
+
+            const auto future = p.loadPreset (juce::JSON::parse (R"({ "format_version": 2, "parameters": {} })"));
+            const auto garbage = p.loadPreset (juce::var ("not a preset"));
+            expect (! future.ok && future.error.contains ("newer"));
+            expect (! garbage.ok);
+            logMessage ("  -> a preset naming only delay_on: delay_feedback back to its default " + juce::String (getParam (p, "delay_feedback"), 1)
+                        + "%, input level (global) still " + juce::String (getParam (p, "input_level_dbu"), 1) + " dBu");
+            logMessage ("  -> warnings: " + warnings);
+            logMessage ("  -> refused: \"" + future.error + "\"; \"" + garbage.error + "\"");
+        }
+
+        beginTest ("presets: the golden v1 file loads the same on every build");
+        {
+            AmpSimProcessor p;
+            juce::String error;
+            const auto golden = presets::load (juce::File (AMPSIM_SOURCE_DIR).getChildFile ("tests/fixtures/presets/golden_v1.json"), error);
+            expect (error.isEmpty(), error);
+            expect (p.loadPreset (golden).ok);
+            waitForLoads (p);
+
+            const std::vector<std::pair<const char*, float>> expected {
+                { "input_gain", 2.5f }, { "output_gain", -3.0f }, { "amp_slot", 1.0f }, { "amp2_bass", 4.0f }, { "amp2_presence", -2.5f },
+                { "cab_mic1_level", -3.0f }, { "cab_mic1_pan", -0.5f }, { "cab_align", 0.0f }, { "comp_pre_on", 1.0f }, { "comp_pre_mode", 1.0f },
+                { "comp_pre_threshold", -30.0f }, { "comp_pre_ratio", 6.0f }, { "eq_post_mode", 1.0f }, { "eq_post_b3_freq", 2500.0f },
+                { "eq_post_b3_gain", 3.5f }, { "delay_on", 1.0f }, { "delay_mode", 2.0f }, { "delay_note", 9.0f }, { "delay_feedback", 45.0f },
+                { "tempo_bpm", 96.0f },
+                // and some it doesn't mention, at their defaults
+                { "comp_post_on", 0.0f }, { "eq_pre_on", 1.0f }, { "delay_mix", 25.0f }, { "amp1_bass", 0.0f } };
+            int wrong = 0;
+            for (const auto& [id, value] : expected)
+                if (std::abs (getParam (p, id) - value) > 0.01f)
+                {
+                    ++wrong;
+                    logMessage ("  !! " + juce::String (id) + " is " + juce::String (getParam (p, id)) + ", expected " + juce::String (value));
+                }
+            expectEquals (wrong, 0);
+            expect (p.getSectionOrder (ampsim::Chain::Section::pre) == juce::StringArray { "eq", "comp" });
+            expect (startsWith (p.getSectionOrder (ampsim::Chain::Section::post), { "delay", "eq", "comp" }));
+            expect (p.getPresetWarnings().joinIntoString ("; ").contains ("some_future_parameter"));
+            logMessage ("  -> tests/fixtures/presets/golden_v1.json: " + juce::String ((int) expected.size()) + " parameter values as expected, order \""
+                        + p.getSectionOrder (ampsim::Chain::Section::pre).joinIntoString (", ") + "\" / \"" + p.getSectionOrder (ampsim::Chain::Section::post).joinIntoString (", ")
+                        + "\", warning: " + p.getPresetWarnings().joinIntoString ("; "));
+        }
+
+        beginTest ("presets: loading one while playing fades out, swaps, and fades back in without a click");
+        {
+            AmpSimProcessor p;
+            p.loadModel (0, a1);
+            p.loadCabIR (0, irFile);
+            waitForLoads (p);
+            p.prepareToPlay (fs, blockSize);
+            const auto other = juce::JSON::parse (R"({ "format_version": 1, "name": "Other", "parameters": { "amp_slot": 0, "output_gain": -4.0, "delay_on": 1 },
+                                                     "amps": [ ")" + exampleModel ("lstm.nam").getFullPathName() + R"(", "", "" ], "cab": { "mic1": ")"
+                                                     + writeSyntheticIR ("preset_other_ir", 2048).getFullPathName() + R"(" }, "order": {} })");
+
+            const auto input = guitarDI ((int) (4.0 * fs));
+            juce::AudioBuffer<float> buffer (2, blockSize);
+            juce::MidiBuffer midi;
+            std::vector<float> out;
+            size_t requestAt = 0, silentFrom = 0, silentTo = 0;
+            for (size_t start = 0; start + blockSize <= input.size(); start += blockSize)
+            {
+                if (start == (size_t) (1.0 * fs) / blockSize * blockSize)
+                {
+                    requestAt = start;
+                    expect (p.loadPreset (other).ok);
+                }
+                buffer.clear();
+                buffer.copyFrom (0, 0, input.data() + start, blockSize);
+                p.processBlock (buffer, midi);
+                out.insert (out.end(), buffer.getReadPointer (0), buffer.getReadPointer (0) + blockSize);
+                if (requestAt > 0 && silentFrom == 0 && buffer.getMagnitude (0, 0, blockSize) == 0.0f)
+                    silentFrom = start;
+                if (silentFrom > 0 && silentTo == 0 && buffer.getMagnitude (0, 0, blockSize) > 0.0f)
+                    silentTo = start;
+                if ((start / blockSize) % 4 == 0)
+                {
+                    juce::Thread::sleep (2); // let the loader work, as in real time
+                    p.runHousekeeping();
+                }
+            }
+
+            expect (silentFrom > requestAt && silentTo > silentFrom);
+            expect (p.getStatus().model[0].startsWith ("lstm"));
+            const auto steady = maxStep (out, (size_t) (0.5 * fs), requestAt);
+            const auto fadeOut = maxStep (out, requestAt, silentFrom + blockSize);
+            const auto fadeIn = maxStep (out, silentTo, silentTo + 2400);
+            const auto after = maxStep (out, silentTo + 4800, out.size());
+            expectLessThan (fadeOut, steady * 1.05);
+            expectLessThan (fadeIn, std::max (steady, after) * 1.05);
+            logMessage ("  -> preset requested at " + juce::String (1000.0 * (double) requestAt / fs, 0) + " ms: silent from "
+                        + juce::String (1000.0 * (double) silentFrom / fs, 0) + " ms to " + juce::String (1000.0 * (double) silentTo / fs, 0)
+                        + " ms while the new capture and IR load; largest step fading out " + juce::String (fadeOut, 4) + ", fading in "
+                        + juce::String (fadeIn, 4) + " (steady playing " + juce::String (steady, 4) + " before, " + juce::String (after, 4) + " after)");
+        }
+
         beginTest ("a saved model that has gone missing is reported, not a crash");
         {
             AmpSimProcessor p;

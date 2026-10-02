@@ -1,6 +1,7 @@
 #pragma once
 
 #include "BlockParameters.h"
+#include "Presets.h"
 #include "dsp/Chain.h"
 #include "dsp/Tempo.h"
 
@@ -50,6 +51,10 @@ public:
     void loadModel (int slot, const juce::File& file);
     void loadCabIR (int mic, const juce::File& file); // mic 0, 1: close mics; 2: room. A folder is a cab pack.
 
+    /// Message thread: empty an amp slot or a cab mic (queued behind any load already running).
+    void clearModel (int slot);
+    void clearCabIR (int mic);
+
     /// Message thread: a close mic's cab pack positions (empty without a pack), for the position pad.
     std::vector<ampsim::CabPack::Point> getCabPackPoints (int mic) const { return chain.cab.getPackPoints (mic); }
 
@@ -73,6 +78,16 @@ public:
     juce::StringArray getSectionOrder (ampsim::Chain::Section section) const;
     static juce::String blockName (ampsim::Chain::Slot slot);
     static juce::Identifier orderKey (ampsim::Chain::Section section) { return section == ampsim::Chain::Section::pre ? "preOrder" : "postOrder"; }
+
+    /// Message thread: loads a preset between songs (BUILD_PLAN "Presets and scenes", Loading): the
+    /// output fades to silence over 20 ms, the preset is applied, and the output fades back in once its
+    /// captures and IRs have loaded. A short gap, never a click. Returns the validation result; problems
+    /// found while applying (missing files, unknown IDs) arrive in getPresetWarnings().
+    presets::ApplyResult loadPreset (const juce::var& preset);
+    juce::var capturePreset (const juce::String& name) { return presets::capture (*this, name); }
+    bool isChangingPreset() const { return presetStage != PresetStage::idle; }
+    juce::StringArray getPresetWarnings() const { return presetWarnings; }
+    juce::String getPresetName() const { return parameters.state.getProperty ("presetName").toString(); }
 
     /// Message thread: a tap on the GUI's tap tempo button. Taps from the GUI and the footswitch (the
     /// CC set by midi_tap_cc, value 64 or more) both reach the audio thread's TapTempo; the resulting
@@ -210,6 +225,17 @@ private:
     int guiTapsSeen = 0;
     std::atomic<double> tappedBpm { 120.0 };
     std::atomic<bool> tapPending { false };
+
+    // Preset changes (message thread drives the stages; the audio thread does the fade).
+    enum class PresetStage { idle, fadingOut, loading };
+    static constexpr double presetFadeSeconds = 0.020, presetSettleMs = 150.0, presetTimeoutMs = 5000.0;
+    PresetStage presetStage = PresetStage::idle;
+    juce::var pendingPreset;
+    double presetStageMs = 0.0;
+    juce::StringArray presetWarnings;
+    std::atomic<bool> presetMute { false }, presetSilent { false };
+    std::atomic<juce::uint32> lastProcessMs { 0 };
+    juce::SmoothedValue<float> presetGain { 1.0f }; // audio thread
     std::atomic<int> morphCount { 0 };
 
     std::atomic<bool> sampleRateOk { true };

@@ -246,7 +246,13 @@ private:
 
     AmpSimProcessor& ampSim;
 
+    void savePreset();
+    void loadPreset();
+
     std::array<juce::TextButton, AmpSimProcessor::numAmpSlots> slotButtons;
+    juce::Label presetLabel;
+    juce::TextButton savePresetButton { "Save..." }, loadPresetButton { "Load..." };
+    juce::String presetMessage;
     Knob inputKnob, outputKnob;
     juce::Label warningLabel;
 

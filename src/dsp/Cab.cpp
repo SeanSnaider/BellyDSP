@@ -94,6 +94,17 @@ CabIR::LoadResult Cab::moveCloseMic (int index, double x, double y)
     return result;
 }
 
+void Cab::clearCloseMic (int index)
+{
+    index = juce::jlimit (0, numCloseMics - 1, index);
+    closeMics[(size_t) index].clear();
+    {
+        const std::scoped_lock lock (packMutex);
+        packs[(size_t) index].reset();
+    }
+    realign();
+}
+
 bool Cab::hasPack (int index) const
 {
     const std::scoped_lock lock (packMutex);
@@ -298,9 +309,14 @@ void Cab::prepare (double newSampleRate, int maxBlockSize)
 void Cab::updatePresence (MicState& state, const CabIR& mic, int numSamples)
 {
     // A mic fades in only once its first IR's engine is in and JUCE's 50 ms crossfade from its
-    // identity engine has finished; until then its output (still raw amp) isn't mixed in.
+    // identity engine has finished; until then its output (still raw amp) isn't mixed in. A mic with
+    // no IR (never loaded, or cleared) starts over, so its next IR fades in the same way.
     if (! mic.hasImpulseResponse())
+    {
+        state.presence.setCurrentAndTargetValue (0.0f);
+        state.samplesSinceReady = 0;
         return;
+    }
 
     if (mic.isEngineReady() && state.samplesSinceReady < settleSamples)
     {

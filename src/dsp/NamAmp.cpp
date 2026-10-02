@@ -114,6 +114,11 @@ NamAmp::LoadResult NamAmp::loadModel (const juce::File& file, bool normalize, co
     return result;
 }
 
+void NamAmp::clearModel()
+{
+    handoff.publish (std::make_unique<Model>()); // no dsp: renders as passthrough
+}
+
 void NamAmp::prepare (double sampleRate, int maxBlockSize)
 {
     inputCopy.assign ((size_t) maxBlockSize, 0.0f);
@@ -138,7 +143,7 @@ void NamAmp::prepare (double sampleRate, int maxBlockSize)
     handoff.collect();
 
     // Resize the model's buffers for this block size and settle its history again.
-    if (current != nullptr)
+    if (current != nullptr && current->dsp != nullptr)
         current->dsp->Reset (requiredSampleRate, maxBlockSize);
 }
 
@@ -217,7 +222,7 @@ void NamAmp::finishSwitchIfDone()
 
 void NamAmp::render (Model* model, const float* input, float* output, int numSamples)
 {
-    if (model == nullptr)
+    if (model == nullptr || model->dsp == nullptr)
     {
         std::copy (input, input + numSamples, output); // no model: pass the input through
         return;

@@ -130,6 +130,15 @@ CabIR::LoadResult CabIR::loadSamples (juce::AudioBuffer<float> samples, double s
     return result;
 }
 
+void CabIR::clear()
+{
+    {
+        const std::scoped_lock lock (loadedMutex);
+        loadedIR.clear();
+    }
+    handoff.publish (std::make_unique<PendingIR>()); // no samples: means "remove the IR"
+}
+
 std::vector<float> CabIR::getLoadedIR() const
 {
     const std::scoped_lock lock (loadedMutex);
@@ -185,6 +194,17 @@ void CabIR::installPendingIR()
 
     if (auto* pending = handoff.take())
     {
+        if (pending->samples.getNumSamples() == 0)
+        {
+            // A clear: back to passthrough, with the engine's history wiped (reset() doesn't allocate).
+            hasIR = false;
+            expectedLength = 0;
+            convolution->reset();
+            if (! handoff.retire (pending))
+                toRetire = pending;
+            return;
+        }
+
         // Wait-free, and moving the buffer in means nothing gets allocated or copied here. JUCE
         // builds the new FFT engine on its own background thread and crossfades to it.
         const auto stereo = pending->samples.getNumChannels() > 1 ? juce::dsp::Convolution::Stereo::yes

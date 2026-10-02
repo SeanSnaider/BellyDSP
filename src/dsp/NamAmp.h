@@ -68,6 +68,9 @@ public:
     LoadResult loadModel (const juce::File& file, bool normalize, const Calibration& calibration);
     LoadResult loadModel (const juce::File& file, bool normalize = true); // without calibration
 
+    /// Background thread: empties the slot (crossfades to passthrough like any model change).
+    void clearModel();
+
     /// Any non-audio thread. Frees models the audio thread has finished with.
     void collectGarbage() { handoff.collect(); }
 
@@ -82,12 +85,12 @@ public:
     bool isSwitching() const noexcept { return fading; }
 
     /// Audio thread, for tests: whether a model is running (false = passthrough).
-    bool hasModel() const noexcept { return current != nullptr; }
+    bool hasModel() const noexcept { return current != nullptr && current->dsp != nullptr; }
 
 private:
     struct Model
     {
-        std::unique_ptr<nam::DSP> dsp;
+        std::unique_ptr<nam::DSP> dsp; // nullptr: an empty slot (passthrough)
         float normalizationGain = 1.0f; // linear, on the output
         float inputGain = 1.0f;         // linear, the input calibration
     };

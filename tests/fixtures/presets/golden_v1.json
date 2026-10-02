@@ -1,0 +1,30 @@
+{
+  "format_version": 1,
+  "name": "Golden v1",
+  "parameters": {
+    "input_gain": 2.5,
+    "output_gain": -3.0,
+    "amp_slot": 1,
+    "amp2_bass": 4.0,
+    "amp2_presence": -2.5,
+    "cab_mic1_level": -3.0,
+    "cab_mic1_pan": -0.5,
+    "cab_align": 0,
+    "comp_pre_on": 1,
+    "comp_pre_mode": 1,
+    "comp_pre_threshold": -30.0,
+    "comp_pre_ratio": 6.0,
+    "eq_post_mode": 1,
+    "eq_post_b3_freq": 2500.0,
+    "eq_post_b3_gain": 3.5,
+    "delay_on": 1,
+    "delay_mode": 2,
+    "delay_note": 9,
+    "delay_feedback": 45.0,
+    "tempo_bpm": 96.0,
+    "some_future_parameter": 1.0
+  },
+  "amps": [ "", "", "" ],
+  "cab": { "mic1": "", "mic2": "", "room": "" },
+  "order": { "pre": [ "eq", "comp" ], "post": [ "delay", "eq", "comp" ] }
+}
