@@ -67,7 +67,10 @@ set(AMPSIM_DSP_SOURCES
     src/dsp/Chorus.cpp
     src/dsp/Tempo.cpp
     src/dsp/Delay.cpp
-    src/dsp/Reverb.cpp)
+    src/dsp/Reverb.cpp
+    src/dsp/PitchDetector.cpp
+    src/dsp/TunerAnalysis.cpp
+    src/dsp/TunerThread.cpp)
 
 set(AMPSIM_JUCE_DEFINITIONS
     JUCE_WEB_BROWSER=0
@@ -161,6 +164,7 @@ target_sources(ampsim_tests PRIVATE
     tests/DelayTests.cpp
     tests/ChorusTests.cpp
     tests/ReverbTests.cpp
+    tests/TunerTests.cpp
     tests/Plot.cpp
     tests/NamAmpTests.cpp
     tests/ChainTests.cpp
