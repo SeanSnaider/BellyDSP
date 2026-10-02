@@ -401,6 +401,34 @@ private:
     juce::Rectangle<int> headerArea;
 };
 
+/// The harmonizer: key, scale (with a 12-note custom scale), the out-of-key rule, glide, lowest note,
+/// level, a row per voice, and what it hears now.
+class HarmonizerPanel final : public EffectPanel
+{
+public:
+    explicit HarmonizerPanel (AmpSimProcessor& processor);
+    void refresh();
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+private:
+    juce::ComboBox *root = nullptr, *scale = nullptr, *outOfKey = nullptr, *floor = nullptr;
+    std::array<juce::TextButton, 12> customNotes;
+    struct Row
+    {
+        ToggleControl on;
+        juce::ComboBox mode;
+        std::array<SliderControl, 6> sliders; // steps, semitones, octave, level, pan, humanize
+    };
+    std::array<Row, ampsim::Harmonizer::maxVoices> rows;
+    juce::OwnedArray<juce::AudioProcessorValueTreeState::SliderAttachment> sliderAttachments;
+    juce::OwnedArray<juce::AudioProcessorValueTreeState::ComboBoxAttachment> rowCombos;
+    juce::OwnedArray<juce::AudioProcessorValueTreeState::ButtonAttachment> rowButtons;
+    juce::String hearing;
+    int shownMask = -1, shownScale = -1;
+    juce::Rectangle<int> statusArea, headerArea;
+};
+
 /// The delay's controls, plus the tempo and its tap button.
 class DelayPanel final : public juce::Component
 {
@@ -512,6 +540,7 @@ private:
 
     PageComponent ampsPage, cabPage, gatesPage, preFxPage, postFxPage, pitchPage, bloomPage, timeFxPage;
     std::unique_ptr<MultivoicerPanel> multivoicerPanel;
+    std::unique_ptr<HarmonizerPanel> harmonizerPanel;
     std::unique_ptr<OrderStrip> bloomOrder;
     std::unique_ptr<BitcrushPanel> bitcrushPanel;
     std::unique_ptr<PhaserPanel> phaserPanel;

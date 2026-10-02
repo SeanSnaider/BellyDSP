@@ -60,6 +60,7 @@ AmpSimProcessor::AmpSimProcessor()
     chorusParams.bind (parameters);
     bloomParams.bind (parameters);
     multivoicerParams.bind (parameters);
+    harmonizerParams.bind (parameters);
     reverbParams.bind (parameters);
     tempoBpm = raw ("tempo_bpm");
     tapCc = raw ("midi_tap_cc");
@@ -201,6 +202,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout AmpSimProcessor::createParam
     params::EqualizerParameters::addTo (layout, "eq_pre", "Pre EQ", true);
     params::EqualizerParameters::addTo (layout, "eq_post", "Post EQ", true);
     params::CompressorParameters::addTo (layout, "comp_post", "Post Comp", false);
+    params::HarmonizerParameters::addTo (layout);
     params::MultivoicerParameters::addTo (layout);
     params::BloomParameters::addTo (layout);
     params::ChorusParameters::addTo (layout);
@@ -349,6 +351,9 @@ void AmpSimProcessor::applyEffectParameters()
     chain.postEq.setSettings (postEqParams.read());
     chain.setBypassed (Slot::postCompressor, ! postCompParams.isOn());
     chain.postCompressor.setSettings (postCompParams.read());
+    // The harmonizer maps notes with the tuner's A4 (BUILD_PLAN "Harmonizer", Key and scale).
+    chain.setBypassed (Slot::harmonizer, ! harmonizerParams.isOn());
+    chain.harmonizer.setSettings (harmonizerParams.read ((double) tunerA4->load (std::memory_order_relaxed)));
     chain.setBypassed (Slot::multivoicer, ! multivoicerParams.isOn());
     chain.multivoicer.setSettings (multivoicerParams.read());
     chain.setBypassed (Slot::bloom, ! bloomParams.isOn()); // Bloom takes this as its own bypass and keeps running
@@ -403,6 +408,8 @@ juce::String AmpSimProcessor::blockName (ampsim::Chain::Slot slot)
         return "bloom";
     if (slot == Slot::multivoicer)
         return "multivoicer";
+    if (slot == Slot::harmonizer)
+        return "harmonizer";
     if (slot == Slot::overdrive)
         return "overdrive";
     if (slot == Slot::preCompressor || slot == Slot::postCompressor)

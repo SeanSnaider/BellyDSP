@@ -14,7 +14,7 @@ Status key: Not started, In progress, Done. See `BUILD_PLAN.md` for what each ph
 | 7 | Tuner (YIN or McLeod, chosen empirically), needle and strobe | Built (branch `phase-7`); Sean's checks pending | McLeod coarse plus a band-pass zero-crossing fine stage, on its own thread; needle and strobe; mute while tuning; A4 430 to 450 Hz. Waiting on Sean: 7.R (real strings). Strum tuner (stretch) not built |
 | 8 | Bloom: bitcrush, phaser, flanger | Built (branch `phase-8`); Sean's checks pending | Bitcrush, phaser (Classic, Modern, Vibe with a lamp-and-photocell model), and flanger with through-zero, in a reorderable container with its own bypass. Waiting on: the integration (parameters, chain slot, latency reporting) and Sean (8.L). |
 | 9 | Pitch shifter (granular + PSOLA), multivoicer, shimmer reverb | Built (branch `phase-9`); Sean's checks pending | Granular (two correlation-aligned heads) and PSOLA engines, the multivoicer in the post section with a Pitch tab, and the shimmer in the Room and Hall reverbs. Waiting on Sean: 9.L |
-| 10 | Harmonizer | Not started | Depends on 7 and 9 |
+| 10 | Harmonizer | Built (branch `phase-10`); Sean's checks pending | Key-aware harmonies (13 scales and a custom one, Parallel or Snap), interval locked per note with bend-following and legato and slide re-evaluation, confidence gating; on the Pitch tab. Waiting on Sean: 10.L |
 | 11 | Full preset system, scenes, undo/A-B, real GUI | Not started | UI_DESIGN.md written first |
 
 ## Workflow
@@ -41,6 +41,7 @@ Since 2026-10-01 the build runs to completion without stopping for questions: ph
 | 7.R | Sean records each open string as a DI (a few seconds each, through the Solo), runs `uv run --with numpy --with scipy python prototypes/pitch_detection.py` on them, and tunes with the app next to a hardware tuner | The app agrees with the hardware tuner within 0.5 cent on every string, and the study still prefers McLeod on real strings (ASSUMPTIONS T1) |
 | 8.L | Sean plays through Bloom once it's in the chain: bitcrush sweeps (bits, rate, dither on decays), the phaser's modes (Classic with and without feedback, Modern stage counts and resonance, Vibe slow and fast), the flanger (positive, negative, through-zero with Manual near 5 ms), reordering, and footswitching each effect | Each sounds right, the Vibe throbs, and nothing clicks |
 | 9.L | Sean listens to the multivoicer renders in `build/proof` (`multivoicer_poly_*.wav`, `multivoicer_mono_*.wav`, against `multivoicer_dry.wav`), then, once it's wired in, plays through it: doubles, octaves on single notes in Mono, and chords in Poly (power chords, triads, add9 voicings) | The doubles sound like separate takes, the octaves sit tight enough, and chord warble (worst on add9 and minor 7th voicings) is acceptable; or a note of what isn't (ASSUMPTIONS S2 and S10 are the knobs) |
+| 10.L | Sean plays lead lines through the harmonizer (a third, then a third and a fifth) in a key: legato runs, taps, bends, slides, and a few chords | The harmonies land in the key, follow bends, change cleanly on legato, wait for slides to land, mute on chords, and don't click |
 | 3.C | Community captures: load several amp-only captures from TONE3000 and run the differential test against NAM core's render tool on them (the Phase 3 done criterion says "several community models"; only NAM core's own examples are tested so far) | Each matches within -100 dB |
 
 ## Log
@@ -188,3 +189,13 @@ Add a dated line here when something meaningful lands or a decision changes.
 - Note tracker (`src/dsp/NoteTracker.*`), on scripted detector readings: an onset one hop after the first reading, ignoring a stray reading of another note; vibrato of +-30 and +-45 cents and a quick bend change nothing; a hammer-on re-evaluates 2.67 ms after the new note is first read, even with stale and stray readings in between; a whole-tone slide re-evaluates once, 31 ms after it lands; a chord releases after 5.3 ms.
 - On audio through the shared detector: onset A3 +11.3 ms, hammer-on to B3 +8.0, pull-off to A3 +10.7, tap to E4 +8.0, a slide to G4 25 ms after it ends, a chord releases at +5.3 ms, the next note +8.0, and no other changes. Found here: the first version jumped to A#3 for 4 ms on the pull-off, because the detector reads a slowly moving blend while its window straddles two notes; a jump now needs three steady readings.
 - 0 allocations, 0 frees, 0 locks over 2655 hops with every rule exercised.
+
+2026-10-02: Phase 10, the harmonizer (branch `phase-10`, on top of phase 9; 1919 checks pass).
+- A C major scale with a diatonic third above: every note gets the key's third (C +4, D +3, E +3, F +4, G +4, A +3, B +3, C +4), worst 1.52 cents.
+- E4 bent 70 cents and back, then vibrato: no re-evaluations, and the harmony stays a third above the moving note (290 to 309 cents, the spread being the harmony trailing a few ms).
+- A hammer-on from E4 to F4 re-evaluates 9.3 ms after it (the third goes from +3 to +4); a slide to A4 re-evaluates 30.7 ms after it lands, with no notes in between; the harmonies measure within 0.74 cents.
+- An A major chord mutes the voices (-240 dBFS) and the next single note brings them back at full level. C#4 in C major gives F4 with Parallel and E4 with Snap; a chromatic -5 ignores the key.
+- Onset, from the pluck to half-way faded in: high E 9.3 ms, B 12.0, G 14.7, D 17.3, A 22.7, low E 28.0 (1 to 3 ms over the plan's budgets, ASSUMPTIONS K7).
+- Every voice off leaves the output identical to the input; fades in and out step no more than the playing does (0.0481 against 0.0461). Four voices with the key, scale, rule, floor, and glide changing: 0 allocations, 0 frees, 0 locks, 0.66% of the deadline.
+- Through the processor: identical to a lone harmonizer, and with the tuner's A4 at 432 Hz a 432 Hz note is heard as A4. The real-time test now switches it on with two voices and changes the key, scale, floor, and rule: 0 allocations, 0 frees, 0 blocking locks.
+- Found while testing: the real-time check counted 13 allocations, at buffers 1, 2, 4, 8 ... 2048: the test's own timing vector growing inside the measured region, not the harmonizer.

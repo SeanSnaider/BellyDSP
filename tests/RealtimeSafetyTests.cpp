@@ -161,6 +161,11 @@ public:
                     case 3100: setParam (p, "reverb_on", 0.0f); setParam (p, "chorus_on", 0.0f); break;   // reverb spills over
                     case 3300: setParam (p, "reverb_on", 1.0f); setParam (p, "reverb_engine", 0.0f); setParam (p, "reverb_shimmer", 70.0f); break;
                     case 3320: setParam (p, "reverb_shimmer_interval", 1.0f); setParam (p, "mv_on", 1.0f); break;
+                    // Phase 10 harmonizer: on with two voices, the key and scale changed, the floor moved, off again.
+                    case 3331: setParam (p, "harm_on", 1.0f); setParam (p, "harm_v2_on", 1.0f); break;
+                    case 3351: setParam (p, "harm_root", 4.0f); setParam (p, "harm_scale", 1.0f); setParam (p, "harm_floor", 1.0f); break;
+                    case 3371: setParam (p, "harm_v2_mode", 1.0f); setParam (p, "harm_out_of_key", 1.0f); break;
+                    case 3391: setParam (p, "harm_on", 0.0f); break;
                     case 3340: setParam (p, "mv_engine", 1.0f); setParam (p, "mv_voices", 8.0f); break;
                     case 3360: setParam (p, "mv_engine", 0.0f); setParam (p, "reverb_freeze", 1.0f); break;
                     case 3380: setParam (p, "reverb_freeze", 0.0f); setParam (p, "mv_on", 0.0f); break;

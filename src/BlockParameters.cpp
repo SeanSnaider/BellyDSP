@@ -473,6 +473,100 @@ ampsim::Chorus::Settings ChorusParameters::read (double bpm) const noexcept
     return s;
 }
 
+// ---- Harmonizer -------------------------------------------------------------------------------
+
+void HarmonizerParameters::addTo (Layout& layout)
+{
+    using H = ampsim::Harmonizer;
+    const auto d = H::defaults();
+    using Int = juce::AudioParameterInt;
+    juce::StringArray scales;
+    for (const auto* name : ampsim::harmony::scaleNames)
+        scales.add (name);
+
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "harm_on", 1 }, "Harmonizer On", false));
+    layout.add (std::make_unique<Choice> (juce::ParameterID { "harm_root", 1 }, "Harmonizer Key",
+                                          juce::StringArray { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }, d.key.root));
+    layout.add (std::make_unique<Choice> (juce::ParameterID { "harm_scale", 1 }, "Harmonizer Scale", scales, (int) d.key.scale));
+    layout.add (std::make_unique<Int> (juce::ParameterID { "harm_custom_mask", 1 }, "Harmonizer Custom Scale", 0, 4095,
+                                       (int) ampsim::harmony::maskOf (ampsim::harmony::Scale::major)));
+    layout.add (std::make_unique<Choice> (juce::ParameterID { "harm_out_of_key", 1 }, "Harmonizer Out-of-Key Notes", juce::StringArray { "Parallel", "Snap" }, 0));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "harm_glide", 1 }, "Harmonizer Glide", juce::NormalisableRange<float> (0.0f, 200.0f, 0.1f),
+                                         (float) d.glideMs, milliseconds()));
+    layout.add (std::make_unique<Choice> (juce::ParameterID { "harm_floor", 1 }, "Harmonizer Lowest Note",
+                                          juce::StringArray { "110 Hz (A string)", "80 Hz (low E)", "60 Hz (drop tunings)" }, d.floor));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "harm_level", 1 }, "Harmonizer Level",
+                                         juce::NormalisableRange<float> ((float) H::minLevelDb, 6.0f, 0.1f), (float) d.levelDb, decibels()));
+
+    for (int v = 0; v < H::maxVoices; ++v)
+    {
+        const auto& voice = d.voices[(size_t) v];
+        const auto name = "Harmony " + juce::String (v + 1) + " ";
+        layout.add (std::make_unique<Bool> (juce::ParameterID { voiceId (v, "on"), 1 }, name + "On", voice.on));
+        layout.add (std::make_unique<Choice> (juce::ParameterID { voiceId (v, "mode"), 1 }, name + "Mode", juce::StringArray { "Diatonic", "Chromatic" },
+                                              voice.interval.diatonic ? 0 : 1));
+        layout.add (std::make_unique<Int> (juce::ParameterID { voiceId (v, "steps"), 1 }, name + "Steps", -7, 7, voice.interval.diatonic ? voice.interval.steps : 2));
+        layout.add (std::make_unique<Int> (juce::ParameterID { voiceId (v, "semitones"), 1 }, name + "Semitones", -24, 24, voice.interval.diatonic ? 0 : voice.interval.steps));
+        layout.add (std::make_unique<Int> (juce::ParameterID { voiceId (v, "octave"), 1 }, name + "Octave", -2, 2, voice.interval.octaves));
+        layout.add (std::make_unique<Float> (juce::ParameterID { voiceId (v, "level"), 1 }, name + "Level",
+                                             juce::NormalisableRange<float> ((float) H::minLevelDb, 6.0f, 0.1f), (float) voice.levelDb, decibels()));
+        layout.add (std::make_unique<Float> (juce::ParameterID { voiceId (v, "pan"), 1 }, name + "Pan", juce::NormalisableRange<float> (-100.0f, 100.0f, 1.0f),
+                                             (float) voice.pan * 100.0f, percent()));
+        layout.add (std::make_unique<Float> (juce::ParameterID { voiceId (v, "humanize"), 1 }, name + "Humanize",
+                                             juce::NormalisableRange<float> (0.0f, (float) H::maxHumanizeMs, 0.1f), (float) voice.humanizeMs, milliseconds()));
+    }
+}
+
+void HarmonizerParameters::bind (State& s)
+{
+    on.bind (s, "harm_on");
+    root.bind (s, "harm_root");
+    scale.bind (s, "harm_scale");
+    customMask.bind (s, "harm_custom_mask");
+    outOfKey.bind (s, "harm_out_of_key");
+    glide.bind (s, "harm_glide");
+    floor.bind (s, "harm_floor");
+    level.bind (s, "harm_level");
+    for (int v = 0; v < ampsim::Harmonizer::maxVoices; ++v)
+    {
+        auto& voice = voices[(size_t) v];
+        voice.on.bind (s, voiceId (v, "on"));
+        voice.mode.bind (s, voiceId (v, "mode"));
+        voice.steps.bind (s, voiceId (v, "steps"));
+        voice.semitones.bind (s, voiceId (v, "semitones"));
+        voice.octave.bind (s, voiceId (v, "octave"));
+        voice.level.bind (s, voiceId (v, "level"));
+        voice.pan.bind (s, voiceId (v, "pan"));
+        voice.humanize.bind (s, voiceId (v, "humanize"));
+    }
+}
+
+ampsim::Harmonizer::Settings HarmonizerParameters::read (double referenceA4) const noexcept
+{
+    ampsim::Harmonizer::Settings s;
+    s.key.root = juce::jlimit (0, 11, root.index());
+    s.key.scale = (ampsim::harmony::Scale) juce::jlimit (0, ampsim::harmony::numScales - 1, scale.index());
+    s.key.customMask = (std::uint16_t) juce::jlimit (0, 4095, customMask.index());
+    s.outOfScale = outOfKey.index() == 1 ? ampsim::harmony::OutOfScale::snap : ampsim::harmony::OutOfScale::parallel;
+    s.glideMs = glide.get();
+    s.floor = juce::jlimit (0, 2, floor.index());
+    s.referenceA4 = referenceA4;
+    s.levelDb = level.get();
+    for (int v = 0; v < ampsim::Harmonizer::maxVoices; ++v)
+    {
+        const auto& p = voices[(size_t) v];
+        auto& voice = s.voices[(size_t) v];
+        voice.on = p.on.on();
+        voice.interval.diatonic = p.mode.index() == 0;
+        voice.interval.steps = voice.interval.diatonic ? p.steps.index() : p.semitones.index();
+        voice.interval.octaves = p.octave.index();
+        voice.levelDb = p.level.get();
+        voice.pan = p.pan.get() / 100.0;
+        voice.humanizeMs = p.humanize.get();
+    }
+    return s;
+}
+
 // ---- Multivoicer ------------------------------------------------------------------------------
 
 void MultivoicerParameters::addTo (Layout& layout)

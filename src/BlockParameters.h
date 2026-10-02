@@ -7,6 +7,7 @@
 #include "dsp/Delay.h"
 #include "dsp/Equalizer.h"
 #include "dsp/Gate.h"
+#include "dsp/Harmonizer.h"
 #include "dsp/Multivoicer.h"
 #include "dsp/Overdrive.h"
 #include "dsp/Reverb.h"
@@ -117,6 +118,26 @@ struct MultivoicerParameters
         Raw semitones, cents, delay, pan, level, drift;
     };
     std::array<Voice, ampsim::Multivoicer::maxVoices> voices;
+};
+
+/// The harmonizer ("harm_*"): key (root, scale, custom mask), the rule for out-of-key notes, glide,
+/// detection floor, overall level, and four voices ("harm_v1_on", ...). Each voice has both a diatonic
+/// interval (steps) and a chromatic one (semitones); its mode picks which applies. A4 is the tuner's.
+struct HarmonizerParameters
+{
+    static void addTo (Layout& layout);
+    void bind (State& state);
+    bool isOn() const noexcept { return on.on(); }
+    ampsim::Harmonizer::Settings read (double referenceA4) const noexcept;
+
+    static juce::String voiceId (int voice, const char* what) { return "harm_v" + juce::String (voice + 1) + "_" + what; }
+
+    Raw on, root, scale, customMask, outOfKey, glide, floor, level;
+    struct Voice
+    {
+        Raw on, mode, steps, semitones, octave, level, pan, humanize;
+    };
+    std::array<Voice, ampsim::Harmonizer::maxVoices> voices;
 };
 
 /// The drive blocks' oversampling factor ("drive_oversampling": 4x or 8x), a global setting.

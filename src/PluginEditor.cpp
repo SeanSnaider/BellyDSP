@@ -385,6 +385,8 @@ juce::String displayName (const juce::String& blockName)
     if (blockName == "boost") return "Boost";
     if (blockName == "overdrive") return "Overdrive";
     if (blockName == "bloom") return "Bloom";
+    if (blockName == "harmonizer") return "Harmonizer";
+    if (blockName == "multivoicer") return "Multivoicer";
     if (blockName == "bitcrush") return "Bitcrush";
     if (blockName == "phaser") return "Phaser";
     if (blockName == "flanger") return "Flanger";
@@ -1064,6 +1066,152 @@ void GatePanel::resized()
     for (auto* knob : knobs)
         cells.push_back (knob);
     layoutGrid (area, cells, 2, juce::jmin (110, area.getHeight() / 4));
+}
+
+// ---- HarmonizerPanel ------------------------------------------------------------------------------
+
+HarmonizerPanel::HarmonizerPanel (AmpSimProcessor& processor) : EffectPanel (processor, "Harmonizer", "harm_on")
+{
+    root = &addCombo ("harm_root", { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" });
+    juce::StringArray scales;
+    for (const auto* name : ampsim::harmony::scaleNames)
+        scales.add (name);
+    scale = &addCombo ("harm_scale", scales);
+    outOfKey = &addCombo ("harm_out_of_key", { "Out of key: parallel", "Out of key: snap" });
+    floor = &addCombo ("harm_floor", { "Lowest note 110 Hz (A)", "Lowest note 80 Hz (low E)", "Lowest note 60 Hz (drop)" });
+    addKnob ("harm_glide", "Glide", " ms");
+    addKnob ("harm_level", "Level");
+
+    // The custom scale: 12 switches, one per semitone above the root, writing the mask parameter's bits.
+    static const char* names[] = { "1", "b2", "2", "b3", "3", "4", "b5", "5", "b6", "6", "b7", "7" };
+    for (int k = 0; k < 12; ++k)
+    {
+        auto& button = customNotes[(size_t) k];
+        button.setButtonText (names[k]);
+        button.setClickingTogglesState (true);
+        button.setColour (juce::TextButton::buttonOnColourId, accent);
+        button.onClick = [this, k]
+        {
+            auto* parameter = ampSim.parameters.getParameter ("harm_custom_mask");
+            auto mask = juce::roundToInt (parameter->convertFrom0to1 (parameter->getValue()));
+            mask = customNotes[(size_t) k].getToggleState() ? (mask | (1 << k)) : (mask & ~(1 << k));
+            parameter->setValueNotifyingHost (parameter->convertTo0to1 ((float) mask));
+        };
+        addAndMakeVisible (button);
+    }
+
+    static const char* what[] = { "steps", "semitones", "octave", "level", "pan", "humanize" };
+    static const char* suffix[] = { " steps", " st", " oct", " dB", " %", " ms" };
+    for (int v = 0; v < ampsim::Harmonizer::maxVoices; ++v)
+    {
+        auto& row = rows[(size_t) v];
+        row.on.setButtonText (juce::String (v + 1));
+        const auto onId = params::HarmonizerParameters::voiceId (v, "on");
+        rowButtons.add (new juce::AudioProcessorValueTreeState::ButtonAttachment (processor.parameters, onId, tagged (row.on, onId)));
+        addAndMakeVisible (row.on);
+        const auto modeId = params::HarmonizerParameters::voiceId (v, "mode");
+        rowCombos.add (new juce::AudioProcessorValueTreeState::ComboBoxAttachment (processor.parameters, modeId, tagged (withItems (row.mode, { "Diatonic", "Chromatic" }), modeId)));
+        addAndMakeVisible (row.mode);
+        for (size_t k = 0; k < row.sliders.size(); ++k)
+        {
+            auto& slider = row.sliders[k];
+            slider.setSliderStyle (juce::Slider::LinearBar);
+            slider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 0, 0);
+            slider.setTextValueSuffix (suffix[k]);
+            slider.setColour (juce::Slider::trackColourId, accent.withAlpha (0.55f));
+            const auto id = params::HarmonizerParameters::voiceId (v, what[k]);
+            sliderAttachments.add (new juce::AudioProcessorValueTreeState::SliderAttachment (processor.parameters, id, tagged (slider, id)));
+            addAndMakeVisible (slider);
+        }
+    }
+    refresh();
+}
+
+void HarmonizerPanel::refresh()
+{
+    // The custom scale's switches follow the parameter, and only matter for the Custom scale.
+    const auto mask = juce::roundToInt (ampSim.parameters.getRawParameterValue ("harm_custom_mask")->load());
+    const auto currentScale = juce::roundToInt (ampSim.parameters.getRawParameterValue ("harm_scale")->load());
+    if (mask != shownMask || currentScale != shownScale)
+    {
+        shownMask = mask;
+        shownScale = currentScale;
+        for (int k = 0; k < 12; ++k)
+        {
+            customNotes[(size_t) k].setToggleState ((mask >> k) & 1, juce::dontSendNotification);
+            customNotes[(size_t) k].setAlpha (currentScale == (int) ampsim::harmony::Scale::custom ? 1.0f : 0.35f);
+        }
+    }
+
+    // Diatonic voices use steps, chromatic ones semitones: dim the other.
+    for (int v = 0; v < ampsim::Harmonizer::maxVoices; ++v)
+    {
+        const auto diatonic = ampSim.parameters.getRawParameterValue (params::HarmonizerParameters::voiceId (v, "mode"))->load() < 0.5f;
+        rows[(size_t) v].sliders[0].setAlpha (diatonic ? 1.0f : 0.35f);
+        rows[(size_t) v].sliders[1].setAlpha (diatonic ? 0.35f : 1.0f);
+    }
+
+    juce::String text;
+    if (const auto note = ampSim.getHarmonizerNote(); note < 0)
+        text = "Listening (no single note)";
+    else
+    {
+        text = "Hearing " + juce::MidiMessage::getMidiNoteName (note, true, true, 4);
+        for (int v = 0; v < ampsim::Harmonizer::maxVoices; ++v)
+            if (const auto shift = ampSim.getHarmonizerShift (v); shift != ampsim::Harmonizer::shownSilent)
+                text << "   " << (v + 1) << ": " << (shift >= 0 ? "+" : "") << shift << " (" << juce::MidiMessage::getMidiNoteName (note + shift, true, true, 4) << ")";
+    }
+    if (text != hearing)
+    {
+        hearing = text;
+        repaint (statusArea);
+    }
+}
+
+void HarmonizerPanel::paint (juce::Graphics& g)
+{
+    EffectPanel::paint (g);
+    g.setColour (dimText);
+    g.setFont (juce::FontOptions (12.0f));
+    auto heads = headerArea;
+    heads.removeFromLeft (150);
+    const auto width = heads.getWidth() / 6;
+    for (const auto* name : { "Steps", "Semitones", "Octave", "Level", "Pan", "Humanize" })
+        g.drawText (name, heads.removeFromLeft (width), juce::Justification::centred);
+    g.setColour (textColour);
+    g.setFont (juce::FontOptions (14.0f));
+    g.drawText (hearing, statusArea, juce::Justification::centredLeft);
+}
+
+void HarmonizerPanel::resized()
+{
+    auto area = layoutTitle();
+    auto top = area.removeFromTop (26);
+    root->setBounds (top.removeFromLeft (70).reduced (2, 0));
+    scale->setBounds (top.removeFromLeft (190).reduced (2, 0));
+    outOfKey->setBounds (top.removeFromLeft (180).reduced (2, 0));
+    floor->setBounds (top.reduced (2, 0));
+    area.removeFromTop (6);
+    auto custom = area.removeFromTop (24);
+    const auto noteWidth = custom.getWidth() / 12;
+    for (auto& button : customNotes)
+        button.setBounds (custom.removeFromLeft (noteWidth).reduced (1, 0));
+    area.removeFromTop (6);
+    auto knobsRow = area.removeFromTop (100);
+    knobs[0]->setBounds (knobsRow.removeFromLeft (110));
+    knobs[1]->setBounds (knobsRow.removeFromLeft (110));
+    statusArea = knobsRow.reduced (8, 30);
+    area.removeFromTop (6);
+    headerArea = area.removeFromTop (18);
+    for (auto& row : rows)
+    {
+        auto line = area.removeFromTop (30).reduced (0, 2);
+        row.on.setBounds (line.removeFromLeft (44));
+        row.mode.setBounds (line.removeFromLeft (106).reduced (2, 0));
+        const auto width = line.getWidth() / (int) row.sliders.size();
+        for (auto& slider : row.sliders)
+            slider.setBounds (line.removeFromLeft (width).reduced (2, 0));
+    }
 }
 
 // ---- MultivoicerPanel -----------------------------------------------------------------------------
@@ -1825,11 +1973,14 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p)
 
     // Pitch: the multivoicer (and, in Phase 10, the harmonizer).
     multivoicerPanel = std::make_unique<MultivoicerPanel> (p);
+    harmonizerPanel = std::make_unique<HarmonizerPanel> (p);
     pitchPage.addAndMakeVisible (multivoicerPanel.get());
+    pitchPage.addAndMakeVisible (harmonizerPanel.get());
     pitchPage.layout = [this] (juce::Rectangle<int> area)
     {
         area.reduce (8, 8);
-        multivoicerPanel->setBounds (area.removeFromLeft (juce::jmin (area.getWidth(), 760)).reduced (4));
+        harmonizerPanel->setBounds (area.removeFromLeft (area.getWidth() / 2).reduced (4));
+        multivoicerPanel->setBounds (area.reduced (4));
     };
     tabs.addTab ("Pitch", panel, &pitchPage, false);
 
@@ -1999,6 +2150,7 @@ void AmpSimEditor::timerCallback()
     reverbPanel->refresh();
     bloomOrder->refresh();
     multivoicerPanel->refresh();
+    harmonizerPanel->refresh();
     phaserPanel->refresh();
     flangerPanel->refresh();
     bloomLatencyLabel.setText (ampSim.getLatencySamples() > 0 ? "Through-zero flanging adds " + juce::String (ampSim.getLatencySamples() * 1000.0 / 48000.0, 1)

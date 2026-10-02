@@ -75,6 +75,7 @@ set(AMPSIM_DSP_SOURCES
     src/dsp/TunerThread.cpp
     src/dsp/Scales.cpp
     src/dsp/NoteTracker.cpp
+    src/dsp/Harmonizer.cpp
     src/dsp/Oversampler.cpp
     src/dsp/DriveCircuits.cpp
     src/dsp/DriveEngine.cpp
@@ -182,6 +183,7 @@ target_sources(ampsim_tests PRIVATE
     tests/ReverbTests.cpp
     tests/TunerTests.cpp
     tests/HarmonyTests.cpp
+    tests/HarmonizerTests.cpp
     tests/GateTests.cpp
     tests/OversamplerTests.cpp
     tests/DriveTests.cpp

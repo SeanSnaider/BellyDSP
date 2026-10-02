@@ -139,6 +139,10 @@ public:
     bool isTunerEngaged() const { return tuner.isEngaged(); }
     uint32_t getTunerUpdateCount() const { return tuner.getUpdateCount(); }
 
+    /// Any thread, for the panel: the note the harmonizer hears (-1 for none) and a voice's interval.
+    int getHarmonizerNote() const { return chain.harmonizer.getShownNote(); }
+    int getHarmonizerShift (int voice) const { return chain.harmonizer.getShownShift (voice); }
+
     /// Any thread: compressor gain reduction meters (dB).
     float getCompressorReduction (bool post) const { return post ? chain.postCompressor.getGainReductionDb() : chain.preCompressor.getGainReductionDb(); }
 
@@ -257,6 +261,7 @@ private:
     params::BoostParameters boostParams;
     params::BloomParameters bloomParams;
     params::MultivoicerParameters multivoicerParams;
+    params::HarmonizerParameters harmonizerParams;
     std::atomic<int> bloomOrderCode { 0 + 3 * 1 + 9 * 2 }; // the order as three base-3 digits, first effect lowest
     ampsim::Bloom::Order bloomOrder() const noexcept;
     params::OverdriveParameters overdriveParams;

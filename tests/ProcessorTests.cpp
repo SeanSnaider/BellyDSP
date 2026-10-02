@@ -521,7 +521,7 @@ public:
             AmpSimProcessor p;
             expectEquals (getParam (p, "chorus_on"), 0.0f);
             expectEquals (getParam (p, "reverb_on"), 0.0f);
-            expect (p.getSectionOrder (ampsim::Chain::Section::post) == juce::StringArray { "eq", "comp", "multivoicer", "bloom", "chorus", "delay", "reverb" });
+            expect (p.getSectionOrder (ampsim::Chain::Section::post) == juce::StringArray { "eq", "comp", "harmonizer", "multivoicer", "bloom", "chorus", "delay", "reverb" });
 
             // Synced: a quarter-note chorus cycle at 120 BPM is 2 Hz; a sixteenth-note pre-delay is 125 ms.
             setParam (p, "chorus_sync", 1.0f);
@@ -1254,6 +1254,49 @@ public:
                         + juce::String (s.flanger.rateHz, 3) + " Hz");
         }
 
+        beginTest ("harmonizer: through the processor it's exactly the block, reading the DI; it follows the tuner's A4");
+        {
+            // A4 = 432 Hz, and the guitar plays 432 Hz: the harmonizer must hear A4 (69), not 31 cents sharp of it.
+            std::vector<float> input ((size_t) (1.5 * fs));
+            for (size_t i = 0; i < input.size(); ++i)
+            {
+                const auto t = (double) i / fs;
+                double v = 0.0;
+                for (int n = 1; n <= 6; ++n)
+                    v += std::sin (juce::MathConstants<double>::twoPi * n * 432.0 * t) / n;
+                input[i] = (float) (0.15 * v * (1.0 - std::exp (-t / 0.002)));
+            }
+            AmpSimProcessor p;
+            for (const auto& [id, value] : std::initializer_list<std::pair<const char*, float>> {
+                     { "harm_on", 1.0f }, { "harm_v2_on", 1.0f }, { "harm_root", 9.0f }, { "harm_scale", 1.0f }, { "tuner_a4", 432.0f } })
+                setParam (p, id, value);
+            p.prepareToPlay (fs, blockSize);
+            const auto out = processAll (p, input);
+            const auto heard = p.getHarmonizerNote();
+
+            params::HarmonizerParameters hp;
+            hp.bind (p.parameters);
+            ampsim::Harmonizer lone;
+            lone.setSettings (hp.read (432.0));
+            lone.prepare (fs, blockSize);
+            Stereo expected { input, input };
+            for (size_t start = 0; start + blockSize <= input.size(); start += blockSize)
+            {
+                float* channels[] = { expected.left.data() + start, expected.right.data() + start };
+                lone.setSettings (hp.read (432.0));
+                lone.process (juce::dsp::AudioBlock<float> (channels, 2, (size_t) blockSize), { input.data() + start, blockSize });
+            }
+            double worst = 0.0;
+            for (size_t n = 0; n < input.size() - blockSize; ++n)
+                worst = std::max ({ worst, std::abs ((double) out.left[n] - (double) expected.left[n]), std::abs ((double) out.right[n] - (double) expected.right[n]) });
+            expectEquals (worst, 0.0);
+            expectEquals (heard, 69);
+            expect (p.getHarmonizerShift (0) == 3 && p.getHarmonizerShift (1) == 7, juce::String (p.getHarmonizerShift (0)) + " " + juce::String (p.getHarmonizerShift (1)));
+            logMessage ("  -> A minor, voices a third and a fifth, A4 = 432 Hz, the guitar at 432 Hz: the harmonizer hears "
+                        + juce::MidiMessage::getMidiNoteName (heard, true, true, 4) + " and plays +" + juce::String (p.getHarmonizerShift (0)) + " and +"
+                        + juce::String (p.getHarmonizerShift (1)) + " semitones; the processor's output differs from a lone harmonizer by " + juce::String (worst));
+        }
+
         beginTest ("the effect order is saved by block name and restored, and odd saved orders are repaired");
         {
             using Section = ampsim::Chain::Section;
@@ -1262,7 +1305,7 @@ public:
             expect (startsWith (p.getSectionOrder (Section::post), { "eq", "comp" }));
             p.setSectionOrder (Section::pre, { "eq", "gate", "comp", "boost", "overdrive" });
             p.setSectionOrder (Section::post, { "comp", "eq" });
-            expect (startsWith (p.getSectionOrder (Section::post), { "comp", "eq", "multivoicer", "bloom", "chorus" }));
+            expect (startsWith (p.getSectionOrder (Section::post), { "comp", "eq", "harmonizer", "multivoicer", "bloom", "chorus" }));
 
             juce::MemoryBlock state;
             p.getStateInformation (state);
@@ -1380,6 +1423,8 @@ public:
             setParam (p, "od_on", 1.0f);
             setParam (p, "od_mode", 1.0f);
             setParam (p, "mv_on", 1.0f);
+            setParam (p, "harm_on", 1.0f);
+            setParam (p, "harm_v2_on", 1.0f);
             setParam (p, "bloom_on", 1.0f);
             setParam (p, "bloom_phaser_on", 1.0f);
             setParam (p, "bloom_phaser_mode", 1.0f);
