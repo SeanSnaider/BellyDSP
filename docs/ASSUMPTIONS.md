@@ -254,3 +254,15 @@ Status key: **Open** (waiting for Sean), **Confirmed** (Sean agreed), **Changed*
 | Q9 | A/B compares settings only (every non-global parameter and the three orders); the captures and IRs are whatever is loaded, in both. B starts as a copy of A; "Copy to B/A" overwrites the other side; loading a preset starts again on A. | Switching never reloads anything, so A/B is instant. | `AmpSimProcessor::abSwitch`. |
 | Q10 | The five factory presets (Polyphia, CHON, Tech Death, Metal, Midwest Emo) set the sound, the orders, and three scenes each, but no captures or IRs: each says in its notes which kind of capture goes in which slot. Their values are starting points from the plan's style table, not tuned by ear. | No third-party captures or IRs can be bundled. | `presets/factory/*.json`. Task 11.F: Sean tunes them with his captures and saves over them. |
 
+## Phase 11: GUI design
+
+| # | Assumption | Why | To change it |
+|---|---|---|---|
+| U1 | `docs/UI_DESIGN.md` was written without Sean's direction, as a proposal: a dark, calm panel with one accent colour (#3FA7D6), section colours on the chain blocks, and the plan's layout (top bar, chain strip, editor, scenes bar, tuner overlay). | The plan has Sean direct the visual design; the run-to-completion build couldn't wait for it. | Edit `docs/UI_DESIGN.md`; the GUI reads every colour and size from `src/ui/Theme.h`. |
+| U2 | The system font (San Francisco) stands in for an embedded font. | Embedding one needs a choice and its licence. | Pick an open-licence font, add it as BinaryData, set it in the LookAndFeel. |
+| U3 | Knobs: drag, shift for fine, scroll, double-click to type, alt-click to reset to the default (the plan's double-click for typing takes double-click, so reset moves to alt-click). | The plan's knob behaviours, without a conflict. | `src/ui` LookAndFeel and the Knob component. |
+| U4 | The window opens at 1280 x 820, resizes down to 1100 x 720, and has a UI scale of 75 to 150%. | A laptop on a stand while playing. | The editor's size limits. |
+| U5 | The CPU meter is the audio callback's time against its deadline, averaged over about 300 ms. | What decides dropouts. | The processor's CPU measurement. |
+| U6 | The EQ analyzer shows the post section's output (4096-point FFT, 30 fps) and the pre EQ shows the signal going into the amp. | Where each EQ acts. | The analyzer tap. |
+| U7 | Scenes sit at the bottom, like a foot controller's row of switches. | The plan's layout. | The editor layout. |
+| U8 | The GUI is agent-built from this file; snapshots in `build/proof` are its proof. | The plan's "Sean directs, the agent builds". | Sean's review of the snapshots (task 11.G). |
