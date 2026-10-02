@@ -221,6 +221,55 @@ public:
                         + " pack positions; 1 s through both: max difference " + juce::String (difference));
         }
 
+        beginTest ("changing the interface level reloads the captures once, after the setting settles");
+        {
+            AmpSimProcessor p;
+            p.loadModel (0, exampleModel ("lstm.nam"));
+            p.loadModel (1, a1); // no recorded input level
+            waitForLoads (p);
+            const auto before = p.getStatus().model[0];
+            expect (before.contains ("input calibrated -6.3 dB"), before);
+            expect (! p.getStatus().model[1].contains ("calibrated"));
+
+            // Drag the setting from +12 to +18.3 dBu over 600 ms, as a mouse would.
+            const auto t0 = juce::Time::getMillisecondCounterHiRes();
+            for (auto now = t0; now - t0 < 600.0; now = juce::Time::getMillisecondCounterHiRes())
+            {
+                setParam (p, "input_level_dbu", (float) (12.0 + 6.3 * (now - t0) / 600.0));
+                p.runHousekeeping();
+                juce::Thread::sleep (10);
+            }
+            setParam (p, "input_level_dbu", 18.3f);
+            const auto reloadsWhileDragging = p.getCalibrationReloadCount();
+
+            for (int i = 0; i < 50; ++i)
+            {
+                p.runHousekeeping();
+                juce::Thread::sleep (10);
+            }
+            waitForLoads (p);
+            const auto after = p.getStatus().model[0];
+
+            expectEquals (reloadsWhileDragging, 0);
+            expectEquals (p.getCalibrationReloadCount(), 1);
+            expect (after.contains ("input calibrated 0.0 dB"), after);
+
+            setParam (p, "input_calibrate", 0.0f);
+            for (int i = 0; i < 40; ++i)
+            {
+                p.runHousekeeping();
+                juce::Thread::sleep (10);
+            }
+            waitForLoads (p);
+            expect (! p.getStatus().model[0].contains ("calibrated"));
+            expectEquals (p.getCalibrationReloadCount(), 2);
+
+            logMessage ("  -> before: \"" + before + "\"");
+            logMessage ("  -> dragged to +18.3 dBu over 600 ms: " + juce::String (reloadsWhileDragging) + " reloads during the drag, 1 after it "
+                        "settled: \"" + after + "\"");
+            logMessage ("  -> calibration off: \"" + p.getStatus().model[0] + "\"");
+        }
+
         beginTest ("a saved model that has gone missing is reported, not a crash");
         {
             AmpSimProcessor p;

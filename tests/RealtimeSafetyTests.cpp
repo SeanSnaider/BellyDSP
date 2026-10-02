@@ -119,6 +119,7 @@ public:
                     case 1000: setParam (p, "cab_bypass", 1.0f); break;                     // cab off
                     case 1100: setParam (p, "cab_bypass", 0.0f); break;                     // cab back on
                     case 1200: midi.addEvent (juce::MidiMessage::programChange (1, 0), 0); break;      // footswitch: slot 1
+                    case 1250: setParam (p, "input_level_dbu", 15.0f); break;               // interface level: captures reload
                     case 1500: setParam (p, "input_gain", 6.0f); break;
                     case 1600: setParam (p, "output_gain", -6.0f); break;
                     case 2000: p.loadModel (0, a1); break;                                  // switch the capture back
@@ -164,6 +165,7 @@ public:
             expectGreaterThan (slotSwitchBlocks, 16, "the slot switches must have crossfaded during the measurement");
             expectEquals (p.getChain().amp.getSelectedSlot(), 0);
             expect (p.getStatus().cab[0].contains ("rt_ir_b"));
+            expectEquals (p.getCalibrationReloadCount(), 1, "the calibration change must have reloaded the captures during the measurement");
             const auto morphs = p.getMorphCount() - morphsBefore;
             expectGreaterThan (morphs, 4, "the mic must have re-morphed while it was dragged");
             expect (p.getStatus().cab[1].startsWith ("rt_pack (4 IRs on a grid) at ") && p.getStatus().cab[2].contains ("rt_room"), p.getStatus().cab[1]);
@@ -177,7 +179,8 @@ public:
                         + " s of audio): 3 capture loads (" + juce::String (modelFadeBlocks) + " blocks mid-crossfade), "
                         "3 slot switches from the GUI and the footswitch (" + juce::String (slotSwitchBlocks)
                         + " blocks mid-crossfade), 3 IR loads into the three cab mics plus an IR swap, auto alignment, 6 cab mic changes, cuts on, off, re-sloped and swept, "
-                        "a cab pack loaded into close mic 2 and dragged around (" + juce::String (morphs) + " re-morphs), cab bypass off and on, 5 knob ramps");
+                        "a cab pack loaded into close mic 2 and dragged around (" + juce::String (morphs) + " re-morphs), cab bypass off and on, 5 knob ramps, "
+                        "an interface-level change that recalibrated and reloaded every capture");
             logMessage ("  -> audio thread: " + describe (total));
         }
     }

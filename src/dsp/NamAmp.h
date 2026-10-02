@@ -36,20 +36,37 @@ public:
 
     static constexpr double switchFadeSeconds = 0.020;
 
+    /// Input calibration (BUILD_PLAN "Input level"). A capture's metadata can say what analog level
+    /// reached 0 dBFS on the rig it was trained with (`input_level_dbu`). If our interface's 0 dBFS is
+    /// a different analog level, the same guitar arrives at a different digital level than the model
+    /// learned from, and it distorts more or less than the real amp would. A signal at V dBu reaches
+    /// the model as V - interfaceDbu dBFS, but the model was trained on V - captureDbu dBFS, so the
+    /// model's input gets interfaceDbu - captureDbu dB of gain to make up the difference.
+    struct Calibration
+    {
+        bool enabled = false;
+        double interfaceInputDbu = 12.0; // the analog level of a full-scale (0 dBFS) input
+    };
+
     struct LoadResult
     {
         bool ok = false;
         juce::String message;          // why it failed, or a short description of what loaded
         double normalizationDb = 0.0;  // gain applied to the model's output
         double measuredLufs = 0.0;     // the model's output loudness on the reference DI, before normalizing
+        double calibrationDb = 0.0;    // gain applied to the model's input (0 without calibration)
+        bool hasInputLevel = false;    // the file says what level it was captured at
+        double captureInputDbu = 0.0;
     };
 
     NamAmp() = default;
     ~NamAmp() override;
 
     /// Background thread; takes tens to hundreds of milliseconds. Pass normalize = false to hear
-    /// (or test) the raw model level.
-    LoadResult loadModel (const juce::File& file, bool normalize = true);
+    /// (or test) the raw model level. The loudness measurement includes the calibration gain, so a
+    /// calibrated slot still lands at the target loudness.
+    LoadResult loadModel (const juce::File& file, bool normalize, const Calibration& calibration);
+    LoadResult loadModel (const juce::File& file, bool normalize = true); // without calibration
 
     /// Any non-audio thread. Frees models the audio thread has finished with.
     void collectGarbage() { handoff.collect(); }
@@ -71,12 +88,13 @@ private:
     struct Model
     {
         std::unique_ptr<nam::DSP> dsp;
-        float normalizationGain = 1.0f; // linear
+        float normalizationGain = 1.0f; // linear, on the output
+        float inputGain = 1.0f;         // linear, the input calibration
     };
 
     void pickUpNewModel();
     void finishSwitchIfDone();
-    static void render (Model* model, float* input, float* output, int numSamples);
+    void render (Model* model, const float* input, float* output, int numSamples);
 
     Handoff<Model> handoff;
 
@@ -88,7 +106,7 @@ private:
     int fadePosition = 0;
     int fadeLength = 960;
 
-    std::vector<float> inputCopy, outgoing;
+    std::vector<float> inputCopy, outgoing, scaledInput;
 
     // Written by prepare(), read by the loader thread.
     std::atomic<int> loaderMaxBlockSize { 4096 };

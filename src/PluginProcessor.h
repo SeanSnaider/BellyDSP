@@ -57,6 +57,13 @@ public:
     /// For tests: how many times a moving mic's IR has been re-morphed.
     int getMorphCount() const { return morphCount.load(); }
 
+    /// A change to the input calibration reloads the captures once the setting has been still this
+    /// long, so dragging the knob doesn't queue a reload per step.
+    static constexpr double calibrationSettleMs = 300.0;
+
+    /// For tests: how many times a calibration change has reloaded the captures.
+    int getCalibrationReloadCount() const { return calibrationReloads; }
+
     /// True while a model or IR load (or a moving mic's re-morph) is still running. Used by the tests.
     bool isLoading() const { return loadsInFlight.load() > 0; }
 
@@ -157,6 +164,15 @@ private:
     std::array<std::atomic<bool>, ampsim::Cab::numCloseMics> morphInFlight {};
     std::array<juce::Point<float>, ampsim::Cab::numCloseMics> morphedPosition; // the position last sent to the loader
     std::array<double, ampsim::Cab::numCloseMics> lastMorphStartMs {};
+
+    // Input calibration (message thread): what the loaded captures were calibrated with, and a newer
+    // setting waiting to settle.
+    ampsim::NamAmp::Calibration currentCalibration() const;
+    ampsim::NamAmp::Calibration appliedCalibration, pendingCalibration;
+    double pendingSinceMs = 0.0;
+    int calibrationReloads = 0;
+    std::atomic<float>* calibrateInput = nullptr;
+    std::atomic<float>* interfaceInputDbu = nullptr;
     std::atomic<int> morphCount { 0 };
 
     std::atomic<bool> sampleRateOk { true };

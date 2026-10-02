@@ -19,6 +19,11 @@ NamAmp::~NamAmp()
 
 NamAmp::LoadResult NamAmp::loadModel (const juce::File& file, bool normalize)
 {
+    return loadModel (file, normalize, Calibration {});
+}
+
+NamAmp::LoadResult NamAmp::loadModel (const juce::File& file, bool normalize, const Calibration& calibration)
+{
     const auto name = file.getFileName();
     std::unique_ptr<nam::DSP> dsp;
 
@@ -54,6 +59,17 @@ NamAmp::LoadResult NamAmp::loadModel (const juce::File& file, bool normalize)
     const auto maxBlock = loaderMaxBlockSize.load();
     dsp->Reset (requiredSampleRate, maxBlock);
 
+    auto model = std::make_unique<Model>();
+    LoadResult result { true, file.getFileNameWithoutExtension() };
+    result.hasInputLevel = dsp->HasInputLevel();
+    result.captureInputDbu = result.hasInputLevel ? dsp->GetInputLevel() : 0.0;
+
+    if (calibration.enabled && result.hasInputLevel)
+    {
+        result.calibrationDb = calibration.interfaceInputDbu - result.captureInputDbu;
+        model->inputGain = juce::Decibels::decibelsToGain ((float) result.calibrationDb, -1000.0f);
+    }
+
     // Measure the model's loudness (BUILD_PLAN "Loudness matching"): render the reference guitar DI
     // through it and K-weight and gate the result (BS.1770). Every model gets the same signal and the
     // same method, so captures land at the same perceived level. A file's own loudness field can't
@@ -61,6 +77,7 @@ NamAmp::LoadResult NamAmp::loadModel (const juce::File& file, bool normalize)
     // model starts clean.
     static const auto referenceDI = referenceGuitarDI ((int) (loudnessProbeSeconds * requiredSampleRate));
     std::vector<float> input (referenceDI), rendered (referenceDI.size());
+    juce::FloatVectorOperations::multiply (input.data(), model->inputGain, (int) input.size()); // as process() will
 
     for (size_t start = 0; start < input.size(); start += (size_t) maxBlock)
     {
@@ -72,21 +89,25 @@ NamAmp::LoadResult NamAmp::loadModel (const juce::File& file, bool normalize)
 
     dsp->Reset (requiredSampleRate, maxBlock);
 
-    auto model = std::make_unique<Model>();
-    LoadResult result { true, file.getFileNameWithoutExtension(), 0.0, 0.0 };
     result.measuredLufs = loudness::integratedMono (rendered.data(), (int) rendered.size(), requiredSampleRate);
+    juce::StringArray notes;
+
+    if (calibration.enabled && result.hasInputLevel)
+        notes.add ("input calibrated " + juce::String (result.calibrationDb, 1) + " dB");
 
     if (normalize && std::isfinite (result.measuredLufs))
     {
         result.normalizationDb = targetLoudnessLufs - result.measuredLufs;
         model->normalizationGain = juce::Decibels::decibelsToGain ((float) result.normalizationDb);
-        result.message << " (" << juce::String (result.measuredLufs, 1) << " LUFS on the reference DI, normalized "
-                       << juce::String (result.normalizationDb, 1) << " dB)";
+        notes.add (juce::String (result.measuredLufs, 1) + " LUFS on the reference DI, normalized " + juce::String (result.normalizationDb, 1) + " dB");
     }
     else if (normalize)
     {
-        result.message << " (silent on the reference DI, so not normalized)";
+        notes.add ("silent on the reference DI, so not normalized");
     }
+
+    if (! notes.isEmpty())
+        result.message << " (" << notes.joinIntoString ("; ") << ")";
 
     model->dsp = std::move (dsp);
     handoff.publish (std::move (model));
@@ -97,6 +118,7 @@ void NamAmp::prepare (double sampleRate, int maxBlockSize)
 {
     inputCopy.assign ((size_t) maxBlockSize, 0.0f);
     outgoing.assign ((size_t) maxBlockSize, 0.0f);
+    scaledInput.assign ((size_t) maxBlockSize, 0.0f);
     fadeLength = juce::jmax (1, juce::roundToInt (sampleRate * switchFadeSeconds));
     loaderMaxBlockSize = maxBlockSize;
 
@@ -193,7 +215,7 @@ void NamAmp::finishSwitchIfDone()
     fadingOut = nullptr;
 }
 
-void NamAmp::render (Model* model, float* input, float* output, int numSamples)
+void NamAmp::render (Model* model, const float* input, float* output, int numSamples)
 {
     if (model == nullptr)
     {
@@ -203,13 +225,17 @@ void NamAmp::render (Model* model, float* input, float* output, int numSamples)
 
     auto& dsp = *model->dsp;
 
+    // The input calibration. Each model has its own, and during a switch two models share one input,
+    // so scale a copy rather than the input itself.
+    juce::FloatVectorOperations::multiply (scaledInput.data(), input, model->inputGain, numSamples);
+
     // A model queued before the most recent prepare() can have buffers sized for a smaller block,
     // so never hand it more frames than it was sized for.
     const int chunk = juce::jmax (1, dsp.GetMaxBufferSize());
 
     for (int start = 0; start < numSamples; start += chunk)
     {
-        NAM_SAMPLE* in = input + start;
+        NAM_SAMPLE* in = scaledInput.data() + start;
         NAM_SAMPLE* out = output + start;
         dsp.process (&in, &out, juce::jmin (chunk, numSamples - start));
     }

@@ -39,6 +39,9 @@ AmpSimProcessor::AmpSimProcessor()
     roomPreDelay = raw (cabParamId (roomMic, "predelay"));
     roomMute = raw (cabParamId (roomMic, "mute"));
     cabAlign = raw ("cab_align");
+    calibrateInput = raw ("input_calibrate");
+    interfaceInputDbu = raw ("input_level_dbu");
+    appliedCalibration = pendingCalibration = currentCalibration();
     lowCutOn = raw ("cab_lowcut_on");
     lowCutFreq = raw ("cab_lowcut_freq");
     lowCutSlope = raw ("cab_lowcut_slope");
@@ -84,6 +87,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout AmpSimProcessor::createParam
     layout.add (std::make_unique<Float> (juce::ParameterID { "output_gain", 1 }, "Output Level", levelRange, 0.0f, dB));
     layout.add (std::make_unique<Bool> (juce::ParameterID { "cab_bypass", 1 }, "Cab Bypass", false));
     layout.add (std::make_unique<Choice> (juce::ParameterID { slotParamId, 1 }, "Amp Slot", juce::StringArray { "Amp 1", "Amp 2", "Amp 3" }, 0));
+
+    // Input calibration (global settings, not part of presets): the analog level that reaches 0 dBFS on
+    // this interface. +12 dBu is the Scarlett Solo 4th Gen's instrument input at minimum gain.
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "input_calibrate", 1 }, "Calibrate Input to Captures", true));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "input_level_dbu", 1 }, "Interface Input Level",
+                                         juce::NormalisableRange<float> (-10.0f, 30.0f, 0.1f), 12.0f,
+                                         juce::AudioParameterFloatAttributes().withLabel ("dBu")));
 
     for (int s = 0; s < numAmpSlots; ++s)
     {
@@ -297,6 +307,9 @@ void AmpSimProcessor::setStateInformation (const void* data, int sizeInBytes)
     parameters.replaceState (juce::ValueTree::fromXml (*xml));
     auto& state = parameters.state;
 
+    // The captures below load with the restored calibration, so it's already applied.
+    appliedCalibration = pendingCalibration = currentCalibration();
+
     // Milestone 1 had one amp slot ("modelPath") and one cab IR ("irPath"): they become slot 1 and
     // close mic 1.
     if (state.hasProperty (legacyModelPathKey) && ! state.hasProperty (modelPathKey (0)))
@@ -340,10 +353,12 @@ void AmpSimProcessor::loadModel (int slot, const juce::File& file)
     parameters.state.setProperty (modelPathKey (slot), file.getFullPathName(), nullptr);
     setModelStatus (slot, "Loading " + file.getFileName() + "...", false);
 
+    const auto calibration = currentCalibration();
+
     ++loadsInFlight;
-    loader.addJob ([this, slot, file]
+    loader.addJob ([this, slot, file, calibration]
     {
-        const auto result = chain.amp.slot (slot).model.loadModel (file);
+        const auto result = chain.amp.slot (slot).model.loadModel (file, true, calibration);
         setModelStatus (slot, result.message, ! result.ok);
         --loadsInFlight;
     });
@@ -399,6 +414,11 @@ void AmpSimProcessor::loadCabIR (int mic, const juce::File& file)
     });
 }
 
+ampsim::NamAmp::Calibration AmpSimProcessor::currentCalibration() const
+{
+    return { calibrateInput->load() >= 0.5f, (double) interfaceInputDbu->load() };
+}
+
 AmpSimProcessor::Status AmpSimProcessor::getStatus() const
 {
     const std::scoped_lock lock (statusMutex);
@@ -448,6 +468,27 @@ void AmpSimProcessor::timerCallback()
             param->setValueNotifyingHost (param->convertTo0to1 ((float) slot));
 
     const auto now = juce::Time::getMillisecondCounterHiRes();
+
+    // The input calibration changed: once it has settled, reload every capture with it (a reload
+    // crossfades like any capture change).
+    const auto same = [] (const ampsim::NamAmp::Calibration& a, const ampsim::NamAmp::Calibration& b)
+    { return a.enabled == b.enabled && std::abs (a.interfaceInputDbu - b.interfaceInputDbu) < 1.0e-4; };
+
+    if (const auto calibration = currentCalibration(); ! same (calibration, pendingCalibration))
+    {
+        pendingCalibration = calibration;
+        pendingSinceMs = now;
+    }
+    else if (! same (pendingCalibration, appliedCalibration) && now - pendingSinceMs >= calibrationSettleMs)
+    {
+        appliedCalibration = pendingCalibration;
+        ++calibrationReloads;
+
+        for (int s = 0; s < numAmpSlots; ++s)
+            if (const auto path = parameters.state.getProperty (modelPathKey (s)).toString();
+                juce::File::isAbsolutePath (path) && juce::File (path).existsAsFile())
+                loadModel (s, juce::File (path));
+    }
 
     for (int m = 0; m < ampsim::Cab::numCloseMics; ++m)
     {

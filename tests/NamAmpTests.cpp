@@ -407,6 +407,97 @@ public:
             amp.prepare (fs, blockSize);
             expect (! amp.hasModel(), "nothing bad should have reached the audio thread");
         }
+
+        beginTest ("input calibration: a capture's recorded input level sets the gain into the model");
+        {
+            const auto calibrationDI = guitarDI ((int) (2.0 * fs));
+            const auto run = [&] (const juce::File& model, const ampsim::NamAmp::Calibration& calibration, float inputGain,
+                                  ampsim::NamAmp::LoadResult& result)
+            {
+                ampsim::NamAmp slot;
+                result = slot.loadModel (model, false, calibration);
+                slot.prepare (fs, blockSize);
+                auto scaled = calibrationDI;
+                for (auto& v : scaled)
+                    v *= inputGain;
+                return runAmp (slot, scaled);
+            };
+
+            // lstm.nam was captured with +18.3 dBu reaching 0 dBFS. An interface whose 0 dBFS is
+            // +12 dBu delivers the same guitar 6.3 dB hotter, so the model's input comes down 6.3 dB.
+            ampsim::NamAmp::LoadResult calibrated, plain;
+            const auto out = run (lstm, { true, 12.0 }, 1.0f, calibrated);
+            const auto calibrationGain = juce::Decibels::decibelsToGain ((float) calibrated.calibrationDb, -1000.0f);
+            const auto reference = run (lstm, {}, calibrationGain, plain); // uncalibrated, fed the scaled DI by hand
+            expect (calibrated.hasInputLevel);
+            expectWithinAbsoluteError (calibrated.captureInputDbu, 18.3, 1.0e-5); // NAM core keeps the level as a float
+            expectWithinAbsoluteError (calibrated.calibrationDb, -6.3, 1.0e-5);
+
+            // Identical once the model's start-up state has washed out. An LSTM keeps its hidden state
+            // through NAM core's Reset() (only the half second of silence that prewarms it follows), so
+            // the loudness render at load leaves a trace that depends on what was rendered: here the
+            // calibrated and plain slots rendered the reference DI at different levels.
+            size_t lastDifference = 0;
+            for (size_t i = 0; i < out.size(); ++i)
+                if (std::abs (out[i] - reference[i]) > 0.0f)
+                    lastDifference = i;
+            const auto startupDifference = maxAbsDifference (out, reference);
+            expectLessThan (startupDifference, 1.0e-6);
+            expectLessThan ((int) lastDifference, 500);
+
+            // A capture that says it was made at +6 dBu: the input goes up 6 dB.
+            auto json = juce::JSON::parse (exampleModel ("wavenet_a1_standard.nam"));
+            if (auto* metadata = json.getProperty ("metadata", {}).getDynamicObject())
+                metadata->setProperty ("input_level_dbu", 6.0);
+            else
+            {
+                auto* fresh = new juce::DynamicObject();
+                fresh->setProperty ("input_level_dbu", 6.0);
+                json.getDynamicObject()->setProperty ("metadata", juce::var (fresh));
+            }
+            const auto lowLevel = tempDir().getChildFile ("captured_at_6dbu.nam");
+            lowLevel.replaceWithText (juce::JSON::toString (json));
+            ampsim::NamAmp::LoadResult up, upPlain;
+            const auto upOut = run (lowLevel, { true, 12.0 }, 1.0f, up);
+            const auto upReference = run (lowLevel, {}, juce::Decibels::decibelsToGain (6.0f, -1000.0f), upPlain);
+            expectWithinAbsoluteError (up.calibrationDb, 6.0, 1.0e-9);
+            expectEquals (maxAbsDifference (upOut, upReference), 0.0);
+
+            // No recorded level, or calibration off: nothing changes.
+            ampsim::NamAmp::LoadResult noLevel, off, offPlain, noLevelPlain;
+            const auto noLevelOut = run (a1, { true, 12.0 }, 1.0f, noLevel);
+            const auto offOut = run (lstm, { false, 12.0 }, 1.0f, off);
+            expect (! noLevel.hasInputLevel && noLevel.calibrationDb == 0.0 && off.calibrationDb == 0.0);
+            expectEquals (maxAbsDifference (noLevelOut, run (a1, {}, 1.0f, noLevelPlain)), 0.0);
+            expectEquals (maxAbsDifference (offOut, run (lstm, {}, 1.0f, offPlain)), 0.0);
+
+            // Normalization measures the calibrated input, so the slot still lands at -18 LUFS.
+            const auto probe = ampsim::referenceGuitarDI ((int) (ampsim::NamAmp::loudnessProbeSeconds * fs));
+            juce::StringArray loudness, crest;
+            for (auto interfaceDbu : { 0.0, 12.0, 24.0 })
+            {
+                ampsim::NamAmp slot;
+                const auto r = slot.loadModel (lstm, true, { true, interfaceDbu });
+                slot.prepare (fs, blockSize);
+                const auto rendered = runAmp (slot, probe);
+                const auto lufs = ampsim::loudness::integratedMono (rendered.data(), (int) rendered.size(), fs);
+                expectWithinAbsoluteError (lufs, ampsim::NamAmp::targetLoudnessLufs, 0.02);
+                const auto peak = std::abs (*std::max_element (rendered.begin(), rendered.end(), [] (float a, float b) { return std::abs (a) < std::abs (b); }));
+                loudness.add ("+" + juce::String (interfaceDbu, 0) + " dBu (" + juce::String (r.calibrationDb, 1) + " dB in): "
+                              + juce::String (lufs, 2) + " LUFS");
+                crest.add (juce::String (toDb (peak / rms (rendered)), 1) + " dB");
+            }
+
+            logMessage ("  -> lstm.nam (captured at +" + juce::String (calibrated.captureInputDbu, 1) + " dBu) on a +12 dBu interface: input "
+                        + juce::String (calibrated.calibrationDb, 1) + " dB, identical to the uncalibrated model fed the DI 6.3 dB down from sample "
+                        + juce::String ((int) lastDifference + 1) + " on (before that, NAM core's LSTM start-up state differs by at most "
+                        + juce::String (toDb (startupDifference), 0) + " dBFS)");
+            logMessage ("  -> a capture made at +6 dBu: input +" + juce::String (up.calibrationDb, 1) + " dB, also identical; a capture "
+                        "without a level, or calibration off: unchanged, bit for bit");
+            logMessage ("  -> normalized on the calibrated input: " + loudness.joinIntoString ("; "));
+            logMessage ("  -> the hotter the interface's full scale, the harder the same guitar drives the capture: output crest factor "
+                        + crest.joinIntoString (", ") + " at +0, +12, +24 dBu");
+        }
     }
 };
 

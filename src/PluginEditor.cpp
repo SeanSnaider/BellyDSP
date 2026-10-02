@@ -370,6 +370,8 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p)
       ampSim (p),
       inputKnob (p.parameters, "input_gain", "Input"),
       outputKnob (p.parameters, "output_gain", "Output"),
+      calibrateAttachment (p.parameters, "input_calibrate", calibrateButton),
+      interfaceLevelAttachment (p.parameters, "input_level_dbu", interfaceLevel),
       lowCutKnob (p.parameters, "cab_lowcut_freq", "Low cut", " Hz"),
       highCutKnob (p.parameters, "cab_highcut_freq", "High cut", " Hz"),
       alignAttachment (p.parameters, "cab_align", alignButton),
@@ -426,10 +428,30 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p)
     warningLabel.setJustificationType (juce::Justification::topLeft);
     addAndMakeVisible (warningLabel);
 
+    interfaceLevel.setTextValueSuffix (" dBu");
+    interfaceLevel.setTextBoxStyle (juce::Slider::TextBoxRight, false, 80, 22);
+    interfaceLevelLabel.setText ("Interface level at 0 dBFS", juce::dontSendNotification);
+    interfaceLevelLabel.setColour (juce::Label::textColourId, dimText);
+    calibrationHint.setText ("Solo 4th Gen instrument input at minimum gain: +12 dBu. Captures without a recorded level aren't changed.",
+                             juce::dontSendNotification);
+    calibrationHint.setColour (juce::Label::textColourId, dimText);
+    calibrationHint.setFont (juce::FontOptions (12.0f));
+    for (auto* c : std::initializer_list<juce::Component*> { &calibrateButton, &interfaceLevelLabel, &interfaceLevel, &calibrationHint })
+        ampsPage.addAndMakeVisible (c);
+
     ampsPage.layout = [this] (juce::Rectangle<int> amps)
     {
-        // Three slot panels side by side.
         amps.reduce (8, 8);
+
+        // Bottom: the input calibration.
+        auto calibration = amps.removeFromBottom (52).reduced (4, 0);
+        auto row = calibration.removeFromTop (28);
+        calibrateButton.setBounds (row.removeFromLeft (250));
+        interfaceLevelLabel.setBounds (row.removeFromLeft (170));
+        interfaceLevel.setBounds (row.removeFromLeft (300));
+        calibrationHint.setBounds (calibration);
+
+        // Three slot panels side by side.
         const auto panelWidth = amps.getWidth() / AmpSimProcessor::numAmpSlots;
         for (auto* slotPanel : slotPanels)
             slotPanel->setBounds (amps.removeFromLeft (panelWidth).reduced (4));

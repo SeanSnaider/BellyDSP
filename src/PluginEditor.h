@@ -128,6 +128,13 @@ private:
 
     PageComponent ampsPage, cabPage;
     juce::OwnedArray<SlotPanel> slotPanels;
+
+    // Amps page, input calibration row.
+    juce::ToggleButton calibrateButton { "Calibrate input to each capture" };
+    juce::Label interfaceLevelLabel, calibrationHint;
+    juce::Slider interfaceLevel { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
+    juce::AudioProcessorValueTreeState::ButtonAttachment calibrateAttachment;
+    juce::AudioProcessorValueTreeState::SliderAttachment interfaceLevelAttachment;
     juce::OwnedArray<MicPanel> micPanels;
     juce::TabbedComponent tabs { juce::TabbedButtonBar::TabsAtTop };
 
