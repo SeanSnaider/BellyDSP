@@ -65,6 +65,7 @@ set(AMPSIM_DSP_SOURCES
     src/dsp/Compressor.cpp
     src/dsp/ModulatedDelay.cpp
     src/dsp/Chorus.cpp
+    src/dsp/Gate.cpp
     src/dsp/Tempo.cpp
     src/dsp/Delay.cpp
     src/dsp/Reverb.cpp)
@@ -161,6 +162,7 @@ target_sources(ampsim_tests PRIVATE
     tests/DelayTests.cpp
     tests/ChorusTests.cpp
     tests/ReverbTests.cpp
+    tests/GateTests.cpp
     tests/Plot.cpp
     tests/NamAmpTests.cpp
     tests/ChainTests.cpp
