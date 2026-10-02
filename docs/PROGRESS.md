@@ -17,6 +17,10 @@ Status key: Not started, In progress, Done. See `BUILD_PLAN.md` for what each ph
 | 10 | Harmonizer | Not started | Depends on 7 and 9 |
 | 11 | Full preset system, scenes, undo/A-B, real GUI | Not started | UI_DESIGN.md written first |
 
+## Workflow
+
+Each phase is built at full fidelity on its own branch (`phase-3`, `phase-4`, ...), with the BUILD_PLAN tests and proof, and merges into `main` after Sean has played it. Tag `milestone-1` is the state before Phase 3 continued.
+
 ## Next tasks
 
 | # | Task | Done when |
