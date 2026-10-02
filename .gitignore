@@ -1,0 +1,13 @@
+# CMake build output
+/build
+
+# User-supplied captures and IRs (never committed; see README)
+/models
+/irs
+
+# Audio files, except committed test fixtures
+*.wav
+!tests/fixtures/**/*.wav
+
+__pycache__/
+.DS_Store
