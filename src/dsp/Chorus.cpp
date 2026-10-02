@@ -60,9 +60,16 @@ double Chorus::highPassQ (int section)
 
 Chorus::MixGains Chorus::mixGains (double mix) noexcept
 {
-    // Linear: the dry falls as the wet rises. (Equal power, cos and sin of pi/2 mix, would hold the level
-    // of the chorused band, where dry and wet are uncorrelated; linear dips it 3 dB at 50%.)
-    return { 1.0 - mix, mix };
+    // Equal power: above the protected lows the wet is uncorrelated with the dry (a delay of 7 ms or
+    // more), so cos and sin of pi/2 mix hold the chorused band's level at every mix, while the lows,
+    // carried at 1 - dry, stay at exactly unity. (Linear dipped the chorused band 3 dB at 50% against
+    // the lows, a tilt toward the bass.) cos(0) is exactly 1, so mix 0 is still bit-exact.
+    if (mix <= 0.0)
+        return { 1.0, 0.0 };
+    if (mix >= 1.0)
+        return { 0.0, 1.0 }; // exactly no dry (cos(pi/2) in floating point is 6e-17)
+    const auto angle = mix * juce::MathConstants<double>::halfPi;
+    return { std::cos (angle), std::sin (angle) };
 }
 
 // ---- Settings (audio thread) ------------------------------------------------------------------

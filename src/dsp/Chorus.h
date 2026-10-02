@@ -54,8 +54,10 @@ namespace ampsim
 ///      oversampled: the tanh is light and the wet is post-cab, so its harmonics fold back far below the
 ///      signal, and the 7 kHz low-pass follows it.
 ///   3. Width: mid/side on the wet, the side scaled by width (0 to 1). The mono sum doesn't depend on it.
-///   4. Mix, linear: out = (1 - mix) x + mix (low + wet). Mix 0 is x exactly; mix 1 is the wet plus the
-///      protected lows (pure vibrato in Classic with the high-pass off).
+///   4. Mix, equal power: out = cos(mix pi/2) x + (1 - cos(mix pi/2)) low + sin(mix pi/2) wet. The chorused
+///      band is uncorrelated with the dry, so its level holds at every mix, and the lows stay at unity.
+///      Mix 0 is x exactly; mix 1 is the wet plus the protected lows (pure vibrato in Classic with the
+///      high-pass off).
 ///
 /// Why those two filters: above the low end the wet is uncorrelated with the dry, so it's power that adds
 /// there, and |LP2|^2 + |HP4|^2 stays within 0.7 dB of 1 at every frequency (1/(1 + W^4) + W^8/(1 + W^8),
@@ -134,7 +136,8 @@ public:
     /// CutFilter: 1.307 and 0.541.
     static double highPassQ (int section);
 
-    /// The mix law: out = dry x + (1 - dry) low + wet * (the chorused signal).
+    /// The mix law (equal power): out = dry x + (1 - dry) low + wet * (the chorused signal), with
+    /// dry = cos(mix pi/2) and wet = sin(mix pi/2).
     struct MixGains
     {
         double dry, wet;

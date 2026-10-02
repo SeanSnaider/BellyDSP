@@ -700,14 +700,19 @@ private:
             const char* name;
             std::function<void (Chorus::Settings&, double)> apply; // 0 = start, 1 = end
             bool jump;
+            double levelAllowance = 1.0;
         };
+        // The mix is equal power (cos and sin of pi/2 mix), which holds the level of uncorrelated signals.
+        // A steady tone's dry and wet are correlated, so halfway through a mix ramp they can add up to
+        // sqrt(2) louder: a level swell, not a zipper step. Mix ramps are held to 1.05 x that bound.
+        const auto equalPowerSwell = std::sqrt (2.0);
         const std::vector<Move> moves {
             { "rate 0.2 -> 6 Hz", [] (Chorus::Settings& s, double t) { s.rateHz = (float) (0.2 * std::pow (30.0, t)); }, false },
             { "depth 10 -> 100%", [] (Chorus::Settings& s, double t) { s.depth = (float) (0.1 + 0.9 * t); }, false },
-            { "mix 0 -> 100%", [] (Chorus::Settings& s, double t) { s.mix = (float) t; }, false },
+            { "mix 0 -> 100%", [] (Chorus::Settings& s, double t) { s.mix = (float) t; }, false, equalPowerSwell },
             { "width 0 -> 100%", [] (Chorus::Settings& s, double t) { s.width = (float) t; }, false },
             { "depth 0 -> 100% at once", [] (Chorus::Settings& s, double t) { s.depth = (float) (t > 0.0 ? 1.0 : 0.0); }, true },
-            { "mix 0 -> 100% at once", [] (Chorus::Settings& s, double t) { s.mix = (float) (t > 0.0 ? 1.0 : 0.0); }, true },
+            { "mix 0 -> 100% at once", [] (Chorus::Settings& s, double t) { s.mix = (float) (t > 0.0 ? 1.0 : 0.0); }, true, equalPowerSwell },
             { "rate 0.2 -> 6 Hz at once", [] (Chorus::Settings& s, double t) { s.rateHz = t > 0.0 ? 6.0f : 0.2f; }, true },
         };
 
@@ -736,12 +741,13 @@ private:
             const auto during = maxStep (out, moveStart, moveEnd);
             const auto after = maxStep (out, moveEnd + (size_t) (0.2 * fs), out.size());
             const auto ratio = during / std::max (before, after);
-            worstRatio = std::max (worstRatio, ratio);
+            worstRatio = std::max (worstRatio, ratio / move.levelAllowance);
             results.add (juce::String (move.name) + ": " + juce::String (during, 4) + " during vs " + juce::String (before, 4) + " before, " + juce::String (after, 4)
                          + " after (x" + juce::String (ratio, 3) + ")");
         }
         expectLessThan (worstRatio, 1.05);
-        logMessage ("  -> largest sample step of a 0.5 x 440 Hz tone (limit: 1.05 x the larger steady state): " + results.joinIntoString ("; "));
+        logMessage ("  -> largest sample step of a 0.5 x 440 Hz tone (limit: 1.05 x the larger steady state, x sqrt(2) for the equal-power mix ramps): "
+                    + results.joinIntoString ("; "));
     }
 
     void dryPath()
@@ -767,8 +773,8 @@ private:
         }
         expectEquals (worstPassthrough, 0.0);
 
-        // An impulse at mix 50% (analog and high-pass off): half of it comes out at once, the rest only after
-        // the shortest delay the sweep reaches.
+        // An impulse at mix 50% (analog and high-pass off): cos(pi/4) of it comes out at once (the equal-power
+        // dry gain), the rest only after the shortest delay the sweep reaches.
         std::vector<float> impulse ((size_t) fs, 0.0f);
         impulse[0] = 1.0f;
         auto half = vibrato (Lfo::Shape::triangle, 0.8f, 0.5f);
@@ -781,7 +787,7 @@ private:
         double before = 0.0;
         for (size_t n = 1; n + 2 < (size_t) shortest; ++n)
             before = std::max (before, (double) std::abs (out[n]));
-        expectEquals (out[0], 0.5f);
+        expectWithinAbsoluteError (out[0], (float) std::cos (juce::MathConstants<double>::pi / 4.0), 1.0e-7f);
         expectEquals (before, 0.0);
 
         // 100% wet: no dry at all, the same delay, and unity level for a sine.

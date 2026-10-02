@@ -28,7 +28,9 @@ Two jobs:
                    difference (A - B)/sqrt(2), opposite on the right; Tri three voices 120 degrees apart
                    panned left, centre, right. Then the 7 kHz low-pass when analog is on
        mid, side = (wetL + wetR) / 2, (wetL - wetR) / 2 * width
-       out       = (1 - mix) x + mix low + mix (mid +- side)
+       out       = cos(mix pi/2) x + (1 - cos(mix pi/2)) low + sin(mix pi/2) (mid +- side)
+                   (equal power: the chorused band is uncorrelated with the dry, so its level holds at
+                   every mix, while the protected lows stay at exactly unity)
 
 2. The design study behind the choices in Chorus.h (vectorized, with scipy's Butterworth filters standing
    in for the SVFs): how the lows are split off, how Tri and Dimension lay their voices out in stereo, the
@@ -206,6 +208,15 @@ def voice_settings(mode, shape, channel, rate, depth):
     return voices
 
 
+def mix_gains(mix):
+    """Equal power, with exact endpoints (the C++ Chorus::mixGains)."""
+    if mix <= 0.0:
+        return 1.0, 0.0
+    if mix >= 1.0:
+        return 0.0, 1.0
+    return math.cos(mix * math.pi / 2), math.sin(mix * math.pi / 2)
+
+
 def chorus(x, s):
     """x: (2, samples) float64 holding float32 values. s: settings with the C++ field names."""
     # The C++ settings are floats.
@@ -219,7 +230,7 @@ def chorus(x, s):
     high_pass = [[Svf("highpass", hz, high_pass_q(0)), Svf("highpass", hz, high_pass_q(1))] for _ in (0, 1)]
     low_band = [Svf("lowpass", hz) for _ in (0, 1)]
     low_pass = [Svf("lowpass", ANALOG_LOW_PASS_HZ) for _ in (0, 1)]
-    dry = 1.0 - mix
+    dry_gain, wet_gain = mix_gains(mix)
     y = np.zeros_like(x)
 
     for n in range(x.shape[1]):
@@ -248,8 +259,8 @@ def chorus(x, s):
 
         mid = 0.5 * (wet[0] + wet[1])
         side = 0.5 * (wet[0] - wet[1]) * width
-        y[0, n] = f32(dry * xs[0] + (1.0 - dry) * low[0] + mix * (mid + side))
-        y[1, n] = f32(dry * xs[1] + (1.0 - dry) * low[1] + mix * (mid - side))
+        y[0, n] = f32(dry_gain * xs[0] + (1.0 - dry_gain) * low[0] + wet_gain * (mid + side))
+        y[1, n] = f32(dry_gain * xs[1] + (1.0 - dry_gain) * low[1] + wet_gain * (mid - side))
     return y
 
 
@@ -378,7 +389,8 @@ def _layout(x, mode, mix=0.5, depth=0.5, split="final", layout="final", shape="t
     else:  # Dimension final: the pure difference
         a, b = voice(0.0, False), voice(0.0, True)
         wets = [DIMENSION_GAIN * (a - b), DIMENSION_GAIN * (b - a)]
-    return [(1 - mix) * x + mix * (low + w) for w in wets]
+    dry_gain, wet_gain = mix_gains(mix)
+    return [dry_gain * x + (1 - dry_gain) * low + wet_gain * w for w in wets]
 
 
 def _ratio_db(y, x):
