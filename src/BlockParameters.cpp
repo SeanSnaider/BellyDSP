@@ -181,7 +181,7 @@ void DelayParameters::addTo (Layout& layout)
     layout.add (std::make_unique<Choice> (juce::ParameterID { "delay_stereo", 1 }, "Delay Stereo", juce::StringArray { "Stereo", "Ping-pong", "Dual" }, 0));
     layout.add (std::make_unique<Bool> (juce::ParameterID { "delay_sync", 1 }, "Delay Sync", true));
     layout.add (std::make_unique<Float> (juce::ParameterID { "delay_time", 1 }, "Delay Time", skewedRange (1.0f, 4000.0f, 400.0f, 0.1f), d.timeMs, milliseconds()));
-    layout.add (std::make_unique<Choice> (juce::ParameterID { "delay_note", 1 }, "Delay Note", notes, noteIndex ("1/8 dotted")));
+    layout.add (std::make_unique<Choice> (juce::ParameterID { "delay_note", 1 }, "Delay Note", notes, noteIndex ("1/8D")));
     layout.add (std::make_unique<Float> (juce::ParameterID { "delay_time_right", 1 }, "Delay Right Time", skewedRange (1.0f, 4000.0f, 400.0f, 0.1f), d.rightTimeMs, milliseconds()));
     layout.add (std::make_unique<Choice> (juce::ParameterID { "delay_note_right", 1 }, "Delay Right Note", notes, noteIndex ("1/4")));
     layout.add (std::make_unique<Float> (juce::ParameterID { "delay_offset", 1 }, "Delay Stereo Offset", juce::NormalisableRange<float> (0.0f, 50.0f, 0.1f), d.offsetMs, milliseconds()));
@@ -235,6 +235,155 @@ ampsim::Delay::Settings DelayParameters::read (double bpm) const noexcept
     s.modRateHz = modRate.get();
     s.duckDb = duck.get();
     s.mix = mix.get() / 100.0f;
+    return s;
+}
+
+// ---- Chorus -----------------------------------------------------------------------------------
+
+namespace
+{
+juce::StringArray noteNames()
+{
+    juce::StringArray names;
+    for (const auto& n : ampsim::tempo::notes)
+        names.add (n.name);
+    return names;
+}
+
+double noteMs (const Raw& r, double bpm)
+{
+    const auto& n = ampsim::tempo::notes[(size_t) juce::jlimit (0, (int) ampsim::tempo::notes.size() - 1, r.index())];
+    return ampsim::tempo::milliseconds (n.division, n.feel, juce::jmax (1.0, bpm));
+}
+} // namespace
+
+void ChorusParameters::addTo (Layout& layout)
+{
+    const ampsim::Chorus::Settings d;
+    const auto notes = noteNames();
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "chorus_on", 1 }, "Chorus On", false));
+    layout.add (std::make_unique<Choice> (juce::ParameterID { "chorus_mode", 1 }, "Chorus Mode", juce::StringArray { "Classic", "Dimension", "Tri" }, 0));
+    layout.add (std::make_unique<Choice> (juce::ParameterID { "chorus_shape", 1 }, "Chorus LFO Shape", juce::StringArray { "Triangle", "Sine", "Random" }, 0));
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "chorus_sync", 1 }, "Chorus Sync", false));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "chorus_rate", 1 }, "Chorus Rate", skewedRange (0.05f, 10.0f, 1.0f, 0.01f), d.rateHz, hertz()));
+    layout.add (std::make_unique<Choice> (juce::ParameterID { "chorus_note", 1 }, "Chorus Note", notes, notes.indexOf ("1/1")));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "chorus_depth", 1 }, "Chorus Depth", juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f), d.depth * 100.0f, percent()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "chorus_mix", 1 }, "Chorus Mix", juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f), d.mix * 100.0f, percent()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "chorus_width", 1 }, "Chorus Width", juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f), d.width * 100.0f, percent()));
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "chorus_analog", 1 }, "Chorus Analog", d.analog));
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "chorus_noise", 1 }, "Chorus Noise", d.noise));
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "chorus_hp", 1 }, "Chorus Low-End Protection", d.wetHighPass));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "chorus_hp_freq", 1 }, "Chorus Low-End Frequency",
+                                         skewedRange ((float) ampsim::Chorus::minHighPassHz, (float) ampsim::Chorus::maxHighPassHz, 150.0f, 1.0f), d.wetHighPassHz, hertz()));
+}
+
+void ChorusParameters::bind (State& s)
+{
+    on.bind (s, "chorus_on");
+    mode.bind (s, "chorus_mode");
+    shape.bind (s, "chorus_shape");
+    sync.bind (s, "chorus_sync");
+    rate.bind (s, "chorus_rate");
+    note.bind (s, "chorus_note");
+    depth.bind (s, "chorus_depth");
+    mix.bind (s, "chorus_mix");
+    width.bind (s, "chorus_width");
+    analog.bind (s, "chorus_analog");
+    noise.bind (s, "chorus_noise");
+    highPass.bind (s, "chorus_hp");
+    highPassHz.bind (s, "chorus_hp_freq");
+}
+
+ampsim::Chorus::Settings ChorusParameters::read (double bpm) const noexcept
+{
+    static constexpr ampsim::Lfo::Shape shapes[] = { ampsim::Lfo::Shape::triangle, ampsim::Lfo::Shape::sine, ampsim::Lfo::Shape::random };
+    ampsim::Chorus::Settings s;
+    s.mode = (ampsim::Chorus::Mode) juce::jlimit (0, 2, mode.index());
+    s.shape = shapes[juce::jlimit (0, 2, shape.index())];
+    s.rateHz = sync.on() ? (float) juce::jlimit (ampsim::Chorus::minRateHz, ampsim::Chorus::maxRateHz, 1000.0 / noteMs (note, bpm)) : rate.get();
+    s.depth = depth.get() / 100.0f;
+    s.mix = mix.get() / 100.0f;
+    s.width = width.get() / 100.0f;
+    s.analog = analog.on();
+    s.noise = noise.on();
+    s.wetHighPass = highPass.on();
+    s.wetHighPassHz = highPassHz.get();
+    return s;
+}
+
+// ---- Reverb -----------------------------------------------------------------------------------
+
+void ReverbParameters::addTo (Layout& layout)
+{
+    const ampsim::Reverb::Settings d;
+    const auto notes = noteNames();
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "reverb_on", 1 }, "Reverb On", false));
+    layout.add (std::make_unique<Choice> (juce::ParameterID { "reverb_engine", 1 }, "Reverb Type", juce::StringArray { "Room", "Hall", "Plate" }, (int) d.engine));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "reverb_mix", 1 }, "Reverb Mix", juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f), d.mix * 100.0f, percent()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "reverb_predelay", 1 }, "Reverb Pre-delay",
+                                         skewedRange (0.0f, (float) ampsim::Reverb::maxPreDelayMs, 40.0f, 0.1f), d.preDelayMs, milliseconds()));
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "reverb_predelay_sync", 1 }, "Reverb Pre-delay Sync", false));
+    layout.add (std::make_unique<Choice> (juce::ParameterID { "reverb_predelay_note", 1 }, "Reverb Pre-delay Note", notes, notes.indexOf ("1/16")));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "reverb_size", 1 }, "Reverb Size", juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f), d.size * 100.0f, percent()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "reverb_decay", 1 }, "Reverb Decay", skewedRange (0.1f, 30.0f, 2.5f, 0.01f), d.decaySeconds,
+                                         juce::AudioParameterFloatAttributes().withLabel ("s")));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "reverb_low_decay", 1 }, "Reverb Low Decay", skewedRange (0.25f, 4.0f, 1.0f, 0.01f), d.lowDecayMultiplier,
+                                         juce::AudioParameterFloatAttributes().withLabel ("x")));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "reverb_high_decay", 1 }, "Reverb High Decay", skewedRange (0.1f, 2.0f, 0.5f, 0.01f), d.highDecayMultiplier,
+                                         juce::AudioParameterFloatAttributes().withLabel ("x")));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "reverb_diffusion", 1 }, "Reverb Diffusion", juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f), d.diffusion * 100.0f, percent()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "reverb_mod_depth", 1 }, "Reverb Modulation Depth", juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f), d.modDepth * 100.0f, percent()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "reverb_mod_rate", 1 }, "Reverb Modulation Rate", skewedRange (0.05f, 5.0f, 0.5f, 0.01f), d.modRateHz, hertz()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "reverb_width", 1 }, "Reverb Width", juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f), d.width * 100.0f, percent()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "reverb_early_late", 1 }, "Reverb Early/Late", juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f), d.earlyLate * 100.0f, percent()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "reverb_lowcut", 1 }, "Reverb Low Cut", skewedRange (20.0f, 1000.0f, 150.0f, 1.0f), d.lowCutHz, hertz()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "reverb_highcut", 1 }, "Reverb High Cut", skewedRange (1000.0f, 20000.0f, 6000.0f, 1.0f), d.highCutHz, hertz()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "reverb_ducking", 1 }, "Reverb Ducking", juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f), d.ducking * 100.0f, percent()));
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "reverb_freeze", 1 }, "Reverb Freeze", false));
+}
+
+void ReverbParameters::bind (State& s)
+{
+    on.bind (s, "reverb_on");
+    engine.bind (s, "reverb_engine");
+    mix.bind (s, "reverb_mix");
+    preDelay.bind (s, "reverb_predelay");
+    preDelaySync.bind (s, "reverb_predelay_sync");
+    preDelayNote.bind (s, "reverb_predelay_note");
+    size.bind (s, "reverb_size");
+    decay.bind (s, "reverb_decay");
+    lowDecay.bind (s, "reverb_low_decay");
+    highDecay.bind (s, "reverb_high_decay");
+    diffusion.bind (s, "reverb_diffusion");
+    modDepth.bind (s, "reverb_mod_depth");
+    modRate.bind (s, "reverb_mod_rate");
+    width.bind (s, "reverb_width");
+    earlyLate.bind (s, "reverb_early_late");
+    lowCut.bind (s, "reverb_lowcut");
+    highCut.bind (s, "reverb_highcut");
+    ducking.bind (s, "reverb_ducking");
+    freeze.bind (s, "reverb_freeze");
+}
+
+ampsim::Reverb::Settings ReverbParameters::read (double bpm, int freezeOverride) const noexcept
+{
+    ampsim::Reverb::Settings s;
+    s.engine = (ampsim::Reverb::Engine) juce::jlimit (0, 2, engine.index());
+    s.mix = mix.get() / 100.0f;
+    s.preDelayMs = preDelaySync.on() ? (float) juce::jmin (ampsim::Reverb::maxPreDelayMs, noteMs (preDelayNote, bpm)) : preDelay.get();
+    s.size = size.get() / 100.0f;
+    s.decaySeconds = decay.get();
+    s.lowDecayMultiplier = lowDecay.get();
+    s.highDecayMultiplier = highDecay.get();
+    s.diffusion = diffusion.get() / 100.0f;
+    s.modDepth = modDepth.get() / 100.0f;
+    s.modRateHz = modRate.get();
+    s.width = width.get() / 100.0f;
+    s.earlyLate = earlyLate.get() / 100.0f;
+    s.lowCutHz = lowCut.get();
+    s.highCutHz = highCut.get();
+    s.ducking = ducking.get() / 100.0f;
+    s.freeze = freezeOverride >= 0 ? freezeOverride == 1 : freeze.on();
     return s;
 }
 

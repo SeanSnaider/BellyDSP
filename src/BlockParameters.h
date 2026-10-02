@@ -1,8 +1,10 @@
 #pragma once
 
+#include "dsp/Chorus.h"
 #include "dsp/Compressor.h"
 #include "dsp/Delay.h"
 #include "dsp/Equalizer.h"
+#include "dsp/Reverb.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
@@ -76,6 +78,33 @@ struct DelayParameters
     ampsim::Delay::Settings read (double bpm) const noexcept;
 
     Raw on, mode, stereoMode, sync, time, note, rightTime, rightNote, offset, feedback, lowCut, highCut, modDepth, modRate, duck, mix;
+};
+
+struct ChorusParameters
+{
+    static void addTo (Layout& layout);
+    void bind (State& state);
+    bool isOn() const noexcept { return on.on(); }
+
+    /// The settings at this tempo (a synced rate is one LFO cycle per note length at `bpm`).
+    ampsim::Chorus::Settings read (double bpm) const noexcept;
+
+    Raw on, mode, shape, sync, rate, note, depth, mix, width, analog, noise, highPass, highPassHz;
+};
+
+struct ReverbParameters
+{
+    static void addTo (Layout& layout);
+    void bind (State& state);
+    bool isOn() const noexcept { return on.on(); }
+    bool isFrozen() const noexcept { return freeze.on(); }
+
+    /// The settings at this tempo (a synced pre-delay is a note length at `bpm`). `freezeOverride` (0 or 1)
+    /// replaces the freeze switch when a footswitch has just toggled it; -1 means use the switch.
+    ampsim::Reverb::Settings read (double bpm, int freezeOverride = -1) const noexcept;
+
+    Raw on, engine, mix, preDelay, preDelaySync, preDelayNote, size, decay, lowDecay, highDecay, diffusion, modDepth, modRate,
+        width, earlyLate, lowCut, highCut, ducking, freeze;
 };
 
 /// Shared helpers for declaring parameters.

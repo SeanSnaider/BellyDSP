@@ -3,8 +3,10 @@
 #include "AmpSection.h"
 #include "Block.h"
 #include "Cab.h"
+#include "Chorus.h"
 #include "Compressor.h"
 #include "Delay.h"
+#include "Reverb.h"
 #include "Equalizer.h"
 #include "Gain.h"
 
@@ -38,7 +40,9 @@ public:
     Cab cab;
     Equalizer postEq { true };
     Compressor postCompressor { true };
+    Chorus chorus;
     Delay delay;
+    Reverb reverb;
     Gain outputGain { true };
 
     enum class Slot : size_t
@@ -50,7 +54,9 @@ public:
         cab,
         postEq,
         postCompressor,
+        chorus,
         delay,
+        reverb,
         outputGain,
         count
     };

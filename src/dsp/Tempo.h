@@ -37,7 +37,7 @@ struct Note
 {
     Division division;
     Feel feel;
-    const char* name;
+    const char* name; // "1/8", "1/8D" (dotted), "1/8T" (triplet)
 };
 extern const std::array<Note, 15> notes;
 } // namespace tempo

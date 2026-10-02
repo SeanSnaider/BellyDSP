@@ -214,6 +214,15 @@ private:
     params::CompressorParameters preCompParams, postCompParams;
     params::EqualizerParameters preEqParams, postEqParams;
     params::DelayParameters delayParams;
+    params::ChorusParameters chorusParams;
+    params::ReverbParameters reverbParams;
+
+    // Reverb freeze from the footswitch (the CC set by midi_freeze_cc): toggled on the audio thread at
+    // once (freezeOverride, -1 when the switch itself is in charge), and written into reverb_freeze by
+    // the timer (freezeRequest).
+    std::atomic<float>* freezeCc = nullptr;
+    int freezeOverride = -1;
+    std::atomic<int> freezeRequest { -1 };
 
     // Tempo and tap tempo. The TapTempo and the sample clock belong to the audio thread.
     void registerTap (double timeSeconds);

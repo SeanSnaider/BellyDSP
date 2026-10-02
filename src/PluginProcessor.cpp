@@ -51,8 +51,11 @@ AmpSimProcessor::AmpSimProcessor()
     preEqParams.bind (parameters, "eq_pre");
     postEqParams.bind (parameters, "eq_post");
     delayParams.bind (parameters);
+    chorusParams.bind (parameters);
+    reverbParams.bind (parameters);
     tempoBpm = raw ("tempo_bpm");
     tapCc = raw ("midi_tap_cc");
+    freezeCc = raw ("midi_freeze_cc");
     calibrateInput = raw ("input_calibrate");
     interfaceInputDbu = raw ("input_level_dbu");
     appliedCalibration = pendingCalibration = currentCalibration();
@@ -173,12 +176,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout AmpSimProcessor::createParam
     params::EqualizerParameters::addTo (layout, "eq_pre", "Pre EQ", true);
     params::EqualizerParameters::addTo (layout, "eq_post", "Post EQ", true);
     params::CompressorParameters::addTo (layout, "comp_post", "Post Comp", false);
+    params::ChorusParameters::addTo (layout);
     params::DelayParameters::addTo (layout);
+    params::ReverbParameters::addTo (layout);
 
     // Tempo (saved with presets) and the footswitch CC that taps it.
     layout.add (std::make_unique<Float> (juce::ParameterID { "tempo_bpm", 1 }, "Tempo", juce::NormalisableRange<float> (30.0f, 300.0f, 0.1f), 120.0f,
                                          juce::AudioParameterFloatAttributes().withLabel ("BPM")));
     layout.add (std::make_unique<Int> (juce::ParameterID { "midi_tap_cc", 1 }, "Tap Tempo CC", 0, 127, 80));
+    layout.add (std::make_unique<Int> (juce::ParameterID { "midi_freeze_cc", 1 }, "Reverb Freeze CC", 0, 127, 81));
     return layout;
 }
 
@@ -217,6 +223,7 @@ void AmpSimProcessor::handleMidi (const juce::MidiBuffer& midi)
     // Read the raw bytes rather than building MidiMessage objects, which keeps this path trivially
     // allocation-free.
     const auto tapController = juce::roundToInt (tapCc->load (std::memory_order_relaxed));
+    const auto freezeController = juce::roundToInt (freezeCc->load (std::memory_order_relaxed));
 
     for (const auto metadata : midi)
     {
@@ -231,6 +238,14 @@ void AmpSimProcessor::handleMidi (const juce::MidiBuffer& midi)
         // Tap tempo from the footswitch: the tap CC pressed (value 64 or more), timed to the sample.
         if (metadata.numBytes >= 3 && (data[0] & 0xf0) == 0xb0 && data[1] == tapController && data[2] >= 64)
             registerTap ((double) (samplesProcessed + metadata.samplePosition) / ampsim::NamAmp::requiredSampleRate);
+
+        // Reverb freeze from the footswitch: each press toggles it, right away.
+        if (metadata.numBytes >= 3 && (data[0] & 0xf0) == 0xb0 && data[1] == freezeController && data[2] >= 64)
+        {
+            const auto frozen = freezeOverride >= 0 ? freezeOverride == 1 : reverbParams.isFrozen();
+            freezeOverride = frozen ? 0 : 1;
+            freezeRequest.store (freezeOverride, std::memory_order_relaxed);
+        }
     }
 
     // Taps from the GUI's button, timed to this buffer.
@@ -283,8 +298,16 @@ void AmpSimProcessor::applyEffectParameters()
     chain.postEq.setSettings (postEqParams.read());
     chain.setBypassed (Slot::postCompressor, ! postCompParams.isOn());
     chain.postCompressor.setSettings (postCompParams.read());
-    chain.setBypassed (Slot::delay, ! delayParams.isOn()); // the delay takes this as spillover
+    chain.setBypassed (Slot::chorus, ! chorusParams.isOn());
+    chain.chorus.setSettings (chorusParams.read (getTempo()));
+    chain.setBypassed (Slot::delay, ! delayParams.isOn()); // the delay and reverb take this as spillover
     chain.delay.setSettings (delayParams.read (getTempo()));
+
+    // Once the timer has written a footswitch's freeze into the switch, the switch is in charge again.
+    if (freezeOverride >= 0 && freezeRequest.load (std::memory_order_relaxed) < 0 && (reverbParams.isFrozen() ? 1 : 0) == freezeOverride)
+        freezeOverride = -1;
+    chain.setBypassed (Slot::reverb, ! reverbParams.isOn());
+    chain.reverb.setSettings (reverbParams.read (getTempo(), freezeOverride));
 }
 
 void AmpSimProcessor::registerTap (double timeSeconds)
@@ -303,8 +326,12 @@ juce::String AmpSimProcessor::blockName (ampsim::Chain::Slot slot)
         return "comp";
     if (slot == Slot::preEq || slot == Slot::postEq)
         return "eq";
+    if (slot == Slot::chorus)
+        return "chorus";
     if (slot == Slot::delay)
         return "delay";
+    if (slot == Slot::reverb)
+        return "reverb";
     return {}; // fixed blocks have no section name
 }
 
@@ -633,6 +660,14 @@ void AmpSimProcessor::timerCallback()
         chain.amp.slot (s).model.collectGarbage();
 
     chain.cab.collectGarbage();
+
+    // A footswitch toggled the reverb's freeze: write it into the switch (the audio thread already has).
+    if (auto freeze = freezeRequest.load(); freeze >= 0)
+    {
+        if (auto* param = parameters.getParameter ("reverb_freeze"))
+            param->setValueNotifyingHost ((float) freeze);
+        freezeRequest.compare_exchange_strong (freeze, -1); // a newer press keeps its request for the next tick
+    }
 
     // A tapped tempo: write it into the tempo knob (the audio thread already uses it).
     if (tapPending.load())

@@ -145,6 +145,18 @@ public:
                     case 2300: setParam (p, "delay_time", 650.0f); break;
                     case 2400: setParam (p, "delay_on", 0.0f); break;           // spillover: the repeats ring on
                     case 2600: setParam (p, "delay_mode", 2.0f); setParam (p, "delay_on", 1.0f); break;
+                    // Chorus and reverb: on, re-moded, synced, frozen from the footswitch, bypassed into spillover.
+                    case 2650: setParam (p, "chorus_on", 1.0f); break;
+                    case 2700: setParam (p, "chorus_mode", 2.0f); break;                    // Tri
+                    case 2720: setParam (p, "chorus_shape", 2.0f); break;                   // random
+                    case 2740: setParam (p, "chorus_sync", 1.0f); break;
+                    case 2760: setParam (p, "reverb_on", 1.0f); break;
+                    case 2800: setParam (p, "reverb_engine", 2.0f); break;                  // plate
+                    case 2850: midi.addEvent (juce::MidiMessage::controllerEvent (1, 81, 127), 33); break; // freeze
+                    case 2950: midi.addEvent (juce::MidiMessage::controllerEvent (1, 81, 127), 7); break;  // thaw
+                    case 3000: setParam (p, "reverb_predelay_sync", 1.0f); setParam (p, "reverb_size", 80.0f); break;
+                    case 3100: setParam (p, "reverb_on", 0.0f); setParam (p, "chorus_on", 0.0f); break;   // reverb spills over
+                    case 3300: setParam (p, "reverb_on", 1.0f); setParam (p, "reverb_engine", 0.0f); break;
                     case 1500: setParam (p, "input_gain", 6.0f); break;
                     case 1600: setParam (p, "output_gain", -6.0f); break;
                     case 2000: p.loadModel (0, a1); break;                                  // switch the capture back
@@ -216,7 +228,9 @@ public:
                         "an interface-level change that recalibrated and reloaded every capture, "
                         "both compressors switched on (one to pedal mode, one to RMS), EQ sliders and bands moved, graphic -> parametric, "
                         "a band type change, a cut slope change, and both FX sections reordered, "
-                        "the delay switched on, retimed by three footswitch taps, re-moded and re-laid-out with 105% feedback, then bypassed into spillover and back");
+                        "the delay switched on, retimed by three footswitch taps, re-moded and re-laid-out with 105% feedback, then bypassed into spillover and back, "
+                        "the chorus on with mode, shape, and sync changes, and the reverb on, re-engined twice, frozen and thawed from the footswitch, resized, "
+                        "and bypassed into spillover");
             logMessage ("  -> audio thread: " + describe (total));
         }
     }

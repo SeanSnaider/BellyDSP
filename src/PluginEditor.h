@@ -200,6 +200,61 @@ private:
     bool parametricShown = false;
 };
 
+/// A small helper for the effect panels: knobs in a grid, toggles, and combo boxes bound to parameters.
+class EffectPanel : public juce::Component
+{
+public:
+    EffectPanel (AmpSimProcessor& processor, const juce::String& title, const juce::String& onParameterId);
+    void paint (juce::Graphics&) override;
+
+protected:
+    Knob& addKnob (const juce::String& id, const juce::String& caption, const juce::String& suffix = " dB");
+    juce::ToggleButton& addToggle (const juce::String& id, const juce::String& text);
+    juce::ComboBox& addCombo (const juce::String& id, const juce::StringArray& items);
+    /// Lays out the title row and returns the area below it.
+    juce::Rectangle<int> layoutTitle();
+
+    AmpSimProcessor& ampSim;
+    juce::Label titleLabel;
+    juce::ToggleButton onButton { "On" };
+    juce::OwnedArray<Knob> knobs;
+    juce::OwnedArray<juce::ToggleButton> toggles;
+    juce::OwnedArray<juce::ComboBox> combos;
+    juce::OwnedArray<juce::AudioProcessorValueTreeState::ButtonAttachment> buttonAttachments;
+    juce::OwnedArray<juce::AudioProcessorValueTreeState::ComboBoxAttachment> comboAttachments;
+};
+
+/// The chorus's controls.
+class ChorusPanel final : public EffectPanel
+{
+public:
+    explicit ChorusPanel (AmpSimProcessor& processor);
+    void refresh(); // rate knob or note, depending on sync
+    void resized() override;
+
+private:
+    juce::ComboBox *mode = nullptr, *shape = nullptr, *note = nullptr;
+    juce::ToggleButton *sync = nullptr, *analog = nullptr, *noise = nullptr, *highPass = nullptr;
+    Knob *rate = nullptr, *depth = nullptr, *mix = nullptr, *width = nullptr, *highPassHz = nullptr;
+    int shownSync = -1;
+};
+
+/// The reverb's controls, with freeze.
+class ReverbPanel final : public EffectPanel
+{
+public:
+    explicit ReverbPanel (AmpSimProcessor& processor);
+    void refresh(); // pre-delay knob or note, depending on sync
+    void resized() override;
+
+private:
+    juce::ComboBox *engine = nullptr, *preDelayNote = nullptr;
+    juce::ToggleButton *freeze = nullptr, *preDelaySync = nullptr;
+    std::vector<Knob*> grid;
+    Knob* preDelay = nullptr;
+    int shownSync = -1;
+};
+
 /// The delay's controls, plus the tempo and its tap button.
 class DelayPanel final : public juce::Component
 {
@@ -258,6 +313,8 @@ private:
 
     PageComponent ampsPage, cabPage, preFxPage, postFxPage, timeFxPage;
     std::unique_ptr<DelayPanel> delayPanel;
+    std::unique_ptr<ChorusPanel> chorusPanel;
+    std::unique_ptr<ReverbPanel> reverbPanel;
     juce::OwnedArray<SlotPanel> slotPanels;
     std::unique_ptr<OrderStrip> preOrder, postOrder;
     std::unique_ptr<CompressorPanel> preComp, postComp;

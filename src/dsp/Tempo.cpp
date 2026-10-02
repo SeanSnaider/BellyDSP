@@ -20,11 +20,11 @@ double milliseconds (Division division, Feel feel, double bpm) noexcept
 }
 
 const std::array<Note, 15> notes { {
-    { Division::whole, Feel::straight, "1/1" },     { Division::whole, Feel::dotted, "1/1 dotted" },     { Division::whole, Feel::triplet, "1/1 triplet" },
-    { Division::half, Feel::straight, "1/2" },      { Division::half, Feel::dotted, "1/2 dotted" },      { Division::half, Feel::triplet, "1/2 triplet" },
-    { Division::quarter, Feel::straight, "1/4" },   { Division::quarter, Feel::dotted, "1/4 dotted" },   { Division::quarter, Feel::triplet, "1/4 triplet" },
-    { Division::eighth, Feel::straight, "1/8" },    { Division::eighth, Feel::dotted, "1/8 dotted" },    { Division::eighth, Feel::triplet, "1/8 triplet" },
-    { Division::sixteenth, Feel::straight, "1/16" }, { Division::sixteenth, Feel::dotted, "1/16 dotted" }, { Division::sixteenth, Feel::triplet, "1/16 triplet" },
+    { Division::whole, Feel::straight, "1/1" },     { Division::whole, Feel::dotted, "1/1D" },     { Division::whole, Feel::triplet, "1/1T" },
+    { Division::half, Feel::straight, "1/2" },      { Division::half, Feel::dotted, "1/2D" },      { Division::half, Feel::triplet, "1/2T" },
+    { Division::quarter, Feel::straight, "1/4" },   { Division::quarter, Feel::dotted, "1/4D" },   { Division::quarter, Feel::triplet, "1/4T" },
+    { Division::eighth, Feel::straight, "1/8" },    { Division::eighth, Feel::dotted, "1/8D" },    { Division::eighth, Feel::triplet, "1/8T" },
+    { Division::sixteenth, Feel::straight, "1/16" }, { Division::sixteenth, Feel::dotted, "1/16D" }, { Division::sixteenth, Feel::triplet, "1/16T" },
 } };
 } // namespace tempo
 

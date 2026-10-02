@@ -482,6 +482,8 @@ All modes have an optional modulation LFO on the repeats.
 
 **Mix and bypass.** Dry/wet mix. Spillover on bypass per the foundation rules.
 
+**Built (Phase 5).** As specified. Mix is equal power (the repeats are decorrelated from the dry). Digital time changes crossfade two read heads over 50 ms; analog and tape glide with a 150 ms one-pole limited to 0.25 samples per sample (about 5 semitones at most). The loop has a soft limiter (digital, linear below 0.7) or tanh saturation (analog drive 1.5 with a 3.5 kHz low-pass, tape 1.2 with 5 kHz, wow 0.5 Hz +-1 ms, flutter 6 Hz +-0.08 ms). Ducking reaches its full depth once the input's envelope is at -20 dBFS (5 ms attack, 100 ms release). Bypassed, feedback is capped at 99% so the spillover always dies away. Tempo is a global `tempo_bpm` (saved in presets); tap tempo comes from the GUI or a footswitch CC (`midi_tap_cc`, default 80). Parameter IDs: `delay_*`.
+
 **Testing.**
 - **Timing.** An impulse arrives at exactly the expected sample.
 - **Tempo math.** A dotted eighth at 120 BPM is exactly 375 ms.
@@ -521,6 +523,8 @@ Design settled in design review round 9.
 
 **Mix.** Dry/wet; 100% wet gives vibrato.
 
+**Built (Phase 5).** On the shared `ModulatedDelay` engine (one per channel, up to 4 voices, Hermite reads, optional bounded feedback; built for the flanger and granular shifter to reuse). Classic: 11 ms swept up to +-4 ms, right LFO inverted. Dimension: an antiphase pair at 7 ms (+-1 ms) mixed as their difference, the SDD-320's matrix: no pitch wobble (0.1 cent), pure width, so its wet cancels in mono by design. Tri: three voices 120 degrees apart, panned left, centre, right. Low-end protection is a crossover (24 dB/oct high-pass into the lines, 12 dB/oct low-pass carried around them) that keeps the lows at unity. Analog: tanh into the lines and a 7 kHz low-pass on the wet; noise optional. Mix is equal power, with the lows at unity. Parameter IDs: `chorus_*`, with tempo sync (`chorus_sync`, `chorus_note`).
+
 **Testing.**
 - **Depth.** Pitch deviation on a sine, in cents, matches the depth setting.
 - **LFO phases.** 180 and 120 degree voice offsets are correct.
@@ -555,6 +559,8 @@ Design settled in design review round 8.
 **Shimmer.** An octave-up pitch shifter in the FDN feedback loop for ambient pads. Built after the pitch shifter exists (Phase 9), not in Phase 5.
 
 **Safety.** Reverb tails are the main denormal risk in the project, so this block carries the decay-to-silence CPU test. Spillover on bypass.
+
+**Built (Phase 5).** Room and Hall are 8- and 16-line FDNs with prime, coprime lengths from 30 to 100 ms times the Size scale 2^(3 size - 2); the Householder matrix is followed by a one-line rotation (still orthogonal and O(N)), because plain Householder at N = 16 leaves 0.875 on the diagonal, which flutters. Per-line decay shelves at 300 Hz and 4 kHz. 10 early reflection taps per side feed 4 lattice diffusers. 4 lines modulated (+-0.5 ms, random). The plate is Dattorro's Fig. 1 with the paper's coefficients scaled to 48 kHz, its one-pole damping replaced by the same low and high shelves (exact at the paper's settings). Freeze mutes the input and makes the tank lossless. Mix is equal power; Size glides limited to 0.25 samples per sample; every engine sits at about the input's level at a 2 s decay. Parameter IDs: `reverb_*`, with pre-delay tempo sync and a freeze footswitch CC (`midi_freeze_cc`, default 81).
 
 **Testing.**
 - **Decay accuracy.** T60 measured from the impulse response's energy decay curve (Schroeder backward integration) is within 10% of the setting for low and high bands.
@@ -692,6 +698,7 @@ The compiler is Apple clang from the command line tools (`xcode-select --install
 2026-10-01: Footswitch: Program Change 0/1/2 selects slot 1/2/3 on the audio thread immediately; the slot parameter syncs from the message thread.
 2026-10-01: Test signals: NAM core's example input is silence plus a test tone, not a DI. Tests use a deterministic Karplus-Strong guitar DI until Sean records real DI clips for tests/fixtures, and NAM differential tests also use a broadband stimulus.
 2026-10-01: Loudness: models are normalized to -18 LUFS on a reference guitar DI with a hand-written BS.1770-4 meter (verified against the standard's coefficients and the EBU Tech 3341 cases). Cab IRs are loudness-matched with K-weighted white noise instead of pink noise, because a study across clean and distorted guitar through stock, dark, and bright cabs found pink noise leaves up to 6.6 LU of difference and white noise 2.1 LU. Normalizing whole amp-plus-cab combinations would be exact but takes away a cab's own effect on loudness; that's Sean's call (PROGRESS task 3.3.Q).
+2026-10-02: Phase 5 built: delay, chorus, reverb, and basic presets as specified (details under each). Mix laws are equal power for all three (each wet is decorrelated from its dry); the chorus's was changed from linear when integrating, because linear tilted the tone 3 dB toward the bass at 50%. The chorus's Dimension mode is pure width (its wet cancels in mono, as on the original hardware). The plate's decay runs 6 to 20% long at short settings (its 725 ms loop), held to 25% instead of the plan's 10% until it's calibrated. Basic presets store absolute paths; loading one while playing fades out, applies, and fades back in.
 2026-10-01: Phase 4 built: compressor and EQ as specified (details under each). Graphic EQ: Q 0.9 with centre-weighted least squares, because the plain accurate cascade design missed the +-1 dB target. Effects start switched off except the EQs, which start flat; the plan implied the pre compressor starts on, which would push every amp harder in a fresh session (recorded in ASSUMPTIONS.md). Reordering a section dips it to its own input for 10 ms each way, because a true crossfade between two orders would need a second copy of every block.
 2026-10-01: Input calibration from `input_level_dbu`, on by default with the interface at +12 dBu (the Solo's instrument input at minimum gain); the gain lives with each loaded model, and normalization measures the calibrated input.
 2026-10-01: Movable mics built as planned (cab packs, position map, minimum-phase morphing, 40 ms re-morph limit), with packs placed by `cabpack.json`, file names, or file order, and inverse-distance weights for scattered points. IR loudness matching switched from measuring 4 s of white noise to computing its exact expected value from the IR's K-weighted energy: within 0.034 dB of the measurement and 500x faster, which re-morphing every 40 ms needs.

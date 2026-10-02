@@ -514,6 +514,59 @@ public:
                         + juce::String (fadeIn, 4) + " (steady playing " + juce::String (steady, 4) + " before, " + juce::String (after, 4) + " after)");
         }
 
+        beginTest ("chorus and reverb: off by default, synced times follow the tempo, and the freeze footswitch acts at once");
+        {
+            AmpSimProcessor p;
+            expectEquals (getParam (p, "chorus_on"), 0.0f);
+            expectEquals (getParam (p, "reverb_on"), 0.0f);
+            expect (p.getSectionOrder (ampsim::Chain::Section::post) == juce::StringArray { "eq", "comp", "chorus", "delay", "reverb" });
+
+            // Synced: a quarter-note chorus cycle at 120 BPM is 2 Hz; a sixteenth-note pre-delay is 125 ms.
+            setParam (p, "chorus_sync", 1.0f);
+            setParam (p, "chorus_note", 6.0f); // 1/4
+            setParam (p, "reverb_predelay_sync", 1.0f);
+            setParam (p, "reverb_predelay_note", 12.0f); // 1/16
+            params::ChorusParameters chorus;
+            chorus.bind (p.parameters);
+            expectWithinAbsoluteError ((double) chorus.read (120.0).rateHz, 2.0, 1.0e-5);
+            setParam (p, "reverb_on", 1.0f);
+            p.prepareToPlay (fs, blockSize);
+
+            juce::AudioBuffer<float> buffer (2, blockSize);
+            juce::MidiBuffer midi;
+            const auto run = [&] (bool pressFreeze)
+            {
+                midi.clear();
+                if (pressFreeze)
+                    midi.addEvent (juce::MidiMessage::controllerEvent (1, 81, 127), 0);
+                buffer.clear();
+                p.processBlock (buffer, midi);
+            };
+            run (false);
+            expectWithinAbsoluteError ((double) p.getChain().reverb.getSettings().preDelayMs, 125.0, 1.0e-3);
+
+            // The footswitch's freeze: in effect in the same buffer, in the switch once the timer runs.
+            run (true);
+            const auto frozenAtOnce = p.getChain().reverb.getSettings().freeze;
+            const auto switchBefore = getParam (p, "reverb_freeze");
+            p.runHousekeeping();
+            run (false);
+            const auto switchAfter = getParam (p, "reverb_freeze");
+            const auto stillFrozen = p.getChain().reverb.getSettings().freeze;
+            run (true);
+            const auto thawedAtOnce = ! p.getChain().reverb.getSettings().freeze;
+            p.runHousekeeping();
+            run (false);
+            expect (frozenAtOnce && stillFrozen && thawedAtOnce);
+            expectEquals (switchBefore, 0.0f);
+            expectEquals (switchAfter, 1.0f);
+            expectEquals (getParam (p, "reverb_freeze"), 0.0f);
+            logMessage ("  -> chorus and reverb off by default; post order eq, comp, chorus, delay, reverb; a synced quarter-note chorus at 120 BPM runs at "
+                        + juce::String (chorus.read (120.0).rateHz, 3) + " Hz, a synced sixteenth pre-delay is "
+                        + juce::String (p.getChain().reverb.getSettings().preDelayMs, 1) + " ms");
+            logMessage ("  -> freeze footswitch (CC 81): frozen in the same buffer, the switch catches up after the timer; a second press thaws at once");
+        }
+
         beginTest ("a saved model that has gone missing is reported, not a crash");
         {
             AmpSimProcessor p;
@@ -673,6 +726,10 @@ public:
             processAll (p, guitarDI ((int) fs));
             setParam (p, "delay_on", 1.0f);
             setParam (p, "delay_stereo", 2.0f);
+            setParam (p, "chorus_on", 1.0f);
+            setParam (p, "chorus_sync", 1.0f);
+            setParam (p, "reverb_on", 1.0f);
+            setParam (p, "reverb_engine", 2.0f);
             for (auto [tab, name] : std::initializer_list<std::pair<int, const char*>> { { 2, "editor_prefx.png" }, { 3, "editor_postfx.png" }, { 4, "editor_timefx.png" } })
             {
                 ampSimEditor->showTab (tab);

@@ -372,6 +372,8 @@ juce::String displayName (const juce::String& blockName)
     if (blockName == "comp") return "Compressor";
     if (blockName == "eq") return "EQ";
     if (blockName == "delay") return "Delay";
+    if (blockName == "chorus") return "Chorus";
+    if (blockName == "reverb") return "Reverb";
     return blockName;
 }
 } // namespace
@@ -760,6 +762,167 @@ void EqualizerPanel::resized()
     }
 }
 
+// ---- EffectPanel, ChorusPanel, ReverbPanel ----------------------------------------------------
+
+EffectPanel::EffectPanel (AmpSimProcessor& processor, const juce::String& title, const juce::String& onParameterId)
+    : ampSim (processor)
+{
+    stylePanelTitle (titleLabel, title);
+    addAndMakeVisible (titleLabel);
+    buttonAttachments.add (new juce::AudioProcessorValueTreeState::ButtonAttachment (processor.parameters, onParameterId, onButton));
+    addAndMakeVisible (onButton);
+}
+
+void EffectPanel::paint (juce::Graphics& g)
+{
+    g.setColour (panel);
+    g.fillRoundedRectangle (getLocalBounds().toFloat().reduced (1.0f), 6.0f);
+}
+
+Knob& EffectPanel::addKnob (const juce::String& id, const juce::String& caption, const juce::String& suffix)
+{
+    auto* knob = knobs.add (new Knob (ampSim.parameters, id, caption, suffix));
+    addAndMakeVisible (knob);
+    return *knob;
+}
+
+juce::ToggleButton& EffectPanel::addToggle (const juce::String& id, const juce::String& text)
+{
+    auto* toggle = toggles.add (new juce::ToggleButton (text));
+    buttonAttachments.add (new juce::AudioProcessorValueTreeState::ButtonAttachment (ampSim.parameters, id, *toggle));
+    addAndMakeVisible (toggle);
+    return *toggle;
+}
+
+juce::ComboBox& EffectPanel::addCombo (const juce::String& id, const juce::StringArray& items)
+{
+    auto* box = combos.add (new juce::ComboBox());
+    comboAttachments.add (new juce::AudioProcessorValueTreeState::ComboBoxAttachment (ampSim.parameters, id, withItems (*box, items)));
+    addAndMakeVisible (box);
+    return *box;
+}
+
+juce::Rectangle<int> EffectPanel::layoutTitle()
+{
+    auto area = getLocalBounds().reduced (10);
+    auto top = area.removeFromTop (28);
+    onButton.setBounds (top.removeFromRight (60));
+    titleLabel.setBounds (top);
+    area.removeFromTop (6);
+    return area;
+}
+
+namespace
+{
+juce::StringArray noteNameList()
+{
+    juce::StringArray names;
+    for (const auto& n : ampsim::tempo::notes)
+        names.add (n.name);
+    return names;
+}
+
+/// Lays knobs (nullptr = skip a cell) out in rows of `columns`, each row `rowHeight` tall.
+void layoutGrid (juce::Rectangle<int> area, const std::vector<juce::Component*>& cells, int columns, int rowHeight)
+{
+    const auto width = area.getWidth() / columns;
+    for (size_t i = 0; i < cells.size(); ++i)
+    {
+        if (i % (size_t) columns == 0 && i > 0)
+            area.removeFromTop (rowHeight);
+        if (cells[i] != nullptr)
+            cells[i]->setBounds (juce::Rectangle<int> (area.getX() + (int) (i % (size_t) columns) * width, area.getY(), width, rowHeight));
+    }
+}
+} // namespace
+
+ChorusPanel::ChorusPanel (AmpSimProcessor& processor) : EffectPanel (processor, "Chorus", "chorus_on")
+{
+    mode = &addCombo ("chorus_mode", { "Classic", "Dimension", "Tri" });
+    shape = &addCombo ("chorus_shape", { "Triangle", "Sine", "Random" });
+    sync = &addToggle ("chorus_sync", "Sync to tempo");
+    note = &addCombo ("chorus_note", noteNameList());
+    rate = &addKnob ("chorus_rate", "Rate", " Hz");
+    depth = &addKnob ("chorus_depth", "Depth", " %");
+    mix = &addKnob ("chorus_mix", "Mix", " %");
+    width = &addKnob ("chorus_width", "Width", " %");
+    analog = &addToggle ("chorus_analog", "Analog");
+    noise = &addToggle ("chorus_noise", "Noise");
+    highPass = &addToggle ("chorus_hp", "Low-end protection");
+    highPassHz = &addKnob ("chorus_hp_freq", "Protect below", " Hz");
+    refresh();
+}
+
+void ChorusPanel::refresh()
+{
+    const auto synced = ampSim.parameters.getRawParameterValue ("chorus_sync")->load() >= 0.5f ? 1 : 0;
+    if (synced == shownSync)
+        return;
+    shownSync = synced;
+    note->setVisible (synced == 1);
+    rate->setVisible (synced == 0);
+}
+
+void ChorusPanel::resized()
+{
+    auto area = layoutTitle();
+    auto combosRow = area.removeFromTop (26);
+    mode->setBounds (combosRow.removeFromLeft (combosRow.getWidth() / 2).reduced (2, 0));
+    shape->setBounds (combosRow.reduced (2, 0));
+    area.removeFromTop (6);
+    auto syncRow = area.removeFromTop (26);
+    sync->setBounds (syncRow.removeFromLeft (150));
+    note->setBounds (syncRow.reduced (2, 0));
+    area.removeFromTop (4);
+    auto togglesRow = area.removeFromBottom (26);
+    analog->setBounds (togglesRow.removeFromLeft (80));
+    noise->setBounds (togglesRow.removeFromLeft (70));
+    highPass->setBounds (togglesRow);
+    area.removeFromBottom (4);
+    layoutGrid (area, { rate, depth, mix, width, highPassHz }, 3, area.getHeight() / 2);
+}
+
+ReverbPanel::ReverbPanel (AmpSimProcessor& processor) : EffectPanel (processor, "Reverb", "reverb_on")
+{
+    engine = &addCombo ("reverb_engine", { "Room", "Hall", "Plate" });
+    freeze = &addToggle ("reverb_freeze", "Freeze");
+    preDelaySync = &addToggle ("reverb_predelay_sync", "Sync pre-delay");
+    preDelayNote = &addCombo ("reverb_predelay_note", noteNameList());
+    preDelay = &addKnob ("reverb_predelay", "Pre-delay", " ms");
+    grid = { &addKnob ("reverb_mix", "Mix", " %"), preDelay, &addKnob ("reverb_decay", "Decay", " s"), &addKnob ("reverb_size", "Size", " %"),
+             &addKnob ("reverb_low_decay", "Low decay", " x"), &addKnob ("reverb_high_decay", "High decay", " x"),
+             &addKnob ("reverb_diffusion", "Diffusion", " %"), &addKnob ("reverb_early_late", "Early/late", " %"),
+             &addKnob ("reverb_mod_depth", "Mod depth", " %"), &addKnob ("reverb_mod_rate", "Mod rate", " Hz"),
+             &addKnob ("reverb_width", "Width", " %"), &addKnob ("reverb_ducking", "Ducking", " %"),
+             &addKnob ("reverb_lowcut", "Low cut", " Hz"), &addKnob ("reverb_highcut", "High cut", " Hz") };
+    refresh();
+}
+
+void ReverbPanel::refresh()
+{
+    const auto synced = ampSim.parameters.getRawParameterValue ("reverb_predelay_sync")->load() >= 0.5f ? 1 : 0;
+    if (synced == shownSync)
+        return;
+    shownSync = synced;
+    preDelayNote->setVisible (synced == 1);
+    preDelay->setVisible (synced == 0);
+}
+
+void ReverbPanel::resized()
+{
+    auto area = layoutTitle();
+    auto row = area.removeFromTop (26);
+    engine->setBounds (row.removeFromLeft (row.getWidth() / 2).reduced (2, 0));
+    freeze->setBounds (row.reduced (6, 0));
+    area.removeFromTop (6);
+    auto syncRow = area.removeFromTop (26);
+    preDelaySync->setBounds (syncRow.removeFromLeft (150));
+    preDelayNote->setBounds (syncRow.reduced (2, 0));
+    area.removeFromTop (4);
+    std::vector<juce::Component*> cells (grid.begin(), grid.end());
+    layoutGrid (area, cells, 4, area.getHeight() / 4);
+}
+
 // ---- DelayPanel -------------------------------------------------------------------------------
 
 DelayPanel::DelayPanel (AmpSimProcessor& processor) : ampSim (processor)
@@ -1034,19 +1197,25 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p)
     tabs.addTab ("Pre FX", panel, &preFxPage, false);
     tabs.addTab ("Post FX", panel, &postFxPage, false);
 
-    // Time FX: the delay (chorus and reverb join it).
+    // Time FX: chorus, delay, and reverb side by side, in their default order.
+    chorusPanel = std::make_unique<ChorusPanel> (p);
     delayPanel = std::make_unique<DelayPanel> (p);
-    timeFxPage.addAndMakeVisible (*delayPanel);
+    reverbPanel = std::make_unique<ReverbPanel> (p);
+    for (auto* c : std::initializer_list<juce::Component*> { chorusPanel.get(), delayPanel.get(), reverbPanel.get() })
+        timeFxPage.addAndMakeVisible (c);
     timeFxPage.layout = [this] (juce::Rectangle<int> area)
     {
         area.reduce (8, 8);
-        delayPanel->setBounds (area.removeFromLeft (juce::jmin (area.getWidth(), 520)).reduced (4));
+        const auto width = area.getWidth() / 3;
+        chorusPanel->setBounds (area.removeFromLeft (width).reduced (4));
+        delayPanel->setBounds (area.removeFromLeft (width).reduced (4));
+        reverbPanel->setBounds (area.reduced (4));
     };
     tabs.addTab ("Time FX", panel, &timeFxPage, false);
     tabs.setTabBarDepth (30);
     addAndMakeVisible (tabs);
 
-    setSize (1120, 800);
+    setSize (1280, 820);
     timerCallback(); // show the current state right away
     startTimerHz (10);
 }
@@ -1156,6 +1325,8 @@ void AmpSimEditor::timerCallback()
     for (auto* eq : { preEq.get(), postEq.get() })
         eq->refresh();
     delayPanel->refresh();
+    chorusPanel->refresh();
+    reverbPanel->refresh();
 }
 
 void AmpSimEditor::paint (juce::Graphics& g)
