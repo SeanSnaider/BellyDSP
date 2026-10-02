@@ -2,6 +2,7 @@
 
 #include "Svf.h"
 
+#include <array>
 #include <cmath>
 #include <complex>
 
@@ -370,6 +371,115 @@ private:
     // Summing amplifier, treble control, output.
     Companion c13, c14, c2, c15;
     double ra = 0.0, rb = 0.0, yT = 0.0, aX = 0.0, kO = 0.0;
+};
+
+/// "Fuzz": the Electro-Harmonix Big Muff Pi, American version 3 (1977, red and black), as ElectroSmash's
+/// "Big Muff Pi Analysis" draws it (schematic, parts list, bias drawing; its designators, with Q4 the
+/// input stage as on EHX's boards). Collector resistors 10k: Kit Rae's BigMuffPage notes them on some
+/// V3s, against 15k on the most common one. Sustain (100k linear) is Drive, Tone (100k linear) is Tone.
+/// Transistors 2N5088, Ebers-Moll in SPICE's transport form with Fairchild's Is, Bf, Br:
+///     Ibe = Is (e^(vbe/VT) - 1) + gmin vbe,   Ibc = Is (e^(vbc/VT) - 1) + gmin vbc,
+///     Ic = Ibe - Ibc (1 + 1/Br),   Ib = Ibe / Bf + Ibc / Br,
+/// diodes 1N914 (DiodeModel). The circuit runs on its real 9 V supply with its real bias.
+///
+///   Q4, input booster: R2 39k and C1 1 uF from the input to the base, R14 47k base to ground, shunt
+///     feedback R9 470k || C10 470 pF, R13 10k collector load, R22 100 emitter. Biased at 7.1 V (not half
+///     the supply: R14 is low), so it cuts off (Ic to 0) above a few hundred mV of input and saturates
+///     (both junctions forward) near 1 V.
+///   Sustain: C4 1 uF into the pot (wiper toward the top as Drive rises) over R23 1k, the wiper through
+///     C5 100 nF and R19 10k to Q3's base.
+///   Q3 and Q2, clipping stages: the same shunt-feedback stage (R20 / R16 100k, R17 / R15 470k || C12 /
+///     C11 470 pF, R18 / R11 10k, R21 / R10 150) with C6 / C7 1 uF in series with D3/D4 and D1/D2 from base
+///     to collector: once the collector swings more than a diode drop from the base, the diodes close the
+///     loop and clip it. C13 100 nF and R12 10k couple them.
+///   Tone stack: R8 39k into C8 10 nF (low-pass) and C9 4 nF into R5 22k (high-pass), the pot between
+///     them (wiper at the high-pass end for Tone 1), the wiper through C3 100 nF to Q1. Its DC path,
+///     R8 + pot + R5 = 161k, loads Q2's collector; the wiper's DC voltage moves with the knob, and C3
+///     passes the change to Q1, as on the real pedal (turning Tone while playing thumps a little).
+///   Q1, output booster: R7 430k / R3 100k bias, R6 15k collector, R4 3.3k emitter (gain about 4.5);
+///     C2 100 nF into the Volume pot (100k, at maximum) and the 1M load.
+///
+/// Solving it. Each transistor stage's own elements are trapezoidal companions around its nodes (base,
+/// emitter, collector, and the diode node on the clipping stages: 3 or 4 unknowns). The networks between
+/// stages (Sustain; C13 + R12; the tone stack) are linear, so their inner nodes are eliminated and each
+/// becomes a 2-port between one stage's collector and the next stage's base. The stages load each other
+/// noticeably (in the fixtures each base swings 0.5 to 7% of the collector before it, and Q1's base up to
+/// 120% of Q2's collector), so all four are solved together: Newton on the 14 unknowns, with SPICE3's
+/// pnjlim on both junctions of every transistor and on the diodes, as in prototypes/circuits.py. The
+/// Jacobian is block-tridiagonal (a stage touches only its neighbours, through one collector-base
+/// pair), so each Newton step is block Gaussian elimination from the input stage to the output stage
+/// and back: four small dense solves. The bias is the same Newton with the capacitors open, solved once.
+class FuzzCircuit final : public Circuit
+{
+public:
+    FuzzCircuit();
+
+    void setSampleRate (double sampleRate) override;
+    void reset() override;
+    void setControls (double drive, double tone) override;
+    void process (double* volts, int numSamples) noexcept override;
+    std::complex<double> smallSignalResponse (double frequency) const override;
+    double meanIterations() const override;
+
+    static constexpr int numUnknowns = 14;
+    /// The bias (DC operating point), by unknown: Q4 b e c, Q3 b e c d, Q2 b e c d, Q1 b e c.
+    const std::array<double, numUnknowns>& bias() const noexcept { return operatingPoint; }
+    /// Newton solves that hit the iteration cap (they keep the last iterate). For the tests.
+    long unconverged() const noexcept { return failures; }
+
+    // 2N5088: the Ebers-Moll part of Fairchild's SPICE model (prototypes/circuits.py, BJT_2N5088).
+    static constexpr double transistorSaturationCurrent = 5.911e-15, forwardBeta = 1122.0, reverseBeta = 1.271;
+    static constexpr double supply = 9.0;
+    static constexpr int maxNewtonIterations = 100;
+    /// Newton stops once no unknown moves more than this in a step (and nothing was limited). Near the
+    /// root it converges quadratically, with the junctions' curvature 1/VT, so the error left after a
+    /// 1 uV step is about 40 x (1e-6)^2 = 4e-11 V.
+    static constexpr double newtonTolerance = 1.0e-6;
+
+    /// One stage's block of the Newton system (row-major, stride 4) and its right-hand side.
+    template <typename Value>
+    struct Block
+    {
+        int n = 3;
+        std::array<Value, 16> a {};
+        std::array<Value, 4> r {};
+    };
+
+    /// All the linear admittances, for one time step (companions, 2C/T), for DC (capacitors open), or
+    /// at one frequency (s C, complex) for the small-signal response.
+    template <typename Value>
+    struct Network
+    {
+        std::array<std::array<Value, 16>, 4> g {};  // each stage's own elements and its 2-ports' self terms
+        std::array<Value, 3> upper {}, lower {};     // A[collector k, base k+1] and A[base k+1, collector k]
+        Value gIn {}, gA {}, gB {}, gG {}, sigma {}, gK {}, gOut {};
+        std::array<Value, 9> toneInverse {};         // the tone stack's inner block, inverted
+        std::array<Value, 6> tonePi {};              // its port-to-inner admittances (2 x 3)
+    };
+
+private:
+    template <typename Value, typename Admittance>
+    void designNetwork (Network<Value>& net, Admittance capacitor) const noexcept;
+    void linearRhs (double vin, std::array<double, numUnknowns>& rhs) const noexcept;
+    int newton (const Network<double>& net, const std::array<double, numUnknowns>& rhs, std::array<double, numUnknowns>& v) noexcept;
+    void limitFrom (const std::array<double, numUnknowns>& v) noexcept;
+    void predict() noexcept;
+    void updateCompanions (double vin) noexcept;
+    void solveBias();
+
+    double sampleRate = 192000.0, T = 1.0 / 192000.0;
+    double drive = 0.5, tone = 0.5;
+    double sustainUpper = 0.0, sustainLower = 0.0, toneUpper = 0.0, toneLower = 0.0;
+    Network<double> network, dcNetwork;
+    DiodeModel diode;
+    double diodeVt = 0.0, diodeVcrit = 0.0, transistorVcrit = 0.0;
+
+    Companion cIn, c10, c4, c5, c12, c6, cK, c11, c7, c8, c9, c3, cOut;
+    std::array<double, numUnknowns> x {}, previous {}, operatingPoint {};
+    std::array<double, 4> vbeLimited {}, vbcLimited {};
+    std::array<double, 2> diodeLimited {};
+    double output = 0.0;
+    long iterations = 0, solves = 0, failures = 0;
 };
 
 } // namespace ampsim::drive

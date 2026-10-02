@@ -10,8 +10,8 @@
 #include <map>
 #include <numeric>
 
-// Tests for the drive engine, the Overdrive (Mid Drive, Distortion, Transparent), and the Boost (Clean,
-// Tight, Screamer). The references are tests/fixtures/drive, rendered by prototypes/circuits.py: AC
+// Tests for the drive engine, the Overdrive (Mid Drive, Distortion, Transparent, Fuzz), and the Boost
+// (Clean, Tight, Screamer). The references are tests/fixtures/drive, rendered by prototypes/circuits.py: AC
 // analyses and 16x transient simulations of the full schematics.
 
 namespace
@@ -97,7 +97,8 @@ const std::vector<ModeInfo>& overdriveModes()
 {
     static const std::vector<ModeInfo> modes { { Overdrive::Mode::midDrive, "Mid Drive", "mid_drive" },
                                                { Overdrive::Mode::distortion, "Distortion", "distortion" },
-                                               { Overdrive::Mode::transparent, "Transparent", "transparent" } };
+                                               { Overdrive::Mode::transparent, "Transparent", "transparent" },
+                                               { Overdrive::Mode::fuzz, "Fuzz", "fuzz" } };
     return modes;
 }
 
@@ -114,11 +115,36 @@ Overdrive::Mode modeOfTag (const juce::String& tag)
     return Overdrive::Mode::midDrive;
 }
 
-/// Waveform tolerance against the 16x circuit simulation, per mode.
-double circuitTolerance (Overdrive::Mode) { return circuitToleranceDb; }
+/// Waveform tolerance against the 16x circuit simulation, per mode. The Fuzz's is 5 dB looser: its two
+/// clipping stages turn the signal into near-square waves in cascade, and at tone 1 the tone stack's
+/// high-pass side passes their edges. Its worst case (the chord at tone 1) is -58.7 dB at 4x and -64 dB
+/// at 8x, about where the Distortion's bright chord sits (-63 / -66 dB): the edge of what the 4x
+/// trapezoidal rule and this comparison resolve on hard-clipped, bright signals. Every other Fuzz case
+/// is at -70 dB or better.
+double circuitTolerance (Overdrive::Mode mode) { return mode == Overdrive::Mode::fuzz ? -55.0 : circuitToleranceDb; }
 
 /// How closely each model's own analytic small-signal response must match AC analysis of the netlist.
-double analyticTolerance (Overdrive::Mode) { return 1.0e-6; }
+/// The Fuzz's netlist has its Tone pot at a 1 mOhm end at tone 0 and 1, which leaves a few 1e-6 dB of
+/// rounding in the full-netlist AC solve (prototypes/circuits.py prints it; with 1 Ohm ends the two
+/// agree to 2e-9 dB).
+double analyticTolerance (Overdrive::Mode mode) { return mode == Overdrive::Mode::fuzz ? 1.0e-5 : 1.0e-6; }
+
+/// The impulse for the small-signal measurement. The op-amp pedals rest at exactly 0 V, so -160 dBFS
+/// keeps every diode linear and nothing else is there. The Fuzz runs on its real bias, and rounding moves
+/// its clipping stages' bases by about 1e-11 V (C6 and C7's companion terms, about 1.4 A each at
+/// 192 kHz, cancel in two rows, and what's left lands on the base and diode node moving together, which
+/// only the base's high impedance holds), amplified 60 dB downstream: -170 dBFS at the output, nothing
+/// to hear, but enough to swamp a -160 dBFS impulse over 2.7 s. So -120 dBFS (4.4 uV, every junction
+/// within 0.4 mV of its bias), and -80 dBFS at Sustain 0, where the pot passes only 1/100 of the first
+/// stage's output to the clipping stages (the same signal in them as -120 dBFS at noon).
+double smallSignalAmplitude (Overdrive::Mode mode, double drive = 0.5)
+{
+    if (mode != Overdrive::Mode::fuzz)
+        return 1.0e-8;
+    return drive < 0.25 ? 1.0e-4 : 1.0e-6;
+}
+
+
 
 /// Aliasing limit at 4x for full-drive tones up to 1.3 kHz at -12 dBFS. The Transparent's gain stage is a
 /// fast op-amp (a TL072, 13 V/us) that clips on its 9 V rails as a near-square wave at full gain: its
@@ -332,7 +358,11 @@ std::vector<double> harmonics (const std::vector<double>& x, double f0, int coun
     return levels;
 }
 
-/// Energy outside the harmonics of f0 (and outside DC to 50 Hz) relative to the total, in dB: aliasing.
+/// Energy outside the harmonics of f0 relative to the total, over the audio band (50 Hz to 20 kHz), in
+/// dB: aliasing. Above 20 kHz is the downsampler's transition band, where a harmonic just above 24 kHz
+/// folds to just below it whatever the oversampling (the 16x reference's decimator does the same); the
+/// Fuzz, bright and hard-clipped, is the first mode with harmonics strong enough there to show. The
+/// circuit-match comparisons ignore 20 to 24 kHz for the same reason.
 double inharmonicDb (const std::vector<double>& x, double f0, int order = 13)
 {
     const auto p = powerSpectrum (x, order);
@@ -341,7 +371,7 @@ double inharmonicDb (const std::vector<double>& x, double f0, int order = 13)
     for (size_t k = 0; k < p.size(); ++k)
     {
         const auto f = (double) k * binHz;
-        if (f < 50.0)
+        if (f < 50.0 || f > 20000.0)
             continue;
         const auto nearest = std::round (f / f0);
         const bool onHarmonic = nearest >= 1.0 && std::abs (f - nearest * f0) <= 4.5 * binHz;
@@ -407,18 +437,20 @@ juce::String acKey (double drive, double tone) { return "d" + juce::String (driv
 
 // ---- Small-signal measurement -------------------------------------------------------------------
 
-/// The model's response to a tiny impulse (-160 dBFS, so every diode stays linear), divided by the
-/// oversampling chain's own response: what's left is the circuit as discretized at 4x.
+/// The model's response to a tiny impulse (-160 dBFS by default, so every diode stays linear), less its
+/// output with no input at all (exactly zero for the circuits that rest at 0 V; the Fuzz's bias drifts
+/// by rounding), divided by the oversampling chain's own response: what's left is the circuit as
+/// discretized at 4x.
 template <typename Process>
-std::vector<std::complex<double>> smallSignal (const std::vector<double>& frequencies, Process&& render, int factor = 4)
+std::vector<std::complex<double>> smallSignal (const std::vector<double>& frequencies, Process&& render, int factor = 4, double amplitude = 1.0e-8)
 {
-    constexpr double amplitude = 1.0e-8;
     std::vector<float> x ((size_t) 1 << 17, 0.0f);
+    const auto rest = render (x);
     x[0] = (float) amplitude;
     const auto y = render (x);
     std::vector<double> h (y.size());
     for (size_t n = 0; n < y.size(); ++n)
-        h[n] = (double) y[n] / amplitude;
+        h[n] = ((double) y[n] - (double) rest[n]) / amplitude;
     const auto chain = chainResponse (factor);
     std::vector<std::complex<double>> out;
     for (const auto f : frequencies)
@@ -432,6 +464,20 @@ struct Deviation
 {
     double low = 0.0, high = 0.0, phase = 0.0; // worst |dB| to 5 kHz, worst |dB| 5-20 kHz, worst degrees to 5 kHz
 };
+
+/// Limits for the small-signal match against AC analysis: worst dB to 5 kHz, worst dB from 5 to 20 kHz,
+/// worst phase to 5 kHz. Above a few kHz the difference is the bilinear transform's frequency warping
+/// (the response at f is the analog one at (fs/pi) tan(pi f/fs), 0.9% higher at 10 kHz at 192 kHz),
+/// whose error in dB grows with the response's slope; the Fuzz's three Miller-capacitor poles and its
+/// tone stack make it fall far more steeply than the op-amp pedals, so its limits are 0.1 dB, 1.5 dB,
+/// and 1 degree. The Fuzz is also held to its own response at the warped frequency (exact for the
+/// trapezoidal rule), which shows the warping is all there is.
+Deviation linearLimits (Overdrive::Mode mode)
+{
+    if (mode == Overdrive::Mode::fuzz)
+        return { 0.1, 1.5, 1.0 };
+    return { 0.05, 1.0, 0.5 };
+}
 
 Deviation compare (const std::vector<double>& f, const std::vector<std::complex<double>>& got, const std::vector<std::complex<double>>& want)
 {
@@ -556,8 +602,15 @@ private:
             o.setSettings (overdriveSettings (mode, 1.0f, 0.5f));
             o.prepare (fs, blockSize);
             run (o, guitarDI ((int) fs));
-            logMessage ("  -> " + modeName (mode) + " at full drive on the guitar DI: " + juce::String (o.getEngine().getCircuit ((int) mode).meanIterations(), 2)
-                        + " Newton iterations per solve on average");
+            auto& circuit = o.getEngine().getCircuit ((int) mode);
+            juce::String extra;
+            if (auto* fuzz = dynamic_cast<ampsim::drive::FuzzCircuit*> (&circuit))
+            {
+                expectEquals (fuzz->unconverged(), 0L);
+                extra = " (all 14 unknowns jointly; " + juce::String (fuzz->unconverged()) + " solves hit the iteration cap)";
+            }
+            logMessage ("  -> " + modeName (mode) + " at full drive on the guitar DI: " + juce::String (circuit.meanIterations(), 2)
+                        + " Newton iterations per solve on average" + extra);
         }
         logMessage ("  -> worst waveform error " + juce::String (worstError, 1) + " dB, worst harmonic difference " + juce::String (worstHarmonic, 3) + " dB");
     }
@@ -629,7 +682,28 @@ private:
 
     void linearBehaviour()
     {
-        beginTest ("linear behaviour: at -160 dBFS the response matches AC analysis of the full circuit (every drive and tone setting)");
+        beginTest ("linear behaviour: at -160 dBFS (the biased Fuzz: -120, -80 at Sustain 0) the response matches AC analysis of the full circuit (every drive and tone setting)");
+
+        // The Fuzz's bias, from its own Newton solve with the capacitors open, against the simulator's
+        // operating point (prototypes/circuits.py writes it into cases.json).
+        {
+            const auto json = juce::JSON::parse (fixture ("cases.json"));
+            const auto reference = json["bias"]["fuzz"];
+            const juce::StringArray names { "b4", "e4", "c4", "b3", "e3", "c3", "d3", "b2", "e2", "c2", "d2", "b1", "e1", "c1" };
+            ampsim::drive::FuzzCircuit fuzz;
+            double worstBias = 0.0;
+            juce::String values;
+            for (int i = 0; i < names.size(); ++i)
+            {
+                const auto got = fuzz.bias()[(size_t) i];
+                worstBias = std::max (worstBias, std::abs (got - (double) reference[names[i].toRawUTF8()]));
+                if (! names[i].startsWith ("d"))
+                    values << names[i] << " " << juce::String (got, 3) << (i + 1 < names.size() ? ", " : "");
+            }
+            expectLessThan (worstBias, 1.0e-6);
+            logMessage ("  -> Fuzz bias (V): " + values + "; within " + juce::String (worstBias, 12) + " V of the simulator's operating point "
+                        + "(ElectroSmash's bias drawing: Q4 0.6 / 0.02 / 7, Q3 and Q2 0.7 / 0.07 / 4.4, Q1 1.6 / 1 / 4.4)");
+        }
         for (const auto& info : overdriveModes())
         {
             const auto mode = info.mode;
@@ -637,14 +711,15 @@ private:
             const auto table = readAc (tag);
             Deviation worst;
             double lowest = 1000.0, highest = -1000.0;
-            double analyticWorst = 0.0;
+            double analyticWorst = 0.0, warpedWorst = 0.0, warpedPhase = 0.0;
             std::vector<PlotSeries> series;
             int colour = 0;
             for (const auto drive : { 0.0, 0.5, 1.0 })
                 for (const auto tone : { 0.0, 0.5, 1.0 })
                 {
                     const auto settings = overdriveSettings (mode, (float) drive, (float) tone);
-                    const auto measured = smallSignal (table.frequencies, [&] (const std::vector<float>& x) { return renderOverdrive (settings, x); });
+                    const auto measured = smallSignal (table.frequencies, [&] (const std::vector<float>& x) { return renderOverdrive (settings, x); }, 4,
+                                                       smallSignalAmplitude (mode, drive));
                     const auto& ac = table.responses.at (acKey (drive, tone));
                     const auto d = compare (table.frequencies, measured, ac);
                     worst.low = std::max (worst.low, d.low);
@@ -658,6 +733,18 @@ private:
                     for (size_t i = 0; i < table.frequencies.size(); ++i)
                         analyticWorst = std::max (analyticWorst,
                                                   std::abs (dbOf (o.getEngine().getCircuit ((int) mode).smallSignalResponse (table.frequencies[i])) - dbOf (ac[i])));
+
+                    // The Fuzz is the trapezoidal rule throughout, so its discrete response at f is exactly
+                    // its analog response at the warped frequency (fs/pi) tan(pi f/fs), fs = 192 kHz.
+                    if (mode == Overdrive::Mode::fuzz)
+                        for (size_t i = 0; i < table.frequencies.size(); ++i)
+                        {
+                            const auto rate = 4.0 * fs;
+                            const auto warped = rate / pi * std::tan (pi * table.frequencies[i] / rate);
+                            const auto expected = o.getEngine().getCircuit ((int) mode).smallSignalResponse (warped);
+                            warpedWorst = std::max (warpedWorst, std::abs (dbOf (measured[i]) - dbOf (expected)));
+                            warpedPhase = std::max (warpedPhase, std::abs (std::arg (measured[i] / expected)) * 180.0 / pi);
+                        }
 
                     if (juce::exactlyEqual (drive, 0.5))
                     {
@@ -677,16 +764,27 @@ private:
                         ++colour;
                     }
                 }
-            expectLessThan (worst.low, 0.05, name);
-            expectLessThan (worst.high, 1.0, name);
-            expectLessThan (worst.phase, 0.5, name);
+            const auto limits = linearLimits (mode);
+            expectLessThan (worst.low, limits.low, name);
+            expectLessThan (worst.high, limits.high, name);
+            expectLessThan (worst.phase, limits.phase, name);
             expectLessThan (analyticWorst, analyticTolerance (mode), name);
+            if (mode == Overdrive::Mode::fuzz)
+            {
+                // What's left (0.01 dB, scattered above 7 kHz) is the bias's rounding drift against the
+                // -120 dBFS impulse; the warping it accounts for is 100 times larger.
+                expectLessThan (warpedWorst, 0.03, name);
+                expectLessThan (warpedPhase, 0.3, name);
+                logMessage ("  -> " + name + ": against its own analog response at the warped frequency (fs/pi) tan(pi f/fs), the measured response is within "
+                            + juce::String (warpedWorst, 4) + " dB and " + juce::String (warpedPhase, 3) + " degrees from 20 Hz to 20 kHz (9 settings)");
+            }
 
             // The 5-20 kHz residual is the bilinear transform's frequency warping at 192 kHz, which a
             // circuit discretized at 8x has a quarter of.
             const auto& acHigh = table.responses.at (acKey (1.0, 1.0));
-            const auto at4 = compare (table.frequencies, smallSignal (table.frequencies, [&] (const std::vector<float>& x) { return renderOverdrive (overdriveSettings (mode, 1.0f, 1.0f, 4), x); }), acHigh);
-            const auto at8 = compare (table.frequencies, smallSignal (table.frequencies, [&] (const std::vector<float>& x) { return renderOverdrive (overdriveSettings (mode, 1.0f, 1.0f, 8), x); }, 8), acHigh);
+            const auto amplitude = smallSignalAmplitude (mode, 1.0);
+            const auto at4 = compare (table.frequencies, smallSignal (table.frequencies, [&] (const std::vector<float>& x) { return renderOverdrive (overdriveSettings (mode, 1.0f, 1.0f, 4), x); }, 4, amplitude), acHigh);
+            const auto at8 = compare (table.frequencies, smallSignal (table.frequencies, [&] (const std::vector<float>& x) { return renderOverdrive (overdriveSettings (mode, 1.0f, 1.0f, 8), x); }, 8, amplitude), acHigh);
             expectLessThan (at8.high, 0.5 * at4.high);
             logMessage ("  -> " + modeName (mode) + ", 9 settings x 120 frequencies: model within " + juce::String (worst.low, 4) + " dB and "
                         + juce::String (worst.phase, 3) + " degrees of AC analysis to 5 kHz, " + juce::String (worst.high, 3)
@@ -1169,7 +1267,7 @@ private:
     static std::vector<Overdrive::Mode> switchPath()
     {
         using M = Overdrive::Mode;
-        return { M::midDrive, M::transparent, M::distortion, M::transparent, M::midDrive };
+        return { M::midDrive, M::transparent, M::distortion, M::fuzz, M::transparent, M::midDrive, M::fuzz, M::distortion, M::transparent, M::fuzz, M::midDrive };
     }
 
     void modeSwitching()
@@ -1287,6 +1385,15 @@ private:
                 case 180: os.mode = Overdrive::Mode::transparent; break;
                 case 190: os.drive = 1.0f; os.tone = 0.0f; break;
                 case 200: os = overdriveSettings (Overdrive::Mode::midDrive, 0.5f, 0.5f); bs = Boost::Settings {}; break;
+                case 220: os.mode = Overdrive::Mode::fuzz; break;
+                case 230: os.drive = 0.0f; os.tone = 1.0f; break;
+                case 240: os.oversampling = 8; os.drive = 1.0f; break;
+                case 260: os.mode = Overdrive::Mode::transparent; os.mix = 0.5f; break;
+                case 280: os.mode = Overdrive::Mode::fuzz; os.tone = 0.0f; os.tightHz = 200.0f; break;
+                case 300: os.oversampling = 4; os.drive = 0.3f; break;
+                case 320: os.mode = Overdrive::Mode::distortion; break;
+                case 340: os.mode = Overdrive::Mode::fuzz; os.mix = 1.0f; os.tightHz = 20.0f; break;
+                case 380: os = overdriveSettings (Overdrive::Mode::midDrive, 0.5f, 0.5f); break;
                 default: break;
             }
             std::copy (x.begin() + (long) start, x.begin() + (long) start + blockSize, buffer.begin());

@@ -9,6 +9,7 @@ Overdrive::Overdrive()
     engine.addCircuit (std::make_unique<drive::MidDriveCircuit>());
     engine.addCircuit (std::make_unique<drive::DistortionCircuit>());
     engine.addCircuit (std::make_unique<drive::TransparentCircuit>());
+    engine.addCircuit (std::make_unique<drive::FuzzCircuit>());
 }
 
 void Overdrive::setSettings (const Settings& s)

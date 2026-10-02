@@ -1598,8 +1598,17 @@ def golden(folder, circuits):
                         peak_volts=float(np.max(np.abs(y))))
             describe_case(circuit, name, stats["internal"][j], info)
             cases[name] = info
+    # The fuzz's bias (operating point), for checking the C++ model's own bias solve.
+    previous = json.load(open(path)) if os.path.exists(path) else {}
+    bias = previous.get("bias", {})
+    if "fuzz" in circuits:
+        nl = fuzz(0.5, 0.5)
+        sim = compile_batch([nl], 1.0)
+        sim.node_gmin = False
+        x, _, _, _ = sim.operating_point()
+        bias["fuzz"] = {n: float(x[0, nl.nodes[n]]) for n in ("b4", "e4", "c4", "b3", "e3", "c3", "d3", "b2", "e2", "c2", "d2", "b1", "e1", "c1")}
     with open(path, "w") as f:
-        json.dump(dict(volts_at_full_scale=VOLTS_AT_FULL_SCALE, simulation_rate=FS * 16, cases=cases), f, indent=2)
+        json.dump(dict(volts_at_full_scale=VOLTS_AT_FULL_SCALE, simulation_rate=FS * 16, cases=cases, bias=bias), f, indent=2)
     print(f"  wrote {len(cases)} cases to cases.json")
 
 

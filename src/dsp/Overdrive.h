@@ -16,8 +16,9 @@ namespace ampsim
 ///     modeled), then hard-clipping diodes to ground and a passive low-pass filter.
 ///   - Transparent: Klon-style. A gain stage into germanium diodes, summed with two clean paths whose
 ///     share the Drive knob turns down as it turns the gain up, then an active treble control.
-/// Fuzz (Big Muff-style) comes later as one more circuit: adding a mode is adding a drive::Circuit and an
-/// entry here.
+///   - Fuzz: Big Muff-style. Four transistor stages: a booster, two clipping stages with diodes in their
+///     feedback, the passive mid-scooping tone stack, and an output booster.
+/// Adding a mode is adding a drive::Circuit and an entry here.
 ///
 /// Controls: Drive and Tone are the pedal's own pots (audio taper where the original is); Level is a gain
 /// after the circuit's output with its volume pot at maximum; Mix blends the circuit with the dry signal
@@ -31,7 +32,8 @@ public:
     {
         midDrive,
         distortion,
-        transparent
+        transparent,
+        fuzz
     };
 
     struct Settings
