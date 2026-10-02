@@ -31,6 +31,8 @@ AmpSimProcessor::AmpSimProcessor()
         p.delay = raw (cabParamId (m, "delay"));
         p.mute = raw (cabParamId (m, "mute"));
         p.channel = raw (cabParamId (m, "channel"));
+        p.positionX = raw (cabParamId (m, "pos_x"));
+        p.positionY = raw (cabParamId (m, "pos_y"));
     }
 
     roomLevel = raw (cabParamId (roomMic, "level"));
@@ -44,9 +46,10 @@ AmpSimProcessor::AmpSimProcessor()
     highCutFreq = raw ("cab_highcut_freq");
     highCutSlope = raw ("cab_highcut_slope");
 
-    // Frees models and IRs the audio thread has handed back, syncs footswitch slot changes, and
-    // re-reads an IR whose channel choice changed.
-    startTimerHz (20);
+    // Frees models and IRs the audio thread has handed back, syncs footswitch slot changes, re-reads an
+    // IR whose channel choice changed, and re-morphs moving mics. 50 Hz, so a mic being dragged is
+    // re-morphed every 40 ms (two ticks), the plan's rate.
+    startTimerHz (50);
 }
 
 AmpSimProcessor::~AmpSimProcessor()
@@ -120,6 +123,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout AmpSimProcessor::createParam
         layout.add (std::make_unique<Bool> (juce::ParameterID { cabParamId (m, "mute"), 1 }, prefix + "Mute", false));
         layout.add (std::make_unique<Choice> (juce::ParameterID { cabParamId (m, "channel"), 1 }, prefix + "IR Channel",
                                               juce::StringArray { "Left", "Right" }, 0));
+        // Where the mic sits on a cab pack's map (only used once a pack is loaded): x across the
+        // speaker, 0 at the dust cap to 1 at the cone's edge; y the distance, 0 the closest capture.
+        layout.add (std::make_unique<Float> (juce::ParameterID { cabParamId (m, "pos_x"), 1 }, prefix + "Position",
+                                             juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.0f));
+        layout.add (std::make_unique<Float> (juce::ParameterID { cabParamId (m, "pos_y"), 1 }, prefix + "Distance",
+                                             juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.0f));
     }
 
     layout.add (std::make_unique<Float> (juce::ParameterID { cabParamId (roomMic, "level"), 1 }, "Cab Room Level", micLevelRange, -6.0f, dB));
@@ -318,7 +327,7 @@ void AmpSimProcessor::setStateInformation (const void* data, int sizeInBytes)
         if (! juce::File::isAbsolutePath (path))
             continue;
 
-        if (juce::File (path).existsAsFile())
+        if (juce::File (path).existsAsFile() || juce::File (path).isDirectory())
             loadCabIR (m, juce::File (path));
         else
             setCabStatus (m, "Saved IR is missing: " + path, true);
@@ -352,6 +361,31 @@ void AmpSimProcessor::loadCabIR (int mic, const juce::File& file)
         const auto useRight = micParameters[(size_t) mic].channel->load() >= 0.5f;
         loadedChannel[(size_t) mic] = useRight ? 1 : 0;
         channel = useRight ? ampsim::CabIR::Channel::right : ampsim::CabIR::Channel::left;
+
+        // Whatever loads next replaces the pack, so stop morphing against the old one now.
+        packActive[(size_t) mic] = false;
+    }
+
+    if (file.isDirectory())
+    {
+        if (mic == roomMic)
+        {
+            setCabStatus (mic, "Cab packs are for the close mics; the room mic takes one IR file", true);
+            return;
+        }
+
+        const juce::Point<float> position { micParameters[(size_t) mic].positionX->load(), micParameters[(size_t) mic].positionY->load() };
+        morphedPosition[(size_t) mic] = position;
+
+        ++loadsInFlight;
+        loader.addJob ([this, mic, file, position]
+        {
+            const auto result = chain.cab.loadCloseMicPack (mic, file, position.x, position.y);
+            setCabStatus (mic, result.message, ! result.ok);
+            packActive[(size_t) mic] = chain.cab.hasPack (mic); // a failed load keeps the previous pack
+            --loadsInFlight;
+        });
+        return;
     }
 
     ++loadsInFlight;
@@ -359,6 +393,8 @@ void AmpSimProcessor::loadCabIR (int mic, const juce::File& file)
     {
         const auto result = mic == roomMic ? chain.cab.loadRoom (file) : chain.cab.loadCloseMic (mic, file, channel);
         setCabStatus (mic, result.message, ! result.ok);
+        if (mic != roomMic)
+            packActive[(size_t) mic] = chain.cab.hasPack (mic); // a file replaces the pack; a failed load keeps it
         --loadsInFlight;
     });
 }
@@ -411,14 +447,44 @@ void AmpSimProcessor::timerCallback()
         if (auto* param = parameters.getParameter (slotParamId))
             param->setValueNotifyingHost (param->convertTo0to1 ((float) slot));
 
-    // A close mic's left/right choice changed: read its file again with the other channel.
+    const auto now = juce::Time::getMillisecondCounterHiRes();
+
     for (int m = 0; m < ampsim::Cab::numCloseMics; ++m)
     {
+        // A close mic's left/right choice changed: read its file again with the other channel.
         const auto wanted = micParameters[(size_t) m].channel->load() >= 0.5f ? 1 : 0;
         const auto path = parameters.state.getProperty (cabPathKey (m)).toString();
 
         if (wanted != loadedChannel[(size_t) m] && juce::File::isAbsolutePath (path) && juce::File (path).existsAsFile())
             loadCabIR (m, juce::File (path));
+
+        // A moving mic: once its position has changed, the last morph has finished, and 40 ms have
+        // passed since it started, morph for the newest position. Positions in between are skipped,
+        // never queued, so the mic always heads for where it is now.
+        const juce::Point<float> position { micParameters[(size_t) m].positionX->load(), micParameters[(size_t) m].positionY->load() };
+
+        if (packActive[(size_t) m] && ! morphInFlight[(size_t) m] && position != morphedPosition[(size_t) m]
+            && now - lastMorphStartMs[(size_t) m] >= morphIntervalMs)
+        {
+            morphedPosition[(size_t) m] = position;
+            lastMorphStartMs[(size_t) m] = now;
+            morphInFlight[(size_t) m] = true;
+            ++morphCount;
+            ++loadsInFlight;
+
+            loader.addJob ([this, m, position]
+            {
+                // A file loaded since this was queued has replaced the pack: nothing to move. (Only
+                // loader jobs change packs, and there's one loader thread, so this can't go stale.)
+                if (chain.cab.hasPack (m))
+                {
+                    const auto result = chain.cab.moveCloseMic (m, position.x, position.y);
+                    setCabStatus (m, result.message, ! result.ok);
+                }
+                morphInFlight[(size_t) m] = false;
+                --loadsInFlight;
+            });
+        }
     }
 }
 

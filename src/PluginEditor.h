@@ -48,19 +48,51 @@ private:
     juce::OwnedArray<Knob> knobs;
 };
 
-/// One cab mic's controls: load an IR, its status, and its knobs and switches.
+/// Where a close mic sits on its cab pack's map: across the speaker (cap to edge) left to right, and
+/// distance (closest capture to farthest) top to bottom. Shows the pack's captured positions; dragging
+/// moves the mic by setting its two position parameters, and the processor re-morphs the IR.
+class MicPositionPad final : public juce::Component
+{
+public:
+    MicPositionPad (juce::AudioProcessorValueTreeState& state, const juce::String& xParameterId, const juce::String& yParameterId);
+
+    /// The pack's captured positions (empty: no pack, so the pad is inactive).
+    void setPoints (std::vector<juce::Point<float>> packPoints);
+    /// Repaints if the position parameters moved (automation, a preset, another view).
+    void refresh();
+
+    void paint (juce::Graphics&) override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+
+private:
+    juce::Rectangle<float> mapArea() const;
+    void moveTo (juce::Point<float> position);
+
+    juce::RangedAudioParameter* xParameter;
+    juce::RangedAudioParameter* yParameter;
+    std::vector<juce::Point<float>> points;
+    juce::Point<float> drawnPosition { -1.0f, -1.0f };
+    bool dragging = false;
+};
+
+/// One cab mic's controls: load an IR (or, for a close mic, a cab pack), its status, the position pad
+/// for a pack, and its knobs and switches.
 class MicPanel final : public juce::Component
 {
 public:
-    MicPanel (AmpSimProcessor& processor, int micIndex, std::function<void()> onLoad);
+    MicPanel (AmpSimProcessor& processor, int micIndex, std::function<void()> onLoad, std::function<void()> onLoadPack);
     void setStatus (const juce::String& text, bool isError);
+    void setPackPoints (const std::vector<ampsim::CabPack::Point>& packPoints);
     void paint (juce::Graphics&) override;
     void resized() override;
 
 private:
     const int mic;
     juce::Label title, status;
-    juce::TextButton loadButton { "Load IR..." };
+    juce::TextButton loadButton { "Load IR..." }, packButton { "Load pack..." };
+    std::unique_ptr<MicPositionPad> pad;
     juce::OwnedArray<Knob> knobs;
     juce::OwnedArray<juce::ToggleButton> toggles;
     juce::OwnedArray<juce::AudioProcessorValueTreeState::ButtonAttachment> toggleAttachments;
@@ -86,7 +118,7 @@ public:
 private:
     void timerCallback() override;
     void chooseFile (const juce::String& title, const juce::String& patterns, const juce::Identifier& lastPathKey,
-                     std::function<void (const juce::File&)> onChosen);
+                     std::function<void (const juce::File&)> onChosen, bool folders = false);
 
     AmpSimProcessor& ampSim;
 

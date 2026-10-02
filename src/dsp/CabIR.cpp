@@ -98,25 +98,15 @@ CabIR::LoadResult CabIR::loadSamples (juce::AudioBuffer<float> samples, double s
     // against the noise in both channels. The plan said pink noise; measured on clean and distorted
     // guitar through very different cabs, white noise keeps swaps within 2.1 LU and pink within only
     // 6.6 LU (see referenceWhiteNoise and the "Cab normalization study" test).
-    const auto noise = referenceWhiteNoise ((int) (4.0 * sampleRate));
-    std::vector<std::vector<float>> through;
-    std::vector<const float*> beforeChannels, afterChannels;
-
+    std::vector<const float*> channels;
     for (int ch = 0; ch < numChannels; ++ch)
-    {
-        through.push_back (loudness::fftConvolve (noise, samples.getReadPointer (ch), samples.getNumSamples()));
-        beforeChannels.push_back (noise.data());
-    }
-    for (const auto& t : through)
-        afterChannels.push_back (t.data());
+        channels.push_back (samples.getReadPointer (ch));
 
-    const auto before = loudness::integrated (beforeChannels, (int) noise.size(), sampleRate);
-    const auto after = loudness::integrated (afterChannels, (int) noise.size(), sampleRate);
+    const auto gain = loudness::whiteNoiseMatchingGain (channels, samples.getNumSamples(), sampleRate);
 
-    if (! std::isfinite (after))
+    if (gain <= 0.0)
         return { false, name + " is effectively silent" };
 
-    const auto gain = std::pow (10.0, (before - after) / 20.0);
     samples.applyGain ((float) gain);
 
     {

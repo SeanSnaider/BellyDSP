@@ -112,7 +112,10 @@ public:
 
             // No single reference gets every tone within 1 LU through cabs this different (see the
             // study test); 2.5 LU is the bound white noise achieves on the study's signals.
-            expectLessThan (worstNoiseChange, 0.05);
+            // The match is computed exactly from the IR's energy; this check measures one 4 s take of
+            // different noise, whose own reading scatters by a few hundredths of an LU through a dark
+            // cab (power estimates over a narrower band average fewer independent samples).
+            expectLessThan (worstNoiseChange, 0.1);
             expectLessThan (spread (distortedLevels), 2.5);
             expectLessThan (spread (cleanLevels), 2.5);
             logMessage ("  -> white noise changes loudness by at most " + juce::String (worstNoiseChange, 3) + " LU through any of the three cabs");

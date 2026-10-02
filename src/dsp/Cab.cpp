@@ -38,10 +38,84 @@ constexpr double butterworth2Q = 0.70710678118654752;
 
 CabIR::LoadResult Cab::loadCloseMic (int index, const juce::File& file, CabIR::Channel channel)
 {
-    auto result = closeMics[(size_t) juce::jlimit (0, numCloseMics - 1, index)].loadFile (file, channel);
+    index = juce::jlimit (0, numCloseMics - 1, index);
+    auto result = closeMics[(size_t) index].loadFile (file, channel);
+    if (result.ok)
+    {
+        const std::scoped_lock lock (packMutex);
+        packs[(size_t) index].reset(); // a single IR: the mic is no longer movable
+    }
     if (result.ok)
         realign();
     return result;
+}
+
+CabIR::LoadResult Cab::loadCloseMicPack (int index, const juce::File& folder, double x, double y)
+{
+    index = juce::jlimit (0, numCloseMics - 1, index);
+    auto pack = std::make_unique<CabPack>();
+    const auto packResult = pack->load (folder);
+
+    if (! packResult.ok)
+        return { false, packResult.message };
+
+    {
+        const std::scoped_lock lock (packMutex);
+        packs[(size_t) index] = std::move (pack);
+    }
+
+    auto result = moveCloseMic (index, x, y);
+    if (result.ok)
+        result.message = packResult.message + "; mic at " + juce::String (x, 2) + ", " + juce::String (y, 2);
+    return result;
+}
+
+CabIR::LoadResult Cab::moveCloseMic (int index, double x, double y)
+{
+    index = juce::jlimit (0, numCloseMics - 1, index);
+    std::vector<float> ir;
+    double rate = 0.0;
+    juce::String description;
+
+    {
+        const std::scoped_lock lock (packMutex);
+        const auto& pack = packs[(size_t) index];
+        if (pack == nullptr)
+            return { false, "This mic has no pack to move in" };
+        ir = pack->irAt (x, y);
+        rate = pack->getSampleRate();
+        description = pack->describe();
+    }
+
+    juce::AudioBuffer<float> buffer (1, (int) ir.size());
+    buffer.copyFrom (0, 0, ir.data(), (int) ir.size());
+    auto result = closeMics[(size_t) index].loadSamples (std::move (buffer), rate, description);
+    if (result.ok)
+    {
+        result.message = description + " at " + juce::String (x, 2) + ", " + juce::String (y, 2);
+        realign();
+    }
+    return result;
+}
+
+bool Cab::hasPack (int index) const
+{
+    const std::scoped_lock lock (packMutex);
+    return packs[(size_t) juce::jlimit (0, numCloseMics - 1, index)] != nullptr;
+}
+
+std::vector<CabPack::Point> Cab::getPackPoints (int index) const
+{
+    const std::scoped_lock lock (packMutex);
+    const auto& pack = packs[(size_t) juce::jlimit (0, numCloseMics - 1, index)];
+    return pack != nullptr ? pack->getPoints() : std::vector<CabPack::Point>();
+}
+
+CabPack::Layout Cab::getPackLayout (int index) const
+{
+    const std::scoped_lock lock (packMutex);
+    const auto& pack = packs[(size_t) juce::jlimit (0, numCloseMics - 1, index)];
+    return pack != nullptr ? pack->getLayout() : CabPack::Layout::single;
 }
 
 CabIR::LoadResult Cab::loadCloseMicSamples (int index, juce::AudioBuffer<float> samples, double rate, const juce::String& name)

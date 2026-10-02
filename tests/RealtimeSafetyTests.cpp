@@ -60,6 +60,15 @@ public:
                         stereoRoom.setSample (ch, i, (2.0f * random.nextFloat() - 1.0f) * std::exp (-(float) i / 4800.0f));
                 writeWav (roomIR, stereoRoom);
             }
+            // A cab pack for a moving mic: four captures on a 2 x 2 grid (cap/edge, 1in/4in).
+            const auto packFolder = tempDir().getChildFile ("rt_pack");
+            packFolder.deleteRecursively();
+            packFolder.createDirectory();
+            writeWav (packFolder.getChildFile ("Cap_1in.wav"), toBuffer (syntheticCabIR (4096, 8.0, 7000.0)));
+            writeWav (packFolder.getChildFile ("Edge_1in.wav"), toBuffer (syntheticCabIR (4096, 0.0, 3500.0)));
+            writeWav (packFolder.getChildFile ("Cap_4in.wav"), toBuffer (syntheticCabIR (4096, 6.0, 6000.0)));
+            writeWav (packFolder.getChildFile ("Edge_4in.wav"), toBuffer (syntheticCabIR (4096, -2.0, 3000.0)));
+
             const auto a1 = exampleModel ("wavenet_a1_standard.nam");
             const auto lstm = exampleModel ("lstm.nam");
             const auto small = exampleModel ("wavenet.nam");
@@ -75,7 +84,7 @@ public:
             juce::AudioBuffer<float> buffer (2, blockSize);
             juce::MidiBuffer midi;
             rtcheck::Counts total;
-            int blocks = 0, modelFadeBlocks = 0, slotSwitchBlocks = 0;
+            int blocks = 0, modelFadeBlocks = 0, slotSwitchBlocks = 0, morphsBefore = 0;
             juce::StringArray events;
 
             for (size_t start = 0; start + blockSize <= input.size(); start += blockSize, ++blocks)
@@ -106,6 +115,7 @@ public:
                     case 710:  setParam (p, AmpSimProcessor::ampParamId (1, "presence"), -4.0f); break;
                     case 800:  setParam (p, AmpSimProcessor::ampParamId (1, "output_trim"), -3.0f); break;
                     case 900:  midi.addEvent (juce::MidiMessage::programChange (1, 2), 0); break;      // footswitch: slot 3
+                    case 905:  p.loadCabIR (1, packFolder); morphsBefore = p.getMorphCount(); break; // close mic 2 becomes movable
                     case 1000: setParam (p, "cab_bypass", 1.0f); break;                     // cab off
                     case 1100: setParam (p, "cab_bypass", 0.0f); break;                     // cab back on
                     case 1200: midi.addEvent (juce::MidiMessage::programChange (1, 0), 0); break;      // footswitch: slot 1
@@ -125,9 +135,25 @@ public:
                 modelFadeBlocks += p.getChain().amp.isLoadingModel() ? 1 : 0;
                 slotSwitchBlocks += p.getChain().amp.isSwitching() ? 1 : 0;
 
-                // Real time: a block is 2.67 ms, so loader threads get time to finish their work,
-                // and the message thread's housekeeping runs now and then.
-                if (blocks % 8 == 0)
+                // Blocks 950 to 1150: dragging close mic 2 around its pack, in real time (the 40 ms
+                // re-morph limit is wall-clock time), with the timer's housekeeping running between.
+                if (blocks >= 950 && blocks < 1150)
+                {
+                    if (blocks % 4 == 0)
+                    {
+                        const auto t = (blocks - 950) / 200.0;
+                        setParam (p, AmpSimProcessor::cabParamId (1, "pos_x"), (float) (0.5 + 0.5 * std::sin (9.0 * t)));
+                        setParam (p, AmpSimProcessor::cabParamId (1, "pos_y"), (float) t);
+                    }
+                    if (blocks % 2 == 0)
+                    {
+                        juce::Thread::sleep (3);
+                        p.runHousekeeping();
+                    }
+                }
+                // Otherwise faster than real time, but a block is 2.67 ms, so loader threads get time
+                // to finish their work, and the message thread's housekeeping runs now and then.
+                else if (blocks % 8 == 0)
                 {
                     juce::Thread::sleep (1);
                     p.runHousekeeping();
@@ -138,7 +164,9 @@ public:
             expectGreaterThan (slotSwitchBlocks, 16, "the slot switches must have crossfaded during the measurement");
             expectEquals (p.getChain().amp.getSelectedSlot(), 0);
             expect (p.getStatus().cab[0].contains ("rt_ir_b"));
-            expect (p.getStatus().cab[1].contains ("rt_ir_c") && p.getStatus().cab[2].contains ("rt_room"));
+            const auto morphs = p.getMorphCount() - morphsBefore;
+            expectGreaterThan (morphs, 4, "the mic must have re-morphed while it was dragged");
+            expect (p.getStatus().cab[1].startsWith ("rt_pack (4 IRs on a grid) at ") && p.getStatus().cab[2].contains ("rt_room"), p.getStatus().cab[1]);
             expect (p.getChain().cab.closeMic (1).hasImpulseResponse() && p.getChain().cab.roomMic().hasImpulseResponse(),
                     "the IRs loaded during playback must have reached the audio thread");
             expectEquals (total.allocations, 0L);
@@ -148,7 +176,8 @@ public:
             logMessage ("  -> " + juce::String (blocks) + " blocks (" + juce::String (blocks * blockSize / fs, 1)
                         + " s of audio): 3 capture loads (" + juce::String (modelFadeBlocks) + " blocks mid-crossfade), "
                         "3 slot switches from the GUI and the footswitch (" + juce::String (slotSwitchBlocks)
-                        + " blocks mid-crossfade), 3 IR loads into the three cab mics plus an IR swap, auto alignment, 6 cab mic changes, cuts on, off, re-sloped and swept, cab bypass off and on, 5 knob ramps");
+                        + " blocks mid-crossfade), 3 IR loads into the three cab mics plus an IR swap, auto alignment, 6 cab mic changes, cuts on, off, re-sloped and swept, "
+                        "a cab pack loaded into close mic 2 and dragged around (" + juce::String (morphs) + " re-morphs), cab bypass off and on, 5 knob ramps");
             logMessage ("  -> audio thread: " + describe (total));
         }
     }

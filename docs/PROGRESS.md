@@ -7,7 +7,7 @@ Status key: Not started, In progress, Done. See `BUILD_PLAN.md` for what each ph
 | 0 | Python prototype: gray-box amp, Yeh tone stack, 3 channels | Done (reference only) | `prototypes/amp_sim.py`. Tone stack verified passive and stable over 2000 random knob settings. Its crude cab filter doubles as the synthetic test IR. |
 | 1 | Standalone app on the Scarlett Solo, smoothed gain | Done except the live check | C++/JUCE as of 2026-10-01. The app builds, launches, and quits cleanly. `ampsim_device_probe` opened the Solo at 48 kHz / 128 samples with all 4 inputs and both outputs, and got 1876 callbacks in 5 s (expected 1875) at 2.667 ms ± 0.05 ms. **Not verified yet:** Sean playing live through it at 128 samples with no dropouts. |
 | 2 | Offline render harness, test suite, basic panel | Done | `ampsim_render` (WAV in, chain, WAV out, CPU timing), `ampsim_tests` (158 checks, run by `ctest`), and the panel (load model, load IR, two knobs, cab bypass, status lines). |
-| 3 | NAM amp slots, three-mic IR cab with movable mics, basic MIDI switching | In progress (branch `phase-3`) | Done: the SVF filter, three always-running slots with per-slot trims and tone controls, the 20 ms slot switch, MIDI program change slot select, measured loudness matching for models and IRs, and the three-mic cab with auto alignment and cuts (see the log). To do: movable mics, input calibration. |
+| 3 | NAM amp slots, three-mic IR cab with movable mics, basic MIDI switching | In progress (branch `phase-3`) | Done: the SVF filter, three always-running slots with per-slot trims and tone controls, the 20 ms slot switch, MIDI program change slot select, measured loudness matching for models and IRs, the three-mic cab with auto alignment and cuts, and movable mics (cab packs, minimum-phase morphing). To do: input calibration. |
 | 4 | Compressor (pre and post) and EQ (graphic and parametric) | Not started | |
 | 5 | Post FX: delay (MIDI tap tempo), reverb, chorus; basic preset save/load | Not started | Milestone: CHON-style clean is the daily practice rig |
 | 6 | Linked dual gates, boost, overdrive | Not started | Milestone: tight tech death with legato surviving the gate |
@@ -21,6 +21,8 @@ Status key: Not started, In progress, Done. See `BUILD_PLAN.md` for what each ph
 
 Each phase is built at full fidelity on its own branch (`phase-3`, `phase-4`, ...), with the BUILD_PLAN tests and proof, and merges into `main` after Sean has played it. Tag `milestone-1` is the state before Phase 3 continued.
 
+Since 2026-10-01 the build runs to completion without stopping for questions: phase branches stack on each other, tasks that need Sean are listed below and skipped, and every assumption made on his behalf goes in `docs/ASSUMPTIONS.md` for review at the end.
+
 ## Next tasks
 
 | # | Task | Done when |
@@ -29,7 +31,7 @@ Each phase is built at full fidelity on its own branch (`phase-3`, `phase-4`, ..
 | 3.2.L | Sean checks slot switching with the footswitch (program change 1/2/3) and plays all three slots | Switches are instant and clickless, and the tone knobs do what their names say |
 | 3.3.Q | Sean decides: keep per-IR loudness matching (cab swaps stay within about 2 LU), or normalize each amp-plus-cab combination (exact on the reference DI, but cabs stop changing loudness at all) | A decision in the BUILD_PLAN log |
 | 3.4.L | Sean loads real IRs into the three mics and plays: checks auto alignment by ear (try toggling it), pan width, room level and pre-delay, and the cuts | Sounds right, and nothing clicks when moving controls while playing |
-| 3.5 | Movable mics: cab packs, the position map, minimum-phase spectral morphing | The BUILD_PLAN cab tests (identity at captured points, continuity, no comb notches) |
+| 3.5.L | Sean loads a real cab pack (a folder of IRs of one cab at several mic positions) into a close mic and drags the mic while playing | Moving the mic sounds like moving a mic, with no hollow or phasey spots between captures and no clicks |
 | 3.6 | Input calibration from model metadata (`input_level_dbu`) | Test with a model that has the field |
 
 ## Log
@@ -70,4 +72,12 @@ Add a dated line here when something meaningful lands or a decision changes.
 - Cuts hit their Butterworth targets to 0.01 dB (-3.010 dB at fc; -12.30/-24.10 dB an octave below a low cut; -14.33/-28.34 dB an octave above a 5 kHz high cut, the bilinear-warped targets).
 - CPU: two 500 ms close mics plus a 1 s stereo room with both cuts on cost 1.2% of the deadline (the room uses JUCE's head/tail partitioning).
 - Bug found by mutation testing: an IR loaded into an empty mic during playback never took effect, because the cab skipped mics without IRs, and a mic only installs a waiting IR while being processed. The first version of the leak test passed for that reason. Fixed (every mic polls for a waiting IR each buffer), and the test now compares block by block against a single-mic cab: until mic 2's engine is ready plus a 60 ms settle, the output is identical to mic 1 alone; afterwards it's exactly 1.5012 x (mic 2 at -6 dB, coherent). With the fade-in logic deliberately disabled, the test fails with a 0.33 error, so it does catch a leak.
+2026-10-01: Phase 3, movable mics (409 checks pass):
+- Cab packs: a folder of IRs placed on a position map by `cabpack.json`, by file names (Cap, CapEdge, Cone, Edge; 1in, 2.5cm, 10mm), or in file order as a fallback the status line admits to. Bilinear weights on a grid, linear on a line, inverse distance over the nearest four for scattered points, all exact in tests.
+- Minimum-phase morphing: magnitude kept to 0.0009 dB from 30 Hz to 16 kHz, partial energy dominates the original's at every sample, and the analytic case 0.4 + z^-1 becomes exactly 1 + 0.4 z^-1. Arrival times are put back to -286 dB for whole samples and 0.0003 samples for fractions.
+- On a captured point the mic uses the capture itself, bit-exact. Moving between two captures that differ by 15 dB changes the response by at most 0.150 dB per 1% of the way (exactly linear in dB), and halfway it's their dB average to within 0.0001 dB.
+- Comb test: halfway between two captures 12 samples apart, a naive crossfade notches 46 dB at 2.2 kHz; the morph stays within 0.0001 dB of the target (plot: `build/proof/cab_morph_vs_crossfade.png`).
+- Dragging: the loader re-morphs at most every 40 ms and always for the latest position. One second of dragging gave 25 morphs exactly 40.0 ms apart and ended on the final position; with the limit deliberately removed, the test fails with 336 morphs 2.2 ms apart. A move costs the loader 1.2 ms for 85 ms IRs.
+- Two fixes found by the new tests: the morph's minimum-phase step left a -60 dB error from IRs' exact zeros at DC and Nyquist (now -77 dB, with a double-precision FFT and neighbour values at those two bins), and IR loudness matching took 70 ms per move (now computed exactly from the IR's K-weighted energy in 0.27 ms, agreeing with the 4 s noise measurement within 0.034 dB).
+- Real-time safety now includes a pack loading into close mic 2 and 12 re-morphs while it's dragged: still 0 allocations, 0 frees, 0 blocking locks. Saving and restoring brings the pack and the mic position back, bit-identical over 1 s.
 

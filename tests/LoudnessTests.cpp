@@ -130,6 +130,67 @@ public:
             logMessage ("  -> reference guitar DI: peak " + juce::String (peak, 2) + " dBFS, loudness " + juce::String (diLoudness, 1)
                         + " LUFS; pink noise: 250-500 Hz octave vs. 4-8 kHz octave differ by " + juce::String (lowOctave - highOctave, 2) + " dB");
         }
+
+        beginTest ("the IR loudness match computed from the IR's energy equals measuring real white noise through it");
+        {
+            // The reference: the original method, 4 s of white noise measured with the BS.1770 meter
+            // before and after the IR (a stereo IR against noise in both channels).
+            const auto measured = [] (const std::vector<std::vector<float>>& channels)
+            {
+                const auto noise = ampsim::referenceWhiteNoise ((int) (4.0 * fs));
+                std::vector<std::vector<float>> through;
+                std::vector<const float*> before, after;
+                for (const auto& h : channels)
+                {
+                    through.push_back (ampsim::loudness::fftConvolve (noise, h.data(), (int) h.size()));
+                    before.push_back (noise.data());
+                }
+                for (const auto& t : through)
+                    after.push_back (t.data());
+                return ampsim::loudness::integrated (before, (int) noise.size(), fs) - ampsim::loudness::integrated (after, (int) noise.size(), fs);
+            };
+            const auto toFloat = [] (const std::vector<double>& h) { return std::vector<float> (h.begin(), h.end()); };
+            const auto decayingNoise = [] (int length, double tau, juce::int64 seed)
+            {
+                auto h = whiteNoise (length, 1.0f, seed);
+                for (size_t n = 0; n < h.size(); ++n)
+                    h[n] *= (float) std::exp (-(double) n / (tau * fs));
+                return h;
+            };
+
+            const std::vector<std::pair<juce::String, std::vector<std::vector<float>>>> irs {
+                { "stock cab", { toFloat (syntheticCabIR (4096)) } },
+                { "dark cab", { toFloat (syntheticCabIR (4096, -4.0, 2500.0)) } },
+                { "bright cab", { toFloat (syntheticCabIR (4096, 10.0, 9000.0)) } },
+                { "quiet cab (-30 dB)", { [&] { auto h = toFloat (syntheticCabIR (2048)); for (auto& v : h) v *= 0.0316f; return h; }() } },
+                { "1 s stereo room", { decayingNoise (48000, 0.15, 5), decayingNoise (48000, 0.15, 6) } },
+            };
+
+            juce::StringArray results;
+            double worst = 0.0;
+            for (const auto& [name, channels] : irs)
+            {
+                std::vector<const float*> pointers;
+                for (const auto& h : channels)
+                    pointers.push_back (h.data());
+                const auto analyticDb = 20.0 * std::log10 (ampsim::loudness::whiteNoiseMatchingGain (pointers, (int) channels[0].size(), fs));
+                const auto measuredDb = measured (channels);
+                worst = std::max (worst, std::abs (analyticDb - measuredDb));
+                results.add (name + " " + juce::String (analyticDb, 2) + " vs " + juce::String (measuredDb, 2) + " dB");
+            }
+            expectLessThan (worst, 0.1);
+
+            const auto t0 = juce::Time::getMillisecondCounterHiRes();
+            const auto room = irs.back().second;
+            ampsim::loudness::whiteNoiseMatchingGain ({ room[0].data(), room[1].data() }, 48000, fs);
+            const auto analyticMs = juce::Time::getMillisecondCounterHiRes() - t0;
+            const auto t1 = juce::Time::getMillisecondCounterHiRes();
+            measured (room);
+            const auto measuredMs = juce::Time::getMillisecondCounterHiRes() - t1;
+
+            logMessage ("  -> computed vs measured gain: " + results.joinIntoString ("; ") + " (largest difference " + juce::String (worst, 3) + " dB)");
+            logMessage ("  -> 1 s stereo room: computed in " + juce::String (analyticMs, 2) + " ms, measured in " + juce::String (measuredMs, 1) + " ms");
+        }
     }
 };
 

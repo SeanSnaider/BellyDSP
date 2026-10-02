@@ -116,6 +116,45 @@ double integratedMono (const float* samples, int numSamples, double sampleRate)
     return integrated ({ samples }, numSamples, sampleRate);
 }
 
+double whiteNoiseMatchingGain (const std::vector<const float*>& irChannels, int length, double sampleRate)
+{
+    // White noise has a flat power spectrum, so after any linear filter g its mean square is the
+    // noise's variance times the energy of g's impulse response (Parseval). Stationary noise passes
+    // both BS.1770 gates untouched, so its loudness is -0.691 + 10 log10 of its K-weighted mean square
+    // summed over channels. The gain that leaves white noise's loudness unchanged is therefore
+    //     g = sqrt( C E[k] / sum over channels c of E[k * h_c] )
+    // with k the K-weighting filter's impulse response, h_c the IR's C channels (a stereo IR is
+    // measured against noise in both channels), and E[] energy. This is the exact expected value of
+    // measuring white noise before and after the IR, which is how it was first built (4 s of noise,
+    // kept in the tests as the reference). It's deterministic and about 100 times faster, which a
+    // moving mic's re-morphs need. See CabIR for why white rather than pink noise.
+    const auto pre = preFilter (sampleRate), rlb = rlbFilter (sampleRate);
+    const auto ringing = (int) (0.5 * sampleRate); // the K filter's tail decays far below 1e-12 in 0.5 s
+
+    const auto kWeightedEnergy = [&] (const float* x, int n)
+    {
+        double px1 = 0, px2 = 0, py1 = 0, py2 = 0, rx1 = 0, rx2 = 0, ry1 = 0, ry2 = 0, energy = 0;
+        for (int i = 0; i < n + ringing; ++i)
+        {
+            const double in = i < n ? (x != nullptr ? (double) x[i] : (i == 0 ? 1.0 : 0.0)) : 0.0;
+            const auto y1 = pre.b0 * in + pre.b1 * px1 + pre.b2 * px2 - pre.a1 * py1 - pre.a2 * py2;
+            px2 = px1; px1 = in; py2 = py1; py1 = y1;
+            const auto y2 = rlb.b0 * y1 + rlb.b1 * rx1 + rlb.b2 * rx2 - rlb.a1 * ry1 - rlb.a2 * ry2;
+            rx2 = rx1; rx1 = y1; ry2 = ry1; ry1 = y2;
+            energy += y2 * y2;
+        }
+        return energy;
+    };
+
+    const auto before = (double) irChannels.size() * kWeightedEnergy (nullptr, 1); // a unit impulse: k itself
+    double after = 0.0;
+    for (const auto* h : irChannels)
+        after += kWeightedEnergy (h, length);
+
+    // Too quiet to measure: more than 100 dB below unity.
+    return after > before * 1.0e-10 ? std::sqrt (before / after) : 0.0;
+}
+
 std::vector<float> fftConvolve (const std::vector<float>& x, const float* h, int hLength)
 {
     const auto fullLength = (int) x.size() + hLength - 1;

@@ -135,9 +135,123 @@ void SlotPanel::resized()
     }
 }
 
+// ---- MicPositionPad ---------------------------------------------------------------------------
+
+MicPositionPad::MicPositionPad (juce::AudioProcessorValueTreeState& state, const juce::String& xParameterId,
+                                const juce::String& yParameterId)
+    : xParameter (state.getParameter (xParameterId)), yParameter (state.getParameter (yParameterId))
+{
+    jassert (xParameter != nullptr && yParameter != nullptr);
+}
+
+void MicPositionPad::setPoints (std::vector<juce::Point<float>> packPoints)
+{
+    if (packPoints != points)
+    {
+        points = std::move (packPoints);
+        setMouseCursor (points.empty() ? juce::MouseCursor::NormalCursor : juce::MouseCursor::CrosshairCursor);
+        repaint();
+    }
+}
+
+void MicPositionPad::refresh()
+{
+    const juce::Point<float> position { xParameter->convertFrom0to1 (xParameter->getValue()),
+                                        yParameter->convertFrom0to1 (yParameter->getValue()) };
+    if (position != drawnPosition)
+        repaint();
+}
+
+juce::Rectangle<float> MicPositionPad::mapArea() const
+{
+    // Room for the axis captions: "cap" / "edge" below, "close" / "far" on the left.
+    return getLocalBounds().toFloat().withTrimmedLeft (34.0f).withTrimmedBottom (16.0f).reduced (6.0f);
+}
+
+void MicPositionPad::paint (juce::Graphics& g)
+{
+    const auto bounds = getLocalBounds().toFloat();
+    const auto map = mapArea();
+    g.setColour (background.brighter (0.05f));
+    g.fillRoundedRectangle (bounds, 4.0f);
+
+    g.setColour (dimText.withAlpha (0.25f));
+    for (int i = 0; i <= 4; ++i)
+    {
+        const auto x = map.getX() + map.getWidth() * (float) i / 4.0f;
+        const auto y = map.getY() + map.getHeight() * (float) i / 4.0f;
+        g.drawVerticalLine (juce::roundToInt (x), map.getY(), map.getBottom());
+        g.drawHorizontalLine (juce::roundToInt (y), map.getX(), map.getRight());
+    }
+
+    g.setColour (dimText);
+    g.setFont (juce::FontOptions (11.0f));
+    g.drawText ("cap", juce::Rectangle<float> (map.getX() - 10.0f, map.getBottom() + 2.0f, 40.0f, 14.0f), juce::Justification::centredLeft);
+    g.drawText ("edge", juce::Rectangle<float> (map.getRight() - 36.0f, map.getBottom() + 2.0f, 40.0f, 14.0f), juce::Justification::centredRight);
+    g.drawText ("close", juce::Rectangle<float> (2.0f, map.getY() - 4.0f, 34.0f, 14.0f), juce::Justification::centredLeft);
+    g.drawText ("far", juce::Rectangle<float> (2.0f, map.getBottom() - 10.0f, 34.0f, 14.0f), juce::Justification::centredLeft);
+
+    drawnPosition = { xParameter->convertFrom0to1 (xParameter->getValue()), yParameter->convertFrom0to1 (yParameter->getValue()) };
+
+    if (points.empty())
+    {
+        g.drawFittedText ("Load a cab pack (a folder of IRs)\nto move this mic", map.toNearestInt(), juce::Justification::centred, 2);
+        return;
+    }
+
+    const auto toScreen = [map] (juce::Point<float> p) { return juce::Point<float> (map.getX() + p.x * map.getWidth(), map.getY() + p.y * map.getHeight()); };
+
+    g.setColour (textColour.withAlpha (0.7f));
+    for (const auto& p : points)
+        g.fillEllipse (juce::Rectangle<float> (6.0f, 6.0f).withCentre (toScreen (p)));
+
+    const auto mic = toScreen (drawnPosition);
+    g.setColour (accent);
+    g.fillEllipse (juce::Rectangle<float> (12.0f, 12.0f).withCentre (mic));
+    g.setColour (textColour);
+    g.drawEllipse (juce::Rectangle<float> (16.0f, 16.0f).withCentre (mic), 1.5f);
+}
+
+void MicPositionPad::moveTo (juce::Point<float> position)
+{
+    const auto map = mapArea();
+    const auto x = juce::jlimit (0.0f, 1.0f, (position.x - map.getX()) / map.getWidth());
+    const auto y = juce::jlimit (0.0f, 1.0f, (position.y - map.getY()) / map.getHeight());
+    xParameter->setValueNotifyingHost (xParameter->convertTo0to1 (x));
+    yParameter->setValueNotifyingHost (yParameter->convertTo0to1 (y));
+    repaint();
+}
+
+void MicPositionPad::mouseDown (const juce::MouseEvent& e)
+{
+    if (points.empty())
+        return;
+
+    dragging = true;
+    xParameter->beginChangeGesture();
+    yParameter->beginChangeGesture();
+    moveTo (e.position);
+}
+
+void MicPositionPad::mouseDrag (const juce::MouseEvent& e)
+{
+    if (dragging)
+        moveTo (e.position);
+}
+
+void MicPositionPad::mouseUp (const juce::MouseEvent&)
+{
+    if (! dragging)
+        return;
+
+    dragging = false;
+    xParameter->endChangeGesture();
+    yParameter->endChangeGesture();
+}
+
 // ---- MicPanel ---------------------------------------------------------------------------------
 
-MicPanel::MicPanel (AmpSimProcessor& processor, int micIndex, std::function<void()> onLoad)
+MicPanel::MicPanel (AmpSimProcessor& processor, int micIndex, std::function<void()> onLoad, std::function<void()> onLoadPack)
     : mic (micIndex)
 {
     const bool isRoom = mic == AmpSimProcessor::roomMic;
@@ -148,6 +262,16 @@ MicPanel::MicPanel (AmpSimProcessor& processor, int micIndex, std::function<void
 
     loadButton.onClick = std::move (onLoad);
     addAndMakeVisible (loadButton);
+
+    if (! isRoom)
+    {
+        packButton.onClick = std::move (onLoadPack);
+        packButton.setTooltip ("A folder of IRs of one cab at different mic positions, which makes this mic movable");
+        addAndMakeVisible (packButton);
+        pad = std::make_unique<MicPositionPad> (processor.parameters, AmpSimProcessor::cabParamId (mic, "pos_x"),
+                                                AmpSimProcessor::cabParamId (mic, "pos_y"));
+        addAndMakeVisible (*pad);
+    }
 
     auto& state = processor.parameters;
     knobs.add (new Knob (state, AmpSimProcessor::cabParamId (mic, "level"), "Level"));
@@ -184,6 +308,18 @@ void MicPanel::setStatus (const juce::String& text, bool isError)
     status.setColour (juce::Label::textColourId, isError ? errorColour : textColour);
 }
 
+void MicPanel::setPackPoints (const std::vector<ampsim::CabPack::Point>& packPoints)
+{
+    if (pad == nullptr)
+        return;
+
+    std::vector<juce::Point<float>> positions;
+    for (const auto& p : packPoints)
+        positions.push_back ({ (float) p.x, (float) p.y });
+    pad->setPoints (std::move (positions));
+    pad->refresh();
+}
+
 void MicPanel::paint (juce::Graphics& g)
 {
     g.setColour (panel);
@@ -194,11 +330,26 @@ void MicPanel::resized()
 {
     auto area = getLocalBounds().reduced (10);
     auto top = area.removeFromTop (28);
-    title.setBounds (top.removeFromLeft (120));
-    loadButton.setBounds (top.removeFromRight (100));
+    if (pad != nullptr)
+    {
+        packButton.setBounds (top.removeFromRight (92));
+        top.removeFromRight (4);
+        loadButton.setBounds (top.removeFromRight (84));
+    }
+    else
+    {
+        loadButton.setBounds (top.removeFromRight (100));
+    }
+    title.setBounds (top);
     area.removeFromTop (4);
     status.setBounds (area.removeFromTop (38));
     area.removeFromTop (4);
+
+    if (pad != nullptr)
+    {
+        pad->setBounds (area.removeFromTop (juce::jmax (90, area.getHeight() - 150)));
+        area.removeFromTop (6);
+    }
 
     auto switches = area.removeFromBottom (28);
     if (mic != AmpSimProcessor::roomMic)
@@ -254,6 +405,11 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p)
         {
             chooseFile ("Choose an impulse response", "*.wav;*.aif;*.aiff;*.flac", AmpSimProcessor::cabPathKey (m),
                         [this, m] (const juce::File& f) { ampSim.loadCabIR (m, f); });
+        },
+        [this, m]
+        {
+            chooseFile ("Choose a cab pack folder", {}, AmpSimProcessor::cabPathKey (m),
+                        [this, m] (const juce::File& f) { ampSim.loadCabIR (m, f); }, true);
         }));
         cabPage.addAndMakeVisible (micPanels.getLast());
     }
@@ -321,7 +477,7 @@ AmpSimEditor::~AmpSimEditor()
 
 void AmpSimEditor::chooseFile (const juce::String& title, const juce::String& patterns,
                                const juce::Identifier& lastPathKey,
-                               std::function<void (const juce::File&)> onChosen)
+                               std::function<void (const juce::File&)> onChosen, bool folders)
 {
     // Start in the folder of the last file loaded, if there is one.
     const auto lastPath = ampSim.parameters.state.getProperty (lastPathKey).toString();
@@ -330,11 +486,12 @@ void AmpSimEditor::chooseFile (const juce::String& title, const juce::String& pa
                            : juce::File::getSpecialLocation (juce::File::userHomeDirectory);
 
     chooser = std::make_unique<juce::FileChooser> (title, start, patterns);
-    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-                          [onChosen] (const juce::FileChooser& fc)
+    const auto flags = juce::FileBrowserComponent::openMode
+                       | (folders ? juce::FileBrowserComponent::canSelectDirectories : juce::FileBrowserComponent::canSelectFiles);
+    chooser->launchAsync (flags, [onChosen, folders] (const juce::FileChooser& fc)
                           {
                               const auto file = fc.getResult();
-                              if (file.existsAsFile())
+                              if (folders ? file.isDirectory() : file.existsAsFile())
                                   onChosen (file);
                           });
 }
@@ -352,7 +509,11 @@ void AmpSimEditor::timerCallback()
     }
 
     for (int m = 0; m < AmpSimProcessor::numCabMics; ++m)
+    {
         micPanels[m]->setStatus (status.cab[(size_t) m], status.cabError[(size_t) m]);
+        if (m != AmpSimProcessor::roomMic)
+            micPanels[m]->setPackPoints (ampSim.getCabPackPoints (m));
+    }
 
     alignmentLabel.setText (status.alignment, juce::dontSendNotification);
     warningLabel.setText (status.warning, juce::dontSendNotification);

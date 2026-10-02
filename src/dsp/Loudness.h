@@ -29,6 +29,10 @@ Biquad rlbFilter (double sampleRate);
 double integrated (const std::vector<const float*>& channels, int numSamples, double sampleRate);
 double integratedMono (const float* samples, int numSamples, double sampleRate);
 
+/// The gain that makes an IR (one or two channels, each `length` samples) leave white noise's BS.1770
+/// loudness unchanged: the cab IR loudness match. Returns 0 for an IR too quiet to measure.
+double whiteNoiseMatchingGain (const std::vector<const float*>& irChannels, int length, double sampleRate);
+
 /// Linear convolution y = x * h through FFTs (offline, allocates). The output has x's length.
 std::vector<float> fftConvolve (const std::vector<float>& x, const float* h, int hLength);
 

@@ -58,6 +58,19 @@ std::vector<double> scaledBright()
     return h;
 }
 
+/// A cab pack folder: four captures on a 2 x 2 grid (dust cap and cone edge, 1 and 4 inches away).
+juce::File writeTestPack (const juce::String& name)
+{
+    const auto folder = tempDir().getChildFile (name);
+    folder.deleteRecursively();
+    folder.createDirectory();
+    writeWav (folder.getChildFile ("Cap_1in.wav"), toBuffer (syntheticCabIR (4096, 8.0, 7000.0)));
+    writeWav (folder.getChildFile ("Edge_1in.wav"), toBuffer (syntheticCabIR (4096, 0.0, 3500.0)));
+    writeWav (folder.getChildFile ("Cap_4in.wav"), toBuffer (syntheticCabIR (4096, 6.0, 6000.0)));
+    writeWav (folder.getChildFile ("Edge_4in.wav"), toBuffer (syntheticCabIR (4096, -2.0, 3000.0)));
+    return folder;
+}
+
 bool savePng (const juce::Image& image, const juce::File& file)
 {
     file.deleteFile();
@@ -179,6 +192,35 @@ public:
                         + "\", cab \"" + restored.getStatus().cab[0] + "\"; 2 s through both: max difference " + juce::String (difference));
         }
 
+        beginTest ("a cab pack and the mic's position survive saving and restoring, and sound identical");
+        {
+            const auto packFolder = writeTestPack ("state_pack");
+            AmpSimProcessor original;
+            setParam (original, AmpSimProcessor::cabParamId (0, "pos_x"), 0.3f);
+            setParam (original, AmpSimProcessor::cabParamId (0, "pos_y"), 0.7f);
+            original.loadCabIR (0, packFolder);
+            waitForLoads (original);
+
+            juce::MemoryBlock state;
+            original.getStateInformation (state);
+            AmpSimProcessor restored;
+            restored.setStateInformation (state.getData(), (int) state.getSize());
+            waitForLoads (restored);
+
+            expect (original.getStatus().cab[0].contains ("state_pack (4 IRs on a grid), placed by file names; mic at 0.30, 0.70"), original.getStatus().cab[0]);
+            expectEquals (restored.getStatus().cab[0], original.getStatus().cab[0]);
+            expectEquals ((int) restored.getCabPackPoints (0).size(), 4);
+            expectEquals (getParam (restored, AmpSimProcessor::cabParamId (0, "pos_x")), 0.3f);
+
+            original.prepareToPlay (fs, blockSize);
+            restored.prepareToPlay (fs, blockSize);
+            const auto input = guitarDI ((int) fs);
+            const auto difference = maxAbsDifference (processAll (original, input).left, processAll (restored, input).left);
+            expectEquals (difference, 0.0);
+            logMessage ("  -> restored: \"" + restored.getStatus().cab[0] + "\" with " + juce::String ((int) restored.getCabPackPoints (0).size())
+                        + " pack positions; 1 s through both: max difference " + juce::String (difference));
+        }
+
         beginTest ("a saved model that has gone missing is reported, not a crash");
         {
             AmpSimProcessor p;
@@ -235,6 +277,16 @@ public:
             const auto cabFile = proofDir().getChildFile ("editor_cab.png");
             expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), cabFile));
             logMessage ("  -> " + cabFile.getFullPathName());
+
+            // A cab pack in close mic 1, the mic moved between captures: the position pad.
+            setParam (p, AmpSimProcessor::cabParamId (0, "pos_x"), 0.62f);
+            setParam (p, AmpSimProcessor::cabParamId (0, "pos_y"), 0.35f);
+            p.loadCabIR (0, writeTestPack ("snapshot_pack"));
+            waitForLoads (p);
+            ampSimEditor->refresh();
+            const auto packFile = proofDir().getChildFile ("editor_cab_pack.png");
+            expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), packFile));
+            logMessage ("  -> " + packFile.getFullPathName());
 
             AmpSimProcessor wrongRate;
             wrongRate.prepareToPlay (44100.0, blockSize);

@@ -46,9 +46,18 @@ public:
 
     /// Message thread. Loading happens on a background thread; watch getStatus() for the result.
     void loadModel (int slot, const juce::File& file);
-    void loadCabIR (int mic, const juce::File& file); // mic 0, 1: close mics; 2: room
+    void loadCabIR (int mic, const juce::File& file); // mic 0, 1: close mics; 2: room. A folder is a cab pack.
 
-    /// True while a model or IR load is still running. Used by the tests.
+    /// Message thread: a close mic's cab pack positions (empty without a pack), for the position pad.
+    std::vector<ampsim::CabPack::Point> getCabPackPoints (int mic) const { return chain.cab.getPackPoints (mic); }
+
+    /// A moving mic is re-morphed at most this often (BUILD_PLAN "Movable mics": every ~40 ms).
+    static constexpr double morphIntervalMs = 40.0;
+
+    /// For tests: how many times a moving mic's IR has been re-morphed.
+    int getMorphCount() const { return morphCount.load(); }
+
+    /// True while a model or IR load (or a moving mic's re-morph) is still running. Used by the tests.
     bool isLoading() const { return loadsInFlight.load() > 0; }
 
     struct Status
@@ -116,6 +125,8 @@ private:
         std::atomic<float>* delay = nullptr;
         std::atomic<float>* mute = nullptr;
         std::atomic<float>* channel = nullptr;
+        std::atomic<float>* positionX = nullptr;
+        std::atomic<float>* positionY = nullptr;
     };
 
     std::atomic<float>* inputGainDb = nullptr;
@@ -138,6 +149,15 @@ private:
     int lastSlotParameter = -1;              // audio thread: the slot parameter value last acted on
     std::atomic<int> midiSlotRequest { -1 }; // audio thread to timer: a footswitch picked this slot
     std::array<int, ampsim::Cab::numCloseMics> loadedChannel { 0, 0 }; // message thread: channel each close mic was read with
+
+    // Moving mics. packActive (the mic has a pack, so its position matters) is cleared by the message
+    // thread when a load starts and set by the loader when it ends; morphInFlight is cleared by the
+    // loader when a morph is done. The rest is message thread only.
+    std::array<std::atomic<bool>, ampsim::Cab::numCloseMics> packActive {};
+    std::array<std::atomic<bool>, ampsim::Cab::numCloseMics> morphInFlight {};
+    std::array<juce::Point<float>, ampsim::Cab::numCloseMics> morphedPosition; // the position last sent to the loader
+    std::array<double, ampsim::Cab::numCloseMics> lastMorphStartMs {};
+    std::atomic<int> morphCount { 0 };
 
     std::atomic<bool> sampleRateOk { true };
     std::atomic<double> deviceSampleRate { 0.0 };

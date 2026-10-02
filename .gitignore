@@ -11,3 +11,6 @@
 
 __pycache__/
 .DS_Store
+
+# Test proof output when ampsim_tests runs without --proof-dir
+/proof

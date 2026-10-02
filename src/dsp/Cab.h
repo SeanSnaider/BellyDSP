@@ -2,6 +2,7 @@
 
 #include "Block.h"
 #include "CabIR.h"
+#include "CabPack.h"
 #include "SwitchableDelay.h"
 #include "Svf.h"
 
@@ -90,6 +91,19 @@ public:
     CabIR::LoadResult loadCloseMic (int index, const juce::File& file, CabIR::Channel channel = CabIR::Channel::left);
     CabIR::LoadResult loadCloseMicSamples (int index, juce::AudioBuffer<float> samples, double sampleRate, const juce::String& name);
     CabIR::LoadResult loadRoom (const juce::File& file);
+
+    /// Loader thread. Loads a cab pack (a folder of IRs on a position map) into a close mic, which
+    /// makes it movable, and places the mic at (x, y). Loading a single IR file clears the pack.
+    CabIR::LoadResult loadCloseMicPack (int index, const juce::File& folder, double x, double y);
+
+    /// Loader thread. Moves a pack-loaded close mic: morphs the IR for (x, y) and swaps it in (the
+    /// audio thread crossfades as for any IR change). Does nothing for a mic without a pack.
+    CabIR::LoadResult moveCloseMic (int index, double x, double y);
+
+    /// Any non-audio thread.
+    bool hasPack (int index) const;
+    std::vector<CabPack::Point> getPackPoints (int index) const;
+    CabPack::Layout getPackLayout (int index) const;
     CabIR::LoadResult loadRoomSamples (juce::AudioBuffer<float> samples, double sampleRate, const juce::String& name);
 
     /// Any thread: the alignment currently in effect.
@@ -168,6 +182,9 @@ private:
     std::atomic<std::uint64_t> packedAlignment { 0 };
     std::atomic<float> alignedCorrelation { 0.0f };
     std::mutex realignMutex; // loader threads only: one realignment at a time
+
+    std::array<std::unique_ptr<CabPack>, numCloseMics> packs; // loader and message threads only
+    mutable std::mutex packMutex;
 
     juce::AudioBuffer<float> micBuffers;  // 2 channels per close mic, then 2 for the room
     juce::AudioBuffer<float> dryBuffer;   // for the cut filters' on/off crossfades
