@@ -1067,6 +1067,104 @@ public:
                         + " dB (clipping); matches the lone block at +18 exactly. drive_oversampling stays out of presets");
         }
 
+        beginTest ("tuner: reads the DI on its own thread while engaged, mutes the output (or not), follows A4, and never comes back engaged");
+        {
+            AmpSimProcessor p;
+            p.prepareToPlay (fs, blockSize);
+
+            // A2 as a plucked harmonic tone: partials n at 1/n, a slow decay, -12 dBFS peak or so.
+            const auto pluck = [] (double f, double seconds)
+            {
+                std::vector<float> x ((size_t) (seconds * fs));
+                for (size_t i = 0; i < x.size(); ++i)
+                {
+                    const auto t = (double) i / fs;
+                    double v = 0.0;
+                    for (int n = 1; n <= 8; ++n)
+                        v += std::sin (juce::MathConstants<double>::twoPi * n * f * t) / n;
+                    x[i] = (float) (0.12 * v * std::exp (-t / 4.0));
+                }
+                return x;
+            };
+            juce::AudioBuffer<float> buffer (2, blockSize);
+            juce::MidiBuffer midi;
+            // Played at about real time (a 128-sample buffer is 2.67 ms), so the analysis thread keeps up.
+            const auto play = [&] (const std::vector<float>& x)
+            {
+                std::vector<float> out;
+                for (size_t start = 0; start + blockSize <= x.size(); start += blockSize)
+                {
+                    buffer.clear();
+                    buffer.copyFrom (0, 0, x.data() + start, blockSize);
+                    p.processBlock (buffer, midi);
+                    out.insert (out.end(), buffer.getReadPointer (0), buffer.getReadPointer (0) + blockSize);
+                    juce::Thread::sleep (2);
+                }
+                return out;
+            };
+
+            const auto note = pluck (110.0, 4.0);
+            const auto idleUpdates = p.getTunerUpdateCount();
+            play (std::vector<float> (note.begin(), note.begin() + (long) (0.2 * fs)));
+            const auto updatesWhileOff = p.getTunerUpdateCount() - idleUpdates;
+
+            setParam (p, "tuner_on", 1.0f);
+            const auto startUpdates = p.getTunerUpdateCount();
+            const auto muted = play (std::vector<float> (note.begin(), note.begin() + (long) (1.5 * fs)));
+            const auto a2 = p.getTunerReading();
+            const auto updates = p.getTunerUpdateCount() - startUpdates;
+            expect (p.isTunerEngaged());
+            expect (a2.hasReading && a2.live && a2.midiNote == 45);
+            expectWithinAbsoluteError (a2.cents, 0.0, 0.5);
+            double mutedPeak = 0.0;
+            for (size_t n = (size_t) (0.025 * fs); n < muted.size(); ++n)
+                mutedPeak = std::max (mutedPeak, std::abs ((double) muted[n]));
+            expectEquals (mutedPeak, 0.0);
+            const auto fadeStep = maxStep (muted, 0, (size_t) (0.025 * fs));
+            const auto playingStep = maxStep (note, 0, (size_t) (0.5 * fs));
+            expectLessThan (fadeStep, playingStep * 1.01);
+
+            // Tune while hearing yourself: the guitar comes back (the defaults pass it untouched).
+            setParam (p, "tuner_mute", 0.0f);
+            const auto heardFrom = (size_t) (1.5 * fs) / blockSize * blockSize;
+            const auto heard = play (std::vector<float> (note.begin() + (long) heardFrom, note.begin() + (long) heardFrom + (long) (0.4 * fs)));
+            double heardDifference = 0.0;
+            for (size_t n = (size_t) (0.025 * fs); n < heard.size(); ++n)
+                heardDifference = std::max (heardDifference, std::abs ((double) heard[n] - (double) note[heardFrom + n]));
+            expectEquals (heardDifference, 0.0);
+
+            // A4 = 432 Hz: the same string reads 31.77 cents sharp.
+            setParam (p, "tuner_a4", 432.0f);
+            const auto a4From = heardFrom + heard.size();
+            play (std::vector<float> (note.begin() + (long) a4From, note.begin() + (long) a4From + (long) (0.6 * fs)));
+            const auto at432 = p.getTunerReading();
+            const auto expected432 = 1200.0 * std::log2 (440.0 / 432.0);
+            expectWithinAbsoluteError (at432.referenceA4, 432.0, 0.05);
+            expect (at432.midiNote == 45);
+            expectWithinAbsoluteError (at432.cents, expected432, 0.5);
+
+            // Never saved engaged, never in a preset.
+            juce::MemoryBlock state;
+            p.getStateInformation (state);
+            AmpSimProcessor restored;
+            restored.setStateInformation (state.getData(), (int) state.getSize());
+            expectEquals (getParam (restored, "tuner_on"), 0.0f);
+            expectWithinAbsoluteError (getParam (restored, "tuner_a4"), 432.0f, 0.05f);
+            const auto preset = p.capturePreset ("x");
+            for (const auto* id : { "tuner_on", "tuner_mute", "tuner_a4" })
+                expect (! preset["parameters"].hasProperty (id), id);
+
+            setParam (p, "tuner_on", 0.0f);
+            logMessage ("  -> off: " + juce::String ((int) updatesWhileOff) + " analyses in 0.2 s; engaged: " + juce::String ((int) updates) + " analyses in "
+                        "1.5 s of a plucked 110 Hz tone, reading " + juce::MidiMessage::getMidiNoteName (a2.midiNote, true, true, 4) + " "
+                        + juce::String (a2.cents, 3) + " cents (" + juce::String (a2.frequency, 4) + " Hz)");
+            logMessage ("  -> muted while tuning: output exactly 0 after the 20 ms fade (largest step during it " + juce::String (fadeStep, 4)
+                        + " vs. " + juce::String (playingStep, 4) + " in the note itself); with mute off the guitar passes untouched (difference "
+                        + juce::String (heardDifference) + ")");
+            logMessage ("  -> A4 = 432 Hz: the same string reads " + juce::String (at432.cents, 3) + " cents (expected " + juce::String (expected432, 3)
+                        + "); a restored session starts with the tuner off; no tuner setting is in a preset");
+        }
+
         beginTest ("the effect order is saved by block name and restored, and odd saved orders are repaired");
         {
             using Section = ampsim::Chain::Section;
@@ -1205,6 +1303,37 @@ public:
                 expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), fxFile));
                 logMessage ("  -> " + fxFile.getFullPathName());
             }
+
+            // The tuner over the tabs: needle, then strobe, with frozen readings.
+            setParam (p, "tuner_on", 1.0f);
+            ampSimEditor->refresh();
+            auto& tunerView = ampSimEditor->getTunerView();
+            expect (tunerView.isVisible());
+            ampsim::TunerReading e2;
+            e2.hasReading = e2.live = true;
+            e2.midiNote = 40;
+            e2.frequency = 82.56;
+            e2.cents = 3.1;
+            e2.levelDb = -21.0;
+            tunerView.setStrobe (false);
+            tunerView.freeze (e2);
+            const auto needleFile = proofDir().getChildFile ("editor_tuner_needle.png");
+            expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), needleFile));
+            auto flat = e2;
+            flat.midiNote = 45;
+            flat.frequency = 108.64;
+            flat.cents = -21.6;
+            flat.strobePhase = 0.3;
+            tunerView.setStrobe (true);
+            tunerView.freeze (flat);
+            const auto strobeFile = proofDir().getChildFile ("editor_tuner_strobe.png");
+            expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), strobeFile));
+            tunerView.setStrobe (false);
+            setParam (p, "tuner_on", 0.0f);
+            ampSimEditor->refresh();
+            expect (! tunerView.isVisible());
+            logMessage ("  -> " + needleFile.getFullPathName());
+            logMessage ("  -> " + strobeFile.getFullPathName());
 
             AmpSimProcessor wrongRate;
             wrongRate.prepareToPlay (44100.0, blockSize);

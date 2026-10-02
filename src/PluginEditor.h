@@ -357,6 +357,45 @@ private:
 /// A basic panel: header with the slot selector and global levels, then tabs: Amps (three slots),
 /// Cab (three mics, alignment, cuts), Pre FX and Post FX (order, compressor, EQ). The real UI comes in
 /// Phase 11 (BUILD_PLAN "GUI").
+/// The tuner's display (BUILD_PLAN "Tuner", Display), shown over the tabs while the tuner is engaged.
+/// Needle mode draws the smoothed cents on a -50 to +50 scale; strobe mode moves a striped band at a speed
+/// proportional to the offset (the analysis integrates the phase), standing still when in tune. It reads
+/// the processor's tuner 60 times a second while it's showing.
+class TunerView final : public juce::Component, private juce::Timer
+{
+public:
+    explicit TunerView (AmpSimProcessor& processor);
+    void paint (juce::Graphics&) override;
+    void resized() override;
+    void visibilityChanged() override;
+
+    /// Needle or strobe, remembered in the app's state.
+    void setStrobe (bool shouldShowStrobe);
+    bool isStrobe() const noexcept { return strobe; }
+
+    /// For tests and snapshots: draw this reading from now on, instead of the live one.
+    void freeze (const ampsim::TunerReading& r)
+    {
+        frozen = true;
+        reading = r;
+        repaint();
+    }
+
+private:
+    void timerCallback() override;
+    void paintNeedle (juce::Graphics&, juce::Rectangle<float> area, juce::Colour colour) const;
+    void paintStrobe (juce::Graphics&, juce::Rectangle<float> area, juce::Colour colour) const;
+
+    AmpSimProcessor& ampSim;
+    ampsim::TunerReading reading;
+    bool strobe = false, frozen = false;
+    juce::TextButton needleButton { "Needle" }, strobeButton { "Strobe" }, closeButton { "Close tuner" };
+    ToggleControl muteButton { "Mute while tuning" };
+    Knob a4Knob;
+    juce::AudioProcessorValueTreeState::ButtonAttachment muteAttachment;
+    juce::Rectangle<int> displayArea;
+};
+
 class AmpSimEditor final : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
@@ -379,6 +418,9 @@ public:
     /// For tests: the menu a right-click on this parameter's control would show.
     juce::PopupMenu midiMenuFor (const juce::String& parameterId);
 
+    /// For tests and snapshots.
+    TunerView& getTunerView() noexcept { return tunerView; }
+
 private:
     void timerCallback() override;
     void chooseFile (const juce::String& title, const juce::String& patterns, const juce::Identifier& lastPathKey,
@@ -393,6 +435,8 @@ private:
     std::array<juce::TextButton, AmpSimProcessor::numAmpSlots> slotButtons;
     juce::Label presetLabel;
     juce::TextButton savePresetButton { "Save..." }, loadPresetButton { "Load..." }, midiButton { "MIDI..." };
+    IgnoresRightClick<juce::TextButton> tunerButton { "Tuner" };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> tunerAttachment;
     juce::String presetMessage;
     Knob inputKnob, outputKnob;
     juce::Label warningLabel;
@@ -417,6 +461,7 @@ private:
     juce::AudioProcessorValueTreeState::SliderAttachment interfaceLevelAttachment;
     juce::OwnedArray<MicPanel> micPanels;
     juce::TabbedComponent tabs { juce::TabbedButtonBar::TabsAtTop };
+    TunerView tunerView { ampSim };
 
     // Cab page, global section.
     ToggleControl alignButton { "Auto-align close mics" }, lowCutButton { "Low cut" }, highCutButton { "High cut" },

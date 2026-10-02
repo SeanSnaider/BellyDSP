@@ -5,6 +5,7 @@
 #include "Presets.h"
 #include "dsp/Chain.h"
 #include "dsp/Tempo.h"
+#include "dsp/TunerThread.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
@@ -25,7 +26,7 @@ public:
     ~AmpSimProcessor() override;
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
-    void releaseResources() override {}
+    void releaseResources() override { tuner.release(); }
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
     void processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) override;
     using AudioProcessor::processBlock;
@@ -124,6 +125,13 @@ public:
         const auto& g = b ? chain.gateB.gate : chain.gateA;
         return { g.getDetectorLevelDb(), g.getOpenThresholdDb(), g.getCloseThresholdDb(), g.getGainReductionDb(), g.isOpen() };
     }
+
+    /// The tuner (BUILD_PLAN "Tuner"): engaged by `tuner_on` (a global switch, never restored from a saved
+    /// state, so the app can't start muted), it reads the DI on its own thread; the output mutes while it's
+    /// engaged unless `tuner_mute` is off. A4 is `tuner_a4`, 430 to 450 Hz.
+    ampsim::TunerReading getTunerReading() const { return tuner.getReading(); }
+    bool isTunerEngaged() const { return tuner.isEngaged(); }
+    uint32_t getTunerUpdateCount() const { return tuner.getUpdateCount(); }
 
     /// Any thread: compressor gain reduction meters (dB).
     float getCompressorReduction (bool post) const { return post ? chain.postCompressor.getGainReductionDb() : chain.preCompressor.getGainReductionDb(); }
@@ -283,6 +291,16 @@ private:
     std::atomic<bool> presetMute { false }, presetSilent { false };
     std::atomic<juce::uint32> lastProcessMs { 0 };
     juce::SmoothedValue<float> presetGain { 1.0f }; // audio thread
+    juce::SmoothedValue<float> tunerGain { 1.0f };  // audio thread: the tuner's mute, same fade
+
+    ampsim::TunerThread tuner;
+    std::atomic<float>* tunerOn = nullptr;
+    std::atomic<float>* tunerMute = nullptr;
+    std::atomic<float>* tunerA4 = nullptr;
+    bool tunerMuting() const noexcept
+    {
+        return tunerOn->load (std::memory_order_relaxed) >= 0.5f && tunerMute->load (std::memory_order_relaxed) >= 0.5f;
+    }
     std::atomic<int> morphCount { 0 };
 
     std::atomic<bool> sampleRateOk { true };

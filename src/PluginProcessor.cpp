@@ -64,6 +64,9 @@ AmpSimProcessor::AmpSimProcessor()
     freezeCc = raw ("midi_freeze_cc");
     calibrateInput = raw ("input_calibrate");
     interfaceInputDbu = raw ("input_level_dbu");
+    tunerOn = raw ("tuner_on");
+    tunerMute = raw ("tuner_mute");
+    tunerA4 = raw ("tuner_a4");
     appliedCalibration = pendingCalibration = currentCalibration();
     lowCutOn = raw ("cab_lowcut_on");
     lowCutFreq = raw ("cab_lowcut_freq");
@@ -117,6 +120,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout AmpSimProcessor::createParam
     layout.add (std::make_unique<Float> (juce::ParameterID { "input_level_dbu", 1 }, "Interface Input Level",
                                          juce::NormalisableRange<float> (-10.0f, 30.0f, 0.1f), 12.0f,
                                          juce::AudioParameterFloatAttributes().withLabel ("dBu")));
+
+    // The tuner (global settings, not part of presets): engaged or not, mute while tuning, A4.
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "tuner_on", 1 }, "Tuner", false));
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "tuner_mute", 1 }, "Mute While Tuning", true));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "tuner_a4", 1 }, "Tuner A4", juce::NormalisableRange<float> (430.0f, 450.0f, 0.1f), 440.0f,
+                                         juce::AudioParameterFloatAttributes().withLabel ("Hz")));
 
     for (int s = 0; s < numAmpSlots; ++s)
     {
@@ -219,6 +228,13 @@ void AmpSimProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 
     presetGain.reset (sampleRate, presetFadeSeconds);
     presetGain.setCurrentAndTargetValue (presetMute.load() ? 0.0f : 1.0f);
+    tunerGain.reset (sampleRate, presetFadeSeconds);
+    tunerGain.setCurrentAndTargetValue (tunerMuting() ? 0.0f : 1.0f);
+
+    // Allocates the tuner's ring and analysis, and (re)starts its thread.
+    tuner.setReferenceA4 ((double) tunerA4->load());
+    tuner.setEngaged (tunerOn->load() >= 0.5f);
+    tuner.prepare (sampleRate, preparedBlockSize);
 }
 
 bool AmpSimProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -484,6 +500,11 @@ void AmpSimProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     applyCabParameters();
     applyEffectParameters();
 
+    // The tuner reads the clean guitar, before any block touches it (wait-free; nothing while disengaged).
+    tuner.setEngaged (tunerOn->load (std::memory_order_relaxed) >= 0.5f);
+    tuner.setReferenceA4 ((double) tunerA4->load (std::memory_order_relaxed));
+    tuner.pushAudio (buffer.getReadPointer (0), numSamples);
+
     // Hosts may occasionally send more samples than promised, so feed the chain in pieces that fit.
     auto io = juce::dsp::AudioBlock<float> (buffer).getSubsetChannelBlock (0, 2);
     const auto maxChunk = (size_t) preparedBlockSize;
@@ -493,15 +514,17 @@ void AmpSimProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
 
     samplesProcessed += numSamples;
 
-    // Preset changes: fade the whole output out, and back in once the new sound is ready.
+    // Preset changes fade the whole output out, and back in once the new sound is ready; the tuner mutes
+    // it while it's engaged (unless set to tune while hearing yourself). Both fade over 20 ms.
     presetGain.setTargetValue (presetMute.load (std::memory_order_relaxed) ? 0.0f : 1.0f);
-    if (presetGain.isSmoothing() || presetGain.getCurrentValue() < 1.0f)
+    tunerGain.setTargetValue (tunerMuting() ? 0.0f : 1.0f);
+    if (presetGain.isSmoothing() || presetGain.getCurrentValue() < 1.0f || tunerGain.isSmoothing() || tunerGain.getCurrentValue() < 1.0f)
     {
         auto* left = buffer.getWritePointer (0);
         auto* right = buffer.getWritePointer (1);
         for (int n = 0; n < numSamples; ++n)
         {
-            const auto g = presetGain.getNextValue();
+            const auto g = presetGain.getNextValue() * tunerGain.getNextValue();
             left[n] *= g;
             right[n] *= g;
         }
@@ -532,6 +555,10 @@ void AmpSimProcessor::setStateInformation (const void* data, int sizeInBytes)
 
     parameters.replaceState (juce::ValueTree::fromXml (*xml));
     auto& state = parameters.state;
+
+    // The tuner never comes back engaged: a session saved while tuning would otherwise open muted.
+    if (auto* tunerSwitch = parameters.getParameter ("tuner_on"))
+        tunerSwitch->setValueNotifyingHost (0.0f);
 
     // MIDI mappings (states saved before they existed have none).
     midiMap = MidiMap::fromVar (juce::JSON::parse (state.getProperty (midiMapKey).toString()), parameters);

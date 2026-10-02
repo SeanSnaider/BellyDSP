@@ -19,8 +19,8 @@ class AmpSimProcessor;
 ///
 /// Loading: a parameter the file doesn't mention takes its default (so a preset always means the same
 /// thing, whatever was set before); an ID the app doesn't know is skipped with a warning; a file from a
-/// newer format version is refused. Global settings (input calibration and the drive blocks'
-/// oversampling so far) are never saved in a preset or changed by one.
+/// newer format version is refused. Global settings (input calibration, the drive blocks' oversampling,
+/// and the tuner's settings so far) are never saved in a preset or changed by one.
 namespace presets
 {
 constexpr int formatVersion = 1;
