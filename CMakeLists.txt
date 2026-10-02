@@ -50,6 +50,7 @@ set(NAM_CORE_WHOLE "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>")
 # Our DSP blocks. Compiled into each target that uses them, because JUCE modules must not be
 # linked into a shared static library and then again into the app.
 set(AMPSIM_DSP_SOURCES
+    src/dsp/AmpSection.cpp
     src/dsp/Chain.cpp
     src/dsp/NamAmp.cpp
     src/dsp/CabIR.cpp)
@@ -129,6 +130,8 @@ target_sources(ampsim_tests PRIVATE
     tests/TestHelpers.cpp
     tests/AllocationTracking.cpp
     tests/HandoffTests.cpp
+    tests/SvfTests.cpp
+    tests/AmpSectionTests.cpp
     tests/GainTests.cpp
     tests/CabIRTests.cpp
     tests/NamAmpTests.cpp

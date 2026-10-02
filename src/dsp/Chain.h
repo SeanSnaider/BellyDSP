@@ -1,9 +1,9 @@
 #pragma once
 
+#include "AmpSection.h"
 #include "Block.h"
 #include "CabIR.h"
 #include "Gain.h"
-#include "NamAmp.h"
 
 #include <array>
 #include <vector>
@@ -21,7 +21,7 @@ class Chain
 {
 public:
     Gain inputGain { false };
-    NamAmp amp;
+    AmpSection amp;
     CabIR cab;
     Gain outputGain { true };
 

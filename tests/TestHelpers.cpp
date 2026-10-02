@@ -106,6 +106,91 @@ std::vector<float> exampleInput (int minimumSamples)
     return x;
 }
 
+std::vector<float> guitarDI (int numSamples)
+{
+    // Karplus-Strong: a burst of noise circulates in a delay line one period long, through a
+    // two-point average (a gentle low-pass) and a decay factor, so it rings at the string's pitch and
+    // loses its highs over time, roughly like a plucked string.
+    struct Note
+    {
+        double start, length;
+        std::vector<double> frequencies;
+        double decay;
+        double level;
+    };
+
+    const std::vector<Note> phrase {
+        { 0.00, 0.12, { 82.41 }, 0.985, 0.8 },                  // palm-muted chugs on low E
+        { 0.15, 0.12, { 82.41 }, 0.985, 0.8 },
+        { 0.30, 0.12, { 82.41 }, 0.985, 0.8 },
+        { 0.45, 0.12, { 82.41 }, 0.985, 0.8 },
+        { 0.60, 0.50, { 82.41, 123.47, 164.81 }, 0.997, 0.6 },  // E5 power chord
+        { 1.10, 0.20, { 196.00 }, 0.996, 0.7 },                 // G3
+        { 1.30, 0.20, { 220.00 }, 0.996, 0.7 },                 // A3
+        { 1.50, 0.20, { 246.94 }, 0.996, 0.7 },                 // B3
+        { 1.70, 0.30, { 110.00, 164.81, 220.00 }, 0.997, 0.6 }, // A5 power chord
+    };
+
+    std::vector<double> mix ((size_t) numSamples, 0.0);
+    juce::Random random (42);
+    const auto release = (int) (0.010 * fs); // each note ends with a 10 ms release instead of a click
+
+    for (double phraseStart = 0.0; phraseStart * fs < numSamples; phraseStart += 2.0)
+    {
+        for (const auto& note : phrase)
+        {
+            for (const auto frequency : note.frequencies)
+            {
+                const auto start = (int) ((phraseStart + note.start) * fs);
+                const auto length = (int) (note.length * fs);
+                const auto period = std::max (2, juce::roundToInt (fs / frequency));
+                std::vector<double> loop ((size_t) period);
+
+                for (auto& v : loop)
+                    v = 2.0 * random.nextDouble() - 1.0; // the pluck
+
+                for (int i = 0; i < length && start + i < numSamples; ++i)
+                {
+                    const auto index = (size_t) (i % period);
+                    const auto y = loop[index];
+                    loop[index] = note.decay * 0.5 * (loop[index] + loop[(index + 1) % (size_t) period]);
+                    const auto envelope = i > length - release ? (double) (length - i) / release : 1.0;
+                    mix[(size_t) (start + i)] += note.level * y * envelope;
+                }
+            }
+        }
+    }
+
+    double peak = 1.0e-9;
+    for (auto v : mix)
+        peak = std::max (peak, std::abs (v));
+
+    std::vector<float> out ((size_t) numSamples);
+    for (size_t i = 0; i < out.size(); ++i)
+        out[i] = (float) (mix[i] * 0.5 / peak); // peaks at -6 dBFS, a typical DI level
+
+    return out;
+}
+
+std::vector<float> richStimulus()
+{
+    auto x = guitarDI ((int) (2.0 * fs));
+
+    // Logarithmic sweep: phase = 2 pi f0 T / ln(f1/f0) * (exp(t ln(f1/f0) / T) - 1).
+    const double f0 = 20.0, f1 = 20000.0, T = 2.0, rate = std::log (f1 / f0);
+    for (int n = 0; n < (int) (T * fs); ++n)
+    {
+        const auto t = n / fs;
+        const auto phase = juce::MathConstants<double>::twoPi * f0 * T / rate * (std::exp (t * rate / T) - 1.0);
+        x.push_back ((float) (0.25 * std::sin (phase)));
+    }
+
+    const auto noise = whiteNoise ((int) (0.5 * fs), 0.1f, 7);
+    x.insert (x.end(), noise.begin(), noise.end());
+    x.resize (x.size() + (size_t) (0.25 * fs), 0.0f);
+    return x;
+}
+
 namespace
 {
 /// One RBJ "Audio EQ Cookbook" biquad in direct form I, double precision. Same formulas as the

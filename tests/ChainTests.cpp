@@ -35,11 +35,12 @@ public:
             chain.inputGain.setGainDecibels (12.0f);
             chain.prepare (fs, blockSize);
 
-            const auto input = exampleInput();
+            const auto input = guitarDI (blockSize * 4);
             std::vector<float> snapshot;
             runChain (chain, std::vector<float> (input.begin(), input.begin() + blockSize));
             snapshot = chain.lastDISnapshot();
 
+            expectGreaterThan (rms (input.data(), blockSize), 0.01, "the snapshot must be compared on real signal");
             expectEquals (maxAbsDifference (std::vector<float> (snapshot.begin(), snapshot.begin() + blockSize),
                                             std::vector<float> (input.begin(), input.begin() + blockSize)), 0.0);
             logMessage ("  -> with +12 dB input gain, the DI snapshot still equals the raw input exactly");

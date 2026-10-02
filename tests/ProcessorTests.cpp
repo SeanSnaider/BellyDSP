@@ -140,7 +140,7 @@ public:
             AmpSimProcessor original;
             setParam (original, "input_gain", 3.5f);
             setParam (original, "output_gain", -2.0f);
-            original.loadModel (a1);
+            original.loadModel (0, a1);
             original.loadImpulseResponse (irFile);
             waitForLoads (original);
 
@@ -154,12 +154,12 @@ public:
             for (auto id : { "input_gain", "output_gain", "cab_bypass" })
                 expectEquals (getParam (restored, id), getParam (original, id), id);
 
-            expectEquals (restored.getStatus().model, original.getStatus().model);
+            expectEquals (restored.getStatus().model[0], original.getStatus().model[0]);
             expectEquals (restored.getStatus().cab, original.getStatus().cab);
 
             original.prepareToPlay (fs, blockSize);
             restored.prepareToPlay (fs, blockSize);
-            const auto input = exampleInput();
+            const auto input = guitarDI ((int) (2.0 * fs));
             const auto a = processAll (original, input);
             const auto b = processAll (restored, input);
             const auto difference = maxAbsDifference (a.left, b.left);
@@ -167,7 +167,7 @@ public:
             expectEquals (difference, 0.0);
             logMessage ("  -> state is " + juce::String ((int) state.getSize()) + " bytes; restored: input_gain "
                         + juce::String (getParam (restored, "input_gain"), 1) + " dB, output_gain "
-                        + juce::String (getParam (restored, "output_gain"), 1) + " dB, model \"" + restored.getStatus().model
+                        + juce::String (getParam (restored, "output_gain"), 1) + " dB, model \"" + restored.getStatus().model[0]
                         + "\", cab \"" + restored.getStatus().cab + "\"; 2 s through both: max difference " + juce::String (difference));
         }
 
@@ -175,21 +175,22 @@ public:
         {
             AmpSimProcessor p;
             auto tree = p.parameters.copyState();
-            tree.setProperty (AmpSimProcessor::modelPathKey, "/nonexistent/folder/gone.nam", nullptr);
+            tree.setProperty (AmpSimProcessor::modelPathKey (0), "/nonexistent/folder/gone.nam", nullptr);
             juce::MemoryBlock state;
             juce::AudioProcessor::copyXmlToBinary (*tree.createXml(), state);
 
             p.setStateInformation (state.getData(), (int) state.getSize());
             const auto status = p.getStatus();
-            expect (status.modelError);
-            expect (status.model.contains ("missing"));
-            logMessage ("  -> status: \"" + status.model + "\"");
+            expect (status.modelError[0]);
+            expect (status.model[0].contains ("missing"));
+            logMessage ("  -> status: \"" + status.model[0] + "\"");
         }
 
         beginTest ("the editor draws (snapshots saved as proof)");
         {
             AmpSimProcessor p;
-            p.loadModel (a1);
+            p.loadModel (0, a1);
+            p.loadModel (1, exampleModel ("lstm.nam"));
             p.loadImpulseResponse (irFile);
             waitForLoads (p);
             p.prepareToPlay (fs, blockSize);
@@ -210,15 +211,15 @@ public:
             logMessage ("  -> " + warningFile.getFullPathName());
         }
 
-        beginTest ("listening renders: NAM core's example DI through the full chain");
+        beginTest ("listening renders: the synthetic guitar DI through the full chain");
         {
-            const auto input = exampleInput();
-            writeWav (proofDir().getChildFile ("render_0_dry_di.wav"), input);
+            const auto input = guitarDI ((int) (4.0 * fs));
+            writeWav (proofDir().getChildFile ("render_0_synthetic_guitar_di.wav"), input);
 
             for (auto modelName : { "wavenet_a1_standard", "lstm" })
             {
                 AmpSimProcessor p;
-                p.loadModel (exampleModel (juce::String (modelName) + ".nam"));
+                p.loadModel (0, exampleModel (juce::String (modelName) + ".nam"));
                 p.loadImpulseResponse (irFile);
                 waitForLoads (p);
                 p.prepareToPlay (fs, blockSize);

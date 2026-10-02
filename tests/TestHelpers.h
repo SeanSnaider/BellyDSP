@@ -28,7 +28,18 @@ bool writeWav (const juce::File& file, const std::vector<float>& mono, double sa
 // ---- Signals --------------------------------------------------------------------------------
 std::vector<float> sine (double frequency, double amplitude, int numSamples);
 std::vector<float> whiteNoise (int numSamples, float amplitude, juce::int64 seed);
-std::vector<float> exampleInput (int minimumSamples = 0); // looped if minimumSamples is longer
+/// NAM core's example_audio/input.wav: 1 s of digital silence, then 1 s of a steady -9 dB RMS test
+/// tone. Not a guitar. Looped if minimumSamples is longer. Use guitarDI() for anything musical.
+std::vector<float> exampleInput (int minimumSamples = 0);
+
+/// A deterministic stand-in for a guitar DI, peaking at -6 dBFS: Karplus-Strong plucked strings (the
+/// idea behind synth_test_riff() in prototypes/amp_sim.py) playing a 2 s phrase on repeat: palm-muted
+/// low E chugs, an E5 power chord, a run on the G string, an A5. Gaps are at most 30 ms.
+std::vector<float> guitarDI (int numSamples);
+
+/// A broadband stimulus for differential tests: 2 s of guitarDI, a 2 s logarithmic sweep from 20 Hz to
+/// 20 kHz at -12 dBFS, 0.5 s of white noise at -20 dBFS, and 0.25 s of silence.
+std::vector<float> richStimulus();
 
 /// The crude 4x12 "cab" from prototypes/amp_sim.py (90 Hz high-pass, +3 dB at 120 Hz, -3 dB at
 /// 400 Hz, +4 dB at 2.5 kHz, two 5 kHz low-passes, all RBJ cookbook biquads) rendered as an

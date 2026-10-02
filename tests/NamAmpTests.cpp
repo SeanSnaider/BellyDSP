@@ -68,7 +68,7 @@ public:
 
     void runTest() override
     {
-        const auto input = exampleInput();
+        const auto input = guitarDI ((int) (2.0 * fs));
         const auto a1 = exampleModel ("wavenet_a1_standard.nam");
         const auto lstm = exampleModel ("lstm.nam");
 
@@ -112,34 +112,50 @@ public:
                 expect (loaded.contains (name), juce::String (name) + " must load");
         }
 
-        beginTest ("matches NeuralAmpModelerCore's own render tool (limit -100 dB)");
+        beginTest ("matches NeuralAmpModelerCore's own render tool on two stimuli (limit -100 dB)");
         {
             expect (namRenderTool().existsAsFile(), "nam_render wasn't built");
 
+            // Stimulus 1: NAM core's own example input (1 s silence, 1 s test tone). Stimulus 2: the
+            // broadband one (guitar DI, a 20 Hz to 20 kHz sweep, noise, silence), which exercises the
+            // whole network instead of one frequency.
+            const auto richFile = tempDir().getChildFile ("rich_stimulus.wav");
+            expect (writeWav (richFile, richStimulus()));
+
             for (const auto& file : exampleModels())
             {
-                ampsim::NamAmp amp;
-                if (! amp.loadModel (file, false).ok)
-                    continue;
+                juce::StringArray results;
 
-                const auto reference = tempDir().getChildFile ("ref_" + file.getFileNameWithoutExtension() + ".wav");
-                if (! renderWithOfficialTool (file, exampleInputFile(), reference))
+                for (const auto& stimulus : { exampleInputFile(), richFile })
                 {
-                    logMessage ("  -> " + file.getFileName() + ": official render tool refused it, skipped");
-                    continue;
+                    ampsim::NamAmp amp;
+                    if (! amp.loadModel (file, false).ok)
+                        continue;
+
+                    const auto reference = tempDir().getChildFile ("ref_" + file.getFileNameWithoutExtension() + "_"
+                                                                   + stimulus.getFileNameWithoutExtension() + ".wav");
+                    if (! renderWithOfficialTool (file, stimulus, reference))
+                    {
+                        results.add (stimulus.getFileName() + ": official tool refused it");
+                        continue;
+                    }
+
+                    const auto refBuffer = readWav (reference);
+                    const std::vector<float> expected (refBuffer.getReadPointer (0), refBuffer.getReadPointer (0) + refBuffer.getNumSamples());
+                    const auto stimulusBuffer = readWav (stimulus);
+                    const std::vector<float> in (stimulusBuffer.getReadPointer (0), stimulusBuffer.getReadPointer (0) + stimulusBuffer.getNumSamples());
+
+                    amp.prepare (fs, blockSize);
+                    const auto ours = runAmp (amp, in);
+                    const auto error = relativeErrorDb (ours, expected);
+
+                    expectEquals ((int) expected.size(), (int) ours.size());
+                    expectLessThan (error, -100.0, file.getFileName() + " on " + stimulus.getFileName());
+                    results.add ((stimulus == richFile ? juce::String ("rich stimulus ") : juce::String ("NAM example input "))
+                                 + dB (error) + " (max difference " + juce::String (maxAbsDifference (ours, expected), 9) + ")");
                 }
 
-                const auto refBuffer = readWav (reference);
-                const std::vector<float> expected (refBuffer.getReadPointer (0), refBuffer.getReadPointer (0) + refBuffer.getNumSamples());
-
-                amp.prepare (fs, blockSize);
-                const auto ours = runAmp (amp, input);
-                const auto error = relativeErrorDb (ours, expected);
-
-                expectEquals ((int) expected.size(), (int) ours.size());
-                expectLessThan (error, -100.0, file.getFileName());
-                logMessage ("  -> " + file.getFileName() + ": ours vs. official, error " + dB (error) + ", max difference "
-                            + juce::String (maxAbsDifference (ours, expected), 9));
+                logMessage ("  -> " + file.getFileName() + " vs. official: " + results.joinIntoString ("; "));
             }
         }
 
@@ -254,7 +270,7 @@ public:
                 loading = false;
             });
 
-            const auto signal = exampleInput();
+            const auto signal = guitarDI ((int) (2.0 * fs));
             juce::AudioBuffer<float> buffer (1, blockSize);
             const ampsim::BlockContext context;
             std::vector<double> blockTimes;
@@ -294,7 +310,7 @@ public:
 
         beginTest ("CPU: one vs. three always-running slots, 128-sample buffers");
         {
-            const auto longInput = exampleInput ((int) (10.0 * fs));
+            const auto longInput = guitarDI ((int) (10.0 * fs));
             const auto numBlocks = longInput.size() / blockSize;
             bool threeA1Fits = false;
 

@@ -34,7 +34,7 @@ void printUsage()
                  "  --input-gain <dB>      input trim (default 0)\n"
                  "  --output-gain <dB>     output level (default 0)\n"
                  "  --block <samples>      block size (default 128)\n"
-                 "  --slots <n>            run n amp slots at once to measure CPU (default 1)\n"
+                 "  --slots <n>            load the model into n of the 3 always-running slots (default 1)\n"
                  "  --no-normalize         skip loudness normalization of the model\n"
                  "  --compare <ref.wav>    report the difference between the output and a reference\n";
 }
@@ -156,14 +156,14 @@ int main (int argc, char* argv[])
     }
 
     ampsim::Chain chain;
-    std::vector<std::unique_ptr<ampsim::NamAmp>> extraSlots;
 
     if (o.model != juce::File())
     {
-        for (int s = 0; s < o.slots; ++s)
+        // All three slots always run (BUILD_PLAN "Seamless amp switching"); --slots loads the model
+        // into the first N of them, so the timing below covers N real models. Slot 1 is heard.
+        for (int s = 0; s < juce::jmin (o.slots, ampsim::AmpSection::numSlots); ++s)
         {
-            auto& amp = s == 0 ? chain.amp : *extraSlots.emplace_back (std::make_unique<ampsim::NamAmp>());
-            const auto result = amp.loadModel (o.model, o.normalize);
+            const auto result = chain.amp.slot (s).model.loadModel (o.model, o.normalize);
 
             if (! result.ok)
             {
@@ -192,13 +192,10 @@ int main (int argc, char* argv[])
     // Set the gains before prepare(), which snaps them, so the render doesn't start with a ramp.
     chain.inputGain.setGainDecibels (o.inputGainDb);
     chain.outputGain.setGainDecibels (o.outputGainDb);
-    chain.prepare (sampleRate, o.blockSize); // also installs the model and IR with no fade
-
-    for (auto& slot : extraSlots)
-        slot->prepare (sampleRate, o.blockSize);
+    chain.prepare (sampleRate, o.blockSize); // also installs the models and IR with no fade
 
     const auto numSamples = input.getNumSamples();
-    juce::AudioBuffer<float> output (2, numSamples), block (2, o.blockSize), slotScratch (1, o.blockSize);
+    juce::AudioBuffer<float> output (2, numSamples), block (2, o.blockSize);
     std::vector<double> blockMicros;
 
     for (int start = 0; start < numSamples; start += o.blockSize)
@@ -210,14 +207,6 @@ int main (int argc, char* argv[])
         const auto t0 = std::chrono::steady_clock::now();
 
         chain.process (juce::dsp::AudioBlock<float> (block).getSubBlock (0, (size_t) len));
-
-        for (auto& slot : extraSlots)
-        {
-            // The other always-running slots: same input, output thrown away.
-            slotScratch.copyFrom (0, 0, input, 0, start, len);
-            const ampsim::BlockContext context { input.getReadPointer (0, start), len };
-            slot->process (juce::dsp::AudioBlock<float> (slotScratch).getSubBlock (0, (size_t) len), context);
-        }
 
         const auto t1 = std::chrono::steady_clock::now();
         blockMicros.push_back (std::chrono::duration<double, std::micro> (t1 - t0).count());
