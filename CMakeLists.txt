@@ -67,7 +67,11 @@ set(AMPSIM_DSP_SOURCES
     src/dsp/Chorus.cpp
     src/dsp/Tempo.cpp
     src/dsp/Delay.cpp
-    src/dsp/Reverb.cpp)
+    src/dsp/Reverb.cpp
+    src/dsp/Bitcrush.cpp
+    src/dsp/Phaser.cpp
+    src/dsp/Flanger.cpp
+    src/dsp/Bloom.cpp)
 
 set(AMPSIM_JUCE_DEFINITIONS
     JUCE_WEB_BROWSER=0
@@ -160,6 +164,7 @@ target_sources(ampsim_tests PRIVATE
     tests/DelayTests.cpp
     tests/ChorusTests.cpp
     tests/ReverbTests.cpp
+    tests/BloomTests.cpp
     tests/Plot.cpp
     tests/NamAmpTests.cpp
     tests/ChainTests.cpp
