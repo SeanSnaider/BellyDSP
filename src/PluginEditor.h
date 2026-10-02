@@ -200,6 +200,28 @@ private:
     bool parametricShown = false;
 };
 
+/// The delay's controls, plus the tempo and its tap button.
+class DelayPanel final : public juce::Component
+{
+public:
+    explicit DelayPanel (AmpSimProcessor& processor);
+    void refresh(); // shows note or time controls (sync), right-side or offset controls (layout)
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+private:
+    AmpSimProcessor& ampSim;
+    juce::Label titleLabel;
+    juce::ToggleButton onButton { "On" }, syncButton { "Sync to tempo" };
+    juce::ComboBox mode, stereo, note, rightNote;
+    juce::Label noteLabel, rightNoteLabel;
+    juce::TextButton tapButton { "Tap" };
+    std::unique_ptr<Knob> time, rightTime, offset, feedback, lowCut, highCut, modDepth, modRate, duck, mix, tempo;
+    juce::OwnedArray<juce::AudioProcessorValueTreeState::ButtonAttachment> buttonAttachments;
+    juce::OwnedArray<juce::AudioProcessorValueTreeState::ComboBoxAttachment> comboAttachments;
+    int shownState = -1;
+};
+
 /// A basic panel: header with the slot selector and global levels, then tabs: Amps (three slots),
 /// Cab (three mics, alignment, cuts), Pre FX and Post FX (order, compressor, EQ). The real UI comes in
 /// Phase 11 (BUILD_PLAN "GUI").
@@ -228,7 +250,8 @@ private:
     Knob inputKnob, outputKnob;
     juce::Label warningLabel;
 
-    PageComponent ampsPage, cabPage, preFxPage, postFxPage;
+    PageComponent ampsPage, cabPage, preFxPage, postFxPage, timeFxPage;
+    std::unique_ptr<DelayPanel> delayPanel;
     juce::OwnedArray<SlotPanel> slotPanels;
     std::unique_ptr<OrderStrip> preOrder, postOrder;
     std::unique_ptr<CompressorPanel> preComp, postComp;

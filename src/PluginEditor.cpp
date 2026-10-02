@@ -371,6 +371,7 @@ juce::String displayName (const juce::String& blockName)
 {
     if (blockName == "comp") return "Compressor";
     if (blockName == "eq") return "EQ";
+    if (blockName == "delay") return "Delay";
     return blockName;
 }
 } // namespace
@@ -759,6 +760,124 @@ void EqualizerPanel::resized()
     }
 }
 
+// ---- DelayPanel -------------------------------------------------------------------------------
+
+DelayPanel::DelayPanel (AmpSimProcessor& processor) : ampSim (processor)
+{
+    auto& state = processor.parameters;
+    stylePanelTitle (titleLabel, "Delay");
+    addAndMakeVisible (titleLabel);
+
+    for (auto [button, id] : std::initializer_list<std::pair<juce::ToggleButton*, const char*>> { { &onButton, "delay_on" }, { &syncButton, "delay_sync" } })
+    {
+        buttonAttachments.add (new juce::AudioProcessorValueTreeState::ButtonAttachment (state, id, *button));
+        addAndMakeVisible (button);
+    }
+
+    juce::StringArray notes;
+    for (const auto& n : ampsim::tempo::notes)
+        notes.add (n.name);
+    for (auto [box, id, items] : std::initializer_list<std::tuple<juce::ComboBox*, const char*, juce::StringArray>> {
+             { &mode, "delay_mode", { "Digital", "Analog", "Tape" } }, { &stereo, "delay_stereo", { "Stereo", "Ping-pong", "Dual" } },
+             { &note, "delay_note", notes }, { &rightNote, "delay_note_right", notes } })
+    {
+        comboAttachments.add (new juce::AudioProcessorValueTreeState::ComboBoxAttachment (state, id, withItems (*box, items)));
+        addAndMakeVisible (box);
+    }
+    for (auto [label, text] : std::initializer_list<std::pair<juce::Label*, const char*>> { { &noteLabel, "Time" }, { &rightNoteLabel, "Right time" } })
+    {
+        label->setText (text, juce::dontSendNotification);
+        label->setJustificationType (juce::Justification::centred);
+        label->setColour (juce::Label::textColourId, dimText);
+        addAndMakeVisible (label);
+    }
+
+    time = std::make_unique<Knob> (state, "delay_time", "Time", " ms");
+    rightTime = std::make_unique<Knob> (state, "delay_time_right", "Right time", " ms");
+    offset = std::make_unique<Knob> (state, "delay_offset", "R offset", " ms");
+    feedback = std::make_unique<Knob> (state, "delay_feedback", "Feedback", " %");
+    lowCut = std::make_unique<Knob> (state, "delay_lowcut", "Low cut", " Hz");
+    highCut = std::make_unique<Knob> (state, "delay_highcut", "High cut", " Hz");
+    modDepth = std::make_unique<Knob> (state, "delay_mod_depth", "Mod depth", " ms");
+    modRate = std::make_unique<Knob> (state, "delay_mod_rate", "Mod rate", " Hz");
+    duck = std::make_unique<Knob> (state, "delay_duck", "Ducking");
+    mix = std::make_unique<Knob> (state, "delay_mix", "Mix", " %");
+    tempo = std::make_unique<Knob> (state, "tempo_bpm", "Tempo", " BPM");
+    for (auto* k : { time.get(), rightTime.get(), offset.get(), feedback.get(), lowCut.get(), highCut.get(), modDepth.get(), modRate.get(), duck.get(), mix.get(), tempo.get() })
+        addAndMakeVisible (k);
+
+    tapButton.setTooltip ("Tap the tempo (or use the footswitch's tap CC)");
+    tapButton.onClick = [this] { ampSim.tapTempo(); };
+    addAndMakeVisible (tapButton);
+    refresh();
+}
+
+void DelayPanel::refresh()
+{
+    auto& state = ampSim.parameters;
+    const bool synced = state.getRawParameterValue ("delay_sync")->load() >= 0.5f;
+    const auto layout = juce::roundToInt (state.getRawParameterValue ("delay_stereo")->load());
+    const auto newState = (synced ? 1 : 0) + 2 * layout;
+    if (newState == shownState)
+        return;
+
+    shownState = newState;
+    note.setVisible (synced);
+    noteLabel.setVisible (synced);
+    time->setVisible (! synced);
+    const bool dual = layout == 2;
+    rightNote.setVisible (synced && dual);
+    rightNoteLabel.setVisible (synced && dual);
+    rightTime->setVisible (! synced && dual);
+    offset->setVisible (layout == 0);
+}
+
+void DelayPanel::paint (juce::Graphics& g)
+{
+    g.setColour (panel);
+    g.fillRoundedRectangle (getLocalBounds().toFloat().reduced (1.0f), 6.0f);
+}
+
+void DelayPanel::resized()
+{
+    auto area = getLocalBounds().reduced (10);
+    auto top = area.removeFromTop (28);
+    onButton.setBounds (top.removeFromRight (60));
+    titleLabel.setBounds (top);
+    area.removeFromTop (6);
+    auto combos = area.removeFromTop (26);
+    mode.setBounds (combos.removeFromLeft (combos.getWidth() / 2).reduced (2, 0));
+    stereo.setBounds (combos.reduced (2, 0));
+    area.removeFromTop (6);
+    syncButton.setBounds (area.removeFromTop (24));
+    area.removeFromTop (4);
+
+    // Row 1: time (or note), right time (or note) / offset, feedback, mix.
+    const auto rowHeight = area.getHeight() / 3;
+    auto row = area.removeFromTop (rowHeight);
+    const auto width = row.getWidth() / 4;
+    auto cell = row.removeFromLeft (width);
+    time->setBounds (cell);
+    noteLabel.setBounds (cell.removeFromTop (18));
+    note.setBounds (cell.withSizeKeepingCentre (cell.getWidth() - 8, 26));
+    cell = row.removeFromLeft (width);
+    rightTime->setBounds (cell);
+    offset->setBounds (cell);
+    rightNoteLabel.setBounds (cell.removeFromTop (18));
+    rightNote.setBounds (cell.withSizeKeepingCentre (cell.getWidth() - 8, 26));
+    feedback->setBounds (row.removeFromLeft (width));
+    mix->setBounds (row);
+
+    row = area.removeFromTop (rowHeight);
+    for (auto* k : { lowCut.get(), highCut.get(), modDepth.get(), modRate.get() })
+        k->setBounds (row.removeFromLeft (width));
+
+    row = area;
+    duck->setBounds (row.removeFromLeft (width));
+    tempo->setBounds (row.removeFromLeft (width));
+    tapButton.setBounds (row.removeFromLeft (width).withSizeKeepingCentre (width - 16, 32));
+}
+
 // ---- AmpSimEditor -----------------------------------------------------------------------------
 
 AmpSimEditor::AmpSimEditor (AmpSimProcessor& p)
@@ -906,6 +1025,16 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p)
     tabs.addTab ("Cab", panel, &cabPage, false);
     tabs.addTab ("Pre FX", panel, &preFxPage, false);
     tabs.addTab ("Post FX", panel, &postFxPage, false);
+
+    // Time FX: the delay (chorus and reverb join it).
+    delayPanel = std::make_unique<DelayPanel> (p);
+    timeFxPage.addAndMakeVisible (*delayPanel);
+    timeFxPage.layout = [this] (juce::Rectangle<int> area)
+    {
+        area.reduce (8, 8);
+        delayPanel->setBounds (area.removeFromLeft (juce::jmin (area.getWidth(), 520)).reduced (4));
+    };
+    tabs.addTab ("Time FX", panel, &timeFxPage, false);
     tabs.setTabBarDepth (30);
     addAndMakeVisible (tabs);
 
@@ -968,6 +1097,7 @@ void AmpSimEditor::timerCallback()
         comp->refresh();
     for (auto* eq : { preEq.get(), postEq.get() })
         eq->refresh();
+    delayPanel->refresh();
 }
 
 void AmpSimEditor::paint (juce::Graphics& g)

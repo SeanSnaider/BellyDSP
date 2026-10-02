@@ -4,6 +4,7 @@
 #include "Block.h"
 #include "Cab.h"
 #include "Compressor.h"
+#include "Delay.h"
 #include "Equalizer.h"
 #include "Gain.h"
 
@@ -37,6 +38,7 @@ public:
     Cab cab;
     Equalizer postEq { true };
     Compressor postCompressor { true };
+    Delay delay;
     Gain outputGain { true };
 
     enum class Slot : size_t
@@ -48,6 +50,7 @@ public:
         cab,
         postEq,
         postCompressor,
+        delay,
         outputGain,
         count
     };

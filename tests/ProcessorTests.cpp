@@ -71,6 +71,17 @@ juce::File writeTestPack (const juce::String& name)
     return folder;
 }
 
+/// Whether an effect order begins with these blocks (later phases append more blocks to each section).
+bool startsWith (const juce::StringArray& order, const juce::StringArray& prefix)
+{
+    if (order.size() < prefix.size())
+        return false;
+    for (int i = 0; i < prefix.size(); ++i)
+        if (order[i] != prefix[i])
+            return false;
+    return true;
+}
+
 bool savePng (const juce::Image& image, const juce::File& file)
 {
     file.deleteFile();
@@ -270,6 +281,70 @@ public:
             logMessage ("  -> calibration off: \"" + p.getStatus().model[0] + "\"");
         }
 
+        beginTest ("tap tempo from the footswitch sets the tempo, and a synced delay follows it to the sample");
+        {
+            AmpSimProcessor p;
+            setParam (p, "delay_on", 1.0f);
+            setParam (p, "delay_note", 6.0f); // 1/4
+            setParam (p, "delay_mix", 100.0f);
+            setParam (p, "delay_feedback", 0.0f);
+            setParam (p, "delay_lowcut", 20.0f);
+            setParam (p, "delay_highcut", 20000.0f);
+            setParam (p, "delay_duck", 0.0f);
+            p.prepareToPlay (fs, blockSize);
+
+            // Four presses of the tap CC (80), 0.6 s apart (100 BPM), at exact sample positions.
+            juce::AudioBuffer<float> buffer (2, blockSize);
+            juce::MidiBuffer midi;
+            const std::vector<juce::int64> taps { 1000, 1000 + 28800, 1000 + 57600, 1000 + 86400 };
+            for (juce::int64 start = 0; start < 100000; start += blockSize)
+            {
+                midi.clear();
+                for (auto t : taps)
+                    if (t >= start && t < start + blockSize)
+                        midi.addEvent (juce::MidiMessage::controllerEvent (1, 80, 127), (int) (t - start));
+                buffer.clear();
+                p.processBlock (buffer, midi);
+            }
+            const auto tapped = p.getTempo();
+            p.runHousekeeping(); // the timer writes it into the tempo knob
+            expectWithinAbsoluteError (tapped, 100.0, 1.0e-6);
+            expectWithinAbsoluteError (getParam (p, "tempo_bpm"), 100.0f, 0.05f);
+
+            // A quarter note at 100 BPM: an impulse's echo 600 ms later.
+            std::vector<float> x ((size_t) (0.8 * fs), 0.0f);
+            x[0] = 0.5f;
+            const auto out = processAll (p, x);
+            size_t peak = 1;
+            for (size_t n = 1; n < out.left.size(); ++n)
+                if (std::abs (out.left[n]) > std::abs (out.left[peak]))
+                    peak = n;
+            expectEquals ((int) peak, 28800);
+
+            // The GUI's button, after a pause long enough to start a new tempo: taps every 188 buffers
+            // (0.5013 s, since GUI taps are timed to the start of a buffer).
+            for (int b = 0; b < 940; ++b) // 2.5 s
+            {
+                buffer.clear();
+                midi.clear();
+                p.processBlock (buffer, midi);
+            }
+            for (int i = 0; i < 4; ++i)
+            {
+                p.tapTempo();
+                for (int b = 0; b < 188; ++b) // 188 buffers of 128 = 0.501 s
+                {
+                    buffer.clear();
+                    midi.clear();
+                    p.processBlock (buffer, midi);
+                }
+            }
+            expectWithinAbsoluteError (p.getTempo(), 60.0 * fs / (188.0 * blockSize), 0.01);
+            logMessage ("  -> 4 footswitch taps 0.6 s apart: " + juce::String (tapped, 3) + " BPM, tempo knob " + juce::String (getParam (p, "tempo_bpm"), 1)
+                        + "; a synced quarter-note delay echoes at sample " + juce::String ((int) peak) + " (600.000 ms); 4 GUI taps every 188 buffers: "
+                        + juce::String (p.getTempo(), 2) + " BPM");
+        }
+
         beginTest ("a saved model that has gone missing is reported, not a crash");
         {
             AmpSimProcessor p;
@@ -327,7 +402,7 @@ public:
             using Section = ampsim::Chain::Section;
             AmpSimProcessor p;
             expect (p.getSectionOrder (Section::pre) == juce::StringArray { "comp", "eq" });
-            expect (p.getSectionOrder (Section::post) == juce::StringArray { "eq", "comp" });
+            expect (startsWith (p.getSectionOrder (Section::post), { "eq", "comp" }));
             p.setSectionOrder (Section::pre, { "eq", "comp" });
             p.setSectionOrder (Section::post, { "comp", "eq" });
 
@@ -336,7 +411,8 @@ public:
             AmpSimProcessor restored;
             restored.setStateInformation (state.getData(), (int) state.getSize());
             expect (restored.getSectionOrder (Section::pre) == juce::StringArray { "eq", "comp" });
-            expect (restored.getSectionOrder (Section::post) == juce::StringArray { "comp", "eq" });
+            expect (startsWith (restored.getSectionOrder (Section::post), { "comp", "eq" }));
+            expect (restored.getSectionOrder (Section::post) == p.getSectionOrder (Section::post));
 
             // A name from the future, a repeat, and a missing block: unknown and repeated names are
             // skipped, and the missing block keeps its default place at the end.
@@ -426,7 +502,9 @@ public:
             setParam (p, "eq_post_highcut_on", 1.0f);
             setParam (p, "eq_post_highcut_slope", 2.0f);
             processAll (p, guitarDI ((int) fs));
-            for (auto [tab, name] : std::initializer_list<std::pair<int, const char*>> { { 2, "editor_prefx.png" }, { 3, "editor_postfx.png" } })
+            setParam (p, "delay_on", 1.0f);
+            setParam (p, "delay_stereo", 2.0f);
+            for (auto [tab, name] : std::initializer_list<std::pair<int, const char*>> { { 2, "editor_prefx.png" }, { 3, "editor_postfx.png" }, { 4, "editor_timefx.png" } })
             {
                 ampSimEditor->showTab (tab);
                 ampSimEditor->resized();

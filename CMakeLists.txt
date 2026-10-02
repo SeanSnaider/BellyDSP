@@ -63,7 +63,8 @@ set(AMPSIM_DSP_SOURCES
     src/dsp/CutFilter.cpp
     src/dsp/Equalizer.cpp
     src/dsp/Compressor.cpp
-    src/dsp/Tempo.cpp)
+    src/dsp/Tempo.cpp
+    src/dsp/Delay.cpp)
 
 set(AMPSIM_JUCE_DEFINITIONS
     JUCE_WEB_BROWSER=0
@@ -152,6 +153,7 @@ target_sources(ampsim_tests PRIVATE
     tests/CompressorTests.cpp
     tests/EqualizerTests.cpp
     tests/PrimitivesTests.cpp
+    tests/DelayTests.cpp
     tests/Plot.cpp
     tests/NamAmpTests.cpp
     tests/ChainTests.cpp

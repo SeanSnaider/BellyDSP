@@ -1,4 +1,5 @@
 #include "BlockParameters.h"
+#include "dsp/Tempo.h"
 
 namespace params
 {
@@ -162,6 +163,78 @@ ampsim::Equalizer::Settings EqualizerParameters::read() const noexcept
     const auto slope = [] (const Raw& r) { return (ampsim::CutFilter::Slope) juce::jlimit (0, 2, r.index()); };
     s.lowCut = { lowCutOn.on(), lowCutFrequency.get(), slope (lowCutSlope) };
     s.highCut = { highCutOn.on(), highCutFrequency.get(), slope (highCutSlope) };
+    return s;
+}
+
+// ---- Delay ------------------------------------------------------------------------------------
+
+void DelayParameters::addTo (Layout& layout)
+{
+    const ampsim::Delay::Settings d;
+    juce::StringArray notes;
+    for (const auto& n : ampsim::tempo::notes)
+        notes.add (n.name);
+    const auto noteIndex = [&] (const char* name) { return notes.indexOf (name); };
+
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "delay_on", 1 }, "Delay On", false));
+    layout.add (std::make_unique<Choice> (juce::ParameterID { "delay_mode", 1 }, "Delay Mode", juce::StringArray { "Digital", "Analog", "Tape" }, 0));
+    layout.add (std::make_unique<Choice> (juce::ParameterID { "delay_stereo", 1 }, "Delay Stereo", juce::StringArray { "Stereo", "Ping-pong", "Dual" }, 0));
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "delay_sync", 1 }, "Delay Sync", true));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "delay_time", 1 }, "Delay Time", skewedRange (1.0f, 4000.0f, 400.0f, 0.1f), d.timeMs, milliseconds()));
+    layout.add (std::make_unique<Choice> (juce::ParameterID { "delay_note", 1 }, "Delay Note", notes, noteIndex ("1/8 dotted")));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "delay_time_right", 1 }, "Delay Right Time", skewedRange (1.0f, 4000.0f, 400.0f, 0.1f), d.rightTimeMs, milliseconds()));
+    layout.add (std::make_unique<Choice> (juce::ParameterID { "delay_note_right", 1 }, "Delay Right Note", notes, noteIndex ("1/4")));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "delay_offset", 1 }, "Delay Stereo Offset", juce::NormalisableRange<float> (0.0f, 50.0f, 0.1f), d.offsetMs, milliseconds()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "delay_feedback", 1 }, "Delay Feedback", juce::NormalisableRange<float> (0.0f, 110.0f, 0.1f), d.feedback * 100.0f, percent()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "delay_lowcut", 1 }, "Delay Low Cut", skewedRange (20.0f, 2000.0f, 200.0f, 1.0f), d.lowCutHz, hertz()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "delay_highcut", 1 }, "Delay High Cut", skewedRange (500.0f, 20000.0f, 5000.0f, 1.0f), d.highCutHz, hertz()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "delay_mod_depth", 1 }, "Delay Modulation Depth", juce::NormalisableRange<float> (0.0f, 5.0f, 0.01f), d.modDepthMs, milliseconds()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "delay_mod_rate", 1 }, "Delay Modulation Rate", skewedRange (0.05f, 10.0f, 1.0f, 0.01f), d.modRateHz, hertz()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "delay_duck", 1 }, "Delay Ducking", juce::NormalisableRange<float> (0.0f, 24.0f, 0.1f), d.duckDb, decibels()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "delay_mix", 1 }, "Delay Mix", juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f), d.mix * 100.0f, percent()));
+}
+
+void DelayParameters::bind (State& s)
+{
+    on.bind (s, "delay_on");
+    mode.bind (s, "delay_mode");
+    stereoMode.bind (s, "delay_stereo");
+    sync.bind (s, "delay_sync");
+    time.bind (s, "delay_time");
+    note.bind (s, "delay_note");
+    rightTime.bind (s, "delay_time_right");
+    rightNote.bind (s, "delay_note_right");
+    offset.bind (s, "delay_offset");
+    feedback.bind (s, "delay_feedback");
+    lowCut.bind (s, "delay_lowcut");
+    highCut.bind (s, "delay_highcut");
+    modDepth.bind (s, "delay_mod_depth");
+    modRate.bind (s, "delay_mod_rate");
+    duck.bind (s, "delay_duck");
+    mix.bind (s, "delay_mix");
+}
+
+ampsim::Delay::Settings DelayParameters::read (double bpm) const noexcept
+{
+    const auto noteMs = [bpm] (const Raw& r)
+    {
+        const auto& n = ampsim::tempo::notes[(size_t) juce::jlimit (0, (int) ampsim::tempo::notes.size() - 1, r.index())];
+        return (float) ampsim::tempo::milliseconds (n.division, n.feel, juce::jmax (1.0, bpm));
+    };
+
+    ampsim::Delay::Settings s;
+    s.mode = (ampsim::Delay::Mode) juce::jlimit (0, 2, mode.index());
+    s.stereoMode = (ampsim::Delay::StereoMode) juce::jlimit (0, 2, stereoMode.index());
+    s.timeMs = sync.on() ? noteMs (note) : time.get();
+    s.rightTimeMs = sync.on() ? noteMs (rightNote) : rightTime.get();
+    s.offsetMs = offset.get();
+    s.feedback = feedback.get() / 100.0f;
+    s.lowCutHz = lowCut.get();
+    s.highCutHz = highCut.get();
+    s.modDepthMs = modDepth.get();
+    s.modRateHz = modRate.get();
+    s.duckDb = duck.get();
+    s.mix = mix.get() / 100.0f;
     return s;
 }
 

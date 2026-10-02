@@ -2,6 +2,7 @@
 
 #include "BlockParameters.h"
 #include "dsp/Chain.h"
+#include "dsp/Tempo.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
@@ -72,6 +73,14 @@ public:
     juce::StringArray getSectionOrder (ampsim::Chain::Section section) const;
     static juce::String blockName (ampsim::Chain::Slot slot);
     static juce::Identifier orderKey (ampsim::Chain::Section section) { return section == ampsim::Chain::Section::pre ? "preOrder" : "postOrder"; }
+
+    /// Message thread: a tap on the GUI's tap tempo button. Taps from the GUI and the footswitch (the
+    /// CC set by midi_tap_cc, value 64 or more) both reach the audio thread's TapTempo; the resulting
+    /// tempo is used right away and written to tempo_bpm by the timer.
+    void tapTempo() { ++guiTaps; }
+
+    /// Any thread: the tempo in effect (BPM).
+    double getTempo() const { return tapPending.load() ? tappedBpm.load() : (double) tempoBpm->load(); }
 
     /// Any thread: compressor gain reduction meters (dB).
     float getCompressorReduction (bool post) const { return post ? chain.postCompressor.getGainReductionDb() : chain.preCompressor.getGainReductionDb(); }
@@ -189,6 +198,18 @@ private:
     void applyEffectParameters();
     params::CompressorParameters preCompParams, postCompParams;
     params::EqualizerParameters preEqParams, postEqParams;
+    params::DelayParameters delayParams;
+
+    // Tempo and tap tempo. The TapTempo and the sample clock belong to the audio thread.
+    void registerTap (double timeSeconds);
+    std::atomic<float>* tempoBpm = nullptr;
+    std::atomic<float>* tapCc = nullptr;
+    ampsim::TapTempo tap;
+    juce::int64 samplesProcessed = 0;
+    std::atomic<int> guiTaps { 0 };
+    int guiTapsSeen = 0;
+    std::atomic<double> tappedBpm { 120.0 };
+    std::atomic<bool> tapPending { false };
     std::atomic<int> morphCount { 0 };
 
     std::atomic<bool> sampleRateOk { true };

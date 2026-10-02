@@ -1,6 +1,7 @@
 #pragma once
 
 #include "dsp/Compressor.h"
+#include "dsp/Delay.h"
 #include "dsp/Equalizer.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -63,6 +64,18 @@ struct EqualizerParameters
     };
     std::array<Band, ampsim::Equalizer::numParametricBands> bands;
     Raw lowCutOn, lowCutFrequency, lowCutSlope, highCutOn, highCutFrequency, highCutSlope;
+};
+
+struct DelayParameters
+{
+    static void addTo (Layout& layout);
+    void bind (State& state);
+    bool isOn() const noexcept { return on.on(); }
+
+    /// The settings at this tempo (synced times are note lengths at `bpm`).
+    ampsim::Delay::Settings read (double bpm) const noexcept;
+
+    Raw on, mode, stereoMode, sync, time, note, rightTime, rightNote, offset, feedback, lowCut, highCut, modDepth, modRate, duck, mix;
 };
 
 /// Shared helpers for declaring parameters.

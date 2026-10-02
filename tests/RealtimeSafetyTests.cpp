@@ -133,6 +133,18 @@ public:
                     case 1480: setParam (p, "comp_pre_mode", 1.0f); break;                  // studio -> pedal
                     case 1520: setParam (p, "comp_post_detector", 1.0f); break;             // peak -> RMS
                     case 1540: setParam (p, "eq_post_b3_gain", -9.0f); break;
+                    // The delay: on, retimed by footswitch taps, re-moded, re-laid-out, bypassed into spillover.
+                    case 1560: setParam (p, "delay_on", 1.0f); break;
+                    case 1610: midi.addEvent (juce::MidiMessage::controllerEvent (1, 80, 127), 17); break;
+                    case 1800: midi.addEvent (juce::MidiMessage::controllerEvent (1, 80, 127), 5); break;
+                    case 1990: midi.addEvent (juce::MidiMessage::controllerEvent (1, 80, 127), 90); break;
+                    case 2100: setParam (p, "delay_mode", 1.0f); break;
+                    case 2150: setParam (p, "delay_stereo", 1.0f); break;
+                    case 2200: setParam (p, "delay_feedback", 105.0f); break;
+                    case 2250: setParam (p, "delay_sync", 0.0f); break;
+                    case 2300: setParam (p, "delay_time", 650.0f); break;
+                    case 2400: setParam (p, "delay_on", 0.0f); break;           // spillover: the repeats ring on
+                    case 2600: setParam (p, "delay_mode", 2.0f); setParam (p, "delay_on", 1.0f); break;
                     case 1500: setParam (p, "input_gain", 6.0f); break;
                     case 1600: setParam (p, "output_gain", -6.0f); break;
                     case 2000: p.loadModel (0, a1); break;                                  // switch the capture back
@@ -182,9 +194,11 @@ public:
             using Slot = ampsim::Chain::Slot;
             expect (p.getChain().getAppliedOrder (ampsim::Chain::Section::pre) == std::vector<Slot> { Slot::preEq, Slot::preCompressor },
                     "the pre FX reorder must have reached the audio thread");
-            expect (p.getChain().getAppliedOrder (ampsim::Chain::Section::post) == std::vector<Slot> { Slot::postCompressor, Slot::postEq },
+            const auto postOrder = p.getChain().getAppliedOrder (ampsim::Chain::Section::post);
+            expect (postOrder.size() >= 2 && postOrder[0] == Slot::postCompressor && postOrder[1] == Slot::postEq,
                     "the post FX reorder must have reached the audio thread");
             expectGreaterThan (p.getCompressorReduction (false), 0.0f, "the pre compressor must have been working");
+            expectGreaterThan (std::abs (p.getTempo() - 120.0), 1.0, "the footswitch taps must have changed the tempo");
             const auto morphs = p.getMorphCount() - morphsBefore;
             expectGreaterThan (morphs, 4, "the mic must have re-morphed while it was dragged");
             expect (p.getStatus().cab[1].startsWith ("rt_pack (4 IRs on a grid) at ") && p.getStatus().cab[2].contains ("rt_room"), p.getStatus().cab[1]);
@@ -201,7 +215,8 @@ public:
                         "a cab pack loaded into close mic 2 and dragged around (" + juce::String (morphs) + " re-morphs), cab bypass off and on, 5 knob ramps, "
                         "an interface-level change that recalibrated and reloaded every capture, "
                         "both compressors switched on (one to pedal mode, one to RMS), EQ sliders and bands moved, graphic -> parametric, "
-                        "a band type change, a cut slope change, and both FX sections reordered");
+                        "a band type change, a cut slope change, and both FX sections reordered, "
+                        "the delay switched on, retimed by three footswitch taps, re-moded and re-laid-out with 105% feedback, then bypassed into spillover and back");
             logMessage ("  -> audio thread: " + describe (total));
         }
     }

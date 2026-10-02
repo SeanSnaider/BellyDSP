@@ -43,6 +43,9 @@ AmpSimProcessor::AmpSimProcessor()
     postCompParams.bind (parameters, "comp_post");
     preEqParams.bind (parameters, "eq_pre");
     postEqParams.bind (parameters, "eq_post");
+    delayParams.bind (parameters);
+    tempoBpm = raw ("tempo_bpm");
+    tapCc = raw ("midi_tap_cc");
     calibrateInput = raw ("input_calibrate");
     interfaceInputDbu = raw ("input_level_dbu");
     appliedCalibration = pendingCalibration = currentCalibration();
@@ -163,6 +166,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout AmpSimProcessor::createParam
     params::EqualizerParameters::addTo (layout, "eq_pre", "Pre EQ", true);
     params::EqualizerParameters::addTo (layout, "eq_post", "Post EQ", true);
     params::CompressorParameters::addTo (layout, "comp_post", "Post Comp", false);
+    params::DelayParameters::addTo (layout);
+
+    // Tempo (saved with presets) and the footswitch CC that taps it.
+    layout.add (std::make_unique<Float> (juce::ParameterID { "tempo_bpm", 1 }, "Tempo", juce::NormalisableRange<float> (30.0f, 300.0f, 0.1f), 120.0f,
+                                         juce::AudioParameterFloatAttributes().withLabel ("BPM")));
+    layout.add (std::make_unique<Int> (juce::ParameterID { "midi_tap_cc", 1 }, "Tap Tempo CC", 0, 127, 80));
     return layout;
 }
 
@@ -197,6 +206,8 @@ void AmpSimProcessor::handleMidi (const juce::MidiBuffer& midi)
     // timer, because setting a parameter notifies listeners, which can lock and allocate.
     // Read the raw bytes rather than building MidiMessage objects, which keeps this path trivially
     // allocation-free.
+    const auto tapController = juce::roundToInt (tapCc->load (std::memory_order_relaxed));
+
     for (const auto metadata : midi)
     {
         const auto* data = metadata.data;
@@ -206,7 +217,15 @@ void AmpSimProcessor::handleMidi (const juce::MidiBuffer& midi)
             chain.amp.selectSlot (data[1]);
             midiSlotRequest.store (data[1]);
         }
+
+        // Tap tempo from the footswitch: the tap CC pressed (value 64 or more), timed to the sample.
+        if (metadata.numBytes >= 3 && (data[0] & 0xf0) == 0xb0 && data[1] == tapController && data[2] >= 64)
+            registerTap ((double) (samplesProcessed + metadata.samplePosition) / ampsim::NamAmp::requiredSampleRate);
     }
+
+    // Taps from the GUI's button, timed to this buffer.
+    for (const auto taps = guiTaps.load (std::memory_order_relaxed); guiTapsSeen != taps; ++guiTapsSeen)
+        registerTap ((double) samplesProcessed / ampsim::NamAmp::requiredSampleRate);
 }
 
 void AmpSimProcessor::applyCabParameters()
@@ -254,6 +273,17 @@ void AmpSimProcessor::applyEffectParameters()
     chain.postEq.setSettings (postEqParams.read());
     chain.setBypassed (Slot::postCompressor, ! postCompParams.isOn());
     chain.postCompressor.setSettings (postCompParams.read());
+    chain.setBypassed (Slot::delay, ! delayParams.isOn()); // the delay takes this as spillover
+    chain.delay.setSettings (delayParams.read (getTempo()));
+}
+
+void AmpSimProcessor::registerTap (double timeSeconds)
+{
+    if (tap.tap (timeSeconds))
+    {
+        tappedBpm = juce::jlimit (30.0, 300.0, tap.getBpm());
+        tapPending = true;
+    }
 }
 
 juce::String AmpSimProcessor::blockName (ampsim::Chain::Slot slot)
@@ -263,6 +293,8 @@ juce::String AmpSimProcessor::blockName (ampsim::Chain::Slot slot)
         return "comp";
     if (slot == Slot::preEq || slot == Slot::postEq)
         return "eq";
+    if (slot == Slot::delay)
+        return "delay";
     return {}; // fixed blocks have no section name
 }
 
@@ -347,6 +379,8 @@ void AmpSimProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
 
     for (size_t start = 0; start < (size_t) numSamples; start += maxChunk)
         chain.process (io.getSubBlock (start, juce::jmin (maxChunk, (size_t) numSamples - start)));
+
+    samplesProcessed += numSamples;
 }
 
 juce::AudioProcessorEditor* AmpSimProcessor::createEditor()
@@ -528,6 +562,14 @@ void AmpSimProcessor::timerCallback()
         chain.amp.slot (s).model.collectGarbage();
 
     chain.cab.collectGarbage();
+
+    // A tapped tempo: write it into the tempo knob (the audio thread already uses it).
+    if (tapPending.load())
+    {
+        if (auto* param = parameters.getParameter ("tempo_bpm"))
+            param->setValueNotifyingHost (param->convertTo0to1 ((float) tappedBpm.load()));
+        tapPending = false;
+    }
 
     // A footswitch changed the slot on the audio thread; make the parameter (and the GUI) agree.
     if (const auto slot = midiSlotRequest.exchange (-1); slot >= 0)
