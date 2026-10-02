@@ -81,6 +81,12 @@ Status key: **Open** (waiting for Sean), **Confirmed** (Sean agreed), **Changed*
 | R10 | Reverb defaults: Hall, mix 25%, pre-delay 10 ms, size 50%, decay 2 s, low x1.2, high x0.5, diffusion 80%, modulation 30% at 0.5 Hz, wet cuts 100 Hz and 8 kHz, ducking off. Ducking reaches 18 dB at full above -30 dBFS. | Starting points. | Parameter defaults. |
 | R11 | Reverb freeze is footswitchable on CC 81 (value 64 or more toggles it), changeable with "Reverb Freeze CC"; the footswitch takes effect in the same audio buffer and the switch in the GUI catches up from the timer. | The plan says footswitchable; the CC number is a guess at a free one. | `midi_freeze_cc`. |
 
+## Phase 6: reorders
+
+| # | Assumption | Why | To change it |
+|---|---|---|---|
+| O1 | While a section reorders, every block's input fades with an S-curve of the dip (as well as the section crossfading to its dry input), so the level dips smoothly by up to about 2.6 dB with one block running and 6.6 dB with five, for about 20 ms. | Otherwise a block with memory stores the jump between the two orders' signals and replays it: a click in a delay's repeats measured 131x the steady curvature, now 0.27x. A reorder is a deliberate, occasional action. | `Chain::runSection`. A shallower dip needs the per-block fade spread differently across the blocks. |
+
 ## Phase 6: MIDI mappings
 
 | # | Assumption | Why | To change it |

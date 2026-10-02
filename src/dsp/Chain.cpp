@@ -131,6 +131,8 @@ void Chain::prepare (double sampleRate, int maxBlockSize)
     di.assign ((size_t) maxBlockSize, 0.0f);
     dry.setSize (2, maxBlockSize);
     sectionDry.setSize (2, maxBlockSize);
+    dipGain.assign ((size_t) maxBlockSize, 1.0f);
+    blockGain.assign ((size_t) maxBlockSize, 1.0f);
 
     for (auto& state : bypass)
         state.wet.reset (sampleRate, bypassFadeSeconds); // also snaps to the current target
@@ -254,25 +256,46 @@ void Chain::runSection (Section section, juce::dsp::AudioBlock<float>& io, const
     }
 
     const bool fading = state.wet.isSmoothing() || state.wet.getCurrentValue() < 1.0f;
+    if (! fading)
+    {
+        for (size_t i = 0; i < state.size; ++i)
+            runBlock (state.order[i], io, context, stereoCopied);
+        return;
+    }
+
+    // The dip, sample by sample: w for the section's output, and an S-curve of it, w^2 (3 - 2 w), for
+    // every block's input. The S-curve is 0 with zero slope at the bottom, so each block hears its input
+    // fade smoothly to silence and back: at the swap every block's input is silent, and a delay line or
+    // reverb tank stores a fade instead of the jump from one order's signal to the other's (which it would
+    // replay later, a click in the repeats). Applied before every block it compounds, so the processed
+    // path dips deeper than w; the output's crossfade to the dry input keeps the sound continuous
+    // (the "reordering" tests measure the level).
+    for (size_t n = 0; n < numSamples; ++n)
+    {
+        const auto w = state.wet.getNextValue();
+        dipGain[n] = w;
+        blockGain[n] = w * w * (3.0f - 2.0f * w);
+    }
+
     auto dryView = juce::dsp::AudioBlock<float> (sectionDry).getSubBlock (0, numSamples).getSubsetChannelBlock (0, numChannels);
-    if (fading)
-        dryView.copyFrom (io.getSubsetChannelBlock (0, numChannels));
+    dryView.copyFrom (io.getSubsetChannelBlock (0, numChannels));
 
     for (size_t i = 0; i < state.size; ++i)
-        runBlock (state.order[i], io, context, stereoCopied);
-
-    if (fading)
     {
-        // Linear, like bypass: the section's input and output are the same signal through a few blocks.
-        for (size_t n = 0; n < numSamples; ++n)
+        for (size_t ch = 0; ch < numChannels; ++ch)
+            juce::FloatVectorOperations::multiply (io.getChannelPointer (ch), blockGain.data(), (int) numSamples);
+        runBlock (state.order[i], io, context, stereoCopied);
+    }
+
+    // Linear, like bypass: the section's input and output are the same signal through a few blocks.
+    for (size_t n = 0; n < numSamples; ++n)
+    {
+        const auto w = dipGain[n];
+        for (size_t ch = 0; ch < numChannels; ++ch)
         {
-            const auto w = state.wet.getNextValue();
-            for (size_t ch = 0; ch < numChannels; ++ch)
-            {
-                auto* out = io.getChannelPointer (ch);
-                const auto d = dryView.getChannelPointer (ch)[n];
-                out[n] = d + w * (out[n] - d);
-            }
+            auto* out = io.getChannelPointer (ch);
+            const auto d = dryView.getChannelPointer (ch)[n];
+            out[n] = d + w * (out[n] - d);
         }
     }
 }
