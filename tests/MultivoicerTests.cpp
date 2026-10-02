@@ -765,6 +765,35 @@ private:
         expectLessThan (around / steady, 1.1);
         logMessage ("  -> " + juce::String ((int) switches.size()) + " switches on a sustained D3 (Octave stack): largest step within 50 ms of a switch "
                     + str (around / steady, 3) + " x the steady-state largest (limit 1.1)");
+
+        // PSOLA's own interval changes (Mono, one voice, glides of 30 ms) on the same note.
+        auto p = single (12.0);
+        p.engine = Multivoicer::Engine::mono;
+        Multivoicer pm;
+        pm.setSettings (p);
+        pm.prepare (fs, blockSize);
+        const std::vector<double> intervals { 12.0, -12.0, 7.0, -5.0, 24.0, -24.0, 0.5 };
+        std::vector<size_t> changes;
+        size_t index = 0;
+        const auto glided = run (pm, x, [&] (size_t start)
+        {
+            if (start > (size_t) (0.5 * fs) && start % (size_t) (0.5 * fs) < (size_t) blockSize && index + 1 < intervals.size())
+            {
+                p.voices[0].semitones = intervals[++index];
+                pm.setSettings (p);
+                changes.push_back (start);
+            }
+        });
+        double worst = 0.0;
+        for (auto c : changes)
+        {
+            const auto before = maxStep (glided.left, c - (size_t) (0.3 * fs), c);
+            const auto after = maxStep (glided.left, c + (size_t) (0.15 * fs), c + (size_t) (0.45 * fs));
+            worst = std::max (worst, maxStep (glided.left, c, c + (size_t) (0.1 * fs)) / std::max (before, after));
+        }
+        expectLessThan (worst, 1.1);
+        logMessage ("  -> Mono interval changes +12 -> -12 -> +7 -> -5 -> +24 -> -24 -> +0.5 on the D3: largest step in the 100 ms after a change "
+                    + str (worst, 3) + " x the larger steady state either side (limit 1.1)");
     }
 
     void cpu()

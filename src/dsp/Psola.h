@@ -123,13 +123,15 @@ private:
 ///
 /// - Each grain is two periods long for r <= 1 (half-length P, as Moulines and Charpentier) and two
 ///   synthesis periods (half-length P/r) for r > 1. With two analysis periods at r > 1, an octave up of a
-///   sine cancels to silence: the grains, laid half a period apart, alternate in sign (measured -270 dB);
+///   sine cancels to silence: the grains, laid half a period apart, alternate in sign (measured -273 dB);
 ///   with two synthesis periods they overlap by exactly half, sum to a constant window, and the same sine
-///   comes out 6 dB down, a harmonic tone at full level (prototypes/pitch_shifter.py --study psola).
+///   comes out 6 dB down, a harmonic tone within 0.3 to 1.6 dB (prototypes/pitch_shifter.py --study psola,
+///   and the tests). Bright tones lose a little more two octaves up (3 to 6 dB, against 1 dB with the
+///   standard window), which is the price of never going silent.
 ///   A window shorter than two periods doesn't average a periodic signal to zero, though (the Hann of
 ///   two periods has a spectral zero at f0; a shorter one doesn't), so each such grain would add the same
-///   offset, a DC as big as the fundamental (measured: 40% of an octave-up's energy on a harmonic tone with
-///   marks on its peaks). Each short grain subtracts its Hann-weighted mean, taken over the same window one
+///   offset, a DC as big as the fundamental (measured with marks on the waveform's peaks: 35% of an octave
+///   up's energy on a harmonic tone, 78% on a sine). Each short grain subtracts its Hann-weighted mean, taken over the same window one
 ///   period earlier (already in the history when the grain starts; equal to its own for a periodic signal).
 ///   The windows sum to exactly 1 at r > 1, so the subtracted means add up to a constant that cancels the
 ///   DC and nothing else.
@@ -140,9 +142,10 @@ private:
 ///   for s <= 2h (overlapping neighbours), and M = 3r/4 beyond. M(1) = 1, M(1/2) = 3/8, M(1/4) = 3/16.
 ///   For r > 1 the windows sum to exactly 1, so no gain is needed.
 /// - The grain for a synthesis mark s uses the kept analysis mark nearest to s - lag (lag = the voice's
-///   delay). With no delay that is the newest mark, which makes the trail (s minus the mark) about
-///   1.6 periods of the note for r <= 1 (half a grain, plus the analysis' 1/8 period, plus half a period
-///   between marks on average): 4.9 ms on the high E, 14.8 ms on the open A, on top of the detection time.
+///   delay). With no delay that is the newest mark, which makes the trail (s minus the mark) 1.4 to 1.8
+///   periods of the note for r <= 1 (half a grain, plus the analysis' 1/8 period, plus up to a period
+///   between marks): measured 5.2 ms on the high E, 13.1 ms on the open A, 17.1 ms on the low E, on top of
+///   the detection time (9 to 25 ms from the high E to the low E at the 80 Hz floor).
 /// - The ratio glides in the log domain over glideMs (taken at each grain), and the voice fades in and out
 ///   over fadeMs when `active` changes (the harmonizer's onsets; the multivoicer leaves it on).
 class PsolaVoice

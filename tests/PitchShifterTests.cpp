@@ -195,6 +195,7 @@ public:
         granularChords();
         granularUnityAndTrail();
         granularGlides();
+        granularSmear();
         granularRealtimeAndCpu();
         psolaGolden();
         psolaPitch();
@@ -1092,6 +1093,89 @@ private:
             logMessage ("  -> a 300 ms glide from 0 to +7 semitones on 220 Hz: every cycle within " + str (worst, 3)
                         + " cents of the log-linear glide (limit 1)");
         }
+    }
+
+    void granularSmear()
+    {
+        beginTest ("granular: transient smear on fast playing (the other side of the 32 ms search range)");
+
+        // 16th notes at 120 BPM: a 2 ms burst of a 2 kHz tone every 125 ms. A splice repeats a stretch of input
+        // (r > 1) or skips one (r < 1), so an attack can come out twice, or quieter, or not at all. For each
+        // burst: the output's main arrival (the loudest 2 ms within 60 ms), how loud it is against the burst,
+        // and the energy anywhere else in those 60 ms (repeats) against the main arrival.
+        const auto n = (size_t) (8.0 * fs);
+        const auto every = (size_t) (0.125 * fs);
+        const auto burst = (size_t) (0.002 * fs);
+        std::vector<float> x (n, 0.0f);
+        for (size_t start = (size_t) (0.25 * fs); start + burst < n; start += every)
+            for (size_t i = 0; i < burst; ++i)
+                x[start + i] = (float) (0.5 * std::sin (twoPi * 2000.0 * (double) i / fs) * (0.5 - 0.5 * std::cos (twoPi * (double) i / (double) burst)));
+        const auto burstEnergy = (double) burst * 0.25 * 0.375 * 0.5 * 4.0 / 4.0; // sum of x^2: 0.5^2 * mean(hann^2) * mean(sin^2) * length
+
+        juce::ignoreUnused (burstEnergy);
+        juce::StringArray rows;
+        for (const auto semitones : { -12.0, 7.0, 12.0 })
+        {
+            GranularShifter s;
+            s.setSettings (granular (semitonesToRatio (semitones)));
+            s.prepare (fs);
+            const auto y = runShifter (s, x);
+
+            // Each burst's arrivals: energy in 1 ms steps over the 60 ms after it; the loudest is the main
+            // arrival, the loudest at least 4 ms away from it a repeat.
+            int lost = 0, doubled = 0, total = 0;
+            std::vector<double> mainLevels, spacings;
+            const auto step = (size_t) (0.001 * fs);
+            for (size_t start = (size_t) (0.25 * fs) + every; start + every < n; start += every, ++total)
+            {
+                std::vector<double> e;
+                for (size_t t = start; t + step <= start + (size_t) (0.060 * fs); t += step)
+                {
+                    double sum = 0.0;
+                    for (size_t i = 0; i < step; ++i)
+                        sum += (double) y[t + i] * (double) y[t + i];
+                    e.push_back (sum);
+                }
+                const auto main = (size_t) (std::max_element (e.begin(), e.end()) - e.begin());
+                double inputPeak = 0.0;
+                for (size_t t = start; t + step <= start + burst + step; t += step)
+                {
+                    double sum = 0.0;
+                    for (size_t i = 0; i < step; ++i)
+                        sum += (double) x[t + i] * (double) x[t + i];
+                    inputPeak = std::max (inputPeak, sum);
+                }
+                const auto mainDb = 10.0 * std::log10 (std::max (1.0e-30, e[main]) / inputPeak);
+                if (mainDb < -10.0)
+                {
+                    ++lost;
+                    continue;
+                }
+                mainLevels.push_back (mainDb);
+                double second = 0.0;
+                size_t secondAt = main;
+                for (size_t k = 0; k < e.size(); ++k)
+                    if ((k + 4 <= main || k >= main + 4) && e[k] > second)
+                    {
+                        second = e[k];
+                        secondAt = k;
+                    }
+                if (second > 0.25 * e[main]) // a second arrival within 6 dB
+                {
+                    ++doubled;
+                    spacings.push_back (std::abs ((double) secondAt - (double) main));
+                }
+            }
+            std::sort (mainLevels.begin(), mainLevels.end());
+            std::sort (spacings.begin(), spacings.end());
+            rows.add (str (semitones, 0) + " st: " + juce::String (lost) + " of " + juce::String (total) + " attacks lost (below -10 dB), "
+                      + juce::String (doubled) + " heard twice (a second arrival within 6 dB"
+                      + (spacings.empty() ? juce::String (")") : ", " + str (spacings[spacings.size() / 2], 0) + " ms apart in the median, up to " + str (spacings.back(), 0) + " ms)")
+                      + ", the rest at a median " + str (mainLevels.empty() ? 0.0 : mainLevels[mainLevels.size() / 2], 1) + " dB");
+        }
+        logMessage ("  -> 2 ms bursts every 125 ms (16ths at 120 BPM): " + rows.joinIntoString ("; ")
+                    + ". Time-domain shifting can't avoid it: an octave down plays half the input, so half of all short attacks fall in skipped stretches; "
+                    "an octave up plays every moment twice. The search range sets how far apart the two arrivals are.");
     }
 
     void granularRealtimeAndCpu()

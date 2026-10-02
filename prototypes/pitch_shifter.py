@@ -865,8 +865,67 @@ def study_granular():
     ALIGN_RANGE_MS = saved
 
 
+def _psola_ideal(x, period, r, short_window, dc_fix, marks_on_peaks=True):
+    """TD-PSOLA with an exactly known integer period: marks every period (on the waveform's peak, as the
+    engine's anchor puts them, or at an arbitrary phase), grains from the nearest mark one and a half
+    periods back, Hann half-length P (or min(P, P/r) with short_window), the level law for r < 1, and
+    optionally each short grain minus its windowed mean."""
+    n = len(x)
+    first = int(np.argmax(np.abs(x[period:2 * period]))) + period if marks_on_peaks else period
+    marks = np.arange(first, n - period, period)
+    y = np.zeros(n)
+    s = 3.0 * period
+    while s < n - 2 * period:
+        a = marks[np.argmin(np.abs(marks - (s - 1.5 * period)))]
+        h = min(period, period / r) if short_window else float(period)
+        lo, hi = int(math.ceil(s - h)), int(math.floor(s + h))
+        t = np.arange(lo, hi + 1, dtype=np.float64)
+        w = 0.5 * (1 + np.cos(np.pi * (t - s) / h))
+        seg = _read(x, t - (s - a))
+        offset = 0.0
+        if dc_fix and h < period:
+            k = np.arange(-int(h), int(h) + 1)
+            ww = 0.5 * (1 + np.cos(np.pi * k / h))
+            offset = float(np.sum(ww * x[a - period + k]) / np.sum(ww))
+        y[lo:hi + 1] += level_compensation(r) * w * (seg - offset)
+        s += period / r
+    return y
+
+
+def _harmonic_report(y, f0, skip):
+    seg = y[skip:-skip]
+    p = np.abs(np.fft.rfft(seg * np.hanning(len(seg)))) ** 2
+    f = np.fft.rfftfreq(len(seg), 1 / FS)
+    on = np.zeros_like(f, dtype=bool)
+    for k in range(1, 60):
+        on |= np.abs(f - k * f0) <= 3.0
+    off_db = 10 * np.log10(max(p[~on].sum(), 1e-30) / p.sum())
+    dc_db = 10 * np.log10(max(p[f < 3.0].sum(), 1e-30) / p.sum())
+    return off_db, dc_db, 10 * np.log10(np.mean(seg ** 2) + 1e-30)
+
+
 def study_psola():
-    pass  # filled in with the PSOLA engine
+    t = np.arange(int(1.0 * FS)) / FS
+    period = 436  # 110.09 Hz, a whole number of samples so the marks are exact
+    f0 = FS / period
+    signals = {"sine": np.sin(2 * np.pi * f0 * t),
+               "harmonic": 0.5 * sum(np.sin(2 * np.pi * f0 * k * t + 0.3 * k * k) / k for k in range(1, 11))}
+    print("PSOLA window and offset, marks on the waveform's peaks (level dB vs input / energy off the harmonics dB / DC share dB):")
+    for name, x in signals.items():
+        level_in = 10 * np.log10(np.mean(x ** 2))
+        print(f"  {name}")
+        for r in (0.25, 0.5, 2 ** (-5 / 12), 2 ** (7 / 12), 2.0, 4.0):
+            row = []
+            for label, short, fix in (("two periods", False, False), ("two synthesis periods", True, False), ("... minus the mean", True, True)):
+                y = _psola_ideal(x, period, r, short, fix)
+                off, dc, level = _harmonic_report(y, f0 * r, int(0.1 * FS))
+                row.append(f"{label}: {level - level_in:7.1f} / {off:6.1f} / {dc:6.1f}")
+            print(f"    r {r:5.3f}  " + " | ".join(row))
+    print("Level law for r < 1 (1/sqrt(mean square of the summed windows)) against the harmonic tone's measured level:")
+    for r in (0.25, 0.35, 0.5, 0.6, 2 ** (-5 / 12), 0.9):
+        x = signals["harmonic"]
+        y = _psola_ideal(x, period, r, True, True)
+        print(f"    r {r:5.3f}: gain {20 * np.log10(level_compensation(r)):5.2f} dB, output level {10 * np.log10(np.mean(y[4800:-4800] ** 2) / np.mean(x ** 2)):6.2f} dB")
 
 
 # ---- Golden renders ----------------------------------------------------------------------------------
