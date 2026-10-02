@@ -123,7 +123,7 @@ ampsim::Boost::Settings BoostParameters::read (int oversampling, double volts) c
 
 juce::StringArray OverdriveParameters::modeNames()
 {
-    const juce::StringArray names { "Mid Drive", "Distortion" };
+    const juce::StringArray names { "Mid Drive", "Distortion", "Transparent", "Fuzz" };
     jassert (names.size() == numModes);
     return names;
 }

@@ -10,9 +10,9 @@
 #include <map>
 #include <numeric>
 
-// Tests for the drive engine, the Overdrive (Mid Drive, Distortion), and the Boost (Clean, Tight,
-// Screamer). The references are tests/fixtures/drive, rendered by prototypes/circuits.py: AC analyses
-// and 16x transient simulations of the full schematics.
+// Tests for the drive engine, the Overdrive (Mid Drive, Distortion, Transparent, Fuzz), and the Boost
+// (Clean, Tight, Screamer). The references are tests/fixtures/drive, rendered by prototypes/circuits.py: AC
+// analyses and 16x transient simulations of the full schematics.
 
 namespace
 {
@@ -85,7 +85,83 @@ std::vector<float> renderBoost (const Boost::Settings& s, const std::vector<floa
     return run (b, x, bufferSize);
 }
 
-juce::String modeName (Overdrive::Mode m) { return m == Overdrive::Mode::midDrive ? "Mid Drive" : "Distortion"; }
+/// Every Overdrive mode, in Mode order, with its UI name and the fixtures' circuit name.
+struct ModeInfo
+{
+    Overdrive::Mode mode;
+    const char* name;
+    const char* tag;
+};
+
+const std::vector<ModeInfo>& overdriveModes()
+{
+    static const std::vector<ModeInfo> modes { { Overdrive::Mode::midDrive, "Mid Drive", "mid_drive" },
+                                               { Overdrive::Mode::distortion, "Distortion", "distortion" },
+                                               { Overdrive::Mode::transparent, "Transparent", "transparent" },
+                                               { Overdrive::Mode::fuzz, "Fuzz", "fuzz" } };
+    return modes;
+}
+
+const ModeInfo& infoOf (Overdrive::Mode m) { return overdriveModes()[(size_t) m]; }
+juce::String modeName (Overdrive::Mode m) { return infoOf (m).name; }
+juce::String modeTag (Overdrive::Mode m) { return infoOf (m).tag; }
+
+Overdrive::Mode modeOfTag (const juce::String& tag)
+{
+    for (const auto& m : overdriveModes())
+        if (tag == m.tag)
+            return m.mode;
+    jassertfalse;
+    return Overdrive::Mode::midDrive;
+}
+
+/// Waveform tolerance against the 16x circuit simulation, per mode. The Fuzz's is 5 dB looser: its two
+/// clipping stages turn the signal into near-square waves in cascade, and at tone 1 the tone stack's
+/// high-pass side passes their edges. Its worst case (the chord at tone 1) is -58.7 dB at 4x and -64 dB
+/// at 8x, about where the Distortion's bright chord sits (-63 / -66 dB): the edge of what the 4x
+/// trapezoidal rule and this comparison resolve on hard-clipped, bright signals. Every other Fuzz case
+/// is at -70 dB or better.
+double circuitTolerance (Overdrive::Mode mode) { return mode == Overdrive::Mode::fuzz ? -55.0 : circuitToleranceDb; }
+
+/// How closely each model's own analytic small-signal response must match AC analysis of the netlist.
+/// The Fuzz's netlist has its Tone pot at a 1 mOhm end at tone 0 and 1, which leaves a few 1e-6 dB of
+/// rounding in the full-netlist AC solve (prototypes/circuits.py prints it; with 1 Ohm ends the two
+/// agree to 2e-9 dB).
+double analyticTolerance (Overdrive::Mode mode) { return mode == Overdrive::Mode::fuzz ? 1.0e-5 : 1.0e-6; }
+
+/// The impulse for the small-signal measurement. The op-amp pedals rest at exactly 0 V, so -160 dBFS
+/// keeps every diode linear and nothing else is there. The Fuzz runs on its real bias, and rounding moves
+/// its clipping stages' bases by about 1e-11 V (C6 and C7's companion terms, about 1.4 A each at
+/// 192 kHz, cancel in two rows, and what's left lands on the base and diode node moving together, which
+/// only the base's high impedance holds), amplified 60 dB downstream: -170 dBFS at the output, nothing
+/// to hear, but enough to swamp a -160 dBFS impulse over 2.7 s. So -120 dBFS (4.4 uV, every junction
+/// within 0.4 mV of its bias), and -80 dBFS at Sustain 0, where the pot passes only 1/100 of the first
+/// stage's output to the clipping stages (the same signal in them as -120 dBFS at noon).
+double smallSignalAmplitude (Overdrive::Mode mode, double drive = 0.5)
+{
+    if (mode != Overdrive::Mode::fuzz)
+        return 1.0e-8;
+    return drive < 0.25 ? 1.0e-4 : 1.0e-6;
+}
+
+
+
+/// Aliasing limit at 4x for full-drive tones up to 1.3 kHz at -12 dBFS. The Transparent's gain stage is a
+/// fast op-amp (a TL072, 13 V/us) that clips on its 9 V rails as a near-square wave at full gain: its
+/// corners take a fraction of a microsecond, far under one 192 kHz sample, so at 4x its hottest high
+/// note aliases at -48 dB (the RAT's LM308 slews at 0.3 V/us, which rounds its corners). 8x clears it
+/// with 20 dB to spare; antiderivative antialiasing would too (ASSUMPTIONS V20).
+double aliasingLimit (Overdrive::Mode mode) { return mode == Overdrive::Mode::transparent ? -46.0 : aliasingLimitDb; }
+
+/// A plot range that holds the data: +-(max |v| x 1.1), rounded up to 0.5.
+double plotRange (const std::vector<double>& a, const std::vector<double>& b, double scale)
+{
+    double peak = 0.0;
+    for (const auto* v : { &a, &b })
+        for (const auto x : *v)
+            peak = std::max (peak, std::abs (x) * scale);
+    return std::ceil (peak * 1.1 / 0.5) * 0.5;
+}
 
 // ---- Oversampling-aware comparison -------------------------------------------------------------
 
@@ -282,7 +358,11 @@ std::vector<double> harmonics (const std::vector<double>& x, double f0, int coun
     return levels;
 }
 
-/// Energy outside the harmonics of f0 (and outside DC to 50 Hz) relative to the total, in dB: aliasing.
+/// Energy outside the harmonics of f0 relative to the total, over the audio band (50 Hz to 20 kHz), in
+/// dB: aliasing. Above 20 kHz is the downsampler's transition band, where a harmonic just above 24 kHz
+/// folds to just below it whatever the oversampling (the 16x reference's decimator does the same); the
+/// Fuzz, bright and hard-clipped, is the first mode with harmonics strong enough there to show. The
+/// circuit-match comparisons ignore 20 to 24 kHz for the same reason.
 double inharmonicDb (const std::vector<double>& x, double f0, int order = 13)
 {
     const auto p = powerSpectrum (x, order);
@@ -291,7 +371,7 @@ double inharmonicDb (const std::vector<double>& x, double f0, int order = 13)
     for (size_t k = 0; k < p.size(); ++k)
     {
         const auto f = (double) k * binHz;
-        if (f < 50.0)
+        if (f < 50.0 || f > 20000.0)
             continue;
         const auto nearest = std::round (f / f0);
         const bool onHarmonic = nearest >= 1.0 && std::abs (f - nearest * f0) <= 4.5 * binHz;
@@ -357,18 +437,20 @@ juce::String acKey (double drive, double tone) { return "d" + juce::String (driv
 
 // ---- Small-signal measurement -------------------------------------------------------------------
 
-/// The model's response to a tiny impulse (-160 dBFS, so every diode stays linear), divided by the
-/// oversampling chain's own response: what's left is the circuit as discretized at 4x.
+/// The model's response to a tiny impulse (-160 dBFS by default, so every diode stays linear), less its
+/// output with no input at all (exactly zero for the circuits that rest at 0 V; the Fuzz's bias drifts
+/// by rounding), divided by the oversampling chain's own response: what's left is the circuit as
+/// discretized at 4x.
 template <typename Process>
-std::vector<std::complex<double>> smallSignal (const std::vector<double>& frequencies, Process&& render, int factor = 4)
+std::vector<std::complex<double>> smallSignal (const std::vector<double>& frequencies, Process&& render, int factor = 4, double amplitude = 1.0e-8)
 {
-    constexpr double amplitude = 1.0e-8;
     std::vector<float> x ((size_t) 1 << 17, 0.0f);
+    const auto rest = render (x);
     x[0] = (float) amplitude;
     const auto y = render (x);
     std::vector<double> h (y.size());
     for (size_t n = 0; n < y.size(); ++n)
-        h[n] = (double) y[n] / amplitude;
+        h[n] = ((double) y[n] - (double) rest[n]) / amplitude;
     const auto chain = chainResponse (factor);
     std::vector<std::complex<double>> out;
     for (const auto f : frequencies)
@@ -382,6 +464,20 @@ struct Deviation
 {
     double low = 0.0, high = 0.0, phase = 0.0; // worst |dB| to 5 kHz, worst |dB| 5-20 kHz, worst degrees to 5 kHz
 };
+
+/// Limits for the small-signal match against AC analysis: worst dB to 5 kHz, worst dB from 5 to 20 kHz,
+/// worst phase to 5 kHz. Above a few kHz the difference is the bilinear transform's frequency warping
+/// (the response at f is the analog one at (fs/pi) tan(pi f/fs), 0.9% higher at 10 kHz at 192 kHz),
+/// whose error in dB grows with the response's slope; the Fuzz's three Miller-capacitor poles and its
+/// tone stack make it fall far more steeply than the op-amp pedals, so its limits are 0.1 dB, 1.5 dB,
+/// and 1 degree. The Fuzz is also held to its own response at the warped frequency (exact for the
+/// trapezoidal rule), which shows the warping is all there is.
+Deviation linearLimits (Overdrive::Mode mode)
+{
+    if (mode == Overdrive::Mode::fuzz)
+        return { 0.1, 1.5, 1.0 };
+    return { 0.05, 1.0, 0.5 };
+}
 
 Deviation compare (const std::vector<double>& f, const std::vector<std::complex<double>>& got, const std::vector<std::complex<double>>& want)
 {
@@ -425,6 +521,7 @@ public:
         transparency();
         mixAndLevel();
         noClicks();
+        modeSwitching();
         realTime();
         cpu();
     }
@@ -439,7 +536,7 @@ private:
         double worstError = -400.0, worstHarmonic = 0.0;
         for (const auto& c : circuitCases())
         {
-            const auto mode = c.circuit == "mid_drive" ? Overdrive::Mode::midDrive : Overdrive::Mode::distortion;
+            const auto mode = modeOfTag (c.circuit);
             const auto x = readMono (fixture (c.input));
             const auto reference = readMono (fixture (c.expected));
             const auto end = reference.size() - 200; // the reference's resampling filter rings at the very end
@@ -457,7 +554,7 @@ private:
                     actual4 = actual;
                 }
             }
-            expectLessThan (errors[0], circuitToleranceDb, c.name);
+            expectLessThan (errors[0], circuitTolerance (mode), c.name);
             worstError = std::max (worstError, errors[0]);
 
             juce::String harmonicText;
@@ -498,14 +595,22 @@ private:
         }
 
         // Newton iterations per solve over a heavily driven run.
-        for (const auto mode : { Overdrive::Mode::midDrive, Overdrive::Mode::distortion })
+        for (const auto& info : overdriveModes())
         {
+            const auto mode = info.mode;
             Overdrive o;
             o.setSettings (overdriveSettings (mode, 1.0f, 0.5f));
             o.prepare (fs, blockSize);
             run (o, guitarDI ((int) fs));
-            logMessage ("  -> " + modeName (mode) + " at full drive on the guitar DI: " + juce::String (o.getEngine().getCircuit ((int) mode).meanIterations(), 2)
-                        + " Newton iterations per solve on average");
+            auto& circuit = o.getEngine().getCircuit ((int) mode);
+            juce::String extra;
+            if (auto* fuzz = dynamic_cast<ampsim::drive::FuzzCircuit*> (&circuit))
+            {
+                expectEquals (fuzz->unconverged(), 0L);
+                extra = " (all 14 unknowns jointly; " + juce::String (fuzz->unconverged()) + " solves hit the iteration cap)";
+            }
+            logMessage ("  -> " + modeName (mode) + " at full drive on the guitar DI: " + juce::String (circuit.meanIterations(), 2)
+                        + " Newton iterations per solve on average" + extra);
         }
         logMessage ("  -> worst waveform error " + juce::String (worstError, 1) + " dB, worst harmonic difference " + juce::String (worstHarmonic, 3) + " dB");
     }
@@ -513,10 +618,12 @@ private:
     void plotCircuitCase (Overdrive::Mode mode, const std::vector<float>& input, const std::vector<float>& reference, const std::vector<double>& expected,
                           const std::vector<double>& actual, const std::vector<double>& refHarmonics, const std::vector<double>& gotHarmonics)
     {
-        const auto tag = mode == Overdrive::Mode::midDrive ? juce::String ("mid_drive") : juce::String ("distortion");
+        const auto tag = modeTag (mode);
         const auto volts = ampsim::drive::defaultVoltsAtFullScale;
         const auto period = (size_t) std::round (fs / 110.0);
         const auto start = reference.size() - 400 - 2 * period;
+        const std::vector<double> shown (expected.begin() + (long) start, expected.begin() + (long) (start + 2 * period));
+        const auto range = plotRange (shown, {}, volts);
 
         // Waveforms over two periods.
         PlotSeries circuit { "circuit (16x simulation)", {}, {}, plotColour (6), 4.0f }, model { "model (4x)", {}, {}, plotColour (1), 1.5f };
@@ -532,7 +639,7 @@ private:
         o.title = modeName (mode) + ", full drive, 110 Hz at 1 V: output, circuit vs model";
         o.xLabel = "Time (ms)";
         o.yLabel = "Output (V)";
-        o.xMin = 0.0; o.xMax = 2000.0 * (double) period / fs; o.yMin = -1.5; o.yMax = 1.5;
+        o.xMin = 0.0; o.xMax = 2000.0 * (double) period / fs; o.yMin = -range; o.yMax = range;
         auto png = proofDir().getChildFile ("drive_" + tag + "_waveform.png");
         expect (savePlot (png, o, { circuit, model }));
         logMessage ("  -> " + png.getFullPathName());
@@ -550,7 +657,7 @@ private:
         o.title = modeName (mode) + ", full drive: transfer curve over one 110 Hz period (filters make it a loop)";
         o.xLabel = "Input (V)";
         o.yLabel = "Output (V)";
-        o.xMin = -1.1; o.xMax = 1.1; o.yMin = -1.5; o.yMax = 1.5;
+        o.xMin = -1.1; o.xMax = 1.1; o.yMin = -range; o.yMax = range;
         png = proofDir().getChildFile ("drive_" + tag + "_transfer.png");
         expect (savePlot (png, o, { curveCircuit, curveModel }));
         logMessage ("  -> " + png.getFullPathName());
@@ -575,19 +682,44 @@ private:
 
     void linearBehaviour()
     {
-        beginTest ("linear behaviour: at -160 dBFS the response matches AC analysis of the full circuit (every drive and tone setting)");
-        for (const auto mode : { Overdrive::Mode::midDrive, Overdrive::Mode::distortion })
+        beginTest ("linear behaviour: at -160 dBFS (the biased Fuzz: -120, -80 at Sustain 0) the response matches AC analysis of the full circuit (every drive and tone setting)");
+
+        // The Fuzz's bias, from its own Newton solve with the capacitors open, against the simulator's
+        // operating point (prototypes/circuits.py writes it into cases.json).
         {
-            const auto table = readAc (mode == Overdrive::Mode::midDrive ? "mid_drive" : "distortion");
+            const auto json = juce::JSON::parse (fixture ("cases.json"));
+            const auto reference = json["bias"]["fuzz"];
+            const juce::StringArray names { "b4", "e4", "c4", "b3", "e3", "c3", "d3", "b2", "e2", "c2", "d2", "b1", "e1", "c1" };
+            ampsim::drive::FuzzCircuit fuzz;
+            double worstBias = 0.0;
+            juce::String values;
+            for (int i = 0; i < names.size(); ++i)
+            {
+                const auto got = fuzz.bias()[(size_t) i];
+                worstBias = std::max (worstBias, std::abs (got - (double) reference[names[i].toRawUTF8()]));
+                if (! names[i].startsWith ("d"))
+                    values << names[i] << " " << juce::String (got, 3) << (i + 1 < names.size() ? ", " : "");
+            }
+            expectLessThan (worstBias, 1.0e-6);
+            logMessage ("  -> Fuzz bias (V): " + values + "; within " + juce::String (worstBias, 12) + " V of the simulator's operating point "
+                        + "(ElectroSmash's bias drawing: Q4 0.6 / 0.02 / 7, Q3 and Q2 0.7 / 0.07 / 4.4, Q1 1.6 / 1 / 4.4)");
+        }
+        for (const auto& info : overdriveModes())
+        {
+            const auto mode = info.mode;
+            const auto name = juce::String (info.name), tag = juce::String (info.tag);
+            const auto table = readAc (tag);
             Deviation worst;
-            double analyticWorst = 0.0;
+            double lowest = 1000.0, highest = -1000.0;
+            double analyticWorst = 0.0, warpedWorst = 0.0, warpedPhase = 0.0;
             std::vector<PlotSeries> series;
             int colour = 0;
             for (const auto drive : { 0.0, 0.5, 1.0 })
                 for (const auto tone : { 0.0, 0.5, 1.0 })
                 {
                     const auto settings = overdriveSettings (mode, (float) drive, (float) tone);
-                    const auto measured = smallSignal (table.frequencies, [&] (const std::vector<float>& x) { return renderOverdrive (settings, x); });
+                    const auto measured = smallSignal (table.frequencies, [&] (const std::vector<float>& x) { return renderOverdrive (settings, x); }, 4,
+                                                       smallSignalAmplitude (mode, drive));
                     const auto& ac = table.responses.at (acKey (drive, tone));
                     const auto d = compare (table.frequencies, measured, ac);
                     worst.low = std::max (worst.low, d.low);
@@ -602,6 +734,18 @@ private:
                         analyticWorst = std::max (analyticWorst,
                                                   std::abs (dbOf (o.getEngine().getCircuit ((int) mode).smallSignalResponse (table.frequencies[i])) - dbOf (ac[i])));
 
+                    // The Fuzz is the trapezoidal rule throughout, so its discrete response at f is exactly
+                    // its analog response at the warped frequency (fs/pi) tan(pi f/fs), fs = 192 kHz.
+                    if (mode == Overdrive::Mode::fuzz)
+                        for (size_t i = 0; i < table.frequencies.size(); ++i)
+                        {
+                            const auto rate = 4.0 * fs;
+                            const auto warped = rate / pi * std::tan (pi * table.frequencies[i] / rate);
+                            const auto expected = o.getEngine().getCircuit ((int) mode).smallSignalResponse (warped);
+                            warpedWorst = std::max (warpedWorst, std::abs (dbOf (measured[i]) - dbOf (expected)));
+                            warpedPhase = std::max (warpedPhase, std::abs (std::arg (measured[i] / expected)) * 180.0 / pi);
+                        }
+
                     if (juce::exactlyEqual (drive, 0.5))
                     {
                         PlotSeries a { "circuit, tone " + juce::String (tone, 1), {}, {}, plotColour (colour), 4.0f };
@@ -612,22 +756,35 @@ private:
                             a.y.push_back (dbOf (ac[i]));
                             m.x.push_back (table.frequencies[i]);
                             m.y.push_back (dbOf (measured[i]));
+                            lowest = std::min (lowest, dbOf (ac[i]));
+                            highest = std::max (highest, dbOf (ac[i]));
                         }
                         series.push_back (a);
                         series.push_back (m);
                         ++colour;
                     }
                 }
-            expectLessThan (worst.low, 0.05);
-            expectLessThan (worst.high, 1.0);
-            expectLessThan (worst.phase, 0.5);
-            expectLessThan (analyticWorst, 1.0e-6);
+            const auto limits = linearLimits (mode);
+            expectLessThan (worst.low, limits.low, name);
+            expectLessThan (worst.high, limits.high, name);
+            expectLessThan (worst.phase, limits.phase, name);
+            expectLessThan (analyticWorst, analyticTolerance (mode), name);
+            if (mode == Overdrive::Mode::fuzz)
+            {
+                // What's left (0.01 dB, scattered above 7 kHz) is the bias's rounding drift against the
+                // -120 dBFS impulse; the warping it accounts for is 100 times larger.
+                expectLessThan (warpedWorst, 0.03, name);
+                expectLessThan (warpedPhase, 0.3, name);
+                logMessage ("  -> " + name + ": against its own analog response at the warped frequency (fs/pi) tan(pi f/fs), the measured response is within "
+                            + juce::String (warpedWorst, 4) + " dB and " + juce::String (warpedPhase, 3) + " degrees from 20 Hz to 20 kHz (9 settings)");
+            }
 
             // The 5-20 kHz residual is the bilinear transform's frequency warping at 192 kHz, which a
             // circuit discretized at 8x has a quarter of.
             const auto& acHigh = table.responses.at (acKey (1.0, 1.0));
-            const auto at4 = compare (table.frequencies, smallSignal (table.frequencies, [&] (const std::vector<float>& x) { return renderOverdrive (overdriveSettings (mode, 1.0f, 1.0f, 4), x); }), acHigh);
-            const auto at8 = compare (table.frequencies, smallSignal (table.frequencies, [&] (const std::vector<float>& x) { return renderOverdrive (overdriveSettings (mode, 1.0f, 1.0f, 8), x); }, 8), acHigh);
+            const auto amplitude = smallSignalAmplitude (mode, 1.0);
+            const auto at4 = compare (table.frequencies, smallSignal (table.frequencies, [&] (const std::vector<float>& x) { return renderOverdrive (overdriveSettings (mode, 1.0f, 1.0f, 4), x); }, 4, amplitude), acHigh);
+            const auto at8 = compare (table.frequencies, smallSignal (table.frequencies, [&] (const std::vector<float>& x) { return renderOverdrive (overdriveSettings (mode, 1.0f, 1.0f, 8), x); }, 8, amplitude), acHigh);
             expectLessThan (at8.high, 0.5 * at4.high);
             logMessage ("  -> " + modeName (mode) + ", 9 settings x 120 frequencies: model within " + juce::String (worst.low, 4) + " dB and "
                         + juce::String (worst.phase, 3) + " degrees of AC analysis to 5 kHz, " + juce::String (worst.high, 3)
@@ -640,9 +797,9 @@ private:
             o.yLabel = "Gain (dB)";
             o.logX = true;
             o.xMin = 20.0; o.xMax = 20000.0;
-            o.yMin = mode == Overdrive::Mode::midDrive ? -20.0 : 0.0;
-            o.yMax = mode == Overdrive::Mode::midDrive ? 30.0 : 50.0;
-            const auto png = proofDir().getChildFile ("drive_" + juce::String (mode == Overdrive::Mode::midDrive ? "mid_drive" : "distortion") + "_linear.png");
+            o.yMin = std::floor (lowest / 10.0) * 10.0;
+            o.yMax = std::ceil (highest / 10.0) * 10.0 + 10.0;
+            const auto png = proofDir().getChildFile ("drive_" + tag + "_linear.png");
             expect (savePlot (png, o, series));
             logMessage ("  -> " + png.getFullPathName());
         }
@@ -707,19 +864,23 @@ private:
         struct Subject
         {
             juce::String name, tag;
+            double limit;
             std::function<std::vector<float> (const std::vector<float>&, int)> render;
         };
-        const std::vector<Subject> subjects {
-            { "Mid Drive", "mid_drive", [] (const std::vector<float>& x, int f) { return renderOverdrive (overdriveSettings (Overdrive::Mode::midDrive, 1.0f, 0.5f, f), x); } },
-            { "Distortion", "distortion", [] (const std::vector<float>& x, int f) { return renderOverdrive (overdriveSettings (Overdrive::Mode::distortion, 1.0f, 0.5f, f), x); } },
-            { "Boost Screamer", "screamer", [] (const std::vector<float>& x, int f)
-              {
-                  Boost::Settings s;
-                  s.mode = Boost::Mode::screamer;
-                  s.oversampling = f;
-                  return renderBoost (s, x);
-              } },
-        };
+        std::vector<Subject> subjects;
+        for (const auto& info : overdriveModes())
+        {
+            const auto mode = info.mode;
+            subjects.push_back ({ info.name, info.tag, aliasingLimit (mode),
+                                  [mode] (const std::vector<float>& x, int f) { return renderOverdrive (overdriveSettings (mode, 1.0f, 0.5f, f), x); } });
+        }
+        subjects.push_back ({ "Boost Screamer", "screamer", aliasingLimitDb, [] (const std::vector<float>& x, int f)
+                              {
+                                  Boost::Settings s;
+                                  s.mode = Boost::Mode::screamer;
+                                  s.oversampling = f;
+                                  return renderBoost (s, x);
+                              } });
 
         std::vector<PlotSeries> curves;
         int colour = 0;
@@ -745,16 +906,17 @@ private:
                 table << juce::String (tones[i] / 1000.0, 2) << " kHz " << juce::String (a1, 1) << " / " << juce::String (a4, 1) << " / " << juce::String (a8, 1)
                       << (i + 1 < tones.size() ? "; " : "");
             }
-            expectLessThan (worstGuitarRange, aliasingLimitDb, subject.name);
+            expectLessThan (worstGuitarRange, subject.limit, subject.name);
             expectGreaterThan (leastGain4, 10.0, subject.name);
             expectGreaterThan (leastGain8, 3.0, subject.name);
             logMessage ("  -> " + subject.name + " (1x / 4x / 8x dB): " + table);
-            logMessage ("  -> " + subject.name + ": worst at 4x up to 1.3 kHz " + juce::String (worstGuitarRange, 1) + " dB; from 1 kHz up, 4x is at least "
+            logMessage ("  -> " + subject.name + ": worst at 4x up to 1.3 kHz " + juce::String (worstGuitarRange, 1) + " dB (limit " + juce::String (subject.limit, 0)
+                        + " dB); from 1 kHz up, 4x is at least "
                         + juce::String (leastGain4, 1) + " dB below 1x and 8x at least " + juce::String (leastGain8, 1) + " dB below 4x");
 
             for (const auto factor : { 4, 8 })
             {
-                PlotSeries s { subject.name + " " + juce::String (factor) + "x", {}, {}, plotColour (colour + (factor == 8 ? 3 : 0)), factor == 4 ? 2.5f : 1.5f, factor == 8 };
+                PlotSeries s { subject.name + " " + juce::String (factor) + "x", {}, {}, plotColour (colour), factor == 4 ? 2.5f : 1.5f, factor == 8 };
                 for (size_t i = 0; i < tones.size(); ++i)
                 {
                     s.x.push_back (tones[i]);
@@ -826,12 +988,13 @@ private:
 
         juce::StringArray results;
         double worst = 0.0;
-        for (const auto mode : { Overdrive::Mode::midDrive, Overdrive::Mode::distortion })
-        {
-            const auto m = meanOfLastSecond (renderOverdrive (overdriveSettings (mode, 1.0f, 0.5f), x));
-            worst = std::max (worst, std::abs (m));
-            results.add (modeName (mode) + " " + juce::String (toDb (std::abs (m)), 1) + " dBFS");
-        }
+        for (const auto& info : overdriveModes())
+            for (const auto drive : { 0.0f, 1.0f })
+            {
+                const auto m = meanOfLastSecond (renderOverdrive (overdriveSettings (info.mode, drive, 0.5f), x));
+                worst = std::max (worst, std::abs (m));
+                results.add (juce::String (info.name) + " at drive " + juce::String ((int) drive) + " " + juce::String (toDb (std::abs (m)), 1) + " dBFS");
+            }
         for (const auto mode : { Boost::Mode::screamer, Boost::Mode::tight })
         {
             Boost::Settings s;
@@ -883,35 +1046,40 @@ private:
 
     void mixAndLevel()
     {
-        beginTest ("mix and level: dry, wet, and blend land exactly where they should, and the dry is phase-aligned");
+        beginTest ("mix and level: dry, wet, and blend land exactly where they should in every mode, and the dry is phase-aligned");
         const auto x = guitarDI ((int) fs);
-        auto s = overdriveSettings (Overdrive::Mode::midDrive, 0.7f, 0.5f);
-
-        s.mix = 0.0f;
-        const auto dry = renderOverdrive (s, x);
         const auto expectedDry = convolve (x, chainResponse (4));
-        const auto dryError = relativeErrorDb (dry, expectedDry);
-
-        s.mix = 1.0f;
-        const auto wet = renderOverdrive (s, x);
-        s.mix = 0.5f;
-        const auto half = renderOverdrive (s, x);
-        std::vector<double> blend (x.size());
-        for (size_t n = 0; n < x.size(); ++n)
-            blend[n] = 0.5 * (double) dry[n] + 0.5 * (double) wet[n];
-        const auto blendError = relativeErrorDb (half, blend);
-
-        s.mix = 1.0f;
-        s.levelDb = 6.0f;
-        const auto louder = renderOverdrive (s, x);
-        double ratioError = 0.0;
         const auto gain = std::pow (10.0, 6.0 / 20.0);
-        for (size_t n = 0; n < x.size(); ++n)
-            ratioError = std::max (ratioError, std::abs ((double) louder[n] - gain * (double) wet[n]));
+        for (const auto& info : overdriveModes())
+        {
+            auto s = overdriveSettings (info.mode, 0.7f, 0.5f);
+            s.mix = 0.0f;
+            const auto dry = renderOverdrive (s, x);
+            const auto dryError = relativeErrorDb (dry, expectedDry);
 
-        expectLessThan (dryError, -120.0);
-        expectLessThan (blendError, -120.0);
-        expectLessThan (ratioError, 1.0e-6);
+            s.mix = 1.0f;
+            const auto wet = renderOverdrive (s, x);
+            s.mix = 0.5f;
+            const auto half = renderOverdrive (s, x);
+            std::vector<double> blend (x.size());
+            for (size_t n = 0; n < x.size(); ++n)
+                blend[n] = 0.5 * (double) dry[n] + 0.5 * (double) wet[n];
+            const auto blendError = relativeErrorDb (half, blend);
+
+            s.mix = 1.0f;
+            s.levelDb = 6.0f;
+            const auto louder = renderOverdrive (s, x);
+            double ratioError = 0.0;
+            for (size_t n = 0; n < x.size(); ++n)
+                ratioError = std::max (ratioError, std::abs ((double) louder[n] - gain * (double) wet[n]));
+
+            expectLessThan (dryError, -120.0, info.name);
+            expectLessThan (blendError, -120.0, info.name);
+            expectLessThan (ratioError, 1.0e-6, info.name);
+            logMessage ("  -> " + juce::String (info.name) + " (drive 0.7, tone noon): mix 0 = input through the oversampler's own response to " + dB (dryError)
+                        + "; mix 0.5 = (dry + wet) / 2 to " + dB (blendError) + "; +6 dB of level = x" + juce::String (gain, 4) + " to " + juce::String (ratioError, 9)
+                        + "; the circuit alone is " + juce::String (toDb (rms (wet) / rms (x)), 1) + " dB re. the input on the guitar DI");
+        }
 
         // Why the dry is aligned: at drive 0 and tiny levels the circuit is nearly linear, so a 50% blend's
         // response should be smooth. With an unaligned (zero-delay) dry it would comb-filter.
@@ -932,10 +1100,7 @@ private:
             worstNotch = std::min (worstNotch, dbOf (unaligned) - dbOf (expected));
         }
         expectLessThan (alignedError, 0.01);
-
-        logMessage ("  -> mix 0: output = input through the oversampler's own response, error " + dB (dryError) + "; mix 0.5 = (dry + wet) / 2 to "
-                    + dB (blendError) + "; +6 dB of level = x" + juce::String (gain, 4) + " to " + juce::String (ratioError, 9));
-        logMessage ("  -> 50% blend at drive 0: matches (wet + dry) / 2 within " + juce::String (alignedError, 4) + " dB from 1 to 20 kHz; an unaligned dry would dip by "
+        logMessage ("  -> 50% blend at drive 0 (Mid Drive): matches (wet + dry) / 2 within " + juce::String (alignedError, 4) + " dB from 1 to 20 kHz; an unaligned dry would dip by "
                     + juce::String (-worstNotch, 1) + " dB in that range");
     }
 
@@ -986,8 +1151,9 @@ private:
         }
 
         // Drive and tone sweeps.
-        for (const auto mode : { Overdrive::Mode::midDrive, Overdrive::Mode::distortion })
+        for (const auto& info : overdriveModes())
         {
+            const auto mode = info.mode;
             Overdrive o;
             auto s = overdriveSettings (mode, 0.0f, 0.5f);
             o.setSettings (s);
@@ -999,13 +1165,19 @@ private:
                 s.tone = (float) (t < 1.2 ? 0.5 : juce::jlimit (0.0, 1.0, 0.5 - (t - 1.2) / 0.1)); // then tone 0.5 -> 0
                 o.setSettings (s);
             });
+            // The yardstick is the larger of the sweep's two ends playing the same passage: the steps a
+            // knob sweep may make are the ones either setting makes on its own. (Full drive alone isn't
+            // enough: the Transparent at drive 0 is a bright clean boost, +14 dB, whose attacks step
+            // further than its clipped, low-passed full-drive sound.)
             const auto settledFull = renderOverdrive (overdriveSettings (mode, 1.0f, 0.5f), x);
+            const auto settledZero = renderOverdrive (overdriveSettings (mode, 0.0f, 0.5f), x);
             const auto during = steady (y, 0.5, 0.7), toneSweep = steady (y, 1.2, 1.4);
-            const auto limit = steady (settledFull, 0.5, 1.5);
-            expectLessThan (during, limit * 1.05);
-            expectLessThan (toneSweep, limit * 1.05);
+            const auto limit = std::max (steady (settledFull, 0.5, 1.5), steady (settledZero, 0.5, 0.7));
+            expectLessThan (during, limit * 1.05, info.name);
+            expectLessThan (toneSweep, limit * 1.05, info.name);
             logMessage ("  -> " + modeName (mode) + ": drive 0 -> 1 in 100 ms, largest step " + juce::String (during, 4) + "; tone 0.5 -> 0 in 100 ms, "
-                        + juce::String (toneSweep, 4) + " (steady at full drive: " + juce::String (limit, 4) + ")");
+                        + juce::String (toneSweep, 4) + " (steady: " + juce::String (steady (settledFull, 0.5, 1.5), 4) + " at full drive, "
+                        + juce::String (steady (settledZero, 0.5, 0.7), 4) + " at drive 0 over the same passage)");
         }
 
         // Oversampling 4x -> 8x -> 4x while playing: a 5 ms dip to silence and back.
@@ -1090,6 +1262,96 @@ private:
         }
     }
 
+    /// A walk through the modes that switches into and out of each newer mode (Transparent, Fuzz) from
+    /// and to every other mode: each ordered pair that involves one of them appears once.
+    static std::vector<Overdrive::Mode> switchPath()
+    {
+        using M = Overdrive::Mode;
+        return { M::midDrive, M::transparent, M::distortion, M::fuzz, M::transparent, M::midDrive, M::fuzz, M::distortion, M::transparent, M::fuzz, M::midDrive };
+    }
+
+    void modeSwitching()
+    {
+        beginTest ("mode switching: into and out of each newer mode from and to every other one while playing, against an ideal crossfade of "
+                   "the modes running on their own");
+        const auto path = switchPath();
+        constexpr double segment = 0.3;
+        const auto x = guitarDI ((int) ((segment * (double) path.size() + 0.2) * fs));
+
+        // Each mode alone, the whole time.
+        std::map<int, std::vector<float>> alone;
+        for (const auto m : path)
+            if (alone.count ((int) m) == 0)
+                alone[(int) m] = renderOverdrive (overdriveSettings (m, 0.6f, 0.5f), x);
+
+        // The live run: each switch requested at the first block start of its segment.
+        const auto blockStart = [] (double t) { return (size_t) std::ceil (t * fs / blockSize) * (size_t) blockSize; };
+        std::vector<size_t> requests;
+        for (size_t k = 1; k < path.size(); ++k)
+            requests.push_back (blockStart (segment * (double) k));
+        Overdrive o;
+        auto live = overdriveSettings (path[0], 0.6f, 0.5f);
+        o.setSettings (live);
+        o.prepare (fs, blockSize);
+        const auto y = run (o, x, blockSize, [&] (size_t start)
+        {
+            for (size_t k = 0; k < requests.size(); ++k)
+                if (start == requests[k])
+                {
+                    live.mode = path[k + 1];
+                    o.setSettings (live);
+                }
+        });
+
+        // The ideal, with the block's timing: 80 ms of warm-up after each request, then 20 ms ramps
+        // contributing sin(pi/2 p) each.
+        const auto warmup = (size_t) std::round (DriveEngine::warmupSeconds * fs);
+        const auto step = 1.0 / (DriveEngine::switchSeconds * fs);
+        std::map<int, double> position;
+        for (const auto& [m, signal] : alone)
+            position[m] = m == (int) path[0] ? 1.0 : 0.0;
+        int heading = (int) path[0];
+        size_t next = 0;
+        std::vector<double> ideal (x.size());
+        for (size_t n = 0; n < x.size(); ++n)
+        {
+            if (next < requests.size() && n == requests[next] + warmup)
+                heading = (int) path[++next];
+            double sum = 0.0;
+            for (auto& [m, p] : position)
+            {
+                p = m == heading ? std::min (1.0, p + step) : std::max (0.0, p - step);
+                sum += std::sin (0.5 * pi * p) * alone[m][n];
+            }
+            ideal[n] = sum;
+        }
+
+        double peak = 0.0;
+        for (const auto v : ideal)
+            peak = std::max (peak, std::abs (v));
+        juce::StringArray lines;
+        double worstDeviation = -400.0, worstRatio = 0.0;
+        for (size_t k = 0; k < requests.size(); ++k)
+        {
+            const auto from = requests[k], to = requests[k] + warmup + (size_t) (DriveEngine::switchSeconds * fs) + 480;
+            double deviation = 0.0, idealStep = 0.0;
+            for (size_t n = from; n < to; ++n)
+            {
+                deviation = std::max (deviation, std::abs ((double) y[n] - ideal[n]));
+                if (n > from)
+                    idealStep = std::max (idealStep, std::abs (ideal[n] - ideal[n - 1]));
+            }
+            const auto ratio = maxStep (y, from, to) / idealStep;
+            worstDeviation = std::max (worstDeviation, toDb (deviation / peak));
+            worstRatio = std::max (worstRatio, ratio);
+            lines.add (modeName (path[k]) + " -> " + modeName (path[k + 1]) + " " + juce::String (toDb (deviation / peak), 1) + " dB, step x" + juce::String (ratio, 3));
+        }
+        expectLessThan (worstDeviation, -30.0);
+        expectLessThan (worstRatio, 1.05);
+        logMessage ("  -> each switch's largest difference from the ideal crossfade (dB re. the peak) and largest step against the ideal's: " + lines.joinIntoString ("; "));
+        logMessage ("  -> worst " + juce::String (worstDeviation, 1) + " dB, largest step x" + juce::String (worstRatio, 3) + " the ideal's");
+    }
+
     void realTime()
     {
         beginTest ("real time: every setting, mode, and oversampling change allocates and locks nothing");
@@ -1115,10 +1377,23 @@ private:
                 case 40:  os.drive = 1.0f; os.tone = 0.1f; bs.tightHz = 400.0f; bs.midDb = 12.0f; break;
                 case 60:  os.mix = 0.4f; os.levelDb = -6.0f; bs.mode = Boost::Mode::screamer; break;
                 case 80:  os.tightHz = 300.0f; os.oversampling = 8; bs.oversampling = 8; break;
+                case 100: os.mode = Overdrive::Mode::transparent; break;
+                case 110: os.drive = 0.3f; os.tone = 0.9f; break;
                 case 120: os.mode = Overdrive::Mode::midDrive; os.drive = 0.2f; bs.mode = Boost::Mode::clean; bs.tiltDb = 6.0f; break;
                 case 140: os.mode = Overdrive::Mode::distortion; os.oversampling = 4; bs.oversampling = 4; bs.levelDb = 10.0f; break;
                 case 160: os.mode = Overdrive::Mode::midDrive; os.mix = 1.0f; os.tightHz = 20.0f; bs.mode = Boost::Mode::screamer; break;
+                case 180: os.mode = Overdrive::Mode::transparent; break;
+                case 190: os.drive = 1.0f; os.tone = 0.0f; break;
                 case 200: os = overdriveSettings (Overdrive::Mode::midDrive, 0.5f, 0.5f); bs = Boost::Settings {}; break;
+                case 220: os.mode = Overdrive::Mode::fuzz; break;
+                case 230: os.drive = 0.0f; os.tone = 1.0f; break;
+                case 240: os.oversampling = 8; os.drive = 1.0f; break;
+                case 260: os.mode = Overdrive::Mode::transparent; os.mix = 0.5f; break;
+                case 280: os.mode = Overdrive::Mode::fuzz; os.tone = 0.0f; os.tightHz = 200.0f; break;
+                case 300: os.oversampling = 4; os.drive = 0.3f; break;
+                case 320: os.mode = Overdrive::Mode::distortion; break;
+                case 340: os.mode = Overdrive::Mode::fuzz; os.mix = 1.0f; os.tightHz = 20.0f; break;
+                case 380: os = overdriveSettings (Overdrive::Mode::midDrive, 0.5f, 0.5f); break;
                 default: break;
             }
             std::copy (x.begin() + (long) start, x.begin() + (long) start + blockSize, buffer.begin());
@@ -1164,15 +1439,15 @@ private:
 
         juce::StringArray results;
         double worstMean = 0.0;
-        for (const auto mode : { Overdrive::Mode::midDrive, Overdrive::Mode::distortion })
+        for (const auto& info : overdriveModes())
             for (const auto factor : { 4, 8 })
             {
                 Overdrive o;
-                o.setSettings (overdriveSettings (mode, 0.8f, 0.5f, factor));
+                o.setSettings (overdriveSettings (info.mode, 0.8f, 0.5f, factor));
                 o.prepare (fs, blockSize);
                 const auto [mean, p99] = measure (o);
                 worstMean = std::max (worstMean, factor == 4 ? mean : 0.0);
-                results.add (modeName (mode) + " " + juce::String (factor) + "x: " + juce::String (mean, 1) + " us (" + juce::String (100.0 * mean / deadlineMicros, 2)
+                results.add (juce::String (info.name) + " " + juce::String (factor) + "x: " + juce::String (mean, 1) + " us (" + juce::String (100.0 * mean / deadlineMicros, 2)
                              + "%, p99 " + juce::String (p99, 1) + " us)");
             }
         for (const auto& [mode, factor] : std::vector<std::pair<Boost::Mode, int>> { { Boost::Mode::clean, 4 }, { Boost::Mode::tight, 4 }, { Boost::Mode::screamer, 4 }, { Boost::Mode::screamer, 8 } })

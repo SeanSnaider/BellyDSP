@@ -71,7 +71,7 @@ struct OverdriveParameters
     ampsim::Overdrive::Settings read (int oversampling, double voltsAtFullScale) const noexcept;
 
     static juce::StringArray modeNames(); // message thread (it allocates)
-    static constexpr int numModes = 2;
+    static constexpr int numModes = 4;
 
     Raw on, mode, drive, tone, level, mix, tightOn, tightHz;
 };
