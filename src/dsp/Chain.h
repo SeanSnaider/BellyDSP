@@ -2,6 +2,7 @@
 
 #include "AmpSection.h"
 #include "Block.h"
+#include "Boost.h"
 #include "Cab.h"
 #include "Chorus.h"
 #include "Compressor.h"
@@ -10,6 +11,7 @@
 #include "Equalizer.h"
 #include "Gain.h"
 #include "LinkedGates.h"
+#include "Overdrive.h"
 
 #include <array>
 #include <atomic>
@@ -35,11 +37,13 @@ class Chain
 {
 public:
     Gain inputGain { false };
-    GateA gateA;
+    Gate gateA;
     Compressor preCompressor { false };
+    Boost boost;
+    Overdrive overdrive;
     Equalizer preEq { false };
     AmpSection amp;
-    GateB gateB { gateA.gate }; // follows Gate A when linked (LinkedGates.h)
+    GateB gateB { gateA }; // follows Gate A when linked (LinkedGates.h)
     Cab cab;
     Equalizer postEq { true };
     Compressor postCompressor { true };
@@ -53,6 +57,8 @@ public:
         inputGain,
         gateA,
         preCompressor,
+        boost,
+        overdrive,
         preEq,
         amp,
         gateB,
@@ -121,6 +127,13 @@ private:
         bool bypassed = false;                   // the target: where the fade is heading
         juce::SmoothedValue<float> wet { 1.0f }; // the fade itself: 1 = block on, 0 = bypassed
         bool resetBeforeNextRun = false;
+
+        // Keeps running while fully bypassed, on a copy of its input, so its state stays live: Gate A
+        // (a linked Gate B follows its curve, and Learn works with it off) and the drive blocks (a
+        // circuit switched on cold clips around the wrong bias while its coupling capacitors charge,
+        // which a 10 ms fade doesn't hide). Costs the block's CPU while it's off; switching it on needs
+        // no reset.
+        bool keepRunning = false;
 
         bool fullyOff() const { return bypassed && ! wet.isSmoothing(); }
     };

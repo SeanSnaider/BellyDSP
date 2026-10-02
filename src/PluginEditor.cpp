@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "BlockParameters.h"
 
 namespace
 {
@@ -1022,8 +1023,8 @@ void GatePanel::paint (juce::Graphics& g)
     else if (linked)
         text = juce::String ("Following Gate A: ") + (meter.reductionDb < 1.0f ? "open" : "closing, " + dB (meter.reductionDb) + " dB down");
     else
-        text = (meter.open ? "Open" : "Closed") + juce::String (": level ") + dB (meter.detectorDb) + " dBFS (opens at " + dB (meter.openDb)
-               + ", closes below " + dB (meter.closeDb) + "), reduction " + (meter.reductionDb >= 99.0f ? juce::String ("full") : dB (meter.reductionDb) + " dB");
+        text = (meter.open ? "Open" : "Closed") + juce::String (", level ") + dB (meter.detectorDb) + " dBFS, reduction "
+               + (meter.reductionDb >= 99.0f ? juce::String ("full") : dB (meter.reductionDb) + " dB");
     g.setColour (learning ? warningColour : textColour);
     g.setFont (juce::FontOptions (12.0f));
     g.drawText (text, textRow, juce::Justification::centredLeft);
@@ -1032,9 +1033,9 @@ void GatePanel::paint (juce::Graphics& g)
 void GatePanel::resized()
 {
     auto area = layoutTitle();
-    auto combos = area.removeFromTop (26);
-    releaseMode->setBounds (combos.removeFromLeft (combos.getWidth() / 2).reduced (2, 0));
-    detector->setBounds (combos.reduced (2, 0));
+    releaseMode->setBounds (area.removeFromTop (26).reduced (2, 0));
+    area.removeFromTop (4);
+    detector->setBounds (area.removeFromTop (26).reduced (2, 0));
     area.removeFromTop (6);
 
     auto toggles = area.removeFromTop (26);
@@ -1050,7 +1051,72 @@ void GatePanel::resized()
     std::vector<juce::Component*> cells;
     for (auto* knob : knobs)
         cells.push_back (knob);
-    layoutGrid (area, cells, 4, juce::jmin (110, area.getHeight() / 2));
+    layoutGrid (area, cells, 2, juce::jmin (110, area.getHeight() / 4));
+}
+
+// ---- BoostPanel, OverdrivePanel -----------------------------------------------------------------
+
+BoostPanel::BoostPanel (AmpSimProcessor& processor) : EffectPanel (processor, "Boost", "boost_on")
+{
+    mode = &addCombo ("boost_mode", { "Clean", "Tight", "Screamer" });
+    level = &addKnob ("boost_level", "Level");
+    tilt = &addKnob ("boost_tilt", "Tilt");
+    tightHz = &addKnob ("boost_tight_freq", "Tight", " Hz");
+    mid = &addKnob ("boost_mid", "Mid push");
+}
+
+void BoostPanel::refresh()
+{
+    // Clean uses the tilt, Tight the tight frequency and the mid push; Screamer only the level.
+    const auto current = juce::roundToInt (ampSim.parameters.getRawParameterValue ("boost_mode")->load());
+    if (current == shownMode)
+        return;
+    shownMode = current;
+    tilt->setAlpha (current == 0 ? 1.0f : 0.35f);
+    tightHz->setAlpha (current == 1 ? 1.0f : 0.35f);
+    mid->setAlpha (current == 1 ? 1.0f : 0.35f);
+}
+
+void BoostPanel::resized()
+{
+    auto area = layoutTitle();
+    mode->setBounds (area.removeFromTop (26).reduced (2, 0));
+    area.removeFromTop (10);
+    layoutGrid (area, { level, tilt, tightHz, mid }, 2, juce::jmin (120, area.getHeight() / 2));
+}
+
+OverdrivePanel::OverdrivePanel (AmpSimProcessor& processor) : EffectPanel (processor, "Overdrive", "od_on")
+{
+    mode = &addCombo ("od_mode", params::OverdriveParameters::modeNames());
+    drive = &addKnob ("od_drive", "Drive", " %");
+    tone = &addKnob ("od_tone", "Tone", " %");
+    level = &addKnob ("od_level", "Level");
+    mix = &addKnob ("od_mix", "Mix", " %");
+    tight = &addToggle ("od_tight", "Tight");
+    tightHz = &addKnob ("od_tight_freq", "Tight", " Hz");
+    oversampling = &addCombo ("drive_oversampling", { "4x oversampling (boost and overdrive)", "8x oversampling (boost and overdrive)" });
+}
+
+void OverdrivePanel::refresh()
+{
+    const auto on = ampSim.parameters.getRawParameterValue ("od_tight")->load() >= 0.5f ? 1 : 0;
+    if (on == shownTight)
+        return;
+    shownTight = on;
+    tightHz->setAlpha (on == 1 ? 1.0f : 0.35f);
+}
+
+void OverdrivePanel::resized()
+{
+    auto area = layoutTitle();
+    mode->setBounds (area.removeFromTop (26).reduced (2, 0));
+    area.removeFromTop (10);
+    oversampling->setBounds (area.removeFromBottom (26).reduced (2, 0));
+    const auto rowHeight = juce::jmin (120, area.getHeight() / 3);
+    layoutGrid (area.removeFromTop (2 * rowHeight), { drive, tone, level, mix }, 2, rowHeight);
+    auto tightRow = area.removeFromTop (rowHeight);
+    tight->setBounds (tightRow.removeFromLeft (tightRow.getWidth() / 2).withSizeKeepingCentre (tightRow.getWidth() / 2 - 8, 26));
+    tightHz->setBounds (tightRow);
 }
 
 // ---- DelayPanel -------------------------------------------------------------------------------
@@ -1326,17 +1392,21 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p)
         };
     }
 
-    // Gates & Drive: the two linked gates (and the boost and overdrive).
+    // Gates & Drive, in signal order: Gate A, the boost, and the overdrive before the amp; Gate B after it.
+    // (The pre section can be reordered on the Pre FX tab; this page keeps the default order.)
     gateAPanel = std::make_unique<GatePanel> (p, false);
     gateBPanel = std::make_unique<GatePanel> (p, true);
-    gatesPage.addAndMakeVisible (gateAPanel.get());
-    gatesPage.addAndMakeVisible (gateBPanel.get());
+    boostPanel = std::make_unique<BoostPanel> (p);
+    overdrivePanel = std::make_unique<OverdrivePanel> (p);
+    for (auto* c : std::initializer_list<juce::Component*> { gateAPanel.get(), boostPanel.get(), overdrivePanel.get(), gateBPanel.get() })
+        gatesPage.addAndMakeVisible (c);
     gatesPage.layout = [this] (juce::Rectangle<int> area)
     {
         area.reduce (8, 8);
-        auto gates = area.removeFromTop (juce::jmin (area.getHeight(), 420));
-        gateAPanel->setBounds (gates.removeFromLeft (gates.getWidth() / 2).reduced (4));
-        gateBPanel->setBounds (gates.reduced (4));
+        const auto width = area.getWidth() / 4;
+        for (auto* c : std::initializer_list<juce::Component*> { gateAPanel.get(), boostPanel.get(), overdrivePanel.get() })
+            c->setBounds (area.removeFromLeft (width).reduced (4));
+        gateBPanel->setBounds (area.reduced (4));
     };
 
     tabs.addTab ("Amps", panel, &ampsPage, false);
@@ -1481,6 +1551,8 @@ void AmpSimEditor::timerCallback()
     reverbPanel->refresh();
     gateAPanel->refresh();
     gateBPanel->refresh();
+    boostPanel->refresh();
+    overdrivePanel->refresh();
 }
 
 void AmpSimEditor::mouseDown (const juce::MouseEvent& e)

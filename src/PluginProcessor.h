@@ -111,7 +111,7 @@ public:
     void learnGates();
     bool isLearningGates() const;
     bool isGateBOnItsOwn() const;
-    float getGateLearnProgress() const { return chain.gateA.gate.getLearnProgress(); }
+    float getGateLearnProgress() const { return chain.gateA.getLearnProgress(); }
 
     /// Any thread: gate meters, for Gate A (b = false) or Gate B.
     struct GateMeter
@@ -121,7 +121,7 @@ public:
     };
     GateMeter getGateMeter (bool b) const
     {
-        const auto& g = b ? chain.gateB.gate : chain.gateA.gate;
+        const auto& g = b ? chain.gateB.gate : chain.gateA;
         return { g.getDetectorLevelDb(), g.getOpenThresholdDb(), g.getCloseThresholdDb(), g.getGainReductionDb(), g.isOpen() };
     }
 
@@ -240,6 +240,9 @@ private:
 
     void applyEffectParameters();
     params::GateParameters gateAParams, gateBParams;
+    params::BoostParameters boostParams;
+    params::OverdriveParameters overdriveParams;
+    params::Raw driveOversampling;
     std::atomic<float>* gateLink = nullptr;
     int gateALearnSeen = 0, gateBLearnSeen = 0;
     params::CompressorParameters preCompParams, postCompParams;

@@ -456,7 +456,7 @@ public:
                     logMessage ("  !! " + juce::String (id) + " is " + juce::String (getParam (p, id)) + ", expected " + juce::String (value));
                 }
             expectEquals (wrong, 0);
-            expect (p.getSectionOrder (ampsim::Chain::Section::pre) == juce::StringArray { "gate", "eq", "comp" }); // saved before the gate existed
+            expect (p.getSectionOrder (ampsim::Chain::Section::pre) == juce::StringArray { "gate", "eq", "comp", "boost", "overdrive" }); // saved before they existed
             expect (startsWith (p.getSectionOrder (ampsim::Chain::Section::post), { "delay", "eq", "comp" }));
             expect (p.getPresetWarnings().joinIntoString ("; ").contains ("some_future_parameter"));
             logMessage ("  -> tests/fixtures/presets/golden_v1.json: " + juce::String ((int) expected.size()) + " parameter values as expected, order \""
@@ -920,7 +920,7 @@ public:
             p.runHousekeeping();
             const auto learnedA = getParam (p, "gate_a_threshold");
             expect (! p.isLearningGates());
-            expectWithinAbsoluteError (learnedA, p.getChain().gateA.gate.getLearnedThresholdDb(), 0.051f);
+            expectWithinAbsoluteError (learnedA, p.getChain().gateA.getLearnedThresholdDb(), 0.051f);
             expectEquals (getParam (p, "gate_b_threshold"), -55.0f);
             setParam (p, "gate_link", 0.0f);
             p.learnGates();
@@ -929,7 +929,7 @@ public:
             expectWithinAbsoluteError (getParam (p, "gate_b_threshold"), p.getChain().gateB.gate.getLearnedThresholdDb(), 0.051f);
             expect (getParam (p, "gate_b_threshold") > -50.0f);
             expect (! p.isLearningGates());
-            const auto noiseFloor = p.getChain().gateA.gate.getLearnedNoiseFloorDb();
+            const auto noiseFloor = p.getChain().gateA.getLearnedNoiseFloorDb();
             expect (noiseFloor > -66.0f && noiseFloor < -55.0f);
 
             logMessage ("  -> through the whole processor, bit for bit against a lone reference gate: linked Gate B with Gate A off applies Gate A's gain "
@@ -941,13 +941,139 @@ public:
                         "Gate B learned only once unlinked: " + juce::String (getParam (p, "gate_b_threshold"), 1) + " dBFS");
         }
 
+        beginTest ("boost and overdrive: through the processor they're exactly the blocks, switched on mid-song they start warm, and the interface level and oversampling reach them");
+        {
+            const auto input = guitarDI ((int) (2.0 * fs));
+            using Settings = std::initializer_list<std::pair<const char*, float>>;
+
+            // The processor with these settings, from the start or switched on at `onAt`.
+            const auto render = [&] (Settings settings, const char* onId = nullptr, size_t onAt = 0)
+            {
+                AmpSimProcessor p;
+                for (const auto& [id, value] : settings)
+                    setParam (p, id, value);
+                p.prepareToPlay (fs, blockSize);
+                juce::AudioBuffer<float> buffer (2, blockSize);
+                juce::MidiBuffer midi;
+                std::vector<float> out (input.size());
+                for (size_t start = 0; start + blockSize <= input.size(); start += blockSize)
+                {
+                    if (onId != nullptr && start == onAt)
+                        setParam (p, onId, 1.0f);
+                    buffer.clear();
+                    buffer.copyFrom (0, 0, input.data() + start, blockSize);
+                    p.processBlock (buffer, midi);
+                    std::copy (buffer.getReadPointer (0), buffer.getReadPointer (0) + blockSize, out.begin() + (long) start);
+                }
+                return out;
+            };
+            // A lone block with the same settings, read through the same parameters, set before prepare()
+            // as the processor does (so it starts in its mode, with no ramps).
+            const auto lone = [&] (auto& block, Settings settings, auto readSettings, size_t startAt = 0)
+            {
+                AmpSimProcessor p;
+                for (const auto& [id, value] : settings)
+                    setParam (p, id, value);
+                const auto blockSettings = readSettings (p);
+                block.setSettings (blockSettings);
+                block.prepare (fs, blockSize);
+                std::vector<float> out (input.size(), 0.0f), scratch ((size_t) blockSize);
+                for (size_t start = startAt; start + blockSize <= input.size(); start += blockSize)
+                {
+                    block.setSettings (blockSettings);
+                    std::copy (input.begin() + (long) start, input.begin() + (long) start + blockSize, scratch.begin());
+                    float* channels[] = { scratch.data() };
+                    block.process (juce::dsp::AudioBlock<float> (channels, 1, (size_t) blockSize), { input.data() + start, blockSize });
+                    std::copy (scratch.begin(), scratch.end(), out.begin() + (long) start);
+                }
+                return out;
+            };
+            const auto overdriveSettings = [] (AmpSimProcessor& p)
+            {
+                params::OverdriveParameters od;
+                od.bind (p.parameters);
+                params::Raw os;
+                os.bind (p.parameters, "drive_oversampling");
+                return od.read (params::oversamplingFactor (os), params::voltsAtFullScale (getParam (p, "input_level_dbu")));
+            };
+            const auto boostSettings = [] (AmpSimProcessor& p)
+            {
+                params::BoostParameters boost;
+                boost.bind (p.parameters);
+                return boost.read (4, params::voltsAtFullScale (getParam (p, "input_level_dbu")));
+            };
+            const auto maxDifference = [] (const std::vector<float>& a, const std::vector<float>& b, size_t from, size_t to)
+            {
+                double worst = 0.0;
+                for (size_t n = from; n < to; ++n)
+                    worst = std::max (worst, std::abs ((double) a[n] - (double) b[n]));
+                return worst;
+            };
+            const auto afterFade = (size_t) (0.02 * fs), end = input.size() - blockSize;
+
+            // From the start: exactly the lone blocks (after the 10 ms switch-on fade).
+            const Settings rat { { "od_on", 1.0f }, { "od_mode", 1.0f }, { "od_drive", 70.0f }, { "od_tone", 40.0f }, { "od_level", -6.0f },
+                                 { "od_tight", 1.0f } };
+            ampsim::Overdrive od1;
+            const auto odDifference = maxDifference (render (rat), lone (od1, rat, overdriveSettings), afterFade, end);
+            const Settings screamer { { "boost_on", 1.0f }, { "boost_mode", 2.0f }, { "boost_level", 6.0f } };
+            ampsim::Boost boost1;
+            const auto boostDifference = maxDifference (render (screamer), lone (boost1, screamer, boostSettings), afterFade, end);
+            expectEquals (odDifference, 0.0);
+            expectEquals (boostDifference, 0.0);
+
+            // Switched on at 1 s: the overdrive kept running while it was off, so 10 ms later the output is
+            // exactly an always-on overdrive's. A circuit started cold at 1 s instead, for comparison.
+            const auto onAt = (size_t) fs / blockSize * blockSize;
+            const Settings ratOff { { "od_mode", 1.0f }, { "od_drive", 70.0f }, { "od_tone", 40.0f }, { "od_level", -6.0f }, { "od_tight", 1.0f } };
+            const auto engaged = render (ratOff, "od_on", onAt);
+            ampsim::Overdrive alwaysOn, cold;
+            const auto always = lone (alwaysOn, rat, overdriveSettings);
+            const auto coldStart = lone (cold, rat, overdriveSettings, onAt);
+            const auto warmDifference = maxDifference (engaged, always, onAt + (size_t) (0.011 * fs), end);
+            double peak = 0.0;
+            for (size_t n = onAt; n < end; ++n)
+                peak = std::max (peak, std::abs ((double) always[n]));
+            const auto coldDb = [&] (double fromMs, double toMs)
+            { return toDb (maxDifference (coldStart, always, onAt + (size_t) (fromMs * 0.001 * fs), onAt + (size_t) (toMs * 0.001 * fs)) / peak); };
+            expectEquals (warmDifference, 0.0);
+
+            // The interface level sets the circuits' volts: +18 dBu drives them 6 dB harder than +12.
+            const Settings hotter { { "od_on", 1.0f }, { "od_mode", 1.0f }, { "od_drive", 70.0f }, { "od_tone", 40.0f }, { "od_level", -6.0f },
+                                    { "od_tight", 1.0f }, { "input_level_dbu", 18.0f } };
+            ampsim::Overdrive od18;
+            const auto hot = render (hotter);
+            expectEquals (maxDifference (hot, lone (od18, hotter, overdriveSettings), afterFade, end), 0.0);
+            const auto levelChange = toDb (rms (hot.data() + afterFade, end - afterFade) / rms (always.data() + afterFade, end - afterFade));
+
+            // 8x reaches the blocks, and isn't part of a preset.
+            const Settings at8x { { "od_on", 1.0f }, { "od_mode", 1.0f }, { "od_drive", 70.0f }, { "od_tone", 40.0f }, { "od_level", -6.0f },
+                                  { "od_tight", 1.0f }, { "drive_oversampling", 1.0f } };
+            ampsim::Overdrive od8;
+            expectEquals (maxDifference (render (at8x), lone (od8, at8x, overdriveSettings), afterFade, end), 0.0);
+            AmpSimProcessor p;
+            setParam (p, "drive_oversampling", 1.0f);
+            const auto preset = p.capturePreset ("x");
+            expect (! preset["parameters"].hasProperty ("drive_oversampling"));
+            expect (preset["parameters"].hasProperty ("od_drive") && preset["parameters"].hasProperty ("boost_mode"));
+
+            logMessage ("  -> through the whole processor, against lone blocks: Distortion (drive 70%, tone 40%, -6 dB, tight 150 Hz) differs by "
+                        + juce::String (odDifference) + ", the Screamer boost (+6 dB) by " + juce::String (boostDifference) + "; at 8x by 0");
+            logMessage ("  -> switched on at 1 s: 11 ms later the output is an always-on overdrive's exactly (difference " + juce::String (warmDifference)
+                        + "); a circuit started cold at 1 s would differ by " + juce::String (coldDb (11.0, 30.0), 1) + " dB (11 to 30 ms), "
+                        + juce::String (coldDb (30.0, 100.0), 1) + " dB (30 to 100 ms), " + juce::String (coldDb (100.0, 300.0), 1)
+                        + " dB (0.1 to 0.3 s) re. its peak");
+            logMessage ("  -> interface level +18 dBu instead of +12: the circuits see 6 dB more volts, output level " + juce::String (levelChange, 2)
+                        + " dB (clipping); matches the lone block at +18 exactly. drive_oversampling stays out of presets");
+        }
+
         beginTest ("the effect order is saved by block name and restored, and odd saved orders are repaired");
         {
             using Section = ampsim::Chain::Section;
             AmpSimProcessor p;
-            expect (p.getSectionOrder (Section::pre) == juce::StringArray { "gate", "comp", "eq" });
+            expect (p.getSectionOrder (Section::pre) == juce::StringArray { "gate", "comp", "boost", "overdrive", "eq" });
             expect (startsWith (p.getSectionOrder (Section::post), { "eq", "comp" }));
-            p.setSectionOrder (Section::pre, { "eq", "gate", "comp" });
+            p.setSectionOrder (Section::pre, { "eq", "gate", "comp", "boost", "overdrive" });
             p.setSectionOrder (Section::post, { "comp", "eq" });
             expect (startsWith (p.getSectionOrder (Section::post), { "comp", "eq", "chorus" }));
 
@@ -955,7 +1081,7 @@ public:
             p.getStateInformation (state);
             AmpSimProcessor restored;
             restored.setStateInformation (state.getData(), (int) state.getSize());
-            expect (restored.getSectionOrder (Section::pre) == juce::StringArray { "eq", "gate", "comp" });
+            expect (restored.getSectionOrder (Section::pre) == juce::StringArray { "eq", "gate", "comp", "boost", "overdrive" });
             expect (startsWith (restored.getSectionOrder (Section::post), { "comp", "eq" }));
             expect (restored.getSectionOrder (Section::post) == p.getSectionOrder (Section::post));
 
@@ -963,12 +1089,13 @@ public:
             // skipped, and a missing block goes where it breaks the fewest pairs of the default order.
             AmpSimProcessor odd;
             odd.setSectionOrder (Section::pre, { "harmonizer", "eq", "eq" });
-            expect (odd.getSectionOrder (Section::pre) == juce::StringArray { "gate", "comp", "eq" });
+            expect (odd.getSectionOrder (Section::pre) == juce::StringArray { "gate", "comp", "boost", "overdrive", "eq" });
 
-            // An order saved before the gate existed (Phase 5): the gate goes first, the rest keep their order.
+            // An order saved before the gate and the drive blocks existed (Phase 5): the gate goes first, the
+            // boost and overdrive after the compressor, and the player's own order stays.
             AmpSimProcessor phase5;
             phase5.setSectionOrder (Section::pre, { "eq", "comp" });
-            expect (phase5.getSectionOrder (Section::pre) == juce::StringArray { "gate", "eq", "comp" });
+            expect (phase5.getSectionOrder (Section::pre) == juce::StringArray { "gate", "eq", "comp", "boost", "overdrive" });
 
             // A state saved before effects existed loads with the default order.
             AmpSimProcessor legacy;
@@ -977,7 +1104,7 @@ public:
             juce::MemoryBlock old;
             juce::AudioProcessor::copyXmlToBinary (*tree.createXml(), old);
             legacy.setStateInformation (old.getData(), (int) old.getSize());
-            expect (legacy.getSectionOrder (Section::pre) == juce::StringArray { "gate", "comp", "eq" });
+            expect (legacy.getSectionOrder (Section::pre) == juce::StringArray { "gate", "comp", "boost", "overdrive", "eq" });
 
             logMessage ("  -> saved \"" + p.parameters.state.getProperty (AmpSimProcessor::orderKey (Section::pre)).toString() + "\" / \""
                         + p.parameters.state.getProperty (AmpSimProcessor::orderKey (Section::post)).toString() + "\", restored the same; "
@@ -1061,6 +1188,10 @@ public:
             setParam (p, "reverb_engine", 2.0f);
             setParam (p, "gate_a_on", 1.0f);
             setParam (p, "gate_b_on", 1.0f);
+            setParam (p, "boost_on", 1.0f);
+            setParam (p, "boost_mode", 1.0f);
+            setParam (p, "od_on", 1.0f);
+            setParam (p, "od_mode", 1.0f);
             for (auto [tab, name] : std::initializer_list<std::pair<int, const char*>> {
                      { 2, "editor_gates.png" }, { 3, "editor_prefx.png" }, { 4, "editor_postfx.png" }, { 5, "editor_timefx.png" } })
             {

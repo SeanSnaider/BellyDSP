@@ -49,6 +49,9 @@ AmpSimProcessor::AmpSimProcessor()
     gateAParams.bind (parameters, "gate_a");
     gateBParams.bind (parameters, "gate_b");
     gateLink = raw ("gate_link");
+    boostParams.bind (parameters);
+    overdriveParams.bind (parameters);
+    driveOversampling.bind (parameters, "drive_oversampling");
     preCompParams.bind (parameters, "comp_pre");
     postCompParams.bind (parameters, "comp_post");
     preEqParams.bind (parameters, "eq_pre");
@@ -178,6 +181,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout AmpSimProcessor::createParam
     params::GateParameters::addTo (layout, "gate_a", "Gate A");
     params::GateParameters::addTo (layout, "gate_b", "Gate B");
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "gate_link", 1 }, "Gate Link", true));
+    params::BoostParameters::addTo (layout);
+    params::OverdriveParameters::addTo (layout);
+    // Global (not in presets): 8x costs about 1.5 to 1.9x the CPU of 4x (BUILD_PLAN "Boost and Overdrive").
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "drive_oversampling", 1 }, "Drive Oversampling",
+                                                              juce::StringArray { "4x", "8x" }, 0));
     params::CompressorParameters::addTo (layout, "comp_pre", "Pre Comp", false);
     params::EqualizerParameters::addTo (layout, "eq_pre", "Pre EQ", true);
     params::EqualizerParameters::addTo (layout, "eq_post", "Post EQ", true);
@@ -300,11 +308,19 @@ void AmpSimProcessor::applyCabParameters()
 void AmpSimProcessor::applyEffectParameters()
 {
     using Slot = ampsim::Chain::Slot;
-    chain.setBypassed (Slot::gateA, ! gateAParams.isOn()); // Gate A takes this as its own bypass and keeps detecting
-    chain.gateA.gate.setSettings (gateAParams.read());
+    chain.setBypassed (Slot::gateA, ! gateAParams.isOn()); // off, it keeps detecting (Chain: keepRunning)
+    chain.gateA.setSettings (gateAParams.read());
     chain.setBypassed (Slot::gateB, ! gateBParams.isOn());
     chain.gateB.gate.setSettings (gateBParams.read());
     chain.gateB.setLinked (gateLink->load (std::memory_order_relaxed) >= 0.5f);
+
+    // The drive circuits run on volts: 0 dBFS is the interface's full scale (as for the NAM calibration).
+    const auto oversampling = params::oversamplingFactor (driveOversampling);
+    const auto volts = params::voltsAtFullScale ((double) interfaceInputDbu->load (std::memory_order_relaxed));
+    chain.setBypassed (Slot::boost, ! boostParams.isOn()); // off, both keep running (Chain: keepRunning)
+    chain.boost.setSettings (boostParams.read (oversampling, volts));
+    chain.setBypassed (Slot::overdrive, ! overdriveParams.isOn());
+    chain.overdrive.setSettings (overdriveParams.read (oversampling, volts));
     chain.setBypassed (Slot::preCompressor, ! preCompParams.isOn());
     chain.preCompressor.setSettings (preCompParams.read());
     chain.setBypassed (Slot::preEq, ! preEqParams.isOn());
@@ -336,7 +352,7 @@ void AmpSimProcessor::registerTap (double timeSeconds)
 
 void AmpSimProcessor::learnGates()
 {
-    chain.gateA.gate.startLearn();
+    chain.gateA.startLearn();
     if (isGateBOnItsOwn())
         chain.gateB.gate.startLearn();
 }
@@ -349,7 +365,7 @@ bool AmpSimProcessor::isGateBOnItsOwn() const
 bool AmpSimProcessor::isLearningGates() const
 {
     // A Gate B switched off or relinked mid-measurement stops detecting, so it only counts while it runs.
-    return chain.gateA.gate.isLearning() || (chain.gateB.gate.isLearning() && isGateBOnItsOwn());
+    return chain.gateA.isLearning() || (chain.gateB.gate.isLearning() && isGateBOnItsOwn());
 }
 
 juce::String AmpSimProcessor::blockName (ampsim::Chain::Slot slot)
@@ -357,6 +373,10 @@ juce::String AmpSimProcessor::blockName (ampsim::Chain::Slot slot)
     using Slot = ampsim::Chain::Slot;
     if (slot == Slot::gateA)
         return "gate";
+    if (slot == Slot::boost)
+        return "boost";
+    if (slot == Slot::overdrive)
+        return "overdrive";
     if (slot == Slot::preCompressor || slot == Slot::postCompressor)
         return "comp";
     if (slot == Slot::preEq || slot == Slot::postEq)
@@ -742,7 +762,7 @@ void AmpSimProcessor::timerCallback()
                 param->setValueNotifyingHost (param->convertTo0to1 (gate.getLearnedThresholdDb()));
         }
     };
-    writeLearned (chain.gateA.gate, gateALearnSeen, "gate_a_threshold");
+    writeLearned (chain.gateA, gateALearnSeen, "gate_a_threshold");
     writeLearned (chain.gateB.gate, gateBLearnSeen, "gate_b_threshold");
 
     // A tapped tempo: write it into the tempo knob (the audio thread already uses it).

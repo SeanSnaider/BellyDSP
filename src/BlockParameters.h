@@ -1,10 +1,12 @@
 #pragma once
 
+#include "dsp/Boost.h"
 #include "dsp/Chorus.h"
 #include "dsp/Compressor.h"
 #include "dsp/Delay.h"
 #include "dsp/Equalizer.h"
 #include "dsp/Gate.h"
+#include "dsp/Overdrive.h"
 #include "dsp/Reverb.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -46,6 +48,40 @@ struct GateParameters
 
     Raw on, threshold, hysteresis, hold, attack, release, releaseMode, range, detector, sidechainOn, sidechainHz;
 };
+
+/// The boost ("boost_*"). Oversampling and the interface's full-scale voltage are global settings the
+/// processor passes in.
+struct BoostParameters
+{
+    static void addTo (Layout& layout);
+    void bind (State& state);
+    bool isOn() const noexcept { return on.on(); }
+    ampsim::Boost::Settings read (int oversampling, double voltsAtFullScale) const noexcept;
+
+    Raw on, mode, level, tilt, tightHz, mid;
+};
+
+/// The overdrive ("od_*"). Its mode list only ever grows at the end, because a saved preset holds the
+/// mode's index (and Overdrive::Mode is numbered the same way).
+struct OverdriveParameters
+{
+    static void addTo (Layout& layout);
+    void bind (State& state);
+    bool isOn() const noexcept { return on.on(); }
+    ampsim::Overdrive::Settings read (int oversampling, double voltsAtFullScale) const noexcept;
+
+    static juce::StringArray modeNames(); // message thread (it allocates)
+    static constexpr int numModes = 2;
+
+    Raw on, mode, drive, tone, level, mix, tightOn, tightHz;
+};
+
+/// The drive blocks' oversampling factor ("drive_oversampling": 4x or 8x), a global setting.
+int oversamplingFactor (const Raw& choice) noexcept;
+
+/// Volts at 0 dBFS for the drive circuits, from the interface's input level in dBu (the same number the
+/// NAM calibration uses): the peak of a sine at that RMS level, sqrt(2) x 0.7746 V x 10^(dBu / 20).
+double voltsAtFullScale (double interfaceDbu) noexcept;
 
 struct CompressorParameters
 {

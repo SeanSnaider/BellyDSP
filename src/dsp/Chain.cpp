@@ -31,13 +31,16 @@ Chain::Chain()
             setBypassed (slot, true);
     }
     setBypassed (Slot::gateB, true);
+
+    for (auto slot : { Slot::gateA, Slot::boost, Slot::overdrive })
+        bypass[(size_t) slot].keepRunning = true;
 }
 
 const std::vector<Chain::Slot>& Chain::defaultOrder (Section section)
 {
     // Built on first use, which is always the Chain constructor, never the audio thread; after that,
     // reading them never allocates.
-    static const std::vector<Slot> pre { Slot::gateA, Slot::preCompressor, Slot::preEq };
+    static const std::vector<Slot> pre { Slot::gateA, Slot::preCompressor, Slot::boost, Slot::overdrive, Slot::preEq };
     static const std::vector<Slot> post { Slot::postEq, Slot::postCompressor, Slot::chorus, Slot::delay, Slot::reverb };
     return section == Section::pre ? pre : post;
 }
@@ -105,6 +108,8 @@ const Block& Chain::blockFor (Slot slot) const
         case Slot::inputGain:      return inputGain;
         case Slot::gateA:          return gateA;
         case Slot::preCompressor:  return preCompressor;
+        case Slot::boost:          return boost;
+        case Slot::overdrive:      return overdrive;
         case Slot::preEq:          return preEq;
         case Slot::amp:            return amp;
         case Slot::gateB:          return gateB;
@@ -170,14 +175,28 @@ void Chain::runBlock (Slot slot, juce::dsp::AudioBlock<float>& io, const BlockCo
     auto& state = bypass[(size_t) slot];
     const auto numSamples = io.getNumSamples();
 
-    // Fully bypassed: don't call the block at all, which also saves its CPU.
-    if (state.fullyOff())
-        return;
-
-    if (block.isStereo() && ! stereoCopied)
+    if (block.isStereo() && ! stereoCopied && ! state.fullyOff())
     {
         copyLeftToRight (io);
         stereoCopied = true;
+    }
+
+    const size_t numChannels = block.isStereo() ? 2 : 1;
+    auto view = io.getSubsetChannelBlock (0, numChannels);
+    auto dryView = juce::dsp::AudioBlock<float> (dry).getSubBlock (0, numSamples).getSubsetChannelBlock (0, numChannels);
+
+    // Fully bypassed: don't call the block at all, which also saves its CPU; or, for a block that keeps
+    // running, run it on a copy and leave the audio alone.
+    if (state.fullyOff())
+    {
+        if (state.keepRunning)
+        {
+            dryView.copyFrom (view);
+            if (numChannels == 2 && ! stereoCopied)
+                dryView.getSingleChannelBlock (1).copyFrom (dryView.getSingleChannelBlock (0));
+            block.process (dryView, context);
+        }
+        return;
     }
 
     if (state.resetBeforeNextRun)
@@ -185,9 +204,6 @@ void Chain::runBlock (Slot slot, juce::dsp::AudioBlock<float>& io, const BlockCo
         block.reset();
         state.resetBeforeNextRun = false;
     }
-
-    const size_t numChannels = block.isStereo() ? 2 : 1;
-    auto view = io.getSubsetChannelBlock (0, numChannels);
 
     if (! state.wet.isSmoothing())
     {
@@ -199,7 +215,6 @@ void Chain::runBlock (Slot slot, juce::dsp::AudioBlock<float>& io, const BlockCo
     // and wet are the same signal with and without one block, so they're usually strongly
     // correlated, and for correlated signals a linear fade holds the level steady (an equal-power
     // fade would bump it by up to 3 dB in the middle).
-    auto dryView = juce::dsp::AudioBlock<float> (dry).getSubBlock (0, numSamples).getSubsetChannelBlock (0, numChannels);
     dryView.copyFrom (view);
 
     block.process (view, context);
@@ -307,8 +322,8 @@ void Chain::setBypassed (Slot slot, bool shouldBeBypassed)
 
     // Re-enabling a block that was fully off: its state is stale (filter memory or a tail from
     // whenever it was switched off), so clear it before it runs again (decision 4). A block that's
-    // mid-fade never stopped running, so its state is still live and there's nothing to clear.
-    if (! shouldBeBypassed && state.fullyOff())
+    // mid-fade, or one that keeps running while off, is still live and there's nothing to clear.
+    if (! shouldBeBypassed && state.fullyOff() && ! state.keepRunning)
         state.resetBeforeNextRun = true;
 
     state.bypassed = shouldBeBypassed;

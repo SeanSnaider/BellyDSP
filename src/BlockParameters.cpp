@@ -79,6 +79,109 @@ ampsim::Gate::Settings GateParameters::read() const noexcept
     return s;
 }
 
+// ---- Boost and overdrive --------------------------------------------------------------------------
+
+void BoostParameters::addTo (Layout& layout)
+{
+    // Ranges and defaults are the block's (Boost.h): Clean at 0 dB is bit-transparent; Tight cuts below
+    // 150 Hz and pushes 800 Hz by 6 dB.
+    const ampsim::Boost::Settings d;
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "boost_on", 1 }, "Boost On", false));
+    layout.add (std::make_unique<Choice> (juce::ParameterID { "boost_mode", 1 }, "Boost Mode", juce::StringArray { "Clean", "Tight", "Screamer" }, 0));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "boost_level", 1 }, "Boost Level", juce::NormalisableRange<float> (-24.0f, 24.0f, 0.1f),
+                                         d.levelDb, decibels()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "boost_tilt", 1 }, "Boost Tilt", juce::NormalisableRange<float> (-12.0f, 12.0f, 0.1f),
+                                         d.tiltDb, decibels()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "boost_tight_freq", 1 }, "Boost Tight Frequency", skewedRange (20.0f, 1000.0f, 150.0f, 1.0f),
+                                         d.tightHz, hertz()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "boost_mid", 1 }, "Boost Mid", juce::NormalisableRange<float> (0.0f, 12.0f, 0.1f),
+                                         d.midDb, decibels()));
+}
+
+void BoostParameters::bind (State& s)
+{
+    on.bind (s, "boost_on");
+    mode.bind (s, "boost_mode");
+    level.bind (s, "boost_level");
+    tilt.bind (s, "boost_tilt");
+    tightHz.bind (s, "boost_tight_freq");
+    mid.bind (s, "boost_mid");
+}
+
+ampsim::Boost::Settings BoostParameters::read (int oversampling, double volts) const noexcept
+{
+    ampsim::Boost::Settings s;
+    s.mode = (ampsim::Boost::Mode) juce::jlimit (0, ampsim::Boost::numModes - 1, mode.index());
+    s.levelDb = level.get();
+    s.tiltDb = tilt.get();
+    s.tightHz = tightHz.get();
+    s.midDb = mid.get();
+    s.oversampling = oversampling;
+    s.voltsAtFullScale = volts;
+    return s;
+}
+
+juce::StringArray OverdriveParameters::modeNames()
+{
+    const juce::StringArray names { "Mid Drive", "Distortion" };
+    jassert (names.size() == numModes);
+    return names;
+}
+
+void OverdriveParameters::addTo (Layout& layout)
+{
+    // Defaults: Mid Drive with drive and tone at noon, unity level, fully wet, Tight off (150 Hz when on).
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "od_on", 1 }, "Overdrive On", false));
+    layout.add (std::make_unique<Choice> (juce::ParameterID { "od_mode", 1 }, "Overdrive Mode", modeNames(), 0));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "od_drive", 1 }, "Overdrive Drive", juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f),
+                                         50.0f, percent()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "od_tone", 1 }, "Overdrive Tone", juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f),
+                                         50.0f, percent()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "od_level", 1 }, "Overdrive Level", skewedRange (-60.0f, 24.0f, 0.0f, 0.1f), 0.0f,
+                                         decibels()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "od_mix", 1 }, "Overdrive Mix", juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f),
+                                         100.0f, percent()));
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "od_tight", 1 }, "Overdrive Tight", false));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "od_tight_freq", 1 }, "Overdrive Tight Frequency",
+                                         skewedRange (ampsim::DriveEngine::tightOffHz + 1.0f, ampsim::DriveEngine::maxTightHz, 150.0f, 1.0f), 150.0f, hertz()));
+}
+
+void OverdriveParameters::bind (State& s)
+{
+    on.bind (s, "od_on");
+    mode.bind (s, "od_mode");
+    drive.bind (s, "od_drive");
+    tone.bind (s, "od_tone");
+    level.bind (s, "od_level");
+    mix.bind (s, "od_mix");
+    tightOn.bind (s, "od_tight");
+    tightHz.bind (s, "od_tight_freq");
+}
+
+ampsim::Overdrive::Settings OverdriveParameters::read (int oversampling, double volts) const noexcept
+{
+    ampsim::Overdrive::Settings s;
+    s.mode = (ampsim::Overdrive::Mode) juce::jlimit (0, numModes - 1, mode.index());
+    s.drive = drive.get() / 100.0f;
+    s.tone = tone.get() / 100.0f;
+    s.levelDb = level.get();
+    s.mix = mix.get() / 100.0f;
+    s.tightHz = tightOn.on() ? tightHz.get() : ampsim::DriveEngine::tightOffHz;
+    s.oversampling = oversampling;
+    s.voltsAtFullScale = volts;
+    return s;
+}
+
+int oversamplingFactor (const Raw& choice) noexcept
+{
+    return choice.index() == 1 ? 8 : 4;
+}
+
+double voltsAtFullScale (double interfaceDbu) noexcept
+{
+    return 1.4142135623730951 * 0.7746 * std::pow (10.0, interfaceDbu / 20.0);
+}
+
 // ---- Compressor -------------------------------------------------------------------------------
 
 void CompressorParameters::addTo (Layout& layout, const juce::String& p, const juce::String& n, bool onByDefault)

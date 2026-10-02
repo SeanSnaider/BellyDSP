@@ -109,6 +109,17 @@ Status key: **Open** (waiting for Sean), **Confirmed** (Sean agreed), **Changed*
 | G11 | Gate B's panel offers own-input detection too (the plan only names Gate A). Linked, Gate B's own knobs are dimmed but still editable. Learn sets Gate B's threshold only when it's on and unlinked. | Unlinked, an independent Gate B may want to see the amp's output; there's no reason to hide it. | `GatePanel`. |
 | G12 | A saved section order that lacks a newer block gets it where it breaks the fewest pairs of the default order (latest such place on a tie). A Phase 5 pre order "eq, comp" becomes "gate, eq, comp". | Puts new blocks where they belong without undoing the player's own reordering. | `AmpSimProcessor::setSectionOrder`. |
 
+## Phase 6: drive in the chain
+
+| # | Assumption | Why | To change it |
+|---|---|---|---|
+| I1 | Gate A, the boost, and the overdrive keep running while they're switched off (on a copy of their input). Cost while off: about 1.8% of the deadline for Mid Drive, 3.2% for Distortion, 1.9% for the Screamer boost at 4x (more at 8x); Clean and Tight boosts and the gate almost nothing. | Switched on cold, a circuit differs from a running one by -8 dB re. its peak for 11 to 30 ms and -18 dB to 100 ms (measured); with the standby it's exact 11 ms after the switch. Gate A's curve must stay live for a linked Gate B. | The `keepRunning` list in the `Chain` constructor. |
+| I2 | Oversampling for both drive blocks is one global setting (`drive_oversampling`, 4x default), not saved in presets. | It's a CPU-versus-aliasing choice for the machine, like the plan's CPU fallback mode. | Remove it from `presets::isGlobal` to make it per preset. |
+| I3 | The circuits' full-scale voltage follows the interface level (`input_level_dbu`) whether or not input calibration is on. At +18 dBu the same digital signal drives them 6 dB harder, and a clipped output comes out about 6 dB lower in dBFS. | That's what the physical circuit would see. | `params::voltsAtFullScale`. |
+| I4 | Overdrive knobs: drive, tone, and mix in percent, level -60 to +24 dB with 0 dB at mid-knob, Tight as a switch plus a frequency (150 Hz default). Boost: level -24 to +24 dB, tilt -12 to +12, tight 20 Hz to 1 kHz, mid push 0 to 12 dB. Both start off. | The blocks' own ranges and defaults (V7, V10, V15). | `params::BoostParameters`, `params::OverdriveParameters`. |
+| I5 | The overdrive's mode list only grows at the end (Mid Drive, Distortion, then Transparent and Fuzz when they're built), so its order isn't the plan's (Mid Drive, Transparent, Distortion, Fuzz). | Presets store a mode's index. | A preset migration that remaps the indices, then reorder. |
+| I6 | A section order saved before the drive blocks existed gets them after the compressor (the fewest-broken-pairs rule, G12): a Phase 5 "eq, comp" becomes "gate, eq, comp, boost, overdrive". | Keeps the player's own order and puts new blocks where the default order wants them relative to it. | `AmpSimProcessor::setSectionOrder`. |
+
 ## Phase 6: boost and overdrive
 
 | # | Assumption | Why | To change it |

@@ -303,6 +303,35 @@ private:
     juce::Rectangle<int> meterArea;
 };
 
+/// The boost's controls; the knobs the current mode doesn't use are dimmed.
+class BoostPanel final : public EffectPanel
+{
+public:
+    explicit BoostPanel (AmpSimProcessor& processor);
+    void refresh();
+    void resized() override;
+
+private:
+    juce::ComboBox* mode = nullptr;
+    Knob *level = nullptr, *tilt = nullptr, *tightHz = nullptr, *mid = nullptr;
+    int shownMode = -1;
+};
+
+/// The overdrive's controls, with the drive blocks' oversampling (a global setting).
+class OverdrivePanel final : public EffectPanel
+{
+public:
+    explicit OverdrivePanel (AmpSimProcessor& processor);
+    void refresh();
+    void resized() override;
+
+private:
+    juce::ComboBox *mode = nullptr, *oversampling = nullptr;
+    ToggleControl* tight = nullptr;
+    Knob *drive = nullptr, *tone = nullptr, *level = nullptr, *mix = nullptr, *tightHz = nullptr;
+    int shownTight = -1;
+};
+
 /// The delay's controls, plus the tempo and its tap button.
 class DelayPanel final : public juce::Component
 {
@@ -370,6 +399,8 @@ private:
 
     PageComponent ampsPage, cabPage, gatesPage, preFxPage, postFxPage, timeFxPage;
     std::unique_ptr<GatePanel> gateAPanel, gateBPanel;
+    std::unique_ptr<BoostPanel> boostPanel;
+    std::unique_ptr<OverdrivePanel> overdrivePanel;
     std::unique_ptr<DelayPanel> delayPanel;
     std::unique_ptr<ChorusPanel> chorusPanel;
     std::unique_ptr<ReverbPanel> reverbPanel;

@@ -176,6 +176,12 @@ public:
                     case 2050: setParam (p, "gate_link", 1.0f); break;
                     case 2350: setParam (p, "gate_a_on", 0.0f); break;
                     case 3500: setParam (p, "gate_link", 0.0f); p.learnGates(); break;
+                    // Phase 6 drive: boost and overdrive on, re-moded, 8x and back, tight, off again.
+                    case 2450: setParam (p, "boost_on", 1.0f); setParam (p, "boost_mode", 2.0f); break; // Screamer
+                    case 2500: setParam (p, "od_on", 1.0f); setParam (p, "od_mode", 1.0f); setParam (p, "od_drive", 80.0f); break;
+                    case 2550: setParam (p, "drive_oversampling", 1.0f); break;                        // 8x
+                    case 3550: setParam (p, "od_tight", 1.0f); setParam (p, "od_mode", 0.0f); setParam (p, "boost_mode", 1.0f); break;
+                    case 3600: setParam (p, "drive_oversampling", 0.0f); setParam (p, "od_on", 0.0f); setParam (p, "boost_on", 0.0f); break;
                     case 1500: setParam (p, "input_gain", 6.0f); break;
                     case 1600: setParam (p, "output_gain", -6.0f); break;
                     case 2000: p.loadModel (0, a1); break;                                  // switch the capture back
@@ -222,9 +228,9 @@ public:
             expectEquals (p.getChain().amp.getSelectedSlot(), 0);
             expect (p.getStatus().cab[0].contains ("rt_ir_b"));
             expectEquals (p.getCalibrationReloadCount(), 1, "the calibration change must have reloaded the captures during the measurement");
-            expectEquals (p.getChain().gateA.gate.getLearnCount(), 1, "the gate Learn must have finished during the measurement");
+            expectEquals (p.getChain().gateA.getLearnCount(), 1, "the gate Learn must have finished during the measurement");
             using Slot = ampsim::Chain::Slot;
-            expect (p.getChain().getAppliedOrder (ampsim::Chain::Section::pre) == std::vector<Slot> { Slot::gateA, Slot::preEq, Slot::preCompressor },
+            expect (p.getChain().getAppliedOrder (ampsim::Chain::Section::pre) == std::vector<Slot> { Slot::gateA, Slot::preEq, Slot::preCompressor, Slot::boost, Slot::overdrive },
                     "the pre FX reorder must have reached the audio thread");
             const auto postOrder = p.getChain().getAppliedOrder (ampsim::Chain::Section::post);
             expect (postOrder.size() >= 2 && postOrder[0] == Slot::postCompressor && postOrder[1] == Slot::postEq,
