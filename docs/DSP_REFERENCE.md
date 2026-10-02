@@ -61,7 +61,9 @@ Glossary and sources for every algorithm in the project. When implementing a blo
 | Reverb | FDN, Dattorro plate, Freeverb (prototype only) | Jean-Marc Jot and Antoine Chaigne, "Digital Delay Networks for Designing Artificial Reverberators" (AES 1991); Jon Dattorro, "Effect Design, Part 1: Reverberator and Other Filters" (JAES 1997); Julius O. Smith, "Physical Audio Signal Processing" (CCRMA online) for Schroeder/Freeverb and FDN theory |
 | Reverb testing | Energy decay curve via Schroeder backward integration | Manfred Schroeder, "New Method of Measuring Reverberation Time" (JASA 1965) |
 | Chorus, flanger, delay | Modulated delay lines with interpolation | Udo Zölzer (ed.), "DAFX: Digital Audio Effects" |
-| Phaser | Swept allpass chains | Zölzer, "DAFX" |
+| Phaser | Swept allpass chains of TPT one-poles; the delay-free feedback loop solved in closed form | Zölzer, "DAFX"; Vadim Zavalishin, "The Art of VA Filter Design" (ch. 3, one-poles; zero-delay feedback); Sedra and Smith's JFET chapter for the square-law ohmic region behind Classic's sweep |
+| Vibe lamp and photocell | Incandescent lamp thermal lag and power law, CdS photocell gamma and asymmetric response | Lamp engineering rules of thumb (power ~ V^1.55, light ~ V^3.4); CdS photocell and Vactrol datasheets (gamma, rise and decay times); `prototypes/vibe.py` has the model and its study |
+| Bitcrusher | Mid-tread quantization, sample and hold, TPDF dither | Stanley Lipshitz, Robert Wannamaker, John Vanderkooy, "Quantization and Dither: A Theoretical Survey", JAES 1992 |
 | Overdrive | Physically informed distortion pedal models | David T. Yeh, "Digital Implementation of Musical Distortion Circuits by Analysis and Simulation", PhD thesis, Stanford (CCRMA), 2009; ElectroSmash circuit analyses of the Tube Screamer, Klon, and RAT |
 | Oversampling | Polyphase IIR halfband filters | Laurent de Soras, HIIR library and its accompanying notes |
 | Circuit validation | SPICE simulation | ngspice documentation |
