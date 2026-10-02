@@ -75,6 +75,13 @@ public:
         int numVoices = 1;
         std::array<Voice, maxVoices> voices {};
         double feedback = 0.0; // fraction of the wet sum fed back, -0.99 to 0.99, through tanh
+
+        /// Above 0, a first-order high-pass at this frequency inside the feedback loop, ahead of the tanh:
+        ///     w[n] = x[n] + tanh(feedback * HP(wet[n]))
+        /// so low frequencies don't recirculate and build up (the flanger's loop, Flanger.h). The high-pass
+        /// is a TPT one-pole (Zavalishin, "The Art of VA Filter Design", ch. 3), H(s) = s / (s + wc),
+        /// prewarped with g = tan(pi fc / fs). 0, the default, leaves the loop exactly as it was.
+        double feedbackHighPassHz = 0.0;
     };
 
     /// Not real-time: allocates the line for delays up to maxDelayMs. smoothingSeconds is how long base
@@ -112,6 +119,10 @@ public:
     /// The engine's LFO cycle position: the first running voice's phase minus its offset, in [0, 1).
     double getPhase() const noexcept;
 
+    /// The feedback amount used for the last processSample() (it glides to a new setting), for a caller that
+    /// scales its wet by it, as the flanger's level compensation does.
+    double getFeedback() const noexcept { return feedback.getCurrentValue(); }
+
 private:
     struct VoiceState
     {
@@ -135,6 +146,10 @@ private:
     double sampleRate = 48000.0;
     double maxDelay = 2048.0;
     double restartPhase = 0.0;
+
+    // The optional loop high-pass (Settings::feedbackHighPassHz): G = g / (1 + g), and the integrator's state.
+    bool loopHighPass = false;
+    double loopHighPassG = 0.0, loopHighPassState = 0.0;
 };
 
 } // namespace ampsim

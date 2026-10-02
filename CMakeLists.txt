@@ -77,7 +77,11 @@ set(AMPSIM_DSP_SOURCES
     src/dsp/DriveCircuits.cpp
     src/dsp/DriveEngine.cpp
     src/dsp/Overdrive.cpp
-    src/dsp/Boost.cpp)
+    src/dsp/Boost.cpp
+    src/dsp/Bitcrush.cpp
+    src/dsp/Phaser.cpp
+    src/dsp/Flanger.cpp
+    src/dsp/Bloom.cpp)
 
 set(AMPSIM_JUCE_DEFINITIONS
     JUCE_WEB_BROWSER=0
@@ -175,6 +179,7 @@ target_sources(ampsim_tests PRIVATE
     tests/GateTests.cpp
     tests/OversamplerTests.cpp
     tests/DriveTests.cpp
+    tests/BloomTests.cpp
     tests/Plot.cpp
     tests/NamAmpTests.cpp
     tests/ChainTests.cpp
