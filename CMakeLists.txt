@@ -85,6 +85,8 @@ if(AMPSIM_X86_SIMD STREQUAL "AVX")
 endif()
 if(MSVC)
     add_compile_options(/bigobj /utf-8) # Eigen-heavy files exceed the default section count
+    # The C++ runtime linked in statically, so friends don't need the Visual C++ Redistributable.
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
 set(CMAKE_CXX_STANDARD 20)            # NeuralAmpModelerCore needs C++20

@@ -1,0 +1,42 @@
+# The macOS test suite on GitHub's runners: a check that the repo builds and passes from a fresh
+# clone, independent of Sean's Mac. Releases are still built on Sean's Mac (tools/release/release.sh),
+# because they're signed with his keys.
+#
+# UNTESTED: it can't run until the repo is pushed to GitHub.
+#
+# Manual only (Actions tab > macOS tests > Run workflow): the source repo is private, and macOS minutes
+# count ten times against GitHub's free allowance (2,000 a month on the Free plan), so a 20-minute run
+# costs about 200 of them.
+
+name: macOS tests
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure (native arm64, no updater: the dev configuration)
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build -j
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -V
+
+      - name: Keep the proof (measurements, renders, editor snapshots)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: proof
+          path: build/proof
