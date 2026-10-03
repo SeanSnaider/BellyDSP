@@ -141,6 +141,8 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p) : AudioProcessorEditor (&p), amp
     };
     cabView->onMicMenu = [this] (int mic, juce::Component& near) { showMicMenu (mic, near); };
 
+    tunerPage = std::make_unique<ui::TunerPage> (p);
+
     using P = ui::PageId;
     pageComponents[(size_t) P::input] = inputPage.get();
     pageComponents[(size_t) P::preFx] = prePage.get();
@@ -149,7 +151,7 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p) : AudioProcessorEditor (&p), amp
     pageComponents[(size_t) P::cab] = cabView.get();
     pageComponents[(size_t) P::postFx] = postPage.get();
     pageComponents[(size_t) P::output] = outputPage.get();
-    pageComponents[(size_t) P::tuner] = &tunerView;
+    pageComponents[(size_t) P::tuner] = tunerPage.get();
     for (auto* page : pageComponents)
         canvas->addChildComponent (page);
 
@@ -242,7 +244,6 @@ void AmpSimEditor::layoutCanvas()
     chainNav.setBounds (0, canvasHeight - chainHeight, canvasWidth, chainHeight);
     for (auto* page : pageComponents)
         page->setBounds (mainArea());
-    // The tuner page fills the main area too (its own layout centres its column).
     statusLine->setBounds (mainArea().getX(), mainArea().getBottom(), mainArea().getWidth(), mainPadBottom);
 }
 
@@ -250,7 +251,7 @@ void AmpSimEditor::layoutCanvas()
 
 ui::ControlGroup* AmpSimEditor::hooksFor (ui::PageId page)
 {
-    if (page == ui::PageId::count || page == ui::PageId::tuner)
+    if (page == ui::PageId::count)
         return nullptr;
     return dynamic_cast<ui::ControlGroup*> (pageComponents[(size_t) page]);
 }
@@ -333,7 +334,7 @@ void AmpSimEditor::refreshState()
 
     // The tuner button's note: the one it hears, only while it's engaged.
     juce::String note ("-");
-    if (const auto reading = ampSim.getTunerReading(); ampSim.isTunerEngaged() && reading.hasReading)
+    if (const auto reading = ampSim.getTunerReading(); tuning && ampSim.isTunerEngaged() && reading.hasReading)
         note = juce::MidiMessage::getMidiNoteName (reading.midiNote, true, false, 4);
     topBar.setTuner (shownPage == ui::PageId::tuner, note);
 

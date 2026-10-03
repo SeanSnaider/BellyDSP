@@ -8,7 +8,7 @@
 #include "ui/MainPages.h"
 #include "ui/Pages.h"
 #include "ui/TopBar.h"
-#include "ui/TunerView.h"
+#include "ui/TunerPage.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
@@ -53,7 +53,7 @@ public:
     ui::CabView& getCabView() noexcept { return *cabView; }
     ui::OutputPage& getOutputPage() noexcept { return *outputPage; }
     ui::ScenesBar& getScenesBar() noexcept { return outputPage->getScenesBar(); }
-    TunerView& getTunerView() noexcept { return tunerView; }
+    ui::TunerPage& getTunerPage() noexcept { return *tunerPage; }
 
     /// The canvas's scale and where it sits in the window (letterboxed when the aspect differs).
     float getCanvasScale() const noexcept { return canvasScale; }
@@ -126,7 +126,7 @@ private:
     std::unique_ptr<ui::EqView> eqView;
     std::unique_ptr<ui::InputPage> inputPage;
     std::unique_ptr<ui::OutputPage> outputPage;
-    TunerView tunerView { ampSim };
+    std::unique_ptr<ui::TunerPage> tunerPage;
     std::array<juce::Component*, ui::numPages> pageComponents {};
     ui::PageId shownPage = ui::PageId::count, pageBeforeTuner = ui::PageId::amp;
     ui::BlockId selectedBlock = ui::BlockId::amp;

@@ -102,7 +102,7 @@ set(AMPSIM_UI_SOURCES
     src/ui/SectionTabs.cpp
     src/ui/ScenesBar.cpp
     src/ui/TopBar.cpp
-    src/ui/TunerView.cpp
+    src/ui/TunerPage.cpp
     src/ui/AmpHead.cpp
     src/ui/AmpView.cpp
     src/ui/MainPages.cpp

@@ -297,6 +297,79 @@ public:
                         + "\" (its marker dimmed and fixed); with IRs in both: \"Load a pack to move mics\"");
         }
 
+        beginTest ("tuner page: a real tone through the tuner thread, in tune and 13 cents sharp; strings, targeting, tunings; compared with the handoff");
+        {
+            AmpSimProcessor p;
+            p.prepareToPlay (fs, blockSize);
+            p.parameters.state.setProperty ("presetName", "Open string clean", nullptr);
+            std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+            auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
+            ed.showPage (ui::PageId::tuner);
+            expectEquals (getParam (p, "tuner_on"), 1.0f); // opening the page engages the tuner
+            auto& tuner = ed.getTunerPage();
+            tuner.setTuning (0);
+
+            // A plucked string (partials n at 1/n), played at about real time so the tuner's thread keeps up.
+            const auto pluck = [&p, &tuner] (double f, double seconds)
+            {
+                juce::AudioBuffer<float> buffer (2, blockSize);
+                juce::MidiBuffer midi;
+                const auto n = (int) (seconds * fs);
+                for (int start = 0; start + blockSize <= n; start += blockSize)
+                {
+                    buffer.clear();
+                    for (int i = 0; i < blockSize; ++i)
+                    {
+                        const auto t = (double) (start + i) / fs;
+                        double v = 0.0;
+                        for (int k = 1; k <= 8; ++k)
+                            v += std::sin (juce::MathConstants<double>::twoPi * k * f * t) / k;
+                        buffer.setSample (0, i, (float) (0.12 * v * std::exp (-t / 4.0)));
+                    }
+                    p.processBlock (buffer, midi);
+                    juce::Thread::sleep (2);
+                }
+                tuner.poll();
+            };
+
+            pluck (82.41, 1.5); // E2, in tune
+            ed.refresh();
+            const auto inTune = tuner.getShown();
+            const auto barNote = ed.getTopBar().getTunerNote();
+            expect (inTune.inTune && inTune.note == "E" && inTune.octave == "2" && inTune.currentString == 0, inTune.cents);
+            expect (tuner.isStringDone (0));
+            expectEquals (barNote, juce::String ("E"));
+            expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), proofDir().getChildFile ("editor_tuner_in_tune.png")));
+
+            pluck (82.41 * std::pow (2.0, 13.0 / 1200.0), 1.5); // 13 cents sharp
+            const auto sharp = tuner.getShown();
+            expect (! sharp.inTune && sharp.state == "Sharp" && std::abs (sharp.centsValue - 13.0) < 1.0, sharp.cents);
+            const auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f);
+            expect (savePng (image, proofDir().getChildFile ("editor_tuner_sharp.png")));
+            expect (writeComparison (image, "05_tuner.png", "tuner"));
+
+            // Targeting the A string: the same E reads 500 cents flat of it (off the scale); again lets go.
+            tuner.clickString (1);
+            const auto targeted = tuner.getShown();
+            expect (targeted.note == "A" && targeted.currentString == 1 && targeted.centsValue < -480.0);
+            tuner.clickString (1);
+            expect (tuner.getTarget() < 0);
+
+            // Drop D: the low string is D2; a new tuning starts with no strings done.
+            tuner.setTuning (1);
+            expect (! tuner.isStringDone (0));
+            expectEquals ((int) p.parameters.state.getProperty ("tunerTuning"), 1);
+
+            // Leaving the page disengages the tuner, and the button's note goes back to a dash.
+            ed.showPage (ui::PageId::amp);
+            ed.refresh();
+            expectEquals (getParam (p, "tuner_on"), 0.0f);
+            expectEquals (ed.getTopBar().getTunerNote(), juce::String ("-"));
+            logMessage ("  -> E2 at 82.41 Hz: " + inTune.note + inTune.octave + " " + inTune.hz + " Hz, " + inTune.cents + " cents, \"" + inTune.state
+                        + "\", string 6 marked tuned, the top bar's Tuner shows \"" + barNote + "\"; 13 cents sharp: " + sharp.hz + " Hz, " + sharp.cents + " cents, \""
+                        + sharp.state + "\"; targeting the A string read " + juce::String (targeted.centsValue, 1) + " cents; leaving the page disengaged the tuner");
+        }
+
         beginTest ("a knob mid-drag shows its value underlined in emerald on an amp panel (compared with the handoff's crop)");
         {
             AmpSimProcessor p;

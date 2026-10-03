@@ -1781,36 +1781,24 @@ public:
             expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), analyzerFile));
             logMessage ("  -> " + analyzerFile.getFullPathName());
 
-            // The tuner page: needle, then strobe, with frozen readings.
+            // The tuner page, with a frozen reading.
             setParam (p, "tuner_on", 1.0f);
             ampSimEditor->refresh();
-            auto& tunerView = ampSimEditor->getTunerView();
-            expect (tunerView.isVisible() && ampSimEditor->getShownPage() == ui::PageId::tuner);
+            auto& tunerPage = ampSimEditor->getTunerPage();
+            expect (tunerPage.isVisible() && ampSimEditor->getShownPage() == ui::PageId::tuner);
             ampsim::TunerReading e2;
             e2.hasReading = e2.live = true;
             e2.midiNote = 40;
             e2.frequency = 82.56;
             e2.cents = 3.1;
             e2.levelDb = -21.0;
-            tunerView.setStrobe (false);
-            tunerView.freeze (e2);
-            const auto needleFile = proofDir().getChildFile ("editor_tuner_needle.png");
-            expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), needleFile));
-            auto flat = e2;
-            flat.midiNote = 45;
-            flat.frequency = 108.64;
-            flat.cents = -21.6;
-            flat.strobePhase = 0.3;
-            tunerView.setStrobe (true);
-            tunerView.freeze (flat);
-            const auto strobeFile = proofDir().getChildFile ("editor_tuner_strobe.png");
-            expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), strobeFile));
-            tunerView.setStrobe (false);
+            tunerPage.freeze (e2);
+            const auto tunerFile = proofDir().getChildFile ("editor_tuner_frozen.png");
+            expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), tunerFile));
             setParam (p, "tuner_on", 0.0f);
             ampSimEditor->refresh();
-            expect (! tunerView.isVisible());
-            logMessage ("  -> " + needleFile.getFullPathName());
-            logMessage ("  -> " + strobeFile.getFullPathName());
+            expect (! tunerPage.isVisible());
+            logMessage ("  -> " + tunerFile.getFullPathName());
 
             AmpSimProcessor wrongRate;
             wrongRate.prepareToPlay (44100.0, blockSize);
