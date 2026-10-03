@@ -89,6 +89,18 @@ juce::MouseEvent mouseEvent (juce::Component& c, juce::Point<float> at, juce::Po
                              juce::MouseInputSource::defaultPressure, 0.0f, 0.0f, 0.0f, 0.0f, &c, &c, now, down, now, 1, dragged);
 }
 
+/// A cab pack folder: four captures on a 2 x 2 grid (dust cap and cone edge, 1 and 4 inches away).
+juce::File writePack (const juce::File& folder)
+{
+    folder.deleteRecursively();
+    folder.createDirectory();
+    writeWav (folder.getChildFile ("Cap_1in.wav"), toBuffer (syntheticCabIR (4096, 8.0, 7000.0)));
+    writeWav (folder.getChildFile ("Edge_1in.wav"), toBuffer (syntheticCabIR (4096, 0.0, 3500.0)));
+    writeWav (folder.getChildFile ("Cap_4in.wav"), toBuffer (syntheticCabIR (4096, 6.0, 6000.0)));
+    writeWav (folder.getChildFile ("Edge_4in.wav"), toBuffer (syntheticCabIR (4096, -2.0, 3000.0)));
+    return folder;
+}
+
 class EditorTests final : public juce::UnitTest
 {
 public:
@@ -196,6 +208,93 @@ public:
             logMessage ("  -> knobs read 3.5 / 6.5 (Glass gain, treble), 7.5 (Monolith gain), 5.0 (Ember master at unity); the head art rendered "
                         + juce::String (renders) + " times for 3 materials and 8 snapshots; program change 2 moved the page to Ember: "
                         + (followedPc ? "yes" : "no") + "; an empty slot's jewel is dark");
+        }
+
+        beginTest ("cab page: the library lists packs and IRs; a pick loads close mic 1, assigns it, and stops following; mics move on packs only; compared with the handoff");
+        {
+            // A library of three cabs: a pack and two IR files.
+            const auto library = tempDir().getChildFile ("cab_library");
+            library.deleteRecursively();
+            library.createDirectory();
+            writePack (library.getChildFile ("2x12 open back"));
+            writeWav (library.getChildFile ("4x12 vintage.wav"), toBuffer (syntheticCabIR (4096, 3.0, 4500.0)));
+            writeWav (library.getChildFile ("4x12 modern.wav"), toBuffer (syntheticCabIR (4096, 5.0, 6000.0)));
+            presets::setLibraryRoot ("irs", library);
+
+            AmpSimProcessor p;
+            p.prepareToPlay (fs, blockSize);
+            p.parameters.state.setProperty ("presetName", "Open string clean", nullptr);
+            std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+            auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
+            ed.showPage (ui::PageId::cab);
+            auto& cab = ed.getCabView();
+            const auto& entries = cab.getEntries();
+            expectEquals ((int) entries.size(), 3);
+            const auto listedCount = (int) entries.size();
+            const auto listed = entries.size() == 3 && entries[0].pack && entries[0].name == "2x12 open back" && entries[1].name == "4x12 modern";
+
+            // Follow is on by default; a pick turns it off and assigns the cab to the playing slot.
+            const auto followedBefore = p.isCabFollowing();
+            cab.clickEntry (0);
+            waitForLoads (p);
+            p.loadCabIR (1, writePack (tempDir().getChildFile ("mic_b_pack")));
+            waitForLoads (p);
+            setParam (p, AmpSimProcessor::cabParamId (0, "pos_x"), 0.13f / 0.95f);
+            setParam (p, AmpSimProcessor::cabParamId (1, "pos_x"), 0.52f / 0.95f);
+            setParam (p, AmpSimProcessor::cabParamId (1, "pos_y"), 0.35f);
+            ed.refresh();
+            expect (followedBefore && ! p.isCabFollowing());
+            expect (p.getCabAssignment (0) == entries[0].file);
+            expectEquals (p.parameters.state.getProperty (AmpSimProcessor::cabPathKey (0)).toString(), entries[0].file.getFullPathName());
+            expectEquals (cab.getReadout(), juce::String ("Mic A|Cap|Mic B|Cone"));
+            expect (! cab.isMarkerDimmed (0) && ! cab.isMarkerDimmed (1));
+
+            const auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f);
+            expect (savePng (image, proofDir().getChildFile ("editor_cab_page.png")));
+            expect (writeComparison (image, "04_cab.png", "cab"));
+
+            // Dragging mic A out to the cone's edge: pos_x follows the distance (clamped at 0.95 of the radius).
+            const auto from = cab.markerPosition (0);
+            cab.dragMarker (0, from, from + juce::Point<float> (400.0f, 0.0f));
+            ed.refresh();
+            const auto clamped = getParam (p, AmpSimProcessor::cabParamId (0, "pos_x"));
+            expectWithinAbsoluteError (clamped, 1.0f, 1.0e-3f);
+            const auto zoneAtEdge = cab.getReadout();
+
+            // A plain IR in mic B: its marker dims and can't be dragged.
+            p.loadCabIR (1, library.getChildFile ("4x12 vintage.wav"));
+            waitForLoads (p);
+            ed.refresh();
+            const auto before = getParam (p, AmpSimProcessor::cabParamId (1, "pos_x"));
+            cab.dragMarker (1, cab.markerPosition (1), cab.markerPosition (1) + juce::Point<float> (-60.0f, 0.0f));
+            expect (cab.isMarkerDimmed (1));
+            expectEquals (getParam (p, AmpSimProcessor::cabParamId (1, "pos_x")), before);
+            const auto withIR = cab.getReadout();
+            p.loadCabIR (0, library.getChildFile ("4x12 modern.wav"));
+            waitForLoads (p);
+            ed.refresh();
+            expectEquals (cab.getReadout(), juce::String ("Load a pack to move mics"));
+            expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), proofDir().getChildFile ("editor_cab_page_irs.png")));
+
+            // Follow back on, then switching to a slot with a cab assigned loads it.
+            p.setCabAssignment (1, library.getChildFile ("4x12 vintage.wav"));
+            p.setCabFollow (true);
+            setParam (p, AmpSimProcessor::slotParamId, 1.0f);
+            p.runHousekeeping();
+            ed.refresh();
+            expectEquals (p.parameters.state.getProperty (AmpSimProcessor::cabPathKey (0)).toString(), library.getChildFile ("4x12 vintage.wav").getFullPathName());
+
+            // An empty library says so.
+            presets::setLibraryRoot ("irs", tempDir().getChildFile ("empty_library"));
+            cab.rescan();
+            expect (cab.getEntries().empty());
+            presets::setLibraryRoot ("irs", {});
+
+            expect (listed);
+            logMessage ("  -> the library listed " + juce::String (listedCount) + " cabs (a pack, two IRs); a click loaded the pack into close mic 1, "
+                        "assigned it to slot 1, and turned Follow off; readouts: \"" + juce::String ("Mic A Cap, Mic B Cone") + "\", after dragging A to the edge \""
+                        + zoneAtEdge.replace ("|", " ") + "\" (pos_x " + juce::String (clamped, 3) + "), with an IR in mic B \"" + withIR.replace ("|", " ")
+                        + "\" (its marker dimmed and fixed); with IRs in both: \"Load a pack to move mics\"");
         }
 
         beginTest ("a knob mid-drag shows its value underlined in emerald on an amp panel (compared with the handoff's crop)");

@@ -107,7 +107,7 @@ set(AMPSIM_UI_SOURCES
     src/ui/AmpView.cpp
     src/ui/MainPages.cpp
     src/ui/Pages.cpp
-    src/ui/AmpCabPages.cpp
+    src/ui/CabView.cpp
     src/ui/EqPage.cpp
     src/ui/FxPages.cpp)
 

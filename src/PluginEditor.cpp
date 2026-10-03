@@ -130,21 +130,23 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p) : AudioProcessorEditor (&p), amp
     ampView = std::make_unique<ui::AmpView> (p);
     ampView->onLoadCapture = [this] (int slot) { loadCapture (slot); };
     ampView->onCaptureMenu = [this] (int slot, juce::Component& near) { showCaptureMenu (slot, near); };
-    cabPage = std::make_unique<ui::CabPage> (p, [this] (int mic, bool pack)
+    cabView = std::make_unique<ui::CabView> (p);
+    cabView->onBrowse = [this] (bool pack)
     {
+        const auto picked = [this] (const juce::File& f) { cabView->pick (f); };
         if (pack)
-            chooseFile ("Choose a cab pack folder", {}, AmpSimProcessor::cabPathKey (mic), [this, mic] (const juce::File& f) { ampSim.loadCabIR (mic, f); }, true);
+            chooseFile ("Choose a cab pack folder", {}, AmpSimProcessor::cabPathKey (0), picked, true);
         else
-            chooseFile ("Choose an impulse response", "*.wav;*.aif;*.aiff;*.flac", AmpSimProcessor::cabPathKey (mic),
-                        [this, mic] (const juce::File& f) { ampSim.loadCabIR (mic, f); });
-    });
+            chooseFile ("Choose an impulse response", "*.wav;*.aif;*.aiff;*.flac", AmpSimProcessor::cabPathKey (0), picked);
+    };
+    cabView->onMicMenu = [this] (int mic, juce::Component& near) { showMicMenu (mic, near); };
 
     using P = ui::PageId;
     pageComponents[(size_t) P::input] = inputPage.get();
     pageComponents[(size_t) P::preFx] = prePage.get();
     pageComponents[(size_t) P::amp] = ampView.get();
     pageComponents[(size_t) P::eq] = eqView.get();
-    pageComponents[(size_t) P::cab] = cabPage.get();
+    pageComponents[(size_t) P::cab] = cabView.get();
     pageComponents[(size_t) P::postFx] = postPage.get();
     pageComponents[(size_t) P::output] = outputPage.get();
     pageComponents[(size_t) P::tuner] = &tunerView;
@@ -543,6 +545,42 @@ void AmpSimEditor::showCaptureMenu (int slot, juce::Component& near)
     {
         if (safe != nullptr)
             safe->ampSim.clearModel (slot);
+    });
+    ui::showMenu (menu, &near, &lookAndFeel, true);
+}
+
+void AmpSimEditor::showMicMenu (int mic, juce::Component& near)
+{
+    // A mic's file: load an IR (or, for a close mic, a cab pack), or clear it. Close mic 1's loads count as
+    // picks: they're assigned to the playing amp slot (H8).
+    juce::PopupMenu menu;
+    const auto safe = juce::Component::SafePointer<AmpSimEditor> (this);
+    const auto load = [safe, mic] (const juce::File& f)
+    {
+        if (safe == nullptr)
+            return;
+        if (mic == 0)
+            safe->ampSim.pickCab (f);
+        else
+            safe->ampSim.loadCabIR (mic, f);
+    };
+    menu.addSectionHeader (mic == AmpSimProcessor::roomMic ? juce::String ("Room mic") : mic == 0 ? juce::String ("Mic A (close mic 1)") : juce::String ("Mic B (close mic 2)"));
+    menu.addItem ("Load an IR file...", [safe, mic, load]
+    {
+        if (safe != nullptr)
+            safe->chooseFile ("Choose an impulse response", "*.wav;*.aif;*.aiff;*.flac", AmpSimProcessor::cabPathKey (mic), load);
+    });
+    if (mic != AmpSimProcessor::roomMic)
+        menu.addItem ("Load a cab pack folder (makes the mic movable)...", [safe, mic, load]
+        {
+            if (safe != nullptr)
+                safe->chooseFile ("Choose a cab pack folder", {}, AmpSimProcessor::cabPathKey (mic), load, true);
+        });
+    const auto loaded = ampSim.parameters.state.getProperty (AmpSimProcessor::cabPathKey (mic)).toString().isNotEmpty();
+    menu.addItem ("Clear", loaded, false, [safe, mic]
+    {
+        if (safe != nullptr)
+            safe->ampSim.clearCabIR (mic);
     });
     ui::showMenu (menu, &near, &lookAndFeel, true);
 }

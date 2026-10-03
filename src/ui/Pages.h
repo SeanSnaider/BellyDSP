@@ -149,30 +149,6 @@ void dim (juce::Component* c, bool used);
 
 // ---- Pages --------------------------------------------------------------------------------------------
 
-/// The cab: a speaker seen from the side with the two close mics on it (drag a mic once its pack is
-/// loaded: across the cone from the cap to the edge, and away from the grille), a card per mic (its IR or
-/// pack, level, pan, delay, polarity, mute, and the file's channel), the room mic's card, alignment, and
-/// the cuts.
-class CabPage final : public BlockPage
-{
-public:
-    CabPage (AmpSimProcessor& processor, std::function<void (int mic, bool pack)> onLoad);
-    void refresh() override;
-
-    class SpeakerMap;
-    SpeakerMap& getSpeakerMap() noexcept { return *map; }
-
-private:
-    class MicCard;
-    void layoutContent (juce::Rectangle<int> area) override;
-    SpeakerMap* map = nullptr;
-    std::array<MicCard*, AmpSimProcessor::numCabMics> mics {};
-    Switch *align = nullptr, *lowCut = nullptr, *highCut = nullptr;
-    juce::Label* alignment = nullptr;
-    Knob *lowCutFrequency = nullptr, *highCutFrequency = nullptr;
-    juce::ComboBox *lowCutSlope = nullptr, *highCutSlope = nullptr;
-};
-
 /// A noise gate: its knobs, release mode, detector, sidechain filter, the detector's level against the
 /// open and close thresholds, and the gain reduction. Gate A has Learn; Gate B the link, and while linked
 /// its own settings are dimmed (it applies Gate A's decision).
