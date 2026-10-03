@@ -1,8 +1,11 @@
+#include "AllocationTracking.h"
 #include "PluginEditor.h"
 #include "BlockParameters.h"
 #include "MidiMap.h"
 #include "PluginProcessor.h"
 #include "TestHelpers.h"
+
+#include <numeric>
 
 namespace
 {
@@ -923,7 +926,7 @@ public:
             auto* ampSimEditor = dynamic_cast<AmpSimEditor*> (editor.get());
             expect (ampSimEditor != nullptr);
 
-            // Every control attached to a parameter carries its ID, on every tab.
+            // Every control attached to a parameter carries its ID, on every page (they all exist; one shows).
             juce::StringArray tagged;
             std::function<void (juce::Component&)> walk = [&] (juce::Component& c)
             {
@@ -932,13 +935,24 @@ public:
                 for (auto* child : c.getChildren())
                     walk (*child);
             };
-            for (int tab = 0; tab < 8; ++tab)
+            for (int b = 0; b < ui::numBlocks; ++b)
             {
-                ampSimEditor->showTab (tab);
+                ampSimEditor->selectBlock ((ui::BlockId) b);
                 walk (*editor);
             }
-            for (const auto* id : { "delay_on", "reverb_mix", "gate_a_threshold", "gate_link", "eq_pre_g3", "cab_bypass", "comp_post_mode" })
+            for (const auto* id : { "delay_on", "reverb_mix", "gate_a_threshold", "gate_link", "eq_pre_g3", "cab_bypass", "comp_post_mode",
+                                    "tuner_on", "amp_slot", "bloom_phaser_mode", "harm_v1_steps", "mv_v8_drift", "tempo_bpm", "input_level_dbu" })
                 expect (tagged.contains (id), id);
+
+            // Every parameter has a tagged control, except the ones set by drawn surfaces: the mics' positions
+            // (the speaker map) and the custom scale's bit mask (its 12 note switches).
+            const juce::StringArray drawnOnly { "cab_mic1_pos_x", "cab_mic1_pos_y", "cab_mic2_pos_x", "cab_mic2_pos_y", "harm_custom_mask" };
+            juce::StringArray missing;
+            for (auto* parameter : p.getParameters())
+                if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (parameter);
+                    ranged != nullptr && ! tagged.contains (ranged->paramID) && ! drawnOnly.contains (ranged->paramID))
+                    missing.add (ranged->paramID);
+            expect (missing.isEmpty(), "no control for: " + missing.joinIntoString (", "));
 
             juce::AudioBuffer<float> buffer (2, blockSize);
             const auto send = [&] (int cc, int value)
@@ -1024,7 +1038,7 @@ public:
             expect (! p.getScenes().isChosen ("delay_mix"));
             expect (! choose ("delay_on", "Held by scenes"));
 
-            logMessage ("  -> " + juce::String (tagged.size()) + " parameters reachable by right-click across the 8 tabs; the delay switch learned CC 85 "
+            logMessage ("  -> " + juce::String (tagged.size()) + " parameters reachable by right-click across the pages (every parameter has a control); the delay switch learned CC 85 "
                         "as a toggle (the learning press changed nothing), switched to follow the switch and back, and was forgotten; the reverb mix "
                         "learned CC 86 over 0-100%; a learn was cancelled; right- and ctrl-clicks reached the control 0 times, a left-click 3 (down, drag, up)");
         }
@@ -1646,8 +1660,7 @@ public:
             waitForLoads (p);
             auto* ampSimEditor = dynamic_cast<AmpSimEditor*> (editor.get());
             expect (ampSimEditor != nullptr);
-            ampSimEditor->showTab (1);
-            ampSimEditor->resized();
+            ampSimEditor->selectBlock (ui::BlockId::cab);
             ampSimEditor->refresh(); // what the status timer would do
             const auto cabFile = proofDir().getChildFile ("editor_cab.png");
             expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), cabFile));
@@ -1663,8 +1676,8 @@ public:
             expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), packFile));
             logMessage ("  -> " + packFile.getFullPathName());
 
-            // Pre FX with the compressor working (its meter showing), the order swapped, and a graphic
-            // EQ curve; Post FX in parametric mode with cuts.
+            // The pre compressor working (its meter showing), the pre order swapped, a graphic EQ curve before
+            // the amp and a parametric one with cuts after the cab, and most effects on.
             setParam (p, "comp_pre_on", 1.0f);
             setParam (p, "comp_pre_threshold", -36.0f);
             p.setSectionOrder (ampsim::Chain::Section::pre, { "eq", "comp" });
@@ -1698,20 +1711,61 @@ public:
             setParam (p, "bloom_phaser_mode", 1.0f);
             setParam (p, "bloom_flanger_on", 1.0f);
             setParam (p, "bloom_flanger_sync", 1.0f);
-            for (auto [tab, name] : std::initializer_list<std::pair<int, const char*>> {
-                     { 2, "editor_gates.png" }, { 3, "editor_prefx.png" }, { 4, "editor_postfx.png" }, { 5, "editor_pitch.png" },
-                     { 6, "editor_bloom.png" }, { 7, "editor_timefx.png" } })
+            setParam (p, "harm_v2_mode", 1.0f);
+            setParam (p, "mv_voices", 5.0f);
+            processAll (p, guitarDI ((int) fs / 2));
+
+            // Every page, at UI scale 1 (drawn at 2x, as on a Retina screen) and at 1.5 (drawn at 1x).
+            juce::StringArray pageFiles;
+            for (auto [suffix, uiScale, pixels] : { std::tuple<const char*, float, float> { "", 1.0f, 2.0f }, std::tuple<const char*, float, float> { "_150", 1.5f, 1.0f } })
             {
-                ampSimEditor->showTab (tab);
-                ampSimEditor->resized();
-                ampSimEditor->refresh();
-                juce::Thread::sleep (60); // the EQ curves redraw on their own 30 Hz timers...
-                for (auto* child : ampSimEditor->getChildren())
-                    child->repaint();
-                const auto fxFile = proofDir().getChildFile (name);
-                expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), fxFile));
-                logMessage ("  -> " + fxFile.getFullPathName());
+                ampSimEditor->setUiScale (uiScale);
+                expectEquals (editor->getWidth(), juce::roundToInt (1280 * uiScale));
+                for (int b = 0; b < ui::numBlocks; ++b)
+                {
+                    const auto id = (ui::BlockId) b;
+                    if (id == ui::BlockId::output || (id == ui::BlockId::cab && uiScale == 1.0f)) // the output shares the input's page; the cab's is above
+                        continue;
+                    ampSimEditor->selectBlock (id);
+                    ampSimEditor->refresh();
+                    const auto pageFile = proofDir().getChildFile ("editor_" + juce::String (ui::info (id).pageName) + suffix + ".png");
+                    expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, pixels), pageFile));
+                    pageFiles.add (pageFile.getFileName());
+                }
             }
+            ampSimEditor->setUiScale (1.0f);
+            logMessage ("  -> pages: " + pageFiles.joinIntoString (", "));
+
+            // The chain strip alone: blocks on and off (the off ones dimmed, their switches hollow), the
+            // delay selected.
+            ampSimEditor->selectBlock (ui::BlockId::delay);
+            ampSimEditor->refresh();
+            auto& strip = ampSimEditor->getChainStrip();
+            const auto stripFile = proofDir().getChildFile ("editor_chain_strip.png");
+            expect (savePng (strip.createComponentSnapshot (strip.getLocalBounds(), true, 2.0f), stripFile));
+            logMessage ("  -> " + stripFile.getFullPathName());
+
+            // The post EQ with the analyzer showing the guitar through the chain: the page reads the ring 30
+            // times a second, as its timer would, while audio runs; then a band's handle is hovered.
+            ampSimEditor->selectBlock (ui::BlockId::postEq);
+            auto& eqPage = dynamic_cast<ui::EqPage&> (ampSimEditor->getPage (ui::BlockId::postEq));
+            const auto music = guitarDI ((int) fs);
+            for (size_t start = 0; start + 1536 <= music.size(); start += 1536) // 12 buffers: 32 ms, about a frame
+            {
+                processAll (p, std::vector<float> (music.begin() + (long) start, music.begin() + (long) start + 1536));
+                eqPage.getGraph().updateAnalyzer();
+            }
+            expect (eqPage.getGraph().getAnalyzer().getSamplesTaken() > 40000);
+            {
+                auto& graph = eqPage.getGraph();
+                const auto handle = graph.handlePosition (2);
+                const auto now = juce::Time::getCurrentTime();
+                graph.mouseMove (juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), handle, {}, juce::MouseInputSource::defaultPressure, 0.0f,
+                                                   0.0f, 0.0f, 0.0f, &graph, &graph, now, handle, now, 0, false));
+            }
+            const auto analyzerFile = proofDir().getChildFile ("editor_eq_analyzer.png");
+            expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), analyzerFile));
+            logMessage ("  -> " + analyzerFile.getFullPathName());
 
             // The tuner over the tabs: needle, then strobe, with frozen readings.
             setParam (p, "tuner_on", 1.0f);
@@ -1752,6 +1806,299 @@ public:
 
             logMessage ("  -> " + file.getFullPathName() + " (" + juce::String (image.getWidth()) + "x" + juce::String (image.getHeight()) + ")");
             logMessage ("  -> " + warningFile.getFullPathName());
+        }
+
+        beginTest ("meters: a -6 dBFS sine reads -6 dB at the input and both outputs; the meter holds it 1.5 s and latches a clip until clicked");
+        {
+            AmpSimProcessor p; // no capture or IR: the guitar comes out as it went in
+            p.prepareToPlay (fs, blockSize);
+            const auto amplitude = std::pow (10.0, -6.0 / 20.0);
+            processAll (p, sine (1000.0, amplitude, (int) fs / 2)); // 48 samples a cycle: sample 12 is the crest
+            const auto peaks = p.takePeaks();
+            expectWithinAbsoluteError (toDb (peaks.input), -6.0, 0.001);
+            expectWithinAbsoluteError (toDb (peaks.left), -6.0, 0.001);
+            expectWithinAbsoluteError (toDb (peaks.right), -6.0, 0.001);
+            const auto next = p.takePeaks(); // each take starts the next measurement
+            expect (next.input == 0.0f && next.left == 0.0f && next.right == 0.0f);
+
+            // The output meter follows the output level: -10 dB on the knob is -16 dBFS out.
+            setParam (p, "output_gain", -10.0f);
+            processAll (p, sine (1000.0, amplitude, (int) fs / 2));
+            p.takePeaks();
+            processAll (p, sine (1000.0, amplitude, (int) fs / 10));
+            const auto quieter = p.takePeaks();
+            expectWithinAbsoluteError (toDb (quieter.left), -16.0, 0.01);
+            expectWithinAbsoluteError (toDb (quieter.input), -6.0, 0.001);
+
+            // The GUI's meter: holds the peak for 1.5 s, then falls with the bar; a clip latches until clicked.
+            ui::LevelMeter meter ("IN", 1);
+            meter.push (&peaks.input, 1.0 / 30.0);
+            const auto held = meter.getHeldDb (0);
+            const float silence = 0.0f;
+            for (int frame = 0; frame < 30; ++frame) // 1 s later: still held, while the bar has fallen 24 dB
+                meter.push (&silence, 1.0 / 30.0);
+            const auto heldAfterOneSecond = meter.getHeldDb (0), shownAfterOneSecond = meter.getShownDb (0);
+            for (int frame = 0; frame < 30; ++frame) // 2 s: the hold has let go
+                meter.push (&silence, 1.0 / 30.0);
+            const auto heldAfterTwoSeconds = meter.getHeldDb (0);
+            expectWithinAbsoluteError (held, -6.0f, 0.01f);
+            expectWithinAbsoluteError (heldAfterOneSecond, -6.0f, 0.01f);
+            expectWithinAbsoluteError (shownAfterOneSecond, -30.0f, 0.1f);
+            expectLessThan (heldAfterTwoSeconds, -40.0f);
+            const float clip = 1.0f;
+            meter.push (&clip, 1.0 / 30.0);
+            for (int frame = 0; frame < 90; ++frame)
+                meter.push (&silence, 1.0 / 30.0);
+            const auto latched = meter.isClipped();
+            meter.mouseDown (juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), {}, juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier),
+                                               juce::MouseInputSource::defaultPressure, 0.0f, 0.0f, 0.0f, 0.0f, &meter, &meter, juce::Time::getCurrentTime(), {},
+                                               juce::Time::getCurrentTime(), 1, false));
+            expect (latched && ! meter.isClipped());
+            logMessage ("  -> a -6 dBFS sine: input " + juce::String (toDb (peaks.input), 3) + " dB, output " + juce::String (toDb (peaks.left), 3) + " / "
+                        + juce::String (toDb (peaks.right), 3) + " dB; with the output at -10 dB the output reads " + juce::String (toDb (quieter.left), 2)
+                        + " dB; the meter holds " + juce::String (heldAfterOneSecond, 2) + " dB after 1 s (bar at " + juce::String (shownAfterOneSecond, 1)
+                        + " dB) and lets go by 2 s (" + juce::String (heldAfterTwoSeconds, 1) + " dB); a clip stays lit 3 s later until clicked");
+        }
+
+        beginTest ("CPU meter: the callback's time against its deadline, between 0 and 100% while audio runs");
+        {
+            AmpSimProcessor p;
+            p.loadModel (0, a1);
+            p.loadModel (1, a1);
+            p.loadModel (2, a1);
+            p.loadCabIR (0, irFile);
+            waitForLoads (p);
+            p.prepareToPlay (fs, blockSize);
+            const auto idle = p.getCpuLoad();
+
+            // The test's own measurement of the same thing over the last 0.3 s, for comparison.
+            const auto input = guitarDI ((int) fs * 2);
+            juce::AudioBuffer<float> buffer (2, blockSize);
+            juce::MidiBuffer midi;
+            std::vector<double> loads;
+            for (size_t start = 0; start + blockSize <= input.size(); start += blockSize)
+            {
+                buffer.clear();
+                buffer.copyFrom (0, 0, input.data() + start, blockSize);
+                const auto t0 = juce::Time::getHighResolutionTicks();
+                p.processBlock (buffer, midi);
+                loads.push_back (100.0 * juce::Time::highResolutionTicksToSeconds (juce::Time::getHighResolutionTicks() - t0) / (blockSize / fs));
+            }
+            const auto recent = (size_t) (0.3 * fs / blockSize);
+            const auto ownAverage = std::accumulate (loads.end() - (long) recent, loads.end(), 0.0) / (double) recent;
+            const auto cpu = p.getCpuLoad();
+            expectEquals (idle, 0.0f);
+            expect (cpu > 0.0f && cpu < 100.0f, juce::String (cpu));
+            logMessage ("  -> three A1 captures and a cab on a guitar DI: the meter reads " + juce::String (cpu, 1) + "% (the test's own average over the last "
+                        "0.3 s: " + juce::String (ownAverage, 1) + "%); 0 before any audio");
+        }
+
+        beginTest ("analyzer: the audio thread fills a lock-free ring (full, it drops and counts, never waits), and the GUI's FFT finds a test tone");
+        {
+            AmpSimProcessor p;
+            p.prepareToPlay (fs, blockSize);
+            auto& ring = p.getAnalyzerRing();
+
+            // Off: nothing is written.
+            processAll (p, sine (1000.0, 0.25, 4096));
+            expectEquals (ring.getNumReady(), 0);
+
+            // The post tap, nobody reading for a second: the ring fills and the rest is dropped and counted,
+            // with nothing allocated, freed, or locked on the audio thread.
+            p.setAnalyzerTap (AmpSimProcessor::AnalyzerTap::postSection);
+            const auto tone = sine (1234.5, 0.25, (int) fs);
+            juce::AudioBuffer<float> buffer (2, blockSize);
+            juce::MidiBuffer midi;
+            rtcheck::Counts counts;
+            double worstMicros = 0.0;
+            for (size_t start = 0; start + blockSize <= tone.size(); start += blockSize)
+            {
+                buffer.clear();
+                buffer.copyFrom (0, 0, tone.data() + start, blockSize);
+                const auto t0 = juce::Time::getHighResolutionTicks();
+                rtcheck::begin();
+                p.processBlock (buffer, midi);
+                counts += rtcheck::end();
+                worstMicros = juce::jmax (worstMicros, 1.0e6 * juce::Time::highResolutionTicksToSeconds (juce::Time::getHighResolutionTicks() - t0));
+            }
+            const auto ready = ring.getNumReady();
+            const auto dropped = (int) ring.takeDroppedCount();
+            expectEquals (ready, AmpSimProcessor::analyzerRingSize);
+            expectEquals (dropped, (int) fs - AmpSimProcessor::analyzerRingSize);
+            expectEquals (counts.allocations + counts.frees + counts.blockingLocks, 0L);
+
+            // The GUI's side: 4096 points, Hann window; the tone's bin, refined by a parabola.
+            ui::SpectrumAnalyzer analyzer;
+            const auto taken = analyzer.pull (ring);
+            analyzer.compute();
+            const auto found = analyzer.peakFrequency (fs);
+            const auto level = analyzer.levelAt (found, 1.0, fs);
+            expectEquals (taken, AmpSimProcessor::analyzerRingSize);
+            expectWithinAbsoluteError (found, 1234.5, 1.0);
+            expectWithinAbsoluteError ((double) level, toDb (0.25), 1.5); // a Hann window's scalloping is at most 1.42 dB
+
+            // The pre tap carries the guitar as it arrives.
+            p.setAnalyzerTap (AmpSimProcessor::AnalyzerTap::preSection);
+            ring.discardAll();
+            processAll (p, sine (440.0, 0.5, 8192));
+            analyzer.reset();
+            analyzer.pull (ring);
+            analyzer.compute();
+            const auto preFound = analyzer.peakFrequency (fs);
+            expectWithinAbsoluteError (preFound, 440.0, 1.0);
+            p.setAnalyzerTap (AmpSimProcessor::AnalyzerTap::off);
+
+            logMessage ("  -> 1 s of a 1234.5 Hz tone with nobody reading: " + juce::String (ready) + " samples waiting (the ring), " + juce::String (dropped)
+                        + " dropped and counted, 0 allocations, frees, or locks, worst buffer " + juce::String (worstMicros, 1) + " us");
+            logMessage ("  -> the FFT (4096 points, Hann) puts the tone at " + juce::String (found, 2) + " Hz, " + juce::String (level, 2) + " dBFS (sine at "
+                        + juce::String (toDb (0.25), 2) + "); the pre tap's 440 Hz reads " + juce::String (preFound, 2) + " Hz");
+        }
+
+        beginTest ("chain strip: dragging a block calls the processor's reorder, the same as the order strip did, and the chain applies the new order");
+        {
+            using Slot = ampsim::Chain::Slot;
+            AmpSimProcessor p;
+            p.prepareToPlay (fs, blockSize);
+            std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+            auto& strip = dynamic_cast<AmpSimEditor&> (*editor).getChainStrip();
+
+            // A drag in small steps, as a mouse makes it: positions in the strip, events in the card's space.
+            const auto drag = [&strip] (ui::BlockId id, juce::Point<float> to)
+            {
+                auto& card = *strip.getCard (id);
+                const auto down = card.getLocalBounds().getCentre().toFloat();
+                const auto from = card.getBounds().getCentre().toFloat();
+                const auto now = juce::Time::getCurrentTime();
+                const auto event = [&card, down, now] (juce::Point<float> local, bool dragged)
+                {
+                    return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), local, juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier),
+                                             juce::MouseInputSource::defaultPressure, 0.0f, 0.0f, 0.0f, 0.0f, &card, &card, now, down, now, 1, dragged);
+                };
+                card.mouseDown (event (down, false));
+                for (int step = 1; step <= 20; ++step)
+                {
+                    const auto inStrip = from + (to - from) * ((float) step / 20.0f);
+                    card.mouseDrag (event (inStrip - card.getPosition().toFloat(), true));
+                }
+                card.mouseUp (event (to - card.getPosition().toFloat(), true));
+            };
+
+            // The boost onto the compressor's place: gate, comp, boost becomes gate, boost, comp.
+            drag (ui::BlockId::boost, strip.getCard (ui::BlockId::preCompressor)->getBounds().getCentre().toFloat());
+            const auto requested = p.getSectionOrder (ampsim::Chain::Section::pre);
+            expect (requested == juce::StringArray { "gate", "boost", "comp", "overdrive", "eq" }, requested.joinIntoString (", "));
+            const auto shownPre = strip.getShownOrder (ui::Section::pre);
+            expect (shownPre == std::vector<ui::BlockId> { ui::BlockId::gateA, ui::BlockId::boost, ui::BlockId::preCompressor, ui::BlockId::overdrive, ui::BlockId::preEq });
+
+            // The reverb to the front of the post section.
+            drag (ui::BlockId::reverb, strip.getCard (ui::BlockId::postEq)->getBounds().getCentre().toFloat() - juce::Point<float> (20.0f, 0.0f));
+            const auto post = p.getSectionOrder (ampsim::Chain::Section::post);
+            expect (post[0] == "reverb" && post[1] == "eq", post.joinIntoString (", "));
+
+            // The chain applies them with its dip (10 ms down, the swap, 10 ms up): 50 ms of audio.
+            const auto before = p.getChain().getAppliedOrder (ampsim::Chain::Section::pre);
+            processAll (p, sine (220.0, 0.1, 2400));
+            const auto after = p.getChain().getAppliedOrder (ampsim::Chain::Section::pre);
+            expect (before[1] == Slot::preCompressor);
+            expect (after == std::vector<Slot> { Slot::gateA, Slot::boost, Slot::preCompressor, Slot::overdrive, Slot::preEq });
+            expect (p.getChain().getAppliedOrder (ampsim::Chain::Section::post)[0] == Slot::reverb);
+
+            // A drag that ends where it began changes nothing; a short wiggle isn't a drag at all.
+            const auto unchanged = p.getSectionOrder (ampsim::Chain::Section::pre);
+            drag (ui::BlockId::preEq, strip.getCard (ui::BlockId::preEq)->getBounds().getCentre().toFloat());
+            expect (p.getSectionOrder (ampsim::Chain::Section::pre) == unchanged);
+            logMessage ("  -> dragged the boost onto the compressor: requested \"" + requested.joinIntoString (", ") + "\", applied by the chain 50 ms later; "
+                        "dragged the reverb to the front of the post section: \"" + post.joinIntoString (", ") + "\"; a drag back to its own place changed nothing");
+        }
+
+        beginTest ("UI scale: the setting resizes the editor around the same layout, survives saving the state, and stays out of presets");
+        {
+            AmpSimProcessor p;
+            juce::MemoryBlock state;
+            juce::String sizes;
+            {
+                std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+                auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
+                expect (editor->getWidth() == 1280 && editor->getHeight() == 820 && ed.getUiScale() == 1.0f);
+                const auto topBarWidth = ed.getTopBar().getWidth();
+                ed.setUiScale (1.5f);
+                expect (editor->getWidth() == 1920 && editor->getHeight() == 1230);
+                expectEquals (ed.getTopBar().getWidth(), topBarWidth); // the same layout, in UI points
+                sizes << "100%: 1280x820, 150%: " << editor->getWidth() << "x" << editor->getHeight();
+                ed.setUiScale (0.8f); // snaps to 75%
+                expect (ed.getUiScale() == 0.75f && editor->getWidth() == 960 && editor->getHeight() == 615);
+                sizes << ", 0.8 snapped to 75%: " << editor->getWidth() << "x" << editor->getHeight();
+                ed.setUiScale (1.25f);
+                p.getStateInformation (state);
+            }
+
+            AmpSimProcessor restored;
+            restored.setStateInformation (state.getData(), (int) state.getSize());
+            std::unique_ptr<juce::AudioProcessorEditor> editor (restored.createEditor());
+            expectEquals (dynamic_cast<AmpSimEditor&> (*editor).getUiScale(), 1.25f);
+            expect (editor->getWidth() == 1600 && editor->getHeight() == 1025);
+
+            // A preset never holds it, and loading one leaves it alone.
+            expect (! juce::JSON::toString (restored.capturePreset ("x")).contains ("uiScale"));
+            expect (restored.loadPreset (juce::JSON::parse (R"({ "format_version": 2, "parameters": {} })")).ok);
+            restored.runHousekeeping();
+            expectEquals ((float) (double) restored.parameters.state.getProperty (AmpSimProcessor::uiScaleKey), 1.25f);
+            logMessage ("  -> " + sizes + "; saved at 125%, a restored session opens at " + juce::String (editor->getWidth()) + "x"
+                        + juce::String (editor->getHeight()) + "; presets don't hold the scale and loading one keeps it");
+        }
+
+        beginTest ("knobs: drag, shift for fine, the wheel, typing a value, and alt-click to reset");
+        {
+            AmpSimProcessor p;
+            ui::Knob knob (p.parameters, "delay_mix", "Mix", " %");
+            knob.setBounds (0, 0, 76, 92);
+            const auto now = juce::Time::getCurrentTime();
+            const auto event = [&knob, now] (juce::Point<float> at, int modifiers)
+            {
+                return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), at, juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier | modifiers),
+                                         juce::MouseInputSource::defaultPressure, 0.0f, 0.0f, 0.0f, 0.0f, &knob, &knob, now, { 38.0f, 46.0f }, now, 1, true);
+            };
+            const auto dragUp = [&] (float pixels, int modifiers)
+            {
+                knob.mouseDown (event ({ 38.0f, 46.0f }, modifiers));
+                knob.mouseDrag (event ({ 38.0f, 46.0f - pixels }, modifiers));
+                knob.mouseUp (event ({ 38.0f, 46.0f - pixels }, modifiers));
+            };
+
+            setParam (p, "delay_mix", 0.0f);
+            dragUp (100.0f, 0); // half the 200-point travel: half the range
+            const auto afterDrag = getParam (p, "delay_mix");
+            dragUp (100.0f, juce::ModifierKeys::shiftModifier); // ten times finer
+            const auto afterFine = getParam (p, "delay_mix") - afterDrag;
+            knob.mouseWheelMove (event ({ 38.0f, 46.0f }, 0), juce::MouseWheelDetails { 0.0f, 0.1f, false, false, false });
+            const auto afterWheel = getParam (p, "delay_mix");
+            const auto typed = knob.setFromText ("12.5");
+            const auto afterTyping = getParam (p, "delay_mix");
+            knob.mouseDown (event ({ 38.0f, 46.0f }, juce::ModifierKeys::altModifier));
+            knob.mouseUp (event ({ 38.0f, 46.0f }, juce::ModifierKeys::altModifier));
+            const auto afterReset = getParam (p, "delay_mix");
+            knob.mouseDown (event ({ 38.0f, 46.0f }, juce::ModifierKeys::ctrlModifier)); // a right-click (ctrl-click) does nothing
+            knob.mouseDrag (event ({ 38.0f, 0.0f }, juce::ModifierKeys::ctrlModifier));
+            const auto afterRightDrag = getParam (p, "delay_mix");
+
+            expectWithinAbsoluteError (afterDrag, 50.0f, 0.06f);
+            expectWithinAbsoluteError (afterFine, 5.0f, 0.06f);
+            expectWithinAbsoluteError (afterWheel - afterDrag - afterFine, 1.5f, 0.06f);
+            expect (typed);
+            expectWithinAbsoluteError (afterTyping, 12.5f, 0.001f);
+            expectWithinAbsoluteError (afterReset, 25.0f, 0.001f); // the parameter's default
+            expectEquals (afterRightDrag, afterReset);
+
+            // Typing understands units and names: "2.5k" on a frequency, a choice by its name.
+            ui::Knob frequency (p.parameters, "delay_highcut", "High cut", " Hz");
+            expect (frequency.setFromText ("2.5k"));
+            ui::ValueField note (p.parameters, "delay_note", "");
+            expect (note.setFromText ("1/4") && ! note.setFromText ("not a note"));
+            expectWithinAbsoluteError (getParam (p, "delay_highcut"), 2500.0f, 0.5f);
+            logMessage ("  -> on the delay mix (0 to 100%): 100 points up = " + juce::String (afterDrag, 1) + "%, 100 more with shift = +" + juce::String (afterFine, 2)
+                        + "%, one wheel notch = +" + juce::String (afterWheel - afterDrag - afterFine, 2) + "%, typed 12.5 = " + juce::String (afterTyping, 1)
+                        + "%, alt-click = " + juce::String (afterReset, 1) + "% (the default); a ctrl-drag moved nothing; \"2.5k\" set the high cut to "
+                        + juce::String (getParam (p, "delay_highcut"), 0) + " Hz; \"1/4\" picked the note");
         }
 
         beginTest ("listening renders: the synthetic guitar DI through the full chain");

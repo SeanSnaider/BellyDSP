@@ -89,6 +89,22 @@ set(AMPSIM_DSP_SOURCES
     src/dsp/Psola.cpp
     src/dsp/Multivoicer.cpp)
 
+# The GUI (Phase 11, docs/UI_DESIGN.md): the theme, the LookAndFeel, the components, and the pages.
+set(AMPSIM_UI_SOURCES
+    src/ui/LookAndFeel.cpp
+    src/ui/Controls.cpp
+    src/ui/Meters.cpp
+    src/ui/Analyzer.cpp
+    src/ui/Blocks.cpp
+    src/ui/ChainStrip.cpp
+    src/ui/ScenesBar.cpp
+    src/ui/TopBar.cpp
+    src/ui/TunerView.cpp
+    src/ui/Pages.cpp
+    src/ui/AmpCabPages.cpp
+    src/ui/EqPage.cpp
+    src/ui/FxPages.cpp)
+
 set(AMPSIM_JUCE_DEFINITIONS
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
@@ -114,6 +130,7 @@ juce_add_plugin(AmpSim
 target_sources(AmpSim PRIVATE
     src/PluginProcessor.cpp
     src/PluginEditor.cpp
+    ${AMPSIM_UI_SOURCES}
     src/BlockParameters.cpp
     src/Presets.cpp
     src/MidiMap.cpp
@@ -207,6 +224,7 @@ target_sources(ampsim_tests PRIVATE
     tests/RealtimeSafetyTests.cpp
     src/PluginProcessor.cpp
     src/PluginEditor.cpp
+    ${AMPSIM_UI_SOURCES}
     src/BlockParameters.cpp
     src/Presets.cpp
     src/MidiMap.cpp

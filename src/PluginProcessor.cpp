@@ -79,6 +79,10 @@ AmpSimProcessor::AmpSimProcessor()
     highCutFreq = raw ("cab_highcut_freq");
     highCutSlope = raw ("cab_highcut_slope");
 
+    // The analyzer's ring and scratch are allocated once, here, never while audio runs.
+    analyzerRing.prepare (analyzerRingSize);
+    analyzerScratch.assign (2048, 0.0f);
+
     // Frees models and IRs the audio thread has handed back, syncs footswitch slot changes, re-reads an
     // IR whose channel choice changed, and re-morphs moving mics. 50 Hz, so a mic being dragged is
     // re-morphed every 40 ms (two ticks), the plan's rate.
@@ -222,6 +226,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout AmpSimProcessor::createParam
 void AmpSimProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     deviceSampleRate = sampleRate;
+    cpuSampleRate = sampleRate > 0.0 ? sampleRate : 48000.0;
     sampleRateOk = std::abs (sampleRate - ampsim::NamAmp::requiredSampleRate) < 0.5;
     preparedBlockSize = juce::jmax (1, samplesPerBlock);
 
@@ -543,11 +548,19 @@ juce::StringArray AmpSimProcessor::getSectionOrder (ampsim::Chain::Section secti
 
 void AmpSimProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
+    // The CPU meter times the whole callback against its deadline.
+    const auto startTicks = juce::Time::getHighResolutionTicks();
+
     // Denormals (tiny floats near zero) are very slow on some CPUs, and a decaying tail produces
     // them. This flushes them to zero for the duration of the callback (BUILD_PLAN "Denormals").
     juce::ScopedNoDenormals noDenormals;
 
     const auto numSamples = buffer.getNumSamples();
+
+    // The input meter reads the guitar as it arrives, before any gain: what decides whether the
+    // interface clips.
+    if (buffer.getNumChannels() > 0 && numSamples > 0)
+        raisePeak (inputPeak, buffer.getMagnitude (0, 0, numSamples));
 
     // Output channels with no matching input start out holding garbage.
     for (auto ch = getTotalNumInputChannels(); ch < getTotalNumOutputChannels(); ++ch)
@@ -557,6 +570,7 @@ void AmpSimProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         || buffer.getNumChannels() < 2)
     {
         buffer.clear(); // the editor shows why
+        measureCpu (startTicks, numSamples);
         return;
     }
 
@@ -596,6 +610,11 @@ void AmpSimProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     tuner.setReferenceA4 ((double) tunerA4->load (std::memory_order_relaxed));
     tuner.pushAudio (buffer.getReadPointer (0), numSamples);
 
+    // The analyzer's pre tap: the guitar going into the chain (the GUI adds the input gain).
+    const auto analyzerSource = (AnalyzerTap) analyzerTap.load (std::memory_order_relaxed);
+    if (analyzerSource == AnalyzerTap::preSection)
+        analyzerRing.write (buffer.getReadPointer (0), numSamples);
+
     // Hosts may occasionally send more samples than promised, so feed the chain in pieces that fit.
     auto io = juce::dsp::AudioBlock<float> (buffer).getSubsetChannelBlock (0, 2);
     const auto maxChunk = (size_t) preparedBlockSize;
@@ -604,6 +623,10 @@ void AmpSimProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         chain.process (io.getSubBlock (start, juce::jmin (maxChunk, (size_t) numSamples - start)));
 
     samplesProcessed += numSamples;
+
+    // The analyzer's post tap: the post section's output (times the output level, which the GUI takes out).
+    if (analyzerSource == AnalyzerTap::postSection)
+        tapOutput (buffer, numSamples);
 
     // Preset changes fade the whole output out, and back in once the new sound is ready; the tuner mutes
     // it while it's engaged (unless set to tune while hearing yourself). Both fade over 20 ms.
@@ -622,6 +645,58 @@ void AmpSimProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     }
     presetSilent.store (presetMute.load (std::memory_order_relaxed) && ! presetGain.isSmoothing() && presetGain.getCurrentValue() <= 0.0f);
     lastProcessMs.store (juce::Time::getMillisecondCounter(), std::memory_order_relaxed);
+
+    // The output meters read what leaves the app.
+    raisePeak (outputPeakLeft, buffer.getMagnitude (0, 0, numSamples));
+    raisePeak (outputPeakRight, buffer.getMagnitude (1, 0, numSamples));
+    measureCpu (startTicks, numSamples);
+}
+
+void AmpSimProcessor::raisePeak (std::atomic<float>& peak, float value) noexcept
+{
+    // A lock-free maximum: the compare-exchange only retries if the GUI took the peak in between (it
+    // swaps in 0), so the loop runs once or twice and never waits on anything.
+    auto current = peak.load (std::memory_order_relaxed);
+    while (value > current && ! peak.compare_exchange_weak (current, value, std::memory_order_relaxed))
+    {
+    }
+}
+
+AmpSimProcessor::Peaks AmpSimProcessor::takePeaks() noexcept
+{
+    return { inputPeak.exchange (0.0f, std::memory_order_relaxed), outputPeakLeft.exchange (0.0f, std::memory_order_relaxed),
+             outputPeakRight.exchange (0.0f, std::memory_order_relaxed) };
+}
+
+void AmpSimProcessor::measureCpu (juce::int64 startTicks, int numSamples) noexcept
+{
+    // The callback's share of its deadline (the time the buffer takes to play), smoothed by a one-pole
+    // average with a 300 ms time constant whatever the buffer size: for a buffer lasting T seconds the
+    // coefficient is 1 - exp(-T / 0.3), so a step settles to 63% after 300 ms of audio.
+    if (numSamples <= 0)
+        return;
+    const auto seconds = juce::Time::highResolutionTicksToSeconds (juce::Time::getHighResolutionTicks() - startTicks);
+    const auto deadline = (double) numSamples / cpuSampleRate;
+    const auto load = (float) (100.0 * seconds / deadline);
+    const auto alpha = (float) (1.0 - std::exp (-deadline / cpuAverageSeconds));
+    cpuSmoothed += alpha * (load - cpuSmoothed);
+    cpuLoad.store (cpuSmoothed, std::memory_order_relaxed);
+}
+
+void AmpSimProcessor::tapOutput (const juce::AudioBuffer<float>& buffer, int numSamples) noexcept
+{
+    // The mono sum of the stereo output, in pieces that fit the preallocated scratch buffer. A full
+    // ring drops what doesn't fit (and counts it) rather than waiting for the GUI.
+    const auto* left = buffer.getReadPointer (0);
+    const auto* right = buffer.getReadPointer (1);
+    const auto capacity = (int) analyzerScratch.size();
+    for (int start = 0; start < numSamples; start += capacity)
+    {
+        const auto n = juce::jmin (capacity, numSamples - start);
+        for (int i = 0; i < n; ++i)
+            analyzerScratch[(size_t) i] = 0.5f * (left[start + i] + right[start + i]);
+        analyzerRing.write (analyzerScratch.data(), n);
+    }
 }
 
 juce::AudioProcessorEditor* AmpSimProcessor::createEditor()

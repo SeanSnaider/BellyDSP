@@ -90,6 +90,17 @@ public:
             int blocks = 0, modelFadeBlocks = 0, slotSwitchBlocks = 0, morphsBefore = 0;
             juce::StringArray events;
 
+            // The GUI's side of the meters and the analyzer (Phase 11): it takes the peaks and empties the
+            // analyzer's ring now and then, outside the measurement.
+            std::vector<float> analyzerSink (4096);
+            juce::int64 analyzed = 0;
+            const auto guiReads = [&]
+            {
+                p.takePeaks();
+                for (int n; (n = p.getAnalyzerRing().read (analyzerSink.data(), (int) analyzerSink.size())) > 0;)
+                    analyzed += n;
+            };
+
             for (size_t start = 0; start + blockSize <= input.size(); start += blockSize, ++blocks)
             {
                 // What a player does mid-song. These are the message thread's side, outside the measurement.
@@ -208,6 +219,11 @@ public:
                     case 3350: setParam (p, "bloom_on", 0.0f); break;
                     case 3550: setParam (p, "od_tight", 1.0f); setParam (p, "od_mode", 0.0f); setParam (p, "boost_mode", 1.0f); break;
                     case 3600: setParam (p, "drive_oversampling", 0.0f); setParam (p, "od_on", 0.0f); setParam (p, "boost_on", 0.0f); break;
+                    // Phase 11 GUI hooks: the analyzer taps the post section, then the pre section; from block
+                    // 2401 to 2800 the GUI stops reading, so the ring fills and the audio thread drops instead of waiting.
+                    case 52:   p.setAnalyzerTap (AmpSimProcessor::AnalyzerTap::postSection); break;
+                    case 2205: p.setAnalyzerTap (AmpSimProcessor::AnalyzerTap::preSection); break;
+                    case 3555: p.setAnalyzerTap (AmpSimProcessor::AnalyzerTap::postSection); break;
                     case 1500: setParam (p, "input_gain", 6.0f); break;
                     case 1600: setParam (p, "output_gain", -6.0f); break;
                     case 2000: p.loadModel (0, a1); break;                                  // switch the capture back
@@ -246,6 +262,8 @@ public:
                 {
                     juce::Thread::sleep (1);
                     p.runHousekeeping();
+                    if (blocks <= 2400 || blocks > 2800)
+                        guiReads();
                 }
             }
 
@@ -268,6 +286,10 @@ public:
             expect (p.getStatus().cab[1].startsWith ("rt_pack (4 IRs on a grid) at ") && p.getStatus().cab[2].contains ("rt_room"), p.getStatus().cab[1]);
             expect (p.getChain().cab.closeMic (1).hasImpulseResponse() && p.getChain().cab.roomMic().hasImpulseResponse(),
                     "the IRs loaded during playback must have reached the audio thread");
+            const auto analyzerDropped = (juce::int64) p.getAnalyzerRing().takeDroppedCount();
+            expectGreaterThan (analyzed, (juce::int64) 300000, "the GUI must have read the analyzer's ring during the measurement");
+            expectGreaterThan (analyzerDropped, (juce::int64) 0, "the ring must have filled while the GUI stopped reading, and dropped");
+            expectGreaterThan (p.getCpuLoad(), 0.0f, "the CPU meter must have measured the callbacks");
             expectEquals (total.allocations, 0L);
             expectEquals (total.frees, 0L);
             expectEquals (total.blockingLocks, 0L);
@@ -283,6 +305,10 @@ public:
                         "the delay switched on, retimed by three footswitch taps, re-moded and re-laid-out with 105% feedback, then bypassed into spillover and back, "
                         "the chorus on with mode, shape, and sync changes, and the reverb on, re-engined twice, frozen and thawed from the footswitch, resized, "
                         "and bypassed into spillover");
+            logMessage ("  -> the GUI hooks: input and output meters and the CPU meter every buffer, the analyzer tapping the post section, the pre section, "
+                        "and the post section again; the GUI read " + juce::String (analyzed) + " samples from the ring and stopped for 400 buffers, "
+                        "so the ring filled and the audio thread dropped " + juce::String (analyzerDropped) + " samples instead of waiting; CPU meter "
+                        + juce::String (p.getCpuLoad(), 1) + "%");
             logMessage ("  -> audio thread: " + describe (total));
         }
     }

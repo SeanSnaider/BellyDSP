@@ -5,6 +5,7 @@
 #include "Presets.h"
 #include "Scenes.h"
 #include "dsp/Chain.h"
+#include "dsp/SpscRing.h"
 #include "dsp/Tempo.h"
 #include "dsp/TunerThread.h"
 
@@ -169,6 +170,45 @@ public:
 
     /// GUI thread. A copy of the current status lines.
     Status getStatus() const;
+
+    // ---- Meters, the CPU meter, and the analyzer (BUILD_PLAN "GUI", Thread communication: audio to GUI
+    // through atomics and a ring buffer; the audio thread never waits for the GUI) ----------------------
+
+    /// GUI thread: the highest input (DI) sample and the highest output samples, left and right, as linear
+    /// magnitudes, since the last call. Each call starts the next measurement.
+    struct Peaks
+    {
+        float input = 0.0f, left = 0.0f, right = 0.0f;
+    };
+    Peaks takePeaks() noexcept;
+
+    /// Any thread: the audio callback's time against its deadline (the buffer's duration), in percent,
+    /// averaged over about 300 ms (ASSUMPTIONS U5).
+    float getCpuLoad() const noexcept { return cpuLoad.load (std::memory_order_relaxed); }
+    static constexpr double cpuAverageSeconds = 0.3;
+
+    /// What the EQ page's analyzer reads (ASSUMPTIONS U6, U11): nothing (the audio thread then writes
+    /// nothing), the guitar as it arrives (before the input gain; the pre EQ's page adds the gain), or
+    /// the chain's output before the preset and tuner fades (the post section's output times the output
+    /// level, which the post EQ's page takes back out).
+    enum class AnalyzerTap
+    {
+        off,
+        preSection,
+        postSection
+    };
+    void setAnalyzerTap (AnalyzerTap newTap) noexcept { analyzerTap.store ((int) newTap, std::memory_order_relaxed); }
+    AnalyzerTap getAnalyzerTap() const noexcept { return (AnalyzerTap) analyzerTap.load (std::memory_order_relaxed); }
+
+    /// GUI thread (the ring's one reader): the tapped samples, mono, oldest first. When the GUI falls
+    /// behind, the ring fills and the audio thread drops the newest samples and counts them
+    /// (SpscRing::takeDroppedCount); it never waits.
+    ampsim::SpscRing<float>& getAnalyzerRing() noexcept { return analyzerRing; }
+    static constexpr int analyzerRingSize = 16384;
+
+    /// The editor's UI scale (75 to 150%) and window size in UI points: kept in the app's state, never in
+    /// presets (BUILD_PLAN "Presets and scenes": window size and UI scale are global settings).
+    static inline const juce::Identifier uiScaleKey { "uiScale" }, uiWidthKey { "uiWidth" }, uiHeightKey { "uiHeight" };
 
     /// For tests: the DSP chain. Only touch it from the thread that calls processBlock().
     ampsim::Chain& getChain() noexcept { return chain; }
@@ -353,6 +393,18 @@ private:
         return tunerOn->load (std::memory_order_relaxed) >= 0.5f && tunerMute->load (std::memory_order_relaxed) >= 0.5f;
     }
     std::atomic<int> morphCount { 0 };
+
+    // Meters (the audio thread raises them, the GUI takes them), the CPU meter, and the analyzer's tap.
+    static void raisePeak (std::atomic<float>& peak, float value) noexcept;
+    void measureCpu (juce::int64 startTicks, int numSamples) noexcept;
+    void tapOutput (const juce::AudioBuffer<float>& buffer, int numSamples) noexcept;
+    std::atomic<float> inputPeak { 0.0f }, outputPeakLeft { 0.0f }, outputPeakRight { 0.0f };
+    std::atomic<float> cpuLoad { 0.0f };
+    float cpuSmoothed = 0.0f;       // audio thread
+    double cpuSampleRate = 48000.0; // set in prepareToPlay, read by the audio thread
+    std::atomic<int> analyzerTap { 0 };
+    ampsim::SpscRing<float> analyzerRing;
+    std::vector<float> analyzerScratch; // audio thread: the output's mono sum, allocated in the constructor
 
     std::atomic<bool> sampleRateOk { true };
     std::atomic<double> deviceSampleRate { 0.0 };
