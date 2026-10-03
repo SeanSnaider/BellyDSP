@@ -5,6 +5,7 @@
 #include "PluginProcessor.h"
 #include "Presets.h"
 #include "TestHelpers.h"
+#include "dsp/CabIR.h"
 #include "platform/AppInfo.h"
 #include "platform/Updater.h"
 
@@ -190,6 +191,73 @@ public:
             logMessage ("  -> renamed inside the content folder: relinked to " + renamed.getRelativePathFrom (factory));
             logMessage ("  -> missing: \"" + warnings + "\"; the IR and delay_on still applied");
             logMessage ("  -> the app's real content folder: " + platform::factoryContentFolder().getFullPathName());
+        }
+
+        beginTest ("bundled IRs: each one in the manifest resolves from its factory: path inside the built app, is 48 kHz and at most 1 s, loads in the cab, and names no brand");
+        {
+            // The built app's content folder (Amp Sim.app/Contents/Resources/content), when the app has been
+            // built in this build tree; otherwise the copy next to this test binary (the same files).
+            const juce::File appContent (AMPSIM_APP_CONTENT_DIR);
+            const auto content = appContent.isDirectory() ? appContent : platform::factoryContentFolder();
+            presets::setLibraryRoot ("factory", content);
+            const auto repoContent = juce::File (AMPSIM_SOURCE_DIR).getChildFile ("content");
+            const auto manifest = juce::JSON::parse (repoContent.getChildFile ("manifest.json"));
+            const auto* files = manifest["files"].getArray();
+            expect (files != nullptr);
+
+            // Brand and model names the bundled files' names and texts must not contain (CLAUDE.md), the
+            // gear in these packs' handbooks among them.
+            const juce::StringArray brands { "Marshall", "Celestion", "Shure", "SM57", "SM 57", "Sennheiser", "e606", "e935", "V30", "Vintage 30",
+                                             "Greenback", "G12", "Behringer", "BG412", "Eminence", "DV-77", "DV77", "Rockdriver", "Pyle", "PDMIC",
+                                             "Neve", "Steinberg", "Golden Age", "Mesa", "Orange", "Neural DSP", "Fortin", "Bogner", "Diezel" };
+            int checked = 0, longest = 0;
+            juce::int64 bytes = 0;
+            juce::StringArray rows, problems;
+            juce::AudioFormatManager formats;
+            formats.registerBasicFormats();
+            for (const auto& entry : *files)
+            {
+                const auto path = entry["path"].toString();
+                if (! path.startsWith ("irs/"))
+                    continue;
+                ++checked;
+                const auto source = repoContent.getChildFile (path);
+                const presets::FileRef ref { "factory:" + path, presets::contentHash (source), source.getSize() };
+                const auto r = presets::resolve (ref, "irs");
+                if (! r.found || r.relinked || r.changed || ! r.file.isAChildOf (content))
+                    problems.add (path + " didn't resolve in place");
+
+                std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (r.file));
+                if (reader == nullptr || reader->sampleRate != 48000.0 || reader->lengthInSamples > 48000 || reader->numChannels != 1)
+                    problems.add (path + " isn't a mono 48 kHz IR of at most 1 s");
+                const auto length = reader != nullptr ? (int) reader->lengthInSamples : 0;
+                longest = juce::jmax (longest, length);
+                bytes += source.getSize();
+
+                ampsim::CabIR mic;
+                const auto loaded = mic.loadFile (r.file);
+                if (! loaded.ok || loaded.message.contains ("cut"))
+                    problems.add (path + ": " + loaded.message);
+
+                for (const auto* key : { "path", "title", "description", "notes" })
+                    for (const auto& brand : brands)
+                        if (entry[key].toString().containsIgnoreCase (brand))
+                            problems.add (path + "'s " + key + " names \"" + brand + "\"");
+                if (entry["license"].toString() != "CC0 1.0" || entry["license_file"].toString() != "licenses/CC0-1.0.txt")
+                    problems.add (path + ": not the CC0 entry expected");
+                rows.add (r.file.getFileNameWithoutExtension() + ": " + juce::String (juce::roundToInt (1000.0 * length / 48000.0)) + " ms, loudness matched "
+                          + juce::String (juce::Decibels::gainToDecibels (loaded.gain), 1) + " dB");
+            }
+            expectEquals (checked, 21);
+            expect (problems.isEmpty(), problems.joinIntoString ("; "));
+            expectEquals (longest, 48000);
+            expect (content.getChildFile ("licenses/CC0-1.0.txt").loadFileAsString().contains ("CC0 1.0 Universal"));
+            expect (AmpSimEditor::aboutText().contains ("Bastian Karschewski"));
+            presets::setLibraryRoot ("factory", {});
+            logMessage ("  -> " + juce::String (checked) + " IRs resolved from factory: paths in " + content.getFullPathName() + ", "
+                        + juce::String (bytes) + " bytes in all; every one 48 kHz mono, at most 1 s (longest " + juce::String (longest) + " samples), none cut on load:");
+            for (const auto& row : rows)
+                logMessage ("       " + row);
         }
     }
 };

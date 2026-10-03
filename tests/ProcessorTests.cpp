@@ -4,6 +4,7 @@
 #include "MidiMap.h"
 #include "PluginProcessor.h"
 #include "TestHelpers.h"
+#include "platform/AppInfo.h"
 
 #include <numeric>
 
@@ -674,8 +675,16 @@ public:
                 expect (p.getPresetWarnings().isEmpty(), preset["name"].toString() + ": " + p.getPresetWarnings().joinIntoString ("; "));
                 expect (p.getScenes().get (0).stored && p.getScenes().get (2).stored);
                 expect (preset["notes"].toString().contains ("Load your own captures"));
+                // Close mic 1 starts on a bundled IR, found in the app's content folder (the tests' copy of it).
+                waitForLoads (p);
+                const auto mic1 = juce::File (p.parameters.state.getProperty (AmpSimProcessor::cabPathKey (0)).toString());
+                const auto cabRef = presets::FileRef::fromVar (preset["cab"]["mic1"]);
+                expect (cabRef.path.startsWith ("factory:irs/"), cabRef.path);
+                expect (mic1.existsAsFile() && mic1.isAChildOf (platform::factoryContentFolder()), mic1.getFullPathName());
+                expect (! p.getStatus().cabError[0] && p.getStatus().cab[0] != "No IR", p.getStatus().cab[0]);
                 names.add (preset["name"].toString() + " (" + juce::String ((int) preset["parameters"].getDynamicObject()->getProperties().size())
-                           + " settings, scenes " + p.getScenes().get (0).name + "/" + p.getScenes().get (1).name + "/" + p.getScenes().get (2).name + ")");
+                           + " settings, scenes " + p.getScenes().get (0).name + "/" + p.getScenes().get (1).name + "/" + p.getScenes().get (2).name
+                           + ", close mic 1 \"" + mic1.getFileNameWithoutExtension() + "\")");
             }
             // Spot checks: what each style is about.
             AmpSimProcessor tech;

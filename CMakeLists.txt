@@ -357,6 +357,8 @@ endif()
 add_dependencies(AmpSim_Standalone AmpSimNotices)
 add_custom_command(TARGET AmpSim_Standalone POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${AMPSIM_NOTICES} "${AMPSIM_RESOURCES_DIR}/THIRD_PARTY_NOTICES.txt"
+    # Emptied first, so a bundled file that was renamed or removed doesn't linger in a dev build.
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "${AMPSIM_RESOURCES_DIR}/content"
     COMMAND ${CMAKE_COMMAND} -E ${_copy_dir} ${CMAKE_CURRENT_SOURCE_DIR}/content "${AMPSIM_RESOURCES_DIR}/content"
     COMMENT "Copying the notices and the bundled content into the app"
     VERBATIM)
@@ -477,7 +479,9 @@ target_compile_definitions(ampsim_tests PRIVATE
     JUCE_MODAL_LOOPS_PERMITTED=1
     AMPSIM_NAM_DIR="${NAM_DIR}"
     AMPSIM_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
-    AMPSIM_NAM_RENDER="$<TARGET_FILE:nam_render>")
+    AMPSIM_NAM_RENDER="$<TARGET_FILE:nam_render>"
+    # The built app's own content folder, for the test that bundled IRs resolve inside a real build.
+    AMPSIM_APP_CONTENT_DIR="${AMPSIM_RESOURCES_DIR}/content")
 target_link_libraries(ampsim_tests
     PRIVATE
         AmpSimFactoryPresets
@@ -489,9 +493,12 @@ target_link_libraries(ampsim_tests
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
 add_dependencies(ampsim_tests nam_render AmpSimNotices)
-# The notices sit next to the test binary too, so the tests read the same generated file the app ships.
+# The notices and the bundled content sit next to the test binary too, so the tests read the same
+# generated file and the same content folder (platform::factoryContentFolder()) the app ships.
 add_custom_command(TARGET ampsim_tests POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${AMPSIM_NOTICES} "$<TARGET_FILE_DIR:ampsim_tests>/THIRD_PARTY_NOTICES.txt"
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "$<TARGET_FILE_DIR:ampsim_tests>/content"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/content "$<TARGET_FILE_DIR:ampsim_tests>/content"
     VERBATIM)
 
 add_test(NAME ampsim_tests

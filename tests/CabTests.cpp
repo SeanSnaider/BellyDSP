@@ -1,8 +1,12 @@
+#include "AllocationTracking.h"
 #include "TestHelpers.h"
 #include "dsp/Cab.h"
+#include "platform/AppInfo.h"
 #include "dsp/Loudness.h"
 
 #include <chrono>
+#include <limits>
+#include <tuple>
 #include <complex>
 #include <numeric>
 
@@ -507,6 +511,86 @@ public:
             expectLessThan (mean, 0.25 * deadlineMicros);
             logMessage ("  -> mean " + juce::String (mean, 1) + " us (" + juce::String (100.0 * mean / deadlineMicros, 1)
                         + "% of the deadline), p99 " + juce::String (p99, 1) + " us, worst " + juce::String (micros.back(), 1) + " us");
+        }
+
+        beginTest ("CPU: the longest bundled IR (1 s) in both close mics, 128-sample buffers, against the shortest one and against no IR");
+        {
+            // The bundled IRs (content/irs, copied next to this binary as the app carries them): the
+            // longest and the shortest by sample count.
+            juce::AudioFormatManager formats;
+            formats.registerBasicFormats();
+            juce::File longest, shortest;
+            juce::int64 longestLength = 0, shortestLength = std::numeric_limits<juce::int64>::max();
+            for (const auto& entry : juce::RangedDirectoryIterator (platform::factoryContentFolder().getChildFile ("irs"), true, "*.wav"))
+                if (std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (entry.getFile())); reader != nullptr)
+                {
+                    if (reader->lengthInSamples > longestLength)
+                        std::tie (longest, longestLength) = std::make_pair (entry.getFile(), reader->lengthInSamples);
+                    if (reader->lengthInSamples < shortestLength)
+                        std::tie (shortest, shortestLength) = std::make_pair (entry.getFile(), reader->lengthInSamples);
+                }
+            expect (longest.existsAsFile() && shortest.existsAsFile());
+
+            const auto input = guitarDI ((int) (10.0 * fs));
+            struct Result { double mean = 0.0, p99 = 0.0, worst = 0.0; rtcheck::Counts counts; };
+            const auto time = [&] (const juce::File& ir)
+            {
+                Cab cab;
+                if (ir != juce::File())
+                {
+                    expect (cab.loadCloseMic (0, ir).ok);
+                    expect (cab.loadCloseMic (1, ir).ok);
+                }
+                cab.prepare (fs, blockSize);
+                juce::AudioBuffer<float> buffer (2, blockSize);
+                // JUCE builds each convolution engine on its own background thread: play until both close
+                // mics run their real engines (not the one-sample placeholder), then time 10 s.
+                for (int i = 0; i < 2000 && ir != juce::File() && ! (cab.closeMic (0).isEngineReady() && cab.closeMic (1).isEngineReady()); ++i)
+                {
+                    buffer.clear();
+                    cab.process (juce::dsp::AudioBlock<float> (buffer), {});
+                    juce::Thread::sleep (1);
+                }
+                std::vector<double> micros;
+                micros.reserve (input.size() / blockSize + 1);
+                Result r;
+                for (size_t start = 0; start + blockSize <= input.size(); start += blockSize)
+                {
+                    buffer.copyFrom (0, 0, input.data() + start, blockSize);
+                    rtcheck::begin();
+                    const auto t0 = std::chrono::steady_clock::now();
+                    cab.process (juce::dsp::AudioBlock<float> (buffer), {});
+                    const auto t1 = std::chrono::steady_clock::now();
+                    r.counts += rtcheck::end();
+                    micros.push_back (std::chrono::duration<double, std::micro> (t1 - t0).count());
+                }
+                std::sort (micros.begin(), micros.end());
+                r.mean = std::accumulate (micros.begin(), micros.end(), 0.0) / (double) micros.size();
+                r.p99 = micros[(size_t) (0.99 * (double) (micros.size() - 1))];
+                r.worst = micros.back();
+                return r;
+            };
+            const auto none = time ({}), shortOne = time (shortest), longOne = time (longest);
+            for (const auto* r : { &none, &shortOne, &longOne })
+            {
+                expectEquals (r->counts.allocations, 0L);
+                expectEquals (r->counts.frees, 0L);
+                expectEquals (r->counts.blockingLocks, 0L);
+            }
+            // The verdict for bundling: two 1 s close mics cost little next to the 2667 us deadline.
+            expectLessThan (longOne.mean, 0.05 * deadlineMicros);
+            const auto describe = [] (const Result& r)
+            {
+                return "mean " + juce::String (r.mean, 1) + " us (" + juce::String (100.0 * r.mean / deadlineMicros, 2) + "% of the deadline), p99 "
+                       + juce::String (r.p99, 1) + " us, worst " + juce::String (r.worst, 1) + " us";
+            };
+            logMessage ("  -> no IR: " + describe (none));
+            logMessage ("  -> \"" + shortest.getFileNameWithoutExtension() + "\" (" + juce::String (shortestLength) + " samples) in both close mics: " + describe (shortOne));
+            logMessage ("  -> \"" + longest.getFileNameWithoutExtension() + "\" (" + juce::String (longestLength) + " samples) in both close mics: " + describe (longOne));
+            logMessage ("  -> the 1 s pair costs " + juce::String (longOne.mean - shortOne.mean, 1) + " us more per buffer than the shortest pair; audio thread in all three: "
+                        + juce::String (none.counts.allocations + shortOne.counts.allocations + longOne.counts.allocations) + " allocations, "
+                        + juce::String (none.counts.frees + shortOne.counts.frees + longOne.counts.frees) + " frees, "
+                        + juce::String (none.counts.blockingLocks + shortOne.counts.blockingLocks + longOne.counts.blockingLocks) + " blocking locks");
         }
     }
 };

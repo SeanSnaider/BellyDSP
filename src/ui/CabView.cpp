@@ -1,6 +1,9 @@
 #include "CabView.h"
 #include "LookAndFeel.h"
 
+#include <algorithm>
+#include <map>
+
 namespace ui
 {
 
@@ -26,6 +29,8 @@ bool isPack (const juce::File& folder)
 
 constexpr int columnGap = 40, leftWidth = 220, rightWidth = 240, padTop = 6;
 constexpr int entryHeight = 52, maxVisibleEntries = 6;
+constexpr int groupHeadingHeight = 28, groupHeadingPad = 6; // a 16 px line of 12 px text, 6 above and below
+constexpr int libraryHintHeight = 44;                      // "Put IR files ... in <folder>", up to 3 lines
 constexpr float speakerSize = 380.0f, speakerScale = speakerSize / 400.0f, speakerRadius = 160.0f; // the reference's SVG units
 constexpr float maxRadius = 0.95f; // markers stay inside 95% of the speaker's radius
 } // namespace
@@ -61,10 +66,20 @@ public:
             g.fillRect (0, 0, 1, getHeight());
             return;
         }
+
+        // Group headings (12 px regular, ink-faint: quieter than the card's own 12 px medium heading).
+        g.setFont (geist (Weight::regular, 12.0f));
+        g.setColour (inkFaint);
+        for (const auto& [headingTop, heading] : view.headings)
+            g.drawText (heading, juce::Rectangle<int> (0, headingTop + groupHeadingPad, getWidth(), 16), juce::Justification::centredLeft, true);
+        if (view.libraryHintTop >= 0)
+            g.drawFittedText ("Put IR files or cab pack folders in " + presets::libraryRoot ("irs").getFullPathName(),
+                              juce::Rectangle<int> (14, view.libraryHintTop, getWidth() - 14, libraryHintHeight), juce::Justification::topLeft, 3, 0.9f);
+
         for (int i = 0; i < (int) listed.size(); ++i)
         {
             const auto& e = listed[(size_t) i];
-            const auto row = juce::Rectangle<int> (0, i * entryHeight, getWidth(), entryHeight);
+            const auto row = juce::Rectangle<int> (0, view.entryTops[(size_t) i], getWidth(), entryHeight);
             const auto selected = e.file.getFullPathName() == selectedPath;
             // CSS .cab-opt: padding 10 0 10 14, a 1 px left border; the name 14 medium, the line 12 faint.
             g.setColour (selected ? accent : line2);
@@ -78,9 +93,18 @@ public:
         }
     }
 
+    /// The entry at y in this component, or -1 (a heading, the hint, or below the last entry).
+    int entryAt (int y) const
+    {
+        for (size_t i = 0; i < view.entryTops.size(); ++i)
+            if (y >= view.entryTops[i] && y < view.entryTops[i] + entryHeight)
+                return (int) i;
+        return -1;
+    }
+
     void mouseMove (const juce::MouseEvent& e) override
     {
-        const auto h = e.y / entryHeight;
+        const auto h = entryAt (e.y);
         if (h != hovered)
         {
             hovered = h;
@@ -95,7 +119,8 @@ public:
     void mouseUp (const juce::MouseEvent& e) override
     {
         if (! e.mods.isPopupMenu() && getLocalBounds().contains (e.getPosition()))
-            view.clickEntry (e.y / entryHeight);
+            if (const auto i = entryAt (e.y); i >= 0)
+                view.clickEntry (i);
     }
 
 private:
@@ -405,9 +430,62 @@ CabView::~CabView()
 
 void CabView::rescan()
 {
-    // The library: every cab pack folder (a manifest, or two or more IRs) and every IR file that isn't in
-    // a pack, up to three folders deep, sorted by name.
     entries.clear();
+
+    // Built in: the IRs bundled with the app (content/irs). Each subfolder is one cab, listed under its
+    // own heading; every IR in it is an entry of its own. A folder of bundled IRs is never treated as a
+    // pack (that would map unrelated captures onto mic positions); only one with a cabpack.json is.
+    // The list line under each name is the manifest's "description" for that file.
+    const auto factory = presets::libraryRoot ("factory");
+    std::map<juce::String, juce::String> descriptions;
+    if (const auto manifest = juce::JSON::parse (factory.getChildFile ("manifest.json")); manifest.isObject())
+        if (const auto* files = manifest["files"].getArray())
+            for (const auto& f : *files)
+                descriptions[f["path"].toString()] = f["description"].toString();
+
+    const auto addBuiltIn = [&] (const juce::File& file, const juce::String& cab)
+    {
+        // "Modern 4x12, dynamic, 75 W, var. 1" under "Built in, Modern 4x12" reads "Dynamic, 75 W, var. 1".
+        auto name = file.getFileNameWithoutExtension();
+        if (cab.isNotEmpty() && name.startsWithIgnoreCase (cab + ", "))
+            name = name.substring (cab.length() + 2);
+        name = name.substring (0, 1).toUpperCase() + name.substring (1);
+        const auto relative = file.getRelativePathFrom (factory).replaceCharacter ('\\', '/');
+        const auto it = descriptions.find (relative);
+        const auto description = it != descriptions.end() && it->second.isNotEmpty() ? it->second : juce::String ("Built-in impulse response");
+        entries.push_back ({ file, name, description, false, true, cab.isEmpty() ? juce::String ("Built in") : "Built in, " + cab });
+    };
+    if (const auto builtIn = factory.getChildFile ("irs"); builtIn.isDirectory())
+    {
+        const auto first = entries.size();
+        auto children = builtIn.findChildFiles (juce::File::findFilesAndDirectories, false);
+        for (const auto& child : children)
+        {
+            if (child.isDirectory() && child.getChildFile ("cabpack.json").existsAsFile())
+                entries.push_back ({ child, child.getFileName(), "Cab pack, " + juce::String (audioFilesIn (child)) + " captures", true, true, "Built in" });
+            else if (child.isDirectory())
+            {
+                for (const auto& f : child.findChildFiles (juce::File::findFiles, false))
+                    if (isAudioFile (f))
+                        addBuiltIn (f, child.getFileName());
+            }
+            else if (isAudioFile (child))
+            {
+                addBuiltIn (child, {});
+            }
+        }
+        // Loose files first, then each cab's folder in name order; inside a folder, by name.
+        std::stable_sort (entries.begin() + (std::ptrdiff_t) first, entries.end(), [] (const Entry& a, const Entry& b)
+                          {
+                              if (a.group != b.group)
+                                  return a.group == "Built in" || (b.group != "Built in" && a.group.compareNatural (b.group) < 0);
+                              return a.name.compareNatural (b.name) < 0;
+                          });
+    }
+    const auto numBuiltIn = entries.size();
+
+    // The user's library: every cab pack folder (a manifest, or two or more IRs) and every IR file that
+    // isn't in a pack, up to three folders deep, sorted by name.
     const auto root = presets::libraryRoot ("irs");
     std::function<void (const juce::File&, int)> scan = [&] (const juce::File& folder, int depth)
     {
@@ -418,22 +496,88 @@ void CabView::rescan()
             if (child.isDirectory())
             {
                 if (isPack (child))
-                    entries.push_back ({ child, child.getFileName(), "Cab pack, " + juce::String (audioFilesIn (child)) + " captures", true });
+                    entries.push_back ({ child, child.getFileName(), "Cab pack, " + juce::String (audioFilesIn (child)) + " captures", true, false, "Your library" });
                 else if (depth < 3)
                     scan (child, depth + 1);
             }
             else if (isAudioFile (child))
             {
                 const auto where = folder == root ? juce::String() : ", " + folder.getFileName();
-                entries.push_back ({ child, child.getFileNameWithoutExtension(), "Impulse response" + where, false });
+                entries.push_back ({ child, child.getFileNameWithoutExtension(), "Impulse response" + where, false, false, "Your library" });
             }
         }
     };
-    if (root.isDirectory())
+    if (root.isDirectory() && root != factory.getChildFile ("irs"))
         scan (root, 0);
-    std::stable_sort (entries.begin(), entries.end(), [] (const Entry& a, const Entry& b) { return a.name.compareNatural (b.name) < 0; });
+    std::stable_sort (entries.begin() + (std::ptrdiff_t) numBuiltIn, entries.end(),
+                      [] (const Entry& a, const Entry& b) { return a.name.compareNatural (b.name) < 0; });
     resized();
     list->repaint();
+}
+
+void CabView::layoutList()
+{
+    // Headings only when there's something built in: a library-only list looks as it always did.
+    entryTops.clear();
+    headings.clear();
+    libraryHintTop = -1;
+    const auto anyBuiltIn = std::any_of (entries.begin(), entries.end(), [] (const Entry& e) { return e.builtIn; });
+    int y = 0;
+    juce::String group;
+    for (const auto& e : entries)
+    {
+        if (anyBuiltIn && e.group != group)
+        {
+            group = e.group;
+            headings.push_back ({ y, group });
+            y += groupHeadingHeight;
+        }
+        entryTops.push_back (y);
+        y += entryHeight;
+    }
+    if (anyBuiltIn && group != "Your library")
+    {
+        // Nothing in the user's library yet: its heading, and where to put files.
+        headings.push_back ({ y, "Your library" });
+        y += groupHeadingHeight;
+        libraryHintTop = y;
+        y += libraryHintHeight;
+    }
+    listContentHeight = y;
+}
+
+juce::StringArray CabView::getGroupHeadings() const
+{
+    juce::StringArray result;
+    for (const auto& h : headings)
+        result.add (h.second);
+    return result;
+}
+
+int CabView::getAlignSwitchBottom() const
+{
+    return align->getBottom();
+}
+
+int CabView::entryTop (int index) const
+{
+    return index >= 0 && index < (int) entryTops.size() ? entryTops[(size_t) index] : -1;
+}
+
+void CabView::scrollSelectionIntoView()
+{
+    // When close mic 1's file changes (a preset, Follow, a pick), bring its entry into view if it's listed.
+    if (list->selectedPath == scrolledTo)
+        return;
+    scrolledTo = list->selectedPath;
+    for (size_t i = 0; i < entries.size() && i < entryTops.size(); ++i)
+        if (entries[i].file.getFullPathName() == scrolledTo)
+        {
+            const auto top = entryTops[i], view = listViewport->getViewPositionY(), height = listViewport->getMaximumVisibleHeight();
+            if (top < view || top + entryHeight > view + height)
+                listViewport->setViewPosition (0, juce::jmax (0, top - (i > 0 && entries[i - 1].group != entries[i].group ? groupHeadingHeight : 0)));
+            return;
+        }
 }
 
 void CabView::pick (const juce::File& fileOrPack)
@@ -485,6 +629,7 @@ void CabView::refresh()
     const auto status = ampSim.getStatus();
     list->selectedPath = state.state.getProperty (AmpSimProcessor::cabPathKey (0)).toString();
     list->repaint();
+    scrollSelectionIntoView();
     follow->setToggleState (ampSim.isCabFollowing(), juce::dontSendNotification);
 
     for (int m = 0; m < AmpSimProcessor::numCabMics; ++m)
@@ -584,12 +729,19 @@ void CabView::resized()
     area.removeFromRight (columnGap);
     centreColumn = area;
 
-    // Left: the heading, the list (up to six entries, then it scrolls), Follow, the drop zone.
+    // Left: the heading, the list (up to six entries' height, then it scrolls), Follow, the drop zone.
     auto y = leftColumn.getY() + 16 + 14;
-    const auto rows = juce::jmax (1, juce::jmin ((int) entries.size(), maxVisibleEntries));
-    const auto listHeight = entries.empty() ? 76 : rows * entryHeight;
+    layoutList();
+    // At most six entries' height, and never more than leaves room for everything under the list in this
+    // column (Follow, the drop zone, the room mic, auto-align: the heights laid out below), so a long list
+    // scrolls instead of pushing auto-align off the page.
+    const auto belowList = 12 + 16 + 22 + 66 + 28 + 16 + 12 + 22 + 10 + 16 + 22 + Switch::preferredHeight;
+    const auto fits = leftColumn.getBottom() - y - belowList;
+    const auto maxHeight = juce::jmin (maxVisibleEntries * entryHeight, juce::jmax (groupHeadingHeight + 2 * entryHeight, fits));
+    const auto listHeight = entries.empty() ? 76 : juce::jmin (listContentHeight, maxHeight);
+    const auto scrolls = ! entries.empty() && listContentHeight > maxHeight;
     listViewport->setBounds (leftColumn.getX(), y, leftColumn.getWidth(), listHeight);
-    list->setSize (leftColumn.getWidth() - (entries.size() > (size_t) maxVisibleEntries ? 8 : 0), entries.empty() ? listHeight : (int) entries.size() * entryHeight);
+    list->setSize (leftColumn.getWidth() - (scrolls ? 8 : 0), entries.empty() ? listHeight : listContentHeight);
     y += listHeight + 12;
     follow->setBounds (leftColumn.getX() - Switch::margin, y - Switch::margin, follow->getPreferredWidth(), Switch::preferredHeight);
     y += 16 + 22;

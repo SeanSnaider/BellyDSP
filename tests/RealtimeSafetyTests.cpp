@@ -2,6 +2,7 @@
 #include "MidiMap.h"
 #include "PluginProcessor.h"
 #include "TestHelpers.h"
+#include "platform/AppInfo.h"
 
 namespace
 {
@@ -73,6 +74,10 @@ public:
             writeWav (packFolder.getChildFile ("Cap_4in.wav"), toBuffer (syntheticCabIR (4096, 6.0, 6000.0)));
             writeWav (packFolder.getChildFile ("Edge_4in.wav"), toBuffer (syntheticCabIR (4096, -2.0, 3000.0)));
 
+            // The longest IR bundled with the app (content/irs, copied next to this binary): 1 s.
+            const auto bundledIR = platform::factoryContentFolder().getChildFile ("irs/Modern 4x12/Modern 4x12, dynamic, 75 W, var. 3.wav");
+            expect (bundledIR.existsAsFile(), bundledIR.getFullPathName());
+
             const auto a1 = exampleModel ("wavenet_a1_standard.nam");
             const auto lstm = exampleModel ("lstm.nam");
             const auto small = exampleModel ("wavenet.nam");
@@ -115,6 +120,7 @@ public:
                     case 300:  p.loadModel (1, small); break;                               // capture into a slot that isn't playing
                     case 450:  setParam (p, AmpSimProcessor::slotParamId, 1.0f); break;     // slot 2 from the GUI
                     case 600:  p.loadCabIR (0, irB); break;                                 // IR swap on close mic 1
+                    case 630:  p.loadCabIR (0, bundledIR); break;                           // a built-in 1 s IR (content/irs)
                     case 650:  p.loadCabIR (1, irC); break;                                 // close mic 2 (and auto alignment)
                     case 680:  p.loadCabIR (AmpSimProcessor::roomMic, roomIR); break;       // stereo room mic
                     case 720:  setParam (p, AmpSimProcessor::cabParamId (0, "pan"), -0.6f); break;
@@ -287,7 +293,7 @@ public:
             expectGreaterThan (modelFadeBlocks, 16, "the model loads must have crossfaded during the measurement");
             expectGreaterThan (slotSwitchBlocks, 16, "the slot switches must have crossfaded during the measurement");
             expectEquals (p.getChain().amp.getSelectedSlot(), 0);
-            expect (p.getStatus().cab[0].contains ("rt_ir_b"));
+            expect (p.getStatus().cab[0].contains ("Modern 4x12, dynamic, 75 W, var. 3"), p.getStatus().cab[0]); // the built-in IR replaced rt_ir_b
             expectEquals (p.getCalibrationReloadCount(), 1, "the calibration change must have reloaded the captures during the measurement");
             expectEquals (p.getChain().gateA.getLearnCount(), 1, "the gate Learn must have finished during the measurement");
             using Slot = ampsim::Chain::Slot;

@@ -7,10 +7,13 @@ namespace ui
 
 /// The Cab page (handoff 4.7; ASSUMPTIONS UH8), three columns, 220 / the rest / 240, 40 px apart:
 ///
-///   Cabinet       the cab packs and IR files in the library folder (presets' "irs" root), each a name
-///                 over a line about it, a 1 px left border that turns emerald on the one in close mic 1.
-///                 A click loads it into close mic 1, assigns it to the playing amp slot, and turns
-///                 Follow off. Then "Follow amp choice", and the dashed drop zone (drop a .wav or a pack
+///   Cabinet       first the IRs bundled with the app (platform::factoryContentFolder()/irs, ASSUMPTIONS
+///                 DS25), under a 12 px faint heading per cab folder ("Built in, Modern 4x12"): each IR
+///                 its own entry, never a pack. Then "Your library": the cab packs and IR files in the
+///                 library folder (presets' "irs" root). Each entry is a name over a line about it, a
+///                 1 px left border that turns emerald on the one in close mic 1, and the list scrolls
+///                 past six entries' height. A click loads it into close mic 1, assigns it to the
+///                 playing amp slot, and turns Follow off. Then "Follow amp choice", and the dashed drop zone (drop a .wav or a pack
 ///                 folder; its emerald Browse opens the file chooser).
 ///   Speaker       the line-drawn speaker at 380 px with mic A (close mic 1, emerald) and mic B (close
 ///                 mic 2, ink). A marker's distance from the centre over the speaker's radius is the
@@ -36,18 +39,25 @@ public:
     /// Follow off.
     void pick (const juce::File& fileOrPack);
 
-    /// The library's entries, as listed (rescanned each time the page shows).
+    /// The list's entries, built-in ones first (rescanned each time the page shows).
     struct Entry
     {
         juce::File file;
         juce::String name, description;
         bool pack = false;
+        bool builtIn = false;  ///< bundled with the app (content/irs), not from the user's library
+        juce::String group;    ///< the heading it's listed under: "Built in, Modern 4x12", "Your library"
     };
     const std::vector<Entry>& getEntries() const noexcept { return entries; }
     void rescan();
 
     /// For tests: click a library entry; a mic marker's centre (in this page's coordinates); drag a mic.
     void clickEntry (int index);
+    /// For tests: the group headings as listed, an entry's top in the list, and the list's viewport.
+    juce::StringArray getGroupHeadings() const;
+    int entryTop (int index) const;
+    juce::Viewport& getListViewport() noexcept { return *listViewport; }
+    int getAlignSwitchBottom() const; ///< the lowest control in the left column, which must stay on the page
     juce::Point<float> markerPosition (int mic) const;
     void dragMarker (int mic, juce::Point<float> from, juce::Point<float> to);
     juce::String getReadout() const;
@@ -93,6 +103,14 @@ private:
     juce::Label *roomLabel = nullptr, *roomLevelLabel = nullptr, *roomPreDelayLabel = nullptr;
 
     std::vector<Entry> entries;
+    // The list's layout: each entry's top, each group heading's top and text, the total height, and
+    // where the "your library is empty" hint goes (-1 for none).
+    std::vector<int> entryTops;
+    std::vector<std::pair<int, juce::String>> headings;
+    int listContentHeight = 0, libraryHintTop = -1;
+    juce::String scrolledTo;
+    void layoutList();
+    void scrollSelectionIntoView();
     juce::Rectangle<int> leftColumn, centreColumn, rightColumn, roomHeading;
     std::array<int, 2> micTops {}, micBottoms {};
     juce::String readout;

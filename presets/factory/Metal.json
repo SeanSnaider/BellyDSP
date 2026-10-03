@@ -1,7 +1,7 @@
 {
   "format_version": 2,
   "name": "Metal",
-  "notes": "Slot 1: a high-gain capture. Slot 2: a crunch. Slot 3: a clean. Load your own captures and cab IRs; these settings are starting points to tune by ear.",
+  "notes": "Slot 1: a high-gain capture. Slot 2: a crunch. Slot 3: a clean. Close mic 1 starts on a built-in modern 4x12 IR (pick another on the Cab page). Load your own captures; these settings are starting points to tune by ear.",
   "parameters": {
     "amp_slot": 0,
     "gate_a_on": 1,
@@ -40,9 +40,9 @@
   ],
   "cab": {
     "mic1": {
-      "path": "",
-      "hash": "",
-      "size": 0
+      "path": "factory:irs/Modern 4x12/Modern 4x12, dynamic, bright 60 W, var. 3.wav",
+      "hash": "fnv1a64:2812ce5e498bcbbb",
+      "size": 144044
     },
     "mic2": {
       "path": "",

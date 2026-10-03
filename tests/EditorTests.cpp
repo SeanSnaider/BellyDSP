@@ -3,6 +3,7 @@
 
 #include "PluginEditor.h"
 #include "Presets.h"
+#include "platform/AppInfo.h"
 #include "TestHelpers.h"
 
 namespace
@@ -221,6 +222,10 @@ public:
             writeWav (library.getChildFile ("4x12 vintage.wav"), toBuffer (syntheticCabIR (4096, 3.0, 4500.0)));
             writeWav (library.getChildFile ("4x12 modern.wav"), toBuffer (syntheticCabIR (4096, 5.0, 6000.0)));
             presets::setLibraryRoot ("irs", library);
+            // This test is about the user's library: an app with nothing bundled (the next test has the IRs).
+            const auto noContent = tempDir().getChildFile ("no_factory_content");
+            noContent.createDirectory();
+            presets::setLibraryRoot ("factory", noContent);
 
             AmpSimProcessor p;
             p.prepareToPlay (fs, blockSize);
@@ -290,12 +295,140 @@ public:
             cab.rescan();
             expect (cab.getEntries().empty());
             presets::setLibraryRoot ("irs", {});
+            presets::setLibraryRoot ("factory", {});
 
             expect (listed);
             logMessage ("  -> the library listed " + juce::String (listedCount) + " cabs (a pack, two IRs); a click loaded the pack into close mic 1, "
                         "assigned it to slot 1, and turned Follow off; readouts: \"" + juce::String ("Mic A Cap, Mic B Cone") + "\", after dragging A to the edge \""
                         + zoneAtEdge.replace ("|", " ") + "\" (pos_x " + juce::String (clamped, 3) + "), with an IR in mic B \"" + withIR.replace ("|", " ")
                         + "\" (its marker dimmed and fixed); with IRs in both: \"Load a pack to move mics\"");
+        }
+
+        beginTest ("cab page: the built-in IRs come first, one entry each under a heading per cab (never a pack); names fit; the list scrolls; a pick saves as factory:irs/...");
+        {
+            // The real bundled content: the build copies content/ next to the test binary, the same files
+            // the app carries (platform::factoryContentFolder()). A small user library goes under it.
+            presets::setLibraryRoot ("factory", {});
+            const auto library = tempDir().getChildFile ("cab_library_with_builtins");
+            library.deleteRecursively();
+            library.createDirectory();
+            writePack (library.getChildFile ("2x12 open back"));
+            writeWav (library.getChildFile ("My 1x12.wav"), toBuffer (syntheticCabIR (4096, 3.0, 4500.0)));
+            presets::setLibraryRoot ("irs", library);
+
+            const auto manifest = juce::JSON::parse (platform::factoryContentFolder().getChildFile ("manifest.json"));
+            int bundledIRs = 0;
+            if (const auto* files = manifest["files"].getArray())
+                for (const auto& f : *files)
+                    bundledIRs += f["path"].toString().startsWith ("irs/") ? 1 : 0;
+
+            AmpSimProcessor p;
+            p.prepareToPlay (fs, blockSize);
+            p.parameters.state.setProperty ("presetName", "Tech Death", nullptr);
+            std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+            auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
+            ed.showPage (ui::PageId::cab);
+            auto& cab = ed.getCabView();
+            const auto& entries = cab.getEntries();
+
+            int builtIn = 0, builtInPacks = 0, firstLibrary = -1;
+            bool builtInFirst = true;
+            for (int i = 0; i < (int) entries.size(); ++i)
+            {
+                const auto& e = entries[(size_t) i];
+                if (e.builtIn)
+                {
+                    ++builtIn;
+                    builtInPacks += e.pack ? 1 : 0;
+                    builtInFirst = builtInFirst && firstLibrary < 0;
+                    expect (e.file.existsAsFile() && e.file.isAChildOf (platform::factoryContentFolder()), e.file.getFullPathName());
+                }
+                else if (firstLibrary < 0)
+                {
+                    firstLibrary = i;
+                }
+            }
+            expectEquals (bundledIRs, 21);
+            expectEquals (builtIn, bundledIRs);
+            expectEquals (builtInPacks, 0);
+            expect (builtInFirst);
+            expectEquals ((int) entries.size(), bundledIRs + 2);
+            expect (firstLibrary >= 0 && entries[(size_t) firstLibrary].pack && entries[(size_t) firstLibrary].name == "2x12 open back"); // the library's pack is still a pack
+            const auto headings = cab.getGroupHeadings();
+            expect (headings == juce::StringArray { "Built in, Modern 4x12", "Built in, Vintage 4x12", "Your library" }, headings.joinIntoString (" / "));
+
+            // Every built-in name and line fits its row: 220 px less the 14 px indent and the 8 px scrollbar.
+            auto& viewport = cab.getListViewport();
+            const auto textArea = viewport.getViewedComponent()->getWidth() - 14;
+            float widest = 0.0f;
+            juce::String widestName;
+            for (const auto& e : entries)
+            {
+                const auto w = ui::theme::textWidth (ui::theme::geist (ui::theme::Weight::medium, 14.0f), e.name);
+                const auto d = ui::theme::textWidth (ui::theme::geist (ui::theme::Weight::regular, 12.0f), e.description);
+                expect (w <= (float) textArea && d <= (float) textArea, e.name + " (" + juce::String (w, 1) + " px) / " + e.description + " (" + juce::String (d, 1) + " px)");
+                if (e.builtIn && w > widest)
+                {
+                    widest = w;
+                    widestName = e.name;
+                }
+            }
+
+            // Six entries' height, then it scrolls (the viewport was already there; now it's needed).
+            const auto contentHeight = viewport.getViewedComponent()->getHeight();
+            expect (viewport.getHeight() <= 6 * 52 && viewport.getHeight() >= 28 + 2 * 52, juce::String (viewport.getHeight()));
+            expect (cab.getAlignSwitchBottom() <= cab.getHeight(), "auto-align is cut off: " + juce::String (cab.getAlignSwitchBottom()) + " > " + juce::String (cab.getHeight()));
+            expect (contentHeight > viewport.getHeight());
+            expect (viewport.canScrollVertically());
+
+            // A pick: the flattest modern IR loads into close mic 1 as a single IR, and a saved preset
+            // refers to it as factory:irs/...
+            int pickIndex = -1;
+            for (int i = 0; i < (int) entries.size(); ++i)
+                if (entries[(size_t) i].file.getFileName() == "Modern 4x12, dynamic, bright 60 W, var. 3.wav")
+                    pickIndex = i;
+            expect (pickIndex >= 0);
+            cab.clickEntry (pickIndex);
+            waitForLoads (p);
+            p.runHousekeeping();
+            ed.refresh();
+            const auto picked = entries[(size_t) pickIndex].file;
+            expectEquals (p.parameters.state.getProperty (AmpSimProcessor::cabPathKey (0)).toString(), picked.getFullPathName());
+            expect (p.getCabPackPoints (0).empty()); // a plain IR: no positions
+            expect (! p.getStatus().cabError[0]);
+            expect (p.getStatus().cab[0].contains ("bright 60 W, var. 3"), p.getStatus().cab[0]);
+            const auto saved = p.capturePreset ("With a built-in cab");
+            const auto mic1 = presets::FileRef::fromVar (saved["cab"]["mic1"]);
+            const auto assigned = presets::FileRef::fromVar (saved["cab_assign"][0]);
+            expectEquals (mic1.path, juce::String ("factory:irs/Modern 4x12/Modern 4x12, dynamic, bright 60 W, var. 3.wav"));
+            expectEquals (assigned.path, mic1.path);
+            expectEquals (presets::makeRef (picked, "irs").path, mic1.path);
+            expect (mic1.hash.startsWith ("fnv1a64:") && mic1.size == picked.getSize());
+
+            // The selection scrolled into view: the picked entry's row is inside the viewport.
+            const auto top = cab.entryTop (pickIndex);
+            const auto viewY = viewport.getViewPositionY();
+            const auto visibleAfterPick = top >= viewY && top + 52 <= viewY + viewport.getHeight();
+
+            // Snapshots: the top of the list (as a friend first sees it), then scrolled to the end.
+            viewport.setViewPosition (0, 0);
+            expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), proofDir().getChildFile ("editor_cab_builtin.png")));
+            viewport.setViewPosition (0, contentHeight);
+            expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), proofDir().getChildFile ("editor_cab_builtin_end.png")));
+            expect (visibleAfterPick);
+
+            presets::setLibraryRoot ("irs", {});
+            library.deleteRecursively();
+            juce::StringArray firstRows;
+            for (int i = 0; i < 4; ++i)
+                firstRows.add (entries[(size_t) i].name + " | " + entries[(size_t) i].description);
+            logMessage ("  -> " + juce::String (builtIn) + " built-in IRs (0 packs) under \"" + headings.joinIntoString ("\", \"") + "\", then the library's "
+                        + juce::String ((int) entries.size() - builtIn) + " (its pack still a pack); the list is " + juce::String (contentHeight)
+                        + " px tall in a " + juce::String (viewport.getHeight()) + " px viewport, so it scrolls");
+            logMessage ("  -> first rows: " + firstRows.joinIntoString ("; "));
+            logMessage ("  -> widest built-in name \"" + widestName + "\": " + juce::String (widest, 1) + " px of " + juce::String (textArea) + " px");
+            logMessage ("  -> picked \"" + entries[(size_t) pickIndex].name + "\": close mic 1 \"" + p.getStatus().cab[0] + "\", saved as \"" + mic1.path + "\" ("
+                        + mic1.hash + ", " + juce::String (mic1.size) + " bytes), also assigned to slot 1; scrolled into view: " + (visibleAfterPick ? "yes" : "no"));
         }
 
         beginTest ("tuner page: a real tone through the tuner thread, in tune and 13 cents sharp; strings, targeting, tunings; compared with the handoff");

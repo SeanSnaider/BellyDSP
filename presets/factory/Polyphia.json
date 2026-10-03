@@ -1,7 +1,7 @@
 {
   "format_version": 2,
   "name": "Polyphia",
-  "notes": "Slot 1: a bright modern clean capture. Slot 2: a crunch. Slot 3: a high-gain capture. Load your own captures and cab IRs; these settings are starting points to tune by ear.",
+  "notes": "Slot 1: a bright modern clean capture. Slot 2: a crunch. Slot 3: a high-gain capture. Close mic 1 starts on a built-in vintage 4x12 IR (pick another on the Cab page). Load your own captures; these settings are starting points to tune by ear.",
   "parameters": {
     "amp_slot": 0,
     "comp_pre_on": 1,
@@ -46,9 +46,9 @@
   ],
   "cab": {
     "mic1": {
-      "path": "",
-      "hash": "",
-      "size": 0
+      "path": "factory:irs/Vintage 4x12/Vintage 4x12, dynamic, upper, var. 2.wav",
+      "hash": "fnv1a64:98c45c47b2379dc4",
+      "size": 26388
     },
     "mic2": {
       "path": "",
