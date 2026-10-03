@@ -7,10 +7,10 @@
 namespace ui
 {
 
-/// The Pre FX and Post FX pages (ASSUMPTIONS H1): a row of tabs for the section's blocks in their current
+/// The Pre FX and Post FX pages (ASSUMPTIONS UH1): a row of tabs for the section's blocks in their current
 /// order, each with its own on dot, and the selected block's editor below. Dragging a tab reorders the
 /// section (the same setSectionOrder() call, applied with the chain's click-free dip). The pre section's
-/// gate tab holds both gates, with a Gate A / Gate B switch at the right of the tab row (H2).
+/// gate tab holds both gates, with a Gate A / Gate B switch at the right of the tab row (UH2).
 class SectionPage final : public ControlGroup
 {
 public:
@@ -48,7 +48,7 @@ private:
     BlockPage* shown = nullptr;
 };
 
-/// The EQ node's page (H1): the post EQ, with tabs to switch to the pre EQ (which is also on the Pre FX
+/// The EQ node's page (UH1): the post EQ, with tabs to switch to the pre EQ (which is also on the Pre FX
 /// page; one editor, shown wherever it was asked for last).
 class EqView final : public ControlGroup
 {
@@ -76,7 +76,7 @@ private:
 /// A page header in the effect pages' style: the title (15 px medium) and a line about it (12 px faint).
 void paintPageHeader (juce::Graphics& g, juce::Rectangle<int> area, const juce::String& title, const juce::String& subtitle);
 
-/// The Input page (H1, H4): the input gain, the input calibration, and a note on where the guitar comes in.
+/// The Input page (UH1): the input gain, the input calibration, and a note on where the guitar comes in.
 class InputPage final : public ControlGroup
 {
 public:
@@ -91,7 +91,7 @@ private:
     juce::Label *interfaceLabel = nullptr, *calibrationNote = nullptr, *routingNote = nullptr;
 };
 
-/// The Output page (H4): the output level, A/B compare with Copy, the tempo with Tap, the CPU meter, the
+/// The Output page (UH6): the output level, A/B compare with Copy, the tempo with Tap, the CPU meter, the
 /// eight scenes with Store, and the footswitch's controllers with the list of MIDI mappings.
 class OutputPage final : public ControlGroup
 {

@@ -178,7 +178,7 @@ public:
             position[(size_t) m] = p.parameters.getParameter (AmpSimProcessor::cabParamId (m, "pos_x"));
     }
 
-    // The markers' angles: for looks only, never saved (H8). The reference's starting places.
+    // The markers' angles: for looks only, never saved (UH8). The reference's starting places.
     std::array<float, 2> angle { std::atan2 (-0.05f, -0.12f), std::atan2 (0.30f, 0.42f) };
     std::array<bool, 2> hasPack {};
 

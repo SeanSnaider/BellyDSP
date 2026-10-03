@@ -14,7 +14,7 @@ namespace ui
 /// optional icon before the name (the amp tabs' 30 x 20 minis), an optional bypass dot after it, 12 px of
 /// padding under the text, a 1 px emerald underline on the selected tab, and a 1 px line under the row.
 ///
-/// With onReorder set, a tab can be dragged along the row (ASSUMPTIONS H1): the others make room where it
+/// With onReorder set, a tab can be dragged along the row (ASSUMPTIONS UH1): the others make room where it
 /// will land, and dropping it reports the new order. A short wiggle is a click, not a drag.
 class TabRow final : public juce::Component
 {

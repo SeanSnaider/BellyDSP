@@ -5,7 +5,7 @@
 namespace ui
 {
 
-/// The Cab page (handoff 4.7; ASSUMPTIONS H8), three columns, 220 / the rest / 240, 40 px apart:
+/// The Cab page (handoff 4.7; ASSUMPTIONS UH8), three columns, 220 / the rest / 240, 40 px apart:
 ///
 ///   Cabinet       the cab packs and IR files in the library folder (presets' "irs" root), each a name
 ///                 over a line about it, a 1 px left border that turns emerald on the one in close mic 1.

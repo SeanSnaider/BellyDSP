@@ -15,7 +15,7 @@ namespace ui
 /// It reads the processor's tuner (its own thread analyses the DI) 30 times a second while showing. The
 /// current string is the one nearest the note heard, unless one has been clicked: then the note and the
 /// cents are measured against that string, so a string far out (or dropped) can be brought to it; a second
-/// click on it lets go (ASSUMPTIONS H9). Strings that have been in tune this session turn emerald. The
+/// click on it lets go (ASSUMPTIONS UH9). Strings that have been in tune this session turn emerald. The
 /// tuning is the app's view state, saved with it, never a parameter.
 class TunerPage final : public ControlGroup, private juce::Timer
 {

@@ -10,7 +10,7 @@
 namespace ui
 {
 
-/// The output spectrum under the amp (handoff 6, option 1; ASSUMPTIONS H13): the analyzer's post tap (the
+/// The output spectrum under the amp (handoff 6, option 1; ASSUMPTIONS UH13): the analyzer's post tap (the
 /// chain's output), 4096-point Hann-windowed FFTs off the audio thread, smoothed over time and over 1/6 of
 /// an octave, drawn as a 1.5 px emerald line over a faint emerald fill fading to transparent, on a log
 /// axis from 20 Hz to 20 kHz with gridlines at 100 Hz, 1 kHz, and 10 kHz, a dashed 0 dB line, and 11 px
@@ -53,7 +53,7 @@ private:
 /// its metadata, its file, and 48 kHz or a message), the output spectrum, and the shared strip (Input,
 /// Gate with its open light, Output).
 ///
-/// Each slot's seven knobs are its own parameters (ASSUMPTIONS H3): Gain is the slot's input trim, Master
+/// Each slot's seven knobs are its own parameters (ASSUMPTIONS UH3): Gain is the slot's input trim, Master
 /// its output trim, the rest its tone bands; all show 0 to 10 with one decimal (5.0 is 0 dB). Switching
 /// slots (a tab, the footswitch, a scene) swaps the head's materials and its knobs.
 class AmpView final : public ControlGroup, private juce::Timer

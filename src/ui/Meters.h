@@ -10,7 +10,7 @@ namespace ui
 /// A peak meter (handoff 4.3: the top bar's In and Out): the label in 11 px ink-faint, then a 56 x 2 bar on
 /// a -60 to 0 dBFS scale, emerald on line-2. It keeps a peak hold (1.5 s) and a clip latch that a click
 /// clears; the hold shows as a 1 px ink-dim tick and a latched clip as an ink cap at the bar's end (no
-/// warning colours, H5). The editor feeds it the processor's peaks 30 times a second (the audio thread
+/// warning colours, UH5). The editor feeds it the processor's peaks 30 times a second (the audio thread
 /// only writes atomics); it falls at 24 dB a second and repaints only when what it shows changes.
 class LevelMeter final : public juce::Component, public juce::SettableTooltipClient
 {

@@ -16,11 +16,11 @@ using ui::IgnoresRightClick;
 using ToggleControl = ui::IgnoresRightClick<juce::ToggleButton>;
 
 /// The GUI, after the UI handoff (docs/ui/amp-ui-handoff/; BUILD_PLAN "GUI"). A fixed 1280 x 760 canvas,
-/// scaled uniformly to the window and letterboxed (ASSUMPTIONS H11): the top bar (56), the main area
+/// scaled uniformly to the window and letterboxed (ASSUMPTIONS UH11): the top bar (56), the main area
 /// (padding 18 top, 40 sides, 16 bottom) showing one page, and the signal chain along the bottom (72),
 /// whose blocks open the pages: Input, Pre FX, Amp, EQ, Cab, Post FX, Output. The top bar's Tuner opens
 /// the tuner page. Messages (the sample rate, MIDI learn, a preset's problems) show on the Amp page's info
-/// row, and elsewhere in a 12 px line at the bottom-left of the main area (H5).
+/// row, and elsewhere in a 12 px line at the bottom-left of the main area (UH5).
 class AmpSimEditor final : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:

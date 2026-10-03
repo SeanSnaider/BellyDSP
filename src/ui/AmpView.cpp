@@ -379,7 +379,7 @@ AmpView::AmpView (AmpSimProcessor& p) : ControlGroup (p), tabs (p), spectrum (p)
     addAndMakeVisible (*info);
     addAndMakeVisible (spectrum);
 
-    // The shared strip (handoff 4.5, without the Doubler: ASSUMPTIONS H7).
+    // The shared strip (handoff 4.5, without the Doubler: ASSUMPTIONS UH7).
     input = &addKnob ("input_gain", "Input", " dB", Knob::Size::compact);
     threshold = &addKnob ("gate_a_threshold", "Threshold", " dB", Knob::Size::compact);
     threshold->setFormatter ([] (float v) { return juce::String (juce::roundToInt (v)) + " dB"; });
@@ -541,7 +541,7 @@ void AmpView::resized()
     grille->setBounds (inHead (AmpHead::grilleBox()));
 
     // The panel: padding 0 22; the 96 px side column holds the jewel (centred, as the CSS does without
-    // the toggles: H4), 20 px, then the knobs spread evenly (space-between) over the rest.
+    // the toggles: UH4), 20 px, then the knobs spread evenly (space-between) over the rest.
     const auto panel = AmpHead::panelBox().translated ((float) head.getX(), (float) head.getY());
     jewel.setBounds (juce::Rectangle<int> (30, 30).withCentre ({ juce::roundToInt (panel.getX() + 22.0f + 9.0f), juce::roundToInt (panel.getCentreY()) }));
     const auto knobsLeft = panel.getX() + 22.0f + 96.0f + 20.0f, knobsWidth = panel.getRight() - 22.0f - knobsLeft;

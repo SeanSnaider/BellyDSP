@@ -174,7 +174,7 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p) : AudioProcessorEditor (&p), amp
     addMouseListener (this, true); // right-clicks anywhere, for MIDI learn; every press starts an undo step
     setWantsKeyboardFocus (true);
 
-    // The app's view state: the page last shown, and the window's size (H11; the old UI scale key is
+    // The app's view state: the page last shown, and the window's size (UH11; the old UI scale key is
     // left alone and no longer used).
     const auto& state = ampSim.parameters.state;
     auto first = P::amp;
@@ -226,7 +226,7 @@ juce::Rectangle<int> AmpSimEditor::getCanvasBounds() const
 void AmpSimEditor::resized()
 {
     // The canvas keeps its 1280 x 760 layout and is scaled uniformly to fit, centred: letterboxed in the
-    // darker colour when the window's aspect differs (H11).
+    // darker colour when the window's aspect differs (UH11).
     canvasScale = juce::jmin ((float) getWidth() / (float) canvasWidth, (float) getHeight() / (float) canvasHeight);
     const auto target = getCanvasBounds();
     canvas->setBounds (0, 0, canvasWidth, canvasHeight);
@@ -530,7 +530,7 @@ void AmpSimEditor::loadCapture (int slot)
 
 void AmpSimEditor::showCaptureMenu (int slot, juce::Component& near)
 {
-    // The old slot card's functions, on a right-click at the grille or the model's name (H12).
+    // The old slot card's functions, on a right-click at the grille or the model's name (UH12).
     juce::PopupMenu menu;
     const auto safe = juce::Component::SafePointer<AmpSimEditor> (this);
     const auto path = ampSim.parameters.state.getProperty (AmpSimProcessor::modelPathKey (slot)).toString();
@@ -553,7 +553,7 @@ void AmpSimEditor::showCaptureMenu (int slot, juce::Component& near)
 void AmpSimEditor::showMicMenu (int mic, juce::Component& near)
 {
     // A mic's file: load an IR (or, for a close mic, a cab pack), or clear it. Close mic 1's loads count as
-    // picks: they're assigned to the playing amp slot (H8).
+    // picks: they're assigned to the playing amp slot (UH8).
     juce::PopupMenu menu;
     const auto safe = juce::Component::SafePointer<AmpSimEditor> (this);
     const auto load = [safe, mic] (const juce::File& f)
@@ -675,7 +675,7 @@ juce::PopupMenu AmpSimEditor::sceneMenuFor (int index)
 
 bool AmpSimEditor::keyPressed (const juce::KeyPress& key)
 {
-    // Undo and redo have no buttons in the handoff's frame: Cmd-Z and Shift-Cmd-Z (H6).
+    // Undo and redo have no buttons in the handoff's frame: Cmd-Z and Shift-Cmd-Z (UH6).
     if (key == juce::KeyPress ('z', juce::ModifierKeys::commandModifier, 0))
     {
         ampSim.parameters.copyState();

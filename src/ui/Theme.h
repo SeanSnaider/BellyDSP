@@ -10,7 +10,7 @@
 ///
 /// The chrome is dark with hairlines and one accent, emerald, which only ever means "active, on, or
 /// correct" (handoff section 3). There are no warning colours: a warning is written in words, in the
-/// neutral inks (ASSUMPTIONS H5).
+/// neutral inks (ASSUMPTIONS UH5).
 namespace ui::theme
 {
 
@@ -28,7 +28,7 @@ inline const juce::Colour accentDim { 0x2434d399 }; // rgba(52, 211, 153, 0.14):
 inline const juce::Colour letterbox { 0xff050606 }; // around the 1280 x 760 canvas when the window's aspect differs
 
 // ---- Colour: the older names the effect pages were written with, mapped onto the tokens ----------
-// (The undesigned pages keep their layouts; ASSUMPTIONS H1. These keep them in the new palette.)
+// (The undesigned pages keep their layouts; ASSUMPTIONS UH1. These keep them in the new palette.)
 
 inline const juce::Colour background = bg;
 inline const juce::Colour surfaceRaised = surface;
@@ -38,7 +38,7 @@ inline const juce::Colour textDim = inkDim;
 inline const juce::Colour accentSoft = accentDim;
 inline const juce::Colour onAccent = bg;
 inline const juce::Colour good = accent;   // in range, signal present
-inline const juce::Colour warn = ink;      // was amber: now the text itself carries the warning (H5)
+inline const juce::Colour warn = ink;      // was amber: now the text itself carries the warning (UH5)
 inline const juce::Colour error = ink;     // was red: likewise
 inline const juce::Colour sectionPre = inkFaint;
 inline const juce::Colour sectionAmp = inkFaint;
@@ -175,7 +175,7 @@ constexpr int captionHeight = 16; // a knob's label
 
 // ---- Layout (handoff 2) --------------------------------------------------------------------------
 
-/// The fixed logical canvas. The window scales it uniformly and letterboxes it (H11).
+/// The fixed logical canvas. The window scales it uniformly and letterboxes it (UH11).
 constexpr int canvasWidth = 1280, canvasHeight = 760;
 constexpr int topBarHeight = 56;
 constexpr int chainHeight = 72;

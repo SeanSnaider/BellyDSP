@@ -97,7 +97,7 @@ private:
 /// One effect block's editor, shown under its tab on the Pre FX or Post FX page (or on the EQ page). A
 /// header (the block's name, where it sits, and its switch) over the block's controls, all built from the
 /// shared components and attached to their parameters. These pages kept their layouts from before the UI
-/// handoff, restyled in its tokens (ASSUMPTIONS H1). Pages exist all the time; only the selected one is
+/// handoff, restyled in its tokens (ASSUMPTIONS UH1). Pages exist all the time; only the selected one is
 /// visible, and only it is refreshed.
 class BlockPage : public ControlGroup
 {

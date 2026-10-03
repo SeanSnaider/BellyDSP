@@ -8,7 +8,7 @@ namespace ui
 {
 
 /// The three amp heads' materials (handoff 4.6): slot 1 wears Glass, slot 2 Ember, slot 3 Monolith, always
-/// (ASSUMPTIONS H12). The names are invented and appear on the badges and tabs.
+/// (ASSUMPTIONS UH12). The names are invented and appear on the badges and tabs.
 enum class Material
 {
     glass,
@@ -65,7 +65,7 @@ private:
 };
 
 /// The pilot light (handoff 4.6): an 18 px jewel, lit emerald with a glow while the slot has a capture
-/// loaded, dark otherwise (H4).
+/// loaded, dark otherwise (UH4).
 class PilotJewel final : public juce::Component, public juce::SettableTooltipClient
 {
 public:

@@ -14,7 +14,7 @@ namespace ui
 ///           "User", 12 px faint) in a 300 x 32 box, the next arrow, and Save (outlined)
 ///   right   the Tuner button (the note it hears in emerald while the tuner is engaged, "-" otherwise;
 ///           a 1 px emerald underline while the tuner page is open), then the In and Out meters
-/// A click on the name opens the preset browser; the arrows step through the presets (H6). The editor
+/// A click on the name opens the preset browser; the arrows step through the presets (UH6). The editor
 /// wires the buttons to what they do.
 class TopBar final : public juce::Component
 {
