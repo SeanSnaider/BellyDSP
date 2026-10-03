@@ -9,19 +9,20 @@ namespace ui
 
 using namespace theme;
 
-/// The brand: a 7 px emerald dot, 8 px, then "rig" (15 px semibold), exactly as the handoff draws it. It's
-/// also the handle of a small menu (the version, "Check for updates...", the licences), so it looks the
-/// same at rest and only the cursor and the tooltip say it can be clicked (ASSUMPTIONS DS9).
+/// The brand: a 7 px emerald dot, 8 px, then the product's name, "BellyDSP" (15 px semibold), where the
+/// handoff draws its placeholder "rig". It's also the handle of a small menu (the version, the licence,
+/// "Check for updates...", the source, the notices), so it looks the same at rest and only the cursor
+/// and the tooltip say it can be clicked (ASSUMPTIONS DS9).
 class TopBar::BrandButton final : public juce::Button
 {
 public:
-    BrandButton() : juce::Button ("rig")
+    BrandButton() : juce::Button (platform::productName)
     {
-        setTooltip ("Amp Sim " + platform::appVersion() + ": updates and licences");
+        setTooltip (juce::String (platform::productName) + " " + platform::appVersion() + ": updates, source, and licences");
         setMouseCursor (juce::MouseCursor::PointingHandCursor);
     }
 
-    static int preferredWidth() { return 15 + (int) std::ceil (textWidth (font(), "rig")) + 2; }
+    static int preferredWidth() { return 15 + (int) std::ceil (textWidth (font(), platform::productName)) + 2; }
 
     void paintButton (juce::Graphics& g, bool, bool) override
     {
@@ -30,7 +31,7 @@ public:
         g.fillEllipse (juce::Rectangle<float> (7.0f, 7.0f).withCentre ({ 3.5f, h * 0.5f }));
         g.setFont (font());
         g.setColour (ink);
-        g.drawText ("rig", juce::Rectangle<float> (15.0f, 0.0f, (float) getWidth() - 15.0f, h), juce::Justification::centredLeft, false);
+        g.drawText (platform::productName, juce::Rectangle<float> (15.0f, 0.0f, (float) getWidth() - 15.0f, h), juce::Justification::centredLeft, false);
     }
 
 private:

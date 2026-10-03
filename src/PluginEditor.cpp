@@ -537,9 +537,13 @@ juce::PopupMenu AmpSimEditor::brandMenu()
 {
     juce::PopupMenu menu;
     const auto safe = juce::Component::SafePointer<AmpSimEditor> (this);
-    menu.addItem ("Amp Sim " + platform::appVersion(), false, false, nullptr);
+    // Two labels, then the commands. The licence line and the source link are the AGPL's "Appropriate
+    // Legal Notices" and its offer of the Corresponding Source (sections 5 and 13), one click away.
+    menu.addItem (juce::String (platform::productName) + " " + platform::appVersion(), false, false, nullptr);
+    menu.addItem ("Free software under the GNU AGPL v3 or later", false, false, nullptr);
     menu.addSeparator();
     menu.addItem ("Check for updates...", platform::updater::isRunning(), false, [] { platform::updater::checkNow(); });
+    menu.addItem ("Source code for this version", [] { juce::URL (platform::sourceUrlForThisVersion()).launchInDefaultBrowser(); });
     menu.addItem ("About / licenses", [safe] { if (safe != nullptr) safe->showAbout(); });
     return menu;
 }
@@ -547,8 +551,10 @@ juce::PopupMenu AmpSimEditor::brandMenu()
 juce::String AmpSimEditor::aboutText()
 {
     juce::String about;
-    about << "Amp Sim " << platform::appVersion() << "\n"
-          << "Sean Snaider's guitar amp sim, with NAM captures running on NeuralAmpModelerCore.\n"
+    about << platform::productName << " " << platform::appVersion() << "\n"
+          << "Sean Snaider's guitar amp sim and multi-effects, with NAM captures running on NeuralAmpModelerCore.\n"
+          << "Copyright (C) 2026 Sean Snaider. Free software under the GNU AGPL v3 or later, with ABSOLUTELY NO WARRANTY.\n"
+          << "Source code for this version: " << platform::sourceUrlForThisVersion() << "\n"
           << platform::updater::describe() << ".\n\n";
     const auto notices = platform::noticesFile();
     if (notices.existsAsFile())
@@ -574,7 +580,7 @@ void AmpSimEditor::showAbout()
     editor->setSize (640, 520);
 
     juce::DialogWindow::LaunchOptions options;
-    options.dialogTitle = "About Amp Sim";
+    options.dialogTitle = "About " + juce::String (platform::productName);
     options.content.setOwned (editor.release());
     options.componentToCentreAround = this;
     options.dialogBackgroundColour = bg;

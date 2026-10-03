@@ -6,7 +6,7 @@
 #import <Foundation/Foundation.h>
 #import <Sparkle/Sparkle.h>
 
-// Sparkle 2 (sparkle-project.org), embedded in Amp Sim.app/Contents/Frameworks by CMakeLists.txt.
+// Sparkle 2 (sparkle-project.org), embedded in BellyDSP.app/Contents/Frameworks by CMakeLists.txt.
 //
 // Everything about the schedule is in Info.plist (CMakeLists.txt, AMPSIM_PLIST_TO_MERGE):
 //   SUFeedURL                 the appcast: GitHub's "latest release" asset URL, which redirects to the

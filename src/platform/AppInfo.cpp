@@ -14,6 +14,31 @@ juce::String appVersion()
     return AMPSIM_VERSION_STRING;
 }
 
+juce::String sourceUrl()
+{
+   #ifdef AMPSIM_SOURCE_URL_STRING
+    if (const juce::String url (AMPSIM_SOURCE_URL_STRING); url.isNotEmpty())
+        return url.trimCharactersAtEnd ("/");
+   #endif
+    return "https://github.com/SeanSnaider/BellyDSP";
+}
+
+juce::String sourceUrlForThisVersion()
+{
+    return sourceUrl() + "/tree/v" + appVersion();
+}
+
+juce::File userDataFolder()
+{
+    // userApplicationDataDirectory is ~/Library on macOS and %APPDATA% (Roaming) on Windows.
+    const auto base = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory);
+   #if JUCE_MAC
+    return base.getChildFile ("Application Support").getChildFile (productName);
+   #else
+    return base.getChildFile (productName);
+   #endif
+}
+
 juce::File resourcesFolder()
 {
     const auto app = juce::File::getSpecialLocation (juce::File::currentApplicationFile);

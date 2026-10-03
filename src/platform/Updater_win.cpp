@@ -8,11 +8,11 @@
 #include <winsparkle.h>
 
 // WinSparkle (winsparkle.org), the Windows counterpart of Sparkle. WinSparkle.dll ships next to
-// "Amp Sim.exe" (CMakeLists.txt copies it; the installer installs it).
+// "BellyDSP.exe" (CMakeLists.txt copies it; the installer installs it).
 //
 // What a friend sees: once a day (and at launch when a day has passed) WinSparkle reads
 // appcast-windows.xml from the latest GitHub release. If there's a newer version it shows its own
-// "A new version of Amp Sim is available" dialog (Install update / Remind me later / Skip this version).
+// "A new version of BellyDSP is available" dialog (Install update / Remind me later / Skip this version).
 // "Install update" downloads the installer, checks its Ed25519 signature against the key below, asks the
 // app to quit (the callbacks below), and runs it with the appcast's installer arguments (silent, per-user,
 // so no UAC prompt), which reopens the app when it's done. WinSparkle has no fully silent mode: the
@@ -40,7 +40,7 @@ struct Session final : public juce::DeletedAtShutdown
     {
         win_sparkle_set_appcast_url (AMPSIM_FEED_URL);
         win_sparkle_set_eddsa_public_key (AMPSIM_ED_PUBLIC_KEY);
-        win_sparkle_set_app_details (L"Sean Snaider", L"Amp Sim", juce::String (AMPSIM_VERSION_STRING).toWideCharPointer());
+        win_sparkle_set_app_details (L"Sean Snaider", L"BellyDSP", juce::String (AMPSIM_VERSION_STRING).toWideCharPointer());
 
         // Explicitly on, so WinSparkle doesn't ask "check automatically?" on the second launch.
         win_sparkle_set_automatic_check_for_updates (1);

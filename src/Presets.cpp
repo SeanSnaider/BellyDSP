@@ -77,26 +77,13 @@ juce::StringArray toStrings (const juce::var& v)
 }
 } // namespace
 
-namespace
-{
-juce::File userDataFolder()
-{
-    // ~/Library/Application Support/AmpSim on macOS, %APPDATA%\AmpSim on Windows.
-   #if JUCE_MAC
-    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getChildFile ("Application Support/AmpSim");
-   #else
-    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getChildFile ("AmpSim");
-   #endif
-}
-} // namespace
-
 juce::File libraryRoot (const juce::String& kind)
 {
     if (const auto it = libraryRoots().find (kind); it != libraryRoots().end())
         return it->second;
     if (kind == "factory")
         return platform::factoryContentFolder();
-    return userDataFolder().getChildFile (kind);
+    return platform::userDataFolder().getChildFile (kind); // ~/Library/Application Support/BellyDSP/<kind>
 }
 
 void setLibraryRoot (const juce::String& kind, const juce::File& folder)
@@ -301,7 +288,7 @@ ApplyResult validate (const juce::var& preset)
     if (version < 1)
         result.error = "Not a preset (no format_version)";
     else if (version > formatVersion)
-        result.error = "This preset was saved by a newer version of Amp Sim (format " + juce::String (version) + "; this one reads up to "
+        result.error = "This preset was saved by a newer version of BellyDSP (format " + juce::String (version) + "; this one reads up to "
                        + juce::String (formatVersion) + ")";
     else if (! preset.getProperty ("parameters", {}).isObject())
         result.error = "The preset has no parameters";
@@ -434,7 +421,7 @@ juce::Array<juce::var> factoryPresets()
 
 juce::File defaultFolder()
 {
-    return userDataFolder().getChildFile ("presets");
+    return platform::userDataFolder().getChildFile ("presets");
 }
 
 bool save (const juce::var& preset, const juce::File& file)

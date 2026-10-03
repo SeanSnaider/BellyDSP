@@ -12,13 +12,15 @@ namespace ui
 
 /// The top bar (handoff 4.3), 56 high with a 1 px line along the bottom, 24 px in from each side, 20 px
 /// between its three parts:
-///   left    the brand: a 7 px emerald dot and "rig", 15 px semibold, in a 136 px column
+///   left    the brand: a 7 px emerald dot and "BellyDSP" (the handoff's placeholder was "rig"), 15 px
+///           semibold, in a 136 px column
 ///   centre  the previous-preset arrow, the preset's name (14 px medium) with its tag ("Factory" or
 ///           "User", 12 px faint) in a 300 x 32 box, the next arrow, and Save (outlined)
 ///   right   the Tuner button (the note it hears in emerald while the tuner is engaged, "-" otherwise;
 ///           a 1 px emerald underline while the tuner page is open), then the In and Out meters
 /// A click on the name opens the preset browser; the arrows step through the presets (UH6). A click on the
-/// brand opens a small menu with the version, "Check for updates...", and the licences (ASSUMPTIONS DS9).
+/// brand opens a small menu with the version, the licence, "Check for updates...", the source code, and the
+/// licences (ASSUMPTIONS DS9).
 /// The editor wires the buttons to what they do.
 class TopBar final : public juce::Component
 {

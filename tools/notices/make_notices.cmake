@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Sean Snaider
 
-# Generates THIRD_PARTY_NOTICES.txt: every third-party component and every bundled capture or IR that
-# ships inside Amp Sim, each with its licence text, read from the actual licence files in the
-# submodules, the downloaded frameworks, and content/. Runs in CMake's script mode at build time
-# (CMakeLists.txt, target AmpSimNotices), so it needs nothing but CMake:
+# Generates THIRD_PARTY_NOTICES.txt: BellyDSP's own licence notice first, then every third-party
+# component and every bundled capture or IR that ships inside it, each with its licence text, read from
+# the actual licence files in LICENSE, the submodules, the downloaded frameworks, and content/. Runs in
+# CMake's script mode at build time (CMakeLists.txt, target AmpSimNotices), so it needs nothing but CMake:
 #
 #   cmake -DSRC=<repo> -DOUT=<file> -DVERSION=0.1.0 -DPLATFORM=macOS [-DSPARKLE_DIR=...] [-DWINSPARKLE_DIR=...]
 #         [-DWITH_ASIO=ON] [-DJUCE_LICENCE=undecided|AGPLv3|JUCE] [-DSOURCE_URL=...] -P make_notices.cmake
@@ -94,13 +94,37 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.")
 
+# ---- BellyDSP itself ---------------------------------------------------------------------------
+if(NOT DEFINED SOURCE_URL OR SOURCE_URL STREQUAL "")
+    set(SOURCE_URL "https://github.com/SeanSnaider/BellyDSP")
+endif()
+set(notice "BellyDSP ${VERSION}
+Copyright (C) 2026 Sean Snaider
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option) any
+later version (SPDX: AGPL-3.0-or-later).
+
+This program comes with ABSOLUTELY NO WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+Affero General Public License for more details.
+
+Source code: ${SOURCE_URL}
+The source of this exact version: ${SOURCE_URL}/tree/v${VERSION}")
+component("BellyDSP ${VERSION} (${SOURCE_URL})"
+    "The app itself, under the GNU Affero General Public License, version 3 or later. Its
+full text follows (LICENSE in the source, LICENSE.txt next to this file). Copyright (C)
+2026 Sean Snaider. Source code: ${SOURCE_URL}"
+    "${SRC}/LICENSE")
+
 # ---- JUCE ------------------------------------------------------------------------------------
 if(JUCE_LICENCE STREQUAL "AGPLv3")
-    set(juce_terms "Amp Sim uses JUCE under the GNU Affero General Public License v3. As the AGPLv3
-requires, the complete source code of this version of Amp Sim is available to
-everyone who receives it: ${SOURCE_URL}")
+    set(juce_terms "BellyDSP uses JUCE under the GNU Affero General Public License v3. As the AGPLv3
+requires, the complete source code of this version of BellyDSP is available to
+everyone who receives it: ${SOURCE_URL}/tree/v${VERSION}")
 elseif(JUCE_LICENCE STREQUAL "JUCE")
-    set(juce_terms "Amp Sim uses JUCE under the JUCE 8 licence (https://juce.com/legal/juce-8-licence/).")
+    set(juce_terms "BellyDSP uses JUCE under the JUCE 8 licence (https://juce.com/legal/juce-8-licence/).")
 else()
     set(juce_terms "JUCE is dual-licensed under the AGPLv3 and the JUCE 8 licence. (Which of the two
 applies to this build hasn't been decided yet: see docs/RELEASING.md, \"Licences\".)")
@@ -234,10 +258,12 @@ else()
 endif()
 
 # ---- Write -------------------------------------------------------------------------------------
-set(header "Amp Sim ${VERSION} (${PLATFORM}): third-party notices
+set(header "BellyDSP ${VERSION} (${PLATFORM}): licence and third-party notices
 ${rule}
 
-Amp Sim is made by Sean Snaider. It includes the software and content below, each
+${notice}
+
+BellyDSP is made by Sean Snaider. It includes the software and content below, each
 under its own licence, reproduced in full. Thanks to everyone who made them.
 
 Contents:

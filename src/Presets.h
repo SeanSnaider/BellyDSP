@@ -20,7 +20,7 @@ class AmpSimProcessor;
 ///
 ///     <file> = { "path": "models/High gain/Lead.nam", "hash": "fnv1a64:0123456789abcdef", "size": 123456 }
 ///     The path is relative to the library root ("models/" or "irs/", under ~/Library/Application Support/
-///     AmpSim) when the file is inside it, absolute otherwise. A file that has moved is found again by
+///     BellyDSP) when the file is inside it, absolute otherwise. A file that has moved is found again by
 ///     searching the library for the same size and content hash; one that's truly gone loads as an empty
 ///     slot with a warning, and the rest of the preset still loads.
 ///     A file bundled with the app (content/ in the repo, docs/RELEASING.md "Bundled content") is
@@ -46,7 +46,7 @@ namespace presets
 constexpr int formatVersion = 2;
 
 /// The library roots relinking searches: "models" for captures, "irs" for cab IRs and packs. Default
-/// ~/Library/Application Support/AmpSim/<kind> (%APPDATA%\AmpSim\<kind> on Windows); tests point them
+/// ~/Library/Application Support/BellyDSP/<kind> (%APPDATA%\BellyDSP\<kind> on Windows); tests point them
 /// elsewhere. "factory" is the app's bundled content (platform::factoryContentFolder()), which
 /// "factory:" paths resolve against and relinking also searches.
 juce::File libraryRoot (const juce::String& kind);
@@ -109,7 +109,7 @@ ApplyResult apply (AmpSimProcessor& processor, const juce::var& preset);
 /// Checks a preset without applying it.
 ApplyResult validate (const juce::var& preset);
 
-/// ~/Library/Application Support/AmpSim/presets (%APPDATA%\AmpSim\presets on Windows)
+/// ~/Library/Application Support/BellyDSP/presets (%APPDATA%\BellyDSP\presets on Windows)
 juce::File defaultFolder();
 
 /// The factory presets (the five style presets), in the plan's order. They set the sound and its scenes

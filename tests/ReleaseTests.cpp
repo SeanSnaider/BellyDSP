@@ -54,7 +54,7 @@ public:
 
     void runTest() override
     {
-        beginTest ("the version comes from the VERSION file, and the brand menu shows it with Check for updates and the licences");
+        beginTest ("the version comes from the VERSION file, and the brand menu shows it with the licence, Check for updates, the source, and the licences");
         {
             const auto versionFile = juce::File (AMPSIM_SOURCE_DIR).getChildFile ("VERSION").loadFileAsString().trim();
             const auto version = platform::appVersion();
@@ -67,22 +67,47 @@ public:
             std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
             const auto entries = entriesOf (ed.brandMenu());
-            expectEquals ((int) entries.size(), 3);
-            expectEquals (entries[0].text, "Amp Sim " + version);
+            expectEquals ((int) entries.size(), 5);
+            expectEquals (entries[0].text, "BellyDSP " + version);
             expect (! entries[0].enabled); // a label, not a command
-            expectEquals (entries[1].text, juce::String ("Check for updates..."));
-            expect (! entries[1].enabled); // the tests' processor isn't the standalone app: no updater runs
-            expectEquals (entries[2].text, juce::String ("About / licenses"));
-            expect (entries[2].enabled);
+            expectEquals (entries[1].text, juce::String ("Free software under the GNU AGPL v3 or later"));
+            expect (! entries[1].enabled);
+            expectEquals (entries[2].text, juce::String ("Check for updates..."));
+            expect (! entries[2].enabled); // the tests' processor isn't the standalone app: no updater runs
+            expectEquals (entries[3].text, juce::String ("Source code for this version"));
+            expect (entries[3].enabled);
+            expectEquals (entries[4].text, juce::String ("About / licenses"));
+            expect (entries[4].enabled);
             expect (! platform::updater::isRunning());
 
+            // Where "Source code for this version" goes: the public repo at this version's tag.
+            expectEquals (platform::sourceUrl(), juce::String ("https://github.com/SeanSnaider/BellyDSP"));
+            expectEquals (platform::sourceUrlForThisVersion(), "https://github.com/SeanSnaider/BellyDSP/tree/v" + version);
+
+            // The brand reads "BellyDSP" (the handoff's placeholder was "rig") and fits its 136 px column.
             auto& brand = ed.getTopBar().getBrandButton();
+            expectEquals (brand.getName(), juce::String ("BellyDSP"));
             expect (brand.isVisible() && brand.getX() == 24 && brand.getRight() <= 24 + 136, brand.getBounds().toString());
             juce::String shown;
             for (const auto& e : entries)
                 shown << (shown.isEmpty() ? "" : " | ") << e.text << (e.enabled ? "" : " (disabled)");
-            logMessage ("  -> VERSION file " + versionFile + ", this build " + version + "; the brand (\"rig\", "
-                        + brand.getBounds().toString() + ") opens: " + shown);
+            logMessage ("  -> VERSION file " + versionFile + ", this build " + version + "; the brand (\"" + brand.getName() + "\", "
+                        + brand.getBounds().toString() + ", " + juce::String (brand.getWidth()) + " of the 136 px column) opens: " + shown);
+            logMessage ("  -> source code for this version: " + platform::sourceUrlForThisVersion());
+
+            // The amp page with the new brand, at 2x, and the brand's corner on its own.
+            const auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f);
+            const auto shot = proofDir().getChildFile ("editor_brand_bellydsp.png");
+            const auto corner = image.getClippedImage ({ 0, 0, 2 * (24 + 136 + 40), 2 * 56 });
+            const auto cornerShot = proofDir().getChildFile ("editor_brand_bellydsp_corner.png");
+            for (const auto& [img, file] : { std::pair { image, shot }, std::pair { corner, cornerShot } })
+            {
+                file.deleteFile();
+                juce::FileOutputStream stream (file);
+                expect (stream.openedOk() && juce::PNGImageFormat().writeImageToStream (img, stream), file.getFullPathName());
+            }
+            logMessage ("  -> snapshots: " + shot.getFileName() + " (" + juce::String (image.getWidth()) + " x " + juce::String (image.getHeight())
+                        + "), " + cornerShot.getFileName());
             logMessage ("  -> updater in this build: " + platform::updater::describe());
         }
 
@@ -92,6 +117,10 @@ public:
             expect (notices.existsAsFile(), notices.getFullPathName());
             const auto about = AmpSimEditor::aboutText();
             const char* required[] = {
+                "BellyDSP", "Copyright (C) 2026 Sean Snaider",                  // BellyDSP's own notice first
+                "GNU Affero General Public License", "either version 3 of the License, or (at your option) any",
+                "ABSOLUTELY NO WARRANTY", "https://github.com/SeanSnaider/BellyDSP",
+                "GNU AFFERO GENERAL PUBLIC LICENSE", "Version 3, 19 November 2007", // the AGPLv3 text, from LICENSE
                 "JUCE 8.0.15", "AGPLv3",                                        // JUCE and its dual licence
                 "NeuralAmpModelerCore", "Copyright (c) 2023 Steven Atkinson",    // NAM core's MIT licence, from its LICENSE
                 "Eigen", "Mozilla Public License Version 2.0",                   // Eigen's MPL2 text, from COPYING.MPL2
@@ -105,7 +134,18 @@ public:
                 if (! about.contains (text))
                     missing.add (text);
             expect (missing.isEmpty(), "missing from the notices: " + missing.joinIntoString (", "));
-            expect (about.startsWith ("Amp Sim " + platform::appVersion()));
+            expect (about.startsWith ("BellyDSP " + platform::appVersion()));
+            expect (about.contains ("Source code for this version: https://github.com/SeanSnaider/BellyDSP/tree/v" + platform::appVersion()));
+            // The notices start with BellyDSP's own licence, then JUCE (under the AGPLv3), then the rest.
+            const auto text = notices.loadFileAsString();
+            const auto ownAt = text.indexOf ("1. BellyDSP"), juceAt = text.indexOf ("2. JUCE 8.0.15");
+            expect (text.startsWith ("BellyDSP " + platform::appVersion()) && ownAt > 0 && juceAt > ownAt, juce::String (ownAt) + " " + juce::String (juceAt));
+            expect (text.contains ("BellyDSP uses JUCE under the GNU Affero General Public License v3"));
+            expect (! text.containsIgnoreCase ("Amp Sim"));
+            // LICENSE ships next to the notices (in the app: Contents/Resources/LICENSE.txt), unmodified.
+            const auto licence = notices.getSiblingFile ("LICENSE.txt");
+            expect (licence.existsAsFile() && licence.loadFileAsString() == juce::File (AMPSIM_SOURCE_DIR).getChildFile ("LICENSE").loadFileAsString(),
+                    licence.getFullPathName());
             const auto lines = juce::StringArray::fromLines (notices.loadFileAsString());
             logMessage ("  -> " + notices.getFileName() + ": " + juce::String (lines.size()) + " lines, " + juce::String (notices.getSize())
                         + " bytes; its contents list:");
@@ -198,7 +238,7 @@ public:
 
         beginTest ("bundled IRs: each one in the manifest resolves from its factory: path inside the built app, is 48 kHz and at most 1 s, loads in the cab, and names no brand");
         {
-            // The built app's content folder (Amp Sim.app/Contents/Resources/content), when the app has been
+            // The built app's content folder (BellyDSP.app/Contents/Resources/content), when the app has been
             // built in this build tree; otherwise the copy next to this test binary (the same files).
             const juce::File appContent (AMPSIM_APP_CONTENT_DIR);
             const auto content = appContent.isDirectory() ? appContent : platform::factoryContentFolder();

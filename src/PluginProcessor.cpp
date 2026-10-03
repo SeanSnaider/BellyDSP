@@ -3,12 +3,13 @@
 
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "platform/DataMigration.h"
 
 AmpSimProcessor::AmpSimProcessor()
     : AudioProcessor (BusesProperties()
                           .withInput ("Input", juce::AudioChannelSet::mono(), true)
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
-      parameters (*this, &undoManager, "AmpSim", createParameterLayout())
+      parameters (*this, &undoManager, "AmpSim", createParameterLayout()) // the state's root tag: saved state and sessions carry it, so it keeps the codename
 {
     // Give every parameter its default through the path a preset or a host uses (normalized value to
     // plain value, snapped to its step). Constructed defaults on skewed ranges are off in their last
@@ -1164,3 +1165,20 @@ juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new AmpSimProcessor();
 }
+
+#if defined(JucePlugin_Build_Standalone) && JucePlugin_Build_Standalone
+namespace
+{
+// The app was called "Amp Sim" until 2026-10-03; copy its data folder and settings file to BellyDSP's
+// names once (src/platform/DataMigration.h). This has to happen before JUCE's standalone wrapper opens
+// its settings file, which it does in the application object's constructor and createPluginHolder(),
+// before createPluginFilter() is ever called, so it runs as a static initializer: on the main thread
+// (the one that becomes the message thread), before main(), long before any audio thread exists. Only in
+// the standalone app; the tests run migrate() on temporary folders instead.
+[[maybe_unused]] const bool legacyDataMigrated = []
+{
+    platform::migration::runAtStartup();
+    return true;
+}();
+} // namespace
+#endif

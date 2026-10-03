@@ -37,7 +37,7 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/tools/release/release.conf"
     "${CMAKE_CURRENT_SOURCE_DIR}/tools/deps.conf")
 
-project(AmpSim VERSION ${AMPSIM_VERSION} LANGUAGES C CXX)
+project(BellyDSP VERSION ${AMPSIM_VERSION} LANGUAGES C CXX)
 
 # ---------------------------------------------------------------------------------------------
 # Release options. A plain `cmake -B build` (Sean's dev build) leaves them all off: native arch, no
@@ -45,8 +45,6 @@ project(AmpSim VERSION ${AMPSIM_VERSION} LANGUAGES C CXX)
 option(AMPSIM_UPDATER "Embed the auto-updater (Sparkle on macOS, WinSparkle on Windows): release builds" OFF)
 option(AMPSIM_WITH_ASIO "Windows: build with ASIO driver support (licensing: docs/RELEASING.md)" OFF)
 set(AMPSIM_X86_SIMD "AVX" CACHE STRING "x86_64 baseline instruction set for the Intel slice and Windows: AVX or SSE2")
-set(AMPSIM_JUCE_LICENCE "undecided" CACHE STRING "How JUCE is licensed, for the notices: undecided, AGPLv3, or JUCE")
-set(AMPSIM_SOURCE_URL "" CACHE STRING "Where recipients can get the source (required by the AGPLv3 if that's the JUCE licence)")
 
 # Values from tools/release/release.conf and tools/deps.conf (KEY=VALUE lines), unless given with -D.
 function(ampsim_conf key file out)
@@ -62,6 +60,11 @@ function(ampsim_conf key file out)
 endfunction()
 ampsim_conf(RELEASES_REPO "${CMAKE_CURRENT_SOURCE_DIR}/tools/release/release.conf" AMPSIM_RELEASES_REPO)
 ampsim_conf(ED_PUBLIC_KEY "${CMAKE_CURRENT_SOURCE_DIR}/tools/release/release.conf" AMPSIM_ED_PUBLIC_KEY)
+# How JUCE is licensed (AGPLv3: BellyDSP is AGPL-3.0-or-later, LICENSE) and where the source is, for the
+# notices and the brand menu's "Source code for this version". Every build reads them from release.conf,
+# so a dev build says the same as a release.
+ampsim_conf(JUCE_LICENCE "${CMAKE_CURRENT_SOURCE_DIR}/tools/release/release.conf" AMPSIM_JUCE_LICENCE)
+ampsim_conf(SOURCE_URL "${CMAKE_CURRENT_SOURCE_DIR}/tools/release/release.conf" AMPSIM_SOURCE_URL)
 ampsim_conf(SPARKLE_VERSION "${CMAKE_CURRENT_SOURCE_DIR}/tools/deps.conf" AMPSIM_SPARKLE_VERSION)
 ampsim_conf(WINSPARKLE_VERSION "${CMAKE_CURRENT_SOURCE_DIR}/tools/deps.conf" AMPSIM_WINSPARKLE_VERSION)
 
@@ -203,14 +206,16 @@ set(AMPSIM_JUCE_DEFINITIONS
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
-    AMPSIM_VERSION_STRING="${PROJECT_VERSION}")
+    AMPSIM_VERSION_STRING="${PROJECT_VERSION}"
+    AMPSIM_SOURCE_URL_STRING="${AMPSIM_SOURCE_URL}")
 if(WIN32 AND AMPSIM_WITH_ASIO)
     # ASIO, from the SDK headers JUCE bundles (Steinberg's ASIO licence or GPLv3: docs/RELEASING.md).
     list(APPEND AMPSIM_JUCE_DEFINITIONS JUCE_ASIO=1)
 endif()
 
-# Where the app finds out about itself (version, bundled files): compiled into the app and the tests.
-set(AMPSIM_PLATFORM_SOURCES src/platform/AppInfo.cpp)
+# Where the app finds out about itself (name, version, source, bundled files, the user's folder) and the
+# one-time copy of the user's files from the old name: compiled into the app and the tests.
+set(AMPSIM_PLATFORM_SOURCES src/platform/AppInfo.cpp src/platform/DataMigration.cpp)
 
 # ---------------------------------------------------------------------------------------------
 # The auto-updater (docs/RELEASING.md). Off: a no-op. On: Sparkle 2 on macOS, WinSparkle on Windows,
@@ -255,12 +260,12 @@ endif()
 
 # ---------------------------------------------------------------------------------------------
 # The app. FORMATS Standalone builds a macOS .app; adding VST3 or AU later is a one-word change.
-juce_add_plugin(AmpSim
+juce_add_plugin(BellyDSP
     COMPANY_NAME "Sean Snaider"
-    PRODUCT_NAME "Amp Sim"
-    BUNDLE_ID com.seansnaider.ampsim
+    PRODUCT_NAME "BellyDSP"
+    BUNDLE_ID com.seansnaider.bellydsp
     PLUGIN_MANUFACTURER_CODE Ssna
-    PLUGIN_CODE Amps
+    PLUGIN_CODE Bdsp
     FORMATS Standalone
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT TRUE          # for the footswitch later
@@ -268,10 +273,10 @@ juce_add_plugin(AmpSim
     IS_MIDI_EFFECT FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
     MICROPHONE_PERMISSION_ENABLED TRUE
-    MICROPHONE_PERMISSION_TEXT "Amp Sim needs audio input to hear your guitar."
+    MICROPHONE_PERMISSION_TEXT "BellyDSP needs audio input to hear your guitar."
     ${AMPSIM_PLIST_ARGS})
 
-target_sources(AmpSim PRIVATE
+target_sources(BellyDSP PRIVATE
     src/PluginProcessor.cpp
     src/PluginEditor.cpp
     ${AMPSIM_PLATFORM_SOURCES}
@@ -300,9 +305,9 @@ juce_add_binary_data(AmpSimFonts HEADER_NAME "FontData.h" NAMESPACE FontData SOU
     resources/fonts/Geist/Geist-SemiBold.ttf
     resources/fonts/Fraunces/Fraunces-SemiBoldItalic.ttf)
 
-target_include_directories(AmpSim PRIVATE src)
-target_compile_definitions(AmpSim PUBLIC ${AMPSIM_JUCE_DEFINITIONS})
-target_link_libraries(AmpSim
+target_include_directories(BellyDSP PRIVATE src)
+target_compile_definitions(BellyDSP PUBLIC ${AMPSIM_JUCE_DEFINITIONS})
+target_link_libraries(BellyDSP
     PRIVATE
         AmpSimFactoryPresets
         AmpSimFonts
@@ -315,8 +320,9 @@ target_link_libraries(AmpSim
         juce::juce_recommended_warning_flags)
 
 # ---------------------------------------------------------------------------------------------
-# What ships inside the app besides the code: the licence notices (generated from the actual licence
-# files; tools/notices/make_notices.cmake), the bundled content (content/), and the updater's framework.
+# What ships inside the app besides the code: BellyDSP's licence (LICENSE), the licence notices (generated
+# from the actual licence files; tools/notices/make_notices.cmake), the bundled content (content/), and
+# the updater's framework.
 set(AMPSIM_NOTICES "${CMAKE_BINARY_DIR}/THIRD_PARTY_NOTICES.txt")
 if(WIN32 AND AMPSIM_WITH_ASIO)
     set(_asio ON)
@@ -353,13 +359,15 @@ else()
     set(_copy_dir copy_directory)
 endif()
 if(APPLE)
-    set(AMPSIM_RESOURCES_DIR "$<TARGET_BUNDLE_CONTENT_DIR:AmpSim_Standalone>/Resources")
+    set(AMPSIM_RESOURCES_DIR "$<TARGET_BUNDLE_CONTENT_DIR:BellyDSP_Standalone>/Resources")
 else()
-    set(AMPSIM_RESOURCES_DIR "$<TARGET_FILE_DIR:AmpSim_Standalone>")
+    set(AMPSIM_RESOURCES_DIR "$<TARGET_FILE_DIR:BellyDSP_Standalone>")
 endif()
-add_dependencies(AmpSim_Standalone AmpSimNotices)
-add_custom_command(TARGET AmpSim_Standalone POST_BUILD
+add_dependencies(BellyDSP_Standalone AmpSimNotices)
+add_custom_command(TARGET BellyDSP_Standalone POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${AMPSIM_NOTICES} "${AMPSIM_RESOURCES_DIR}/THIRD_PARTY_NOTICES.txt"
+    # BellyDSP's own licence (the AGPLv3 text), next to the notices, so every copy carries it.
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_SOURCE_DIR}/LICENSE "${AMPSIM_RESOURCES_DIR}/LICENSE.txt"
     # Emptied first, so a bundled file that was renamed or removed doesn't linger in a dev build.
     COMMAND ${CMAKE_COMMAND} -E rm -rf "${AMPSIM_RESOURCES_DIR}/content"
     COMMAND ${CMAKE_COMMAND} -E ${_copy_dir} ${CMAKE_CURRENT_SOURCE_DIR}/content "${AMPSIM_RESOURCES_DIR}/content"
@@ -368,29 +376,29 @@ add_custom_command(TARGET AmpSim_Standalone POST_BUILD
 
 if(AMPSIM_UPDATER AND APPLE)
     # Sparkle.framework goes in Contents/Frameworks; the executable finds it through an rpath. Its
-    # XPCServices (Installer.xpc, Downloader.xpc) are only for sandboxed apps, and Amp Sim isn't one, so
+    # XPCServices (Installer.xpc, Downloader.xpc) are only for sandboxed apps, and BellyDSP isn't one, so
     # they're left out. After that the framework's own (ad-hoc) seal no longer matches, so the bundle is
     # re-signed ad hoc here; the release script signs it properly afterwards (tools/release/sign_app.sh).
-    target_compile_options(AmpSim PRIVATE "-F${AMPSIM_SPARKLE_DIR}")
-    target_link_libraries(AmpSim PUBLIC "-F${AMPSIM_SPARKLE_DIR}" "-framework Sparkle")
-    target_link_options(AmpSim_Standalone PRIVATE "-Wl,-rpath,@executable_path/../Frameworks")
-    set(_frameworks "$<TARGET_BUNDLE_CONTENT_DIR:AmpSim_Standalone>/Frameworks")
-    add_custom_command(TARGET AmpSim_Standalone POST_BUILD
+    target_compile_options(BellyDSP PRIVATE "-F${AMPSIM_SPARKLE_DIR}")
+    target_link_libraries(BellyDSP PUBLIC "-F${AMPSIM_SPARKLE_DIR}" "-framework Sparkle")
+    target_link_options(BellyDSP_Standalone PRIVATE "-Wl,-rpath,@executable_path/../Frameworks")
+    set(_frameworks "$<TARGET_BUNDLE_CONTENT_DIR:BellyDSP_Standalone>/Frameworks")
+    add_custom_command(TARGET BellyDSP_Standalone POST_BUILD
         COMMAND rm -rf "${_frameworks}/Sparkle.framework"
         COMMAND mkdir -p "${_frameworks}"
         COMMAND ditto "${AMPSIM_SPARKLE_DIR}/Sparkle.framework" "${_frameworks}/Sparkle.framework"
         COMMAND rm -rf "${_frameworks}/Sparkle.framework/Versions/B/XPCServices" "${_frameworks}/Sparkle.framework/XPCServices"
-        COMMAND codesign --force --deep --sign - "$<TARGET_BUNDLE_DIR:AmpSim_Standalone>"
+        COMMAND codesign --force --deep --sign - "$<TARGET_BUNDLE_DIR:BellyDSP_Standalone>"
         COMMENT "Embedding Sparkle.framework (without its sandbox-only XPC services)"
         VERBATIM)
 elseif(AMPSIM_UPDATER AND WIN32)
-    target_include_directories(AmpSim PRIVATE "${AMPSIM_WINSPARKLE_DIR}/include")
-    target_link_libraries(AmpSim PUBLIC "${AMPSIM_WINSPARKLE_DIR}/x64/Release/WinSparkle.lib")
-    target_compile_definitions(AmpSim PRIVATE
+    target_include_directories(BellyDSP PRIVATE "${AMPSIM_WINSPARKLE_DIR}/include")
+    target_link_libraries(BellyDSP PUBLIC "${AMPSIM_WINSPARKLE_DIR}/x64/Release/WinSparkle.lib")
+    target_compile_definitions(BellyDSP PRIVATE
         AMPSIM_FEED_URL="${AMPSIM_FEED_URL}"
         AMPSIM_ED_PUBLIC_KEY="${AMPSIM_ED_PUBLIC_KEY}")
-    add_custom_command(TARGET AmpSim_Standalone POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${AMPSIM_WINSPARKLE_DIR}/x64/Release/WinSparkle.dll" "$<TARGET_FILE_DIR:AmpSim_Standalone>"
+    add_custom_command(TARGET BellyDSP_Standalone POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${AMPSIM_WINSPARKLE_DIR}/x64/Release/WinSparkle.dll" "$<TARGET_FILE_DIR:BellyDSP_Standalone>"
         COMMENT "Copying WinSparkle.dll next to the app"
         VERBATIM)
 endif()
@@ -464,6 +472,7 @@ target_sources(ampsim_tests PRIVATE
     tests/HandoffEngineTests.cpp
     tests/EditorTests.cpp
     tests/ReleaseTests.cpp
+    tests/MigrationTests.cpp
     tests/CaptureTests.cpp
     tools/capture/CaptureEngine.cpp
     src/PluginProcessor.cpp
@@ -502,6 +511,7 @@ add_dependencies(ampsim_tests nam_render AmpSimNotices)
 # generated file and the same content folder (platform::factoryContentFolder()) the app ships.
 add_custom_command(TARGET ampsim_tests POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${AMPSIM_NOTICES} "$<TARGET_FILE_DIR:ampsim_tests>/THIRD_PARTY_NOTICES.txt"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_SOURCE_DIR}/LICENSE "$<TARGET_FILE_DIR:ampsim_tests>/LICENSE.txt"
     COMMAND ${CMAKE_COMMAND} -E rm -rf "$<TARGET_FILE_DIR:ampsim_tests>/content"
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/content "$<TARGET_FILE_DIR:ampsim_tests>/content"
     VERBATIM)
