@@ -34,6 +34,10 @@ ctest --test-dir build --output-on-failure   # run the tests
 open "build/AmpSim_artefacts/Release/Standalone/Amp Sim.app"
 ```
 
+## Releasing
+
+Friends get Amp Sim from a public releases repo, and it updates itself (Sparkle on the Mac, WinSparkle on Windows). One command builds, tests, signs, packages, and publishes a version: `tools/release/release.sh <version>`. `docs/RELEASING.md` has the one-time setup and the details; `docs/INSTALL.md` is the guide for friends.
+
 ## Repo layout
 
 | Path | What it is |
@@ -42,12 +46,18 @@ open "build/AmpSim_artefacts/Release/Standalone/Amp Sim.app"
 | `src/PluginProcessor.*` | Parameters, state, file loading, MIDI, and the audio callback, which just drives the chain |
 | `src/BlockParameters.*`, `src/Presets.*` | Parameter glue for each effect block, and the preset format |
 | `src/PluginEditor.*` | The editor: lays out the GUI and runs presets, scenes, MIDI learn menus, and undo |
+| `src/platform/` | What the shipped app knows about itself: its version, its bundled files, and the auto-updater |
 | `src/ui/` | The GUI: tokens and fonts, LookAndFeel, controls, meters, the analyzer, the signal chain, the amp, cab, and tuner pages, and every effect's page |
 | `presets/factory/` | The factory presets, embedded in the app |
 | `docs/ui/amp-ui-handoff/` | The GUI's design: the handoff spec, its reference HTML, and screenshots (`docs/UI_DESIGN.md` lists where the build differs) |
 | `resources/fonts/` | Geist and Fraunces (SIL OFL, licences alongside), embedded in the app |
 | `tools/render/` | `ampsim_render`: runs a WAV through the chain offline, with CPU timing |
 | `tools/device_probe/` | `ampsim_device_probe`: opens the interface and reports timing and input levels |
+| `tools/release/`, `tools/fetch_deps.sh`, `tools/notices/` | The release pipeline: signing, packaging, appcasts, publishing, the update test, the licence notices |
+| `installer/` | The DMG's read-me and the Windows installer script (Inno Setup) |
+| `content/` | Captures and IRs bundled with the app (empty for now), each with its licence in `manifest.json` |
+| `release-notes/` | One Markdown file per released version |
+| `.github/workflows/` | The Windows build and installer, and an on-demand macOS test run |
 | `tests/` | The test suite (`ampsim_tests`), including real-time safety and NAM differential tests |
 | `third_party/` | JUCE 8.0.15 and NeuralAmpModelerCore v0.6.0, as pinned git submodules |
 | `prototypes/` | Python lab bench. Algorithms get prototyped and listened to here before being ported |
@@ -57,6 +67,7 @@ open "build/AmpSim_artefacts/Release/Standalone/Amp Sim.app"
 | `docs/DSP_REFERENCE.md` | Glossary and the sources behind each algorithm |
 | `docs/ASSUMPTIONS.md` | Every decision made on Sean's behalf during the unattended build, to review |
 | `docs/NAM_UPSTREAM.md` | NAM core findings worth taking upstream |
+| `docs/RELEASING.md`, `docs/INSTALL.md` | How releases and updates work (for Sean), and how to install (for friends) |
 | `CLAUDE.md` | Context and rules for AI assistants working in this repo |
 
 ## Amp models

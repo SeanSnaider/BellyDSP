@@ -229,13 +229,15 @@ if(AMPSIM_UPDATER)
         endif()
         set(AMPSIM_UPDATER_SOURCE src/platform/Updater_mac.mm)
         # Sparkle's settings (src/platform/Updater_mac.mm explains each). SUScheduledCheckInterval is in
-        # seconds: once a day.
+        # seconds: once a day. LSMinimumSystemVersion makes Finder explain an older macOS instead of
+        # failing to launch.
         set(AMPSIM_PLIST_ARGS PLIST_TO_MERGE "<plist><dict>
             <key>SUFeedURL</key><string>${AMPSIM_FEED_URL}</string>
             <key>SUPublicEDKey</key><string>${AMPSIM_ED_PUBLIC_KEY}</string>
             <key>SUEnableAutomaticChecks</key><true/>
             <key>SUAutomaticallyUpdate</key><true/>
             <key>SUScheduledCheckInterval</key><integer>86400</integer>
+            <key>LSMinimumSystemVersion</key><string>${CMAKE_OSX_DEPLOYMENT_TARGET}</string>
             </dict></plist>")
     elseif(WIN32)
         set(AMPSIM_WINSPARKLE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/build-deps/WinSparkle-${AMPSIM_WINSPARKLE_VERSION}" CACHE PATH "WinSparkle's release folder")

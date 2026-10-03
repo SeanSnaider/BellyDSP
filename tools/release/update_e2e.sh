@@ -21,7 +21,9 @@
 #
 # While it runs it changes, and afterwards restores: the app's user defaults (com.seansnaider.ampsim)
 # and the standalone app's settings file (~/Library/Application Support/Amp Sim.settings), which gets a
-# no-audio-device setup so the app doesn't stop at launch to ask for the microphone.
+# no-audio-device setup so the app doesn't stop at launch to ask for the microphone. It also clears
+# Sparkle's download cache (~/Library/Caches/com.seansnaider.ampsim/org.sparkle-project.Sparkle) before
+# and after, so a pending update from one run can't leak into the next. Quit Amp Sim before running it.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
@@ -46,19 +48,32 @@ for f in "$OLD_ZIP" "$NEW_ZIP" "$NEW_APPCAST"; do [ -f "$f" ] || die "missing $f
 grep -q "http://127.0.0.1:$PORT/" "$NEW_APPCAST" || die "dist/$NEW/appcast.xml doesn't point at http://127.0.0.1:$PORT/ (build it with AMPSIM_DOWNLOAD_BASE)"
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/ampsim-e2e.XXXXXX")"
+# Sparkle keeps a downloaded, not yet installed update here between launches; each test starts without one.
+SPARKLE_CACHE="$HOME/Library/Caches/$BUNDLE_ID/org.sparkle-project.Sparkle"
 INSTALLED="$WORK/install/Amp Sim.app"
 SETTINGS="$HOME/Library/Application Support/Amp Sim.settings"
 LOG="$WORK/server.log"
 server_pid=""
 
 # ---- Restore everything on the way out, whatever happens ----------------------------------------
-had_defaults=0; had_settings=0
-if defaults export "$BUNDLE_ID" "$WORK/defaults-backup.plist" 2>/dev/null; then had_defaults=1; fi
+had_defaults=0; had_settings=0; had_cache=0
+[ -d "$HOME/Library/Caches/$BUNDLE_ID" ] && had_cache=1
+# (`defaults export` succeeds even for a domain that doesn't exist, so check with `defaults read`.)
+if defaults read "$BUNDLE_ID" >/dev/null 2>&1; then defaults export "$BUNDLE_ID" "$WORK/defaults-backup.plist"; had_defaults=1; fi
 if [ -f "$SETTINGS" ]; then cp -p "$SETTINGS" "$WORK/settings-backup"; had_settings=1; fi
 cleanup() {
     quit_app >/dev/null 2>&1 || true
+    # The server runs under uv, so kill it by its command line (killing uv's pid leaves python running).
     [ -n "$server_pid" ] && kill "$server_pid" 2>/dev/null || true
-    if [ $had_defaults = 1 ]; then defaults import "$BUNDLE_ID" "$WORK/defaults-backup.plist"; else defaults delete "$BUNDLE_ID" >/dev/null 2>&1 || true; fi
+    pkill -f "serve_updates.py $WORK/server" 2>/dev/null || true
+    rm -rf "$SPARKLE_CACHE"
+    [ $had_cache = 0 ] && rm -rf "$HOME/Library/Caches/$BUNDLE_ID"   # the app's URL cache, made by this test
+    if [ $had_defaults = 1 ]; then defaults import "$BUNDLE_ID" "$WORK/defaults-backup.plist"; else
+        defaults delete "$BUNDLE_ID" >/dev/null 2>&1 || true
+        # `defaults delete` leaves an empty plist behind; it didn't exist before, so it goes too.
+        prefs="$HOME/Library/Preferences/$BUNDLE_ID.plist"
+        [ -f "$prefs" ] && [ "$(plutil -convert json -o - "$prefs" 2>/dev/null)" = "{}" ] && rm -f "$prefs"
+    fi
     if [ $had_settings = 1 ]; then cp -p "$WORK/settings-backup" "$SETTINGS"; else rm -f "$SETTINGS"; fi
     info "restored the app's user defaults and settings file; test files are in $WORK"
 }
@@ -72,6 +87,11 @@ quit_app() {
 running() { pgrep -f "$INSTALLED/Contents/MacOS/Amp Sim" >/dev/null; }
 exe_hash() { shasum -a 256 "$1/Contents/MacOS/Amp Sim" | cut -c1-16; }
 plist_version() { /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$1/Contents/Info.plist"; }
+
+if curl -s -o /dev/null "http://127.0.0.1:$PORT/"; then die "something is already listening on port $PORT (an earlier test's server?)"; fi
+running_any="$(osascript -l JavaScript -e "ObjC.import('AppKit'); \$.NSRunningApplication.runningApplicationsWithBundleIdentifier('$BUNDLE_ID').count")"
+[ "$running_any" = 0 ] || die "Amp Sim is running; quit it first (the test quits every copy)"
+rm -rf "$SPARKLE_CACHE"
 
 step "1. Install $OLD into a scratch folder" "Unzipped from its update zip, the way a friend's copy would look."
 mkdir -p "$WORK/install"

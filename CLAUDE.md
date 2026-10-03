@@ -65,6 +65,8 @@ New algorithms get prototyped in `prototypes/` first when there's any doubt abou
 | `build/ampsim_render_artefacts/Release/ampsim_render --model amp.nam --ir cab.wav di.wav out.wav` | Render a DI file offline through the same chain, with CPU timing |
 | `build/ampsim_device_probe_artefacts/Release/ampsim_device_probe` | Open the Solo with silent output and report callback timing and input levels |
 | `python prototypes/amp_sim.py <di.wav> --all-channels` | Render the old gray-box Python amps (reference only) |
+| `tools/fetch_deps.sh` | Download the pinned Sparkle (and with `--windows`, WinSparkle) into `build-deps/` |
+| `tools/release/release.sh <version> [--dry-run]` | Build, test, sign, package, and publish a release (docs/RELEASING.md). Never run it without `--dry-run` unless Sean asks |
 
 Use Release builds for anything involving live audio. NAM core is always compiled with -O3, but JUCE and our code aren't in Debug.
 
