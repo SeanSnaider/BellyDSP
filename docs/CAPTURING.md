@@ -1,6 +1,6 @@
 # Capturing your own gear
 
-How to turn your own amp, pedal, or preamp into a NAM capture that plays in Amp Sim's amp slots, and how
+How to turn your own amp, pedal, or preamp into a NAM capture that plays in BellyDSP's amp slots, and how
 it then ships to friends. Two tools do the work:
 
 - **`ampsim_capture`** (built with everything else by `cmake --build build -j`) plays NAM's standard test
@@ -190,15 +190,17 @@ the real test; the ESR below is a guide.
      "path": "models/Crunch, amp only.nam",
      "title": "Crunch, amp only",
      "author": "Sean Snaider",
-     "source": "Captured by Sean Snaider for Amp Sim",
-     "license": "<your choice, e.g. CC BY 4.0>",
-     "license_file": "licenses/<the text of that licence>.txt",
+     "source": "Captured by Sean Snaider for BellyDSP (https://github.com/SeanSnaider/BellyDSP)",
+     "license": "CC BY 4.0",
+     "license_file": "licenses/CC-BY-4.0.txt",
      "notes": "Amp through a load box; trained with neural-amp-modeler 0.12.3, standard, ESR 0.0xx"
    }
    ```
-   Your own captures are yours to license (docs/ASSUMPTIONS.md DS32).
+   Your own captures are CC BY 4.0 with the attribution "Sean Snaider" (decided 2026-10-03, replacing the
+   DS32 placeholder; `content/licenses/CC-BY-4.0.txt` is the official legal code). Anyone may share and
+   adapt them, commercially too, as long as they credit you. The app's code stays AGPL-3.0-or-later.
 3. Put it in a factory preset: open the app, load the preset, load the bundled capture into a slot from
-   the app's own copy (`build/AmpSim_artefacts/Release/Standalone/Amp Sim.app/Contents/Resources/content/models`,
+   the app's own copy (`build/BellyDSP_artefacts/Release/Standalone/BellyDSP.app/Contents/Resources/content/models`,
    after a build), Save the preset, and copy its `"amps"` entry (which now reads
    `"factory:models/Crunch, amp only.nam"` with a hash) into `presets/factory/<preset>.json`.
 4. `cmake --build build -j && ctest --test-dir build --output-on-failure`: the tests check every factory

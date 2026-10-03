@@ -122,7 +122,8 @@ def main() -> None:
             # Read the raw 24-bit integers (as int32, left-justified) so untouched samples stay bit-exact.
             data, rate = sf.read(str(source), dtype="int32", always_2d=True)
             original_len = data.shape[0]
-            notes = f"Original file: {source.name} (handbook patch {number}, 48 kHz folder). Renamed."
+            # Cited by the handbook's patch number only (the original file names stay out of the app's notices).
+            notes = f"Original: handbook patch {number} (48 kHz folder). Renamed."
             if original_len > MAX_SECONDS * rate:
                 n = int(MAX_SECONDS * rate)
                 fade = int(FADE_SECONDS * rate)

@@ -1,18 +1,27 @@
 # Bundled content
 
-Captures and impulse responses that ship inside Amp Sim, so a friend has something to play the moment
+Captures and impulse responses that ship inside BellyDSP, so anyone has something to play the moment
 the app opens.
 
 - `irs/Vintage 4x12/` (6 IRs) and `irs/Modern 4x12/` (15 IRs): the "Emerald" and "Brutal" cab IR packs by
   Bastian Karschewski (Jester Dyne Productions), which he released under CC0 (public domain). Renamed
   without brand names and the modern ones cut to 1 s by `tools/content/import_jester_irs.py`; each file's
-  original name is in its manifest entry. The cab page lists them under "Built in", one entry per IR.
-- `models/`: none yet. The bundled captures will be Sean's own (`docs/CAPTURING.md`).
+  manifest entry cites its original by the pack handbook's patch number. The cab page lists them under "Built in", one entry per IR.
+- `models/`: none yet. The bundled captures will be Sean's own (`docs/CAPTURING.md`), licensed under
+  **CC BY 4.0** (Creative Commons Attribution 4.0 International, `licenses/CC-BY-4.0.txt`, the official
+  legal code from creativecommons.org) with the attribution "Sean Snaider": anyone may share and adapt
+  them, including commercially, as long as they credit him.
+
+## Licences
+
+The app's code is AGPL-3.0-or-later (`LICENSE` at the repo root). The files in this folder are not code
+and each carries its own licence, listed per file in `manifest.json`: CC0 1.0 for the Jester Dyne IRs
+(`licenses/CC0-1.0.txt`) and CC BY 4.0 for Sean's own captures (`licenses/CC-BY-4.0.txt`).
 
 ## How it works
 
 - Everything in this folder except this README is copied into the app when it's built: into
-  `Amp Sim.app/Contents/Resources/content/` on macOS and into `content\` next to `Amp Sim.exe` on
+  `BellyDSP.app/Contents/Resources/content/` on macOS and into `content\` next to `BellyDSP.exe` on
   Windows (the installer installs it there).
 - Put captures under `models/` and IRs or cab packs under `irs/`, the same layout as the user library.
 - A preset refers to a bundled file as `factory:models/<file>.nam` or `factory:irs/<file>.wav`. The app
