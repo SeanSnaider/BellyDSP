@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+
 """
 Accurate cascade graphic EQ: prototype and design study (BUILD_PLAN "EQ", graphic mode).
 

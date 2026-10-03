@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Sean Snaider
+
 // ampsim_device_probe: opens the audio interface through JUCE's CoreAudio backend, the same code
 // path the standalone app uses, and reports what actually happens. It outputs silence.
 //

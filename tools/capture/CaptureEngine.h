@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Sean Snaider
+
 #pragma once
 
 // The play-and-record engine behind ampsim_capture (docs/CAPTURING.md), kept apart from the audio device

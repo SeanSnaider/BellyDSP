@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+#
 # THE RELEASE COMMAND. Builds, tests, signs, packages, and publishes one version of Amp Sim.
 #
 #   tools/release/release.sh <version> [options]
@@ -36,7 +39,7 @@ while [ $# -gt 0 ]; do
         --allow-branch) ALLOW_BRANCH=1 ;;
         --allow-dirty) ALLOW_DIRTY=1 ;;
         --allow-undecided-licence) ALLOW_UNDECIDED=1 ;;
-        -h|--help) sed -n '2,29p' "$0"; exit 0 ;;
+        -h|--help) awk 'NR < 5 { next } /^#/ { print; next } { exit }' "$0"; exit 0 ;;
         -*) die "unknown option $1 (see --help)" ;;
         *) [ -z "$VERSION" ] || die "one version at a time"; VERSION="$1" ;;
     esac

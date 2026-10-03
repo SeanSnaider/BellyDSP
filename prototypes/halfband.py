@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+
 """
 Polyphase IIR halfband filters for zero-latency oversampling (BUILD_PLAN "Boost and Overdrive",
 Oversampling): design, response, and a check of the design against its specification.

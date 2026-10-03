@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+
 """Writes an appcast: the small RSS file Sparkle (macOS) and WinSparkle (Windows) read to learn about
 the newest version. Standard library only.
 

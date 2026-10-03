@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Sean Snaider
+
 #include "Loudness.h"
 
 #include <juce_dsp/juce_dsp.h>

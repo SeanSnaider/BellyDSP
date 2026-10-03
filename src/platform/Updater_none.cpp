@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Sean Snaider
+
 #include "Updater.h"
 
 // Builds without an updater: dev builds (AMPSIM_UPDATER=OFF, the default, so a dev build never replaces

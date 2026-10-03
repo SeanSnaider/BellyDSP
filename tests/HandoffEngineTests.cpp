@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Sean Snaider
+
 // The engine plumbing the UI handoff needed (BUILD_PLAN decision log, 2026-10-03): the amp's bypass, the
 // two effect sections' switches, the strip's gate light, and "Follow amp choice" (each amp slot's cab).
 

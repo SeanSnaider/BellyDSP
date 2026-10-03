@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+
 # The macOS test suite on GitHub's runners: a check that the repo builds and passes from a fresh
 # clone, independent of Sean's Mac. Releases are still built on Sean's Mac (tools/release/release.sh),
 # because they're signed with his keys.

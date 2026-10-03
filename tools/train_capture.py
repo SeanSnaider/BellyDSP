@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+
 """Trains a NAM capture with NAM's official trainer (the neural-amp-modeler package). Run it through
 tools/train_capture.sh, which pins the trainer's version and runs this with uv (docs/CAPTURING.md).
 

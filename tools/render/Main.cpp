@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Sean Snaider
+
 // ampsim_render: runs a WAV file through the same DSP chain the app uses, offline.
 //
 // Use it to listen to a capture/IR combination without the interface, to compare against

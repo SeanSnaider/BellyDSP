@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Sean Snaider
+
 #include "PluginProcessor.h"
 #include "TestHelpers.h"
 #include "dsp/AmpSection.h"

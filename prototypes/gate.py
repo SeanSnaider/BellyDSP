@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+
 """
 Noise gate reference simulation and design study (BUILD_PLAN "Gates"), sample by sample in double
 precision. The C++ block (src/dsp/Gate.cpp) has to match the renders this writes: the golden test in

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Sean Snaider
+
 #include "AllocationTracking.h"
 
 // The real-time checks' counters on platforms without macOS's malloc_logger hook (Windows, for the CI

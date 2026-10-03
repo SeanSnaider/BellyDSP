@@ -1,3 +1,6 @@
+; SPDX-License-Identifier: AGPL-3.0-or-later
+; Copyright (C) 2026 Sean Snaider
+
 ; Amp Sim's Windows installer (Inno Setup 6, https://jrsoftware.org/isinfo.php). Built by the Windows CI
 ; workflow (.github/workflows/windows.yml):
 ;

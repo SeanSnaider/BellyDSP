@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+#
 # Notarizes and staples a DMG. Only for the Developer ID path (AMPSIM_SIGN_IDENTITY set): Apple won't
 # notarize a self-signed app. release.sh calls it after packaging.
 #

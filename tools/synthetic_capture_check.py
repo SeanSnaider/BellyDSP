@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+
 """The whole capture workflow end to end without hardware: capture -> train -> play in our engine -> compare.
 
     uv run --with numpy --with soundfile python tools/synthetic_capture_check.py --arch nano --epochs 20

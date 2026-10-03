@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+#
 # Adds the Windows installer to a release that's already published, signing it here on the Mac (so the
 # Ed25519 private key never has to be a GitHub secret). Use it when the Windows CI job didn't publish by
 # itself (no AMPSIM_ED_PRIVATE_KEY or RELEASES_TOKEN secret):

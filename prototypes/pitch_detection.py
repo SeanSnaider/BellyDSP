@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+
 """
 Pitch detection study and golden reference for the tuner and the harmonizer (BUILD_PLAN "Tuner" and
 "Harmonizer"): YIN against the McLeod Pitch Method on synthetic guitar-like tones, through the same analysis

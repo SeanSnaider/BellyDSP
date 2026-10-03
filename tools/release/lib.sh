@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+
 # Shared helpers for the release scripts. Sourced, not run: `source "$(dirname "$0")/lib.sh"`.
 #
 # Every script talks a lot on purpose: each step says what it's doing and why, so a release log reads

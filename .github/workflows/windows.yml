@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+
 # The Windows build: compiles Amp Sim with MSVC, runs the test suite, builds the Inno Setup installer,
 # signs it for WinSparkle, and (for a release tag) adds it to the GitHub release in the public releases
 # repo. docs/RELEASING.md explains the setup.

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+
 """
 Phaser reference for Bloom (BUILD_PLAN "Bloom (modulation container)"), centred on the Vibe mode's lamp and
 photocell model.

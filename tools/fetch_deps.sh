@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+#
 # Downloads the pinned auto-update frameworks into build-deps/ (gitignored) and checks each download's
 # SHA-256 against tools/deps.conf, so a build can never pick up a different file than the one that was
 # reviewed. Safe to run again: anything already there and verified is skipped.
@@ -15,7 +18,7 @@ want_windows=0
 for arg in "$@"; do
     case "$arg" in
         --windows) want_windows=1 ;;
-        -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
+        -h|--help) awk 'NR < 5 { next } /^#/ { print; next } { exit }' "$0"; exit 0 ;;
         *) die "unknown option $arg" ;;
     esac
 done

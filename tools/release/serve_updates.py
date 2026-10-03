@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+
 """A stand-in for GitHub's release downloads, for testing updates locally (update_e2e.sh). Standard
 library only.
 

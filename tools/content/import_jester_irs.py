@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+
 """Imports the two CC0 cab IR packs by Jester Dyne Productions (Bastian Karschewski) into content/irs/.
 
     uv run --with numpy --with soundfile python tools/content/import_jester_irs.py \

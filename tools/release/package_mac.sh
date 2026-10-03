@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+#
 # Packages a signed "Amp Sim.app" two ways (called by release.sh):
 #
 #   tools/release/package_mac.sh "path/to/Amp Sim.app" <version> <output dir>

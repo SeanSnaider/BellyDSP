@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+#
 # Trains a NAM capture from ampsim_capture's recording, with NAM's official trainer at the version pinned in
 # tools/deps.conf (NAM_TRAINER_VERSION). See docs/CAPTURING.md, and tools/train_capture.py --help for options.
 #

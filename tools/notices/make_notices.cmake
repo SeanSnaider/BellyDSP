@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+
 # Generates THIRD_PARTY_NOTICES.txt: every third-party component and every bundled capture or IR that
 # ships inside Amp Sim, each with its licence text, read from the actual licence files in the
 # submodules, the downloaded frameworks, and content/. Runs in CMake's script mode at build time

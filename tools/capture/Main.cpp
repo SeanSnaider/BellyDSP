@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Sean Snaider
+
 // ampsim_capture: records a NAM capture of your own gear through the audio interface (docs/CAPTURING.md).
 //
 // It plays NAM's standard training file (input.wav) out of one output of the interface, into the gear,

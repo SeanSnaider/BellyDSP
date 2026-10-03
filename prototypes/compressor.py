@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+
 """
 Compressor reference simulation (BUILD_PLAN "Compressor"): both loops, sample by sample, in double
 precision, written straight from the equations rather than ported from the C++. The C++ block

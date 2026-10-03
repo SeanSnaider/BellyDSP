@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+#
 # ONE-TIME SETUP: creates Amp Sim's self-signed code-signing identity (docs/RELEASING.md, step 3).
 #
 # Why: macOS remembers permissions (the microphone) and Sparkle accepts updates by the app's code
@@ -33,7 +36,7 @@ mode=create
 case "${1:-}" in
     --check) mode=check ;;
     "") ;;
-    -h|--help) sed -n '2,28p' "$0"; exit 0 ;;
+    -h|--help) awk 'NR < 5 { next } /^#/ { print; next } { exit }' "$0"; exit 0 ;;
     *) die "unknown option $1" ;;
 esac
 

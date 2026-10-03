@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Sean Snaider
+
 // ampsim_capture's play-and-record engine (tools/capture), run against simulated devices: the recording
 // must line up with what was played sample for sample, have exactly the input's length, survive the WAV
 // round trip, and the latency measurement must find the simulated round trip. No hardware needed.

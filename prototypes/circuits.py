@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+
 """
 A small SPICE-style circuit simulator, the stand-in for ngspice (BUILD_PLAN "Boost and Overdrive",
 Validation; ngspice isn't installed, ASSUMPTIONS W3). It simulates the drive pedals' full schematics and

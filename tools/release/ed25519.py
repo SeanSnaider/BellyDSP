@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+
 """Ed25519 (EdDSA over Curve25519) in pure Python, for the release scripts.
 
 Sparkle (macOS) and WinSparkle (Windows) check every update with an Ed25519 signature: the private

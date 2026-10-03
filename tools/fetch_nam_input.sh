@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+#
 # Downloads NAM's standard training input file (v3.0.0, "input.wav") into build-deps/nam/ (gitignored) and
 # checks it against the SHA-256 pinned in tools/deps.conf, plus the MD5 that NAM's trainer itself uses to
 # recognise the file. Safe to run again: a verified copy is left alone.

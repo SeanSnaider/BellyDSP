@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Sean Snaider
+
 // ampsim_tests: every test in tests/, run with JUCE's UnitTest framework.
 //
 //   ampsim_tests [--proof-dir <dir>] [--only <test name substring>]

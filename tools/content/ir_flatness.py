@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+
 """Ranks the bundled cab IRs by how flat their response is from 200 Hz to 5 kHz.
 
     uv run --with numpy --with soundfile python tools/content/ir_flatness.py

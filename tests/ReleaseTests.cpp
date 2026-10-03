@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Sean Snaider
+
 // What a shipped build carries besides the DSP (docs/RELEASING.md): its version, the brand menu (version,
 // "Check for updates...", licences), the generated licence notices, and bundled content that presets
 // refer to as "factory:...".

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Sean Snaider
+
 // Which reference signal should cab IRs be loudness-matched with? BUILD_PLAN said pink noise, but
 // distorted guitar through stock, dark, and bright cabs still spans over 6 LU that way. This compares
 // candidate references on clean and distorted guitar, logs the worst-case spread for each, and checks

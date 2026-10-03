@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+#
 # Creates (or updates) a GitHub release in the public releases repo and uploads files to it, with the
 # GitHub REST API and curl. Called by release.sh and by the Windows CI workflow:
 #

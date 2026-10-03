@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+
 # Build file for the whole project. CMake doesn't compile anything itself: it generates the real
 # build instructions (Makefiles here) from this description, a bit like Maven's pom.xml.
 #

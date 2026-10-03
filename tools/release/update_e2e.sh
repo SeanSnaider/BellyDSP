@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+#
 # End-to-end update test, on this Mac, with no GitHub involved: proves an installed old version really
 # updates itself to a new one through Sparkle, and that a wrongly signed update is refused.
 #
