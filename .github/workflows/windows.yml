@@ -1,29 +1,34 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Sean Snaider
 
-# The Windows build: compiles Amp Sim with MSVC, runs the test suite, builds the Inno Setup installer,
-# signs it for WinSparkle, and (for a release tag) adds it to the GitHub release in the public releases
-# repo. docs/RELEASING.md explains the setup.
+# The Windows build: compiles BellyDSP with MSVC, runs the test suite, builds the Inno Setup installer,
+# signs it for WinSparkle, and (for a release tag) adds it to the GitHub release on this same public repo.
+# docs/RELEASING.md explains the setup.
 #
 # UNTESTED: it can't run until the repo is pushed to GitHub, and nothing here has been compiled on
 # Windows yet. Expect the first run to need fixes.
 #
-# When it runs: on a pushed release tag (v1.2.3, which release.sh creates) and by hand (Actions tab >
-# Windows build > Run workflow). Not on every push: the source repo is private, and Windows minutes count
-# double against GitHub's free allowance (2,000 a month on the Free plan), at roughly 30 to 45 minutes
-# a build.
+# This file lives in both repos (docs/RELEASING.md): the private dev repo and the public SeanSnaider/BellyDSP.
+# When it runs:
+#   public repo   every push, every pull request, every release tag (v1.2.3), and by hand. Actions minutes
+#                 on standard runners are free for public repos.
+#   private repo  only by hand (Actions tab > Windows build > Run workflow): there, Windows minutes count
+#                 double against the free allowance (2,000 a month on the Free plan) at 30 to 45 minutes a
+#                 build, so push and pull-request runs are skipped (the jobs' `if`, ASSUMPTIONS DS40).
 #
-# Secrets (Settings > Secrets and variables > Actions), both optional:
+# Secrets (Settings > Secrets and variables > Actions on the public repo), optional:
 #   AMPSIM_ED_PRIVATE_KEY  the Ed25519 private key (the one-line file `generate_keys -x` writes). Signs the
 #                          installer here. Without it, sign it on your Mac instead: tools/release/add_windows.sh.
-#   RELEASES_TOKEN         a fine-grained token with Contents: read and write on the public releases repo.
-#                          Lets a tag build upload the installer and appcast-windows.xml to the release.
+# Uploading needs no secret: the release is on this repo, so the workflow's own token (contents: write
+# on the publish job only) can add the files.
 
 name: Windows build
 
 on:
   push:
+    branches: ['**']
     tags: ['v*']
+  pull_request:
   workflow_dispatch:
     inputs:
       version:
@@ -40,6 +45,8 @@ permissions:
 
 jobs:
   build:
+    # Automatic runs only on the public repo; by hand anywhere.
+    if: ${{ github.event_name == 'workflow_dispatch' || !github.event.repository.private }}
     runs-on: windows-2022
     timeout-minutes: 120
     env:
@@ -71,7 +78,7 @@ jobs:
             echo "updater=OFF" >> "$GITHUB_OUTPUT"
             echo "::warning::ED_PUBLIC_KEY is empty in tools/release/release.conf: building without the updater"
           fi
-          echo "Building Amp Sim $version"
+          echo "Building BellyDSP $version"
 
       - name: Fetch WinSparkle (pinned, SHA-256 checked)
         shell: pwsh
@@ -106,20 +113,21 @@ jobs:
         run: |
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; }
-          $src = (Resolve-Path "build-release/AmpSim_artefacts/Release/Standalone").Path
+          $src = (Resolve-Path "build-release/BellyDSP_artefacts/Release/Standalone").Path
           New-Item -ItemType Directory -Force dist | Out-Null
-          & $iscc "/DAppVersion=${{ steps.conf.outputs.version }}" "/DSourceDir=$src" "/DOutputDir=$((Resolve-Path dist).Path)" installer\windows\AmpSim.iss
+          & $iscc "/DAppVersion=${{ steps.conf.outputs.version }}" "/DSourceDir=$src" "/DOutputDir=$((Resolve-Path dist).Path)" installer\windows\BellyDSP.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
           Get-ChildItem dist
 
       - name: Sign the installer for WinSparkle and write appcast-windows.xml
-        if: ${{ env.HAS_ED_KEY == 'true' && steps.conf.outputs.updater == 'ON' }}
+        # Release tags and manual runs only: the private key isn't exposed to ordinary push and PR builds.
+        if: ${{ env.HAS_ED_KEY == 'true' && steps.conf.outputs.updater == 'ON' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') }}
         env:
           ED_PRIVATE_KEY: ${{ secrets.AMPSIM_ED_PRIVATE_KEY }}
         shell: bash
         run: |
           v="${{ steps.conf.outputs.version }}"
-          setup="dist/AmpSim-$v-windows-setup.exe"
+          setup="dist/BellyDSP-$v-windows-setup.exe"
           sig="$(printf '%s' "$ED_PRIVATE_KEY" | python tools/release/ed25519.py sign - "$setup")"
           python tools/release/ed25519.py verify "${{ steps.conf.outputs.ed_public_key }}" "$setup" "$sig"
           notes=(); [ -f "release-notes/$v.md" ] && notes=(--notes "release-notes/$v.md")
@@ -130,17 +138,20 @@ jobs:
       - name: Keep the installer as a build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AmpSim-${{ steps.conf.outputs.version }}-windows
+          name: BellyDSP-${{ steps.conf.outputs.version }}-windows
           path: |
-            dist/AmpSim-*-windows-setup.exe
+            dist/BellyDSP-*-windows-setup.exe
             dist/appcast-windows.xml
           if-no-files-found: error
 
   publish:
-    # Only for release tags, and only when the secrets exist (otherwise: release.sh --windows-dir).
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Only for release tags on the public repo (where the release lives), and only when the installer was
+    # signed (otherwise: tools/release/add_windows.sh on the Mac, or release.sh --windows-dir).
+    if: ${{ startsWith(github.ref, 'refs/tags/v') && !github.event.repository.private }}
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -149,9 +160,8 @@ jobs:
           merge-multiple: true
       - name: Add the Windows files to the GitHub release
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
-          if [ -z "$GITHUB_TOKEN" ]; then echo "::warning::No RELEASES_TOKEN secret: download the artifact and run tools/release/add_windows.sh instead"; exit 0; fi
           if [ ! -f windows/appcast-windows.xml ]; then echo "::warning::The installer wasn't signed (no AMPSIM_ED_PRIVATE_KEY): run tools/release/add_windows.sh on the Mac"; exit 0; fi
           ls -la windows
-          tools/release/github_release.sh "$GITHUB_REF_NAME" - windows/AmpSim-*-windows-setup.exe windows/appcast-windows.xml
+          tools/release/github_release.sh "$GITHUB_REF_NAME" - windows/BellyDSP-*-windows-setup.exe windows/appcast-windows.xml

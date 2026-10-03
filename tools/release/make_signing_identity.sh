@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Sean Snaider
 #
-# ONE-TIME SETUP: creates Amp Sim's self-signed code-signing identity (docs/RELEASING.md, step 3).
+# ONE-TIME SETUP: creates BellyDSP's self-signed code-signing identity (docs/RELEASING.md, step 3).
 #
 # Why: macOS remembers permissions (the microphone) and Sparkle accepts updates by the app's code
 # signature. An unsigned or ad-hoc signed app gets a new identity every build, so every update would
@@ -52,7 +52,7 @@ test_sign() {
     local hash
     hash="$(identity_hash "$NAME" "$SIGNING_KEYCHAIN")"
     [ -n "$hash" ] || die "No identity called \"$NAME\" in $SIGNING_KEYCHAIN"
-    run codesign --force --sign "$hash" --keychain "$SIGNING_KEYCHAIN" --identifier com.seansnaider.ampsim.signingtest "$tmp/ampsim-signing-test"
+    run codesign --force --sign "$hash" --keychain "$SIGNING_KEYCHAIN" --identifier com.seansnaider.bellydsp.signingtest "$tmp/ampsim-signing-test"
     run codesign --verify --strict "$tmp/ampsim-signing-test"
     info "Designated requirement (what macOS and Sparkle compare between versions):"
     codesign -d -r- "$tmp/ampsim-signing-test" 2>&1 | sed -n 's/^designated => /      /p'
@@ -89,7 +89,7 @@ else
     pw="$(openssl rand -base64 24)"
     # (Not echoed: the command line holds the password.)
     security add-generic-password -U -a "$USER" -s "$SIGNING_KEYCHAIN_SERVICE" \
-        -l "Amp Sim signing keychain password" -w "$pw"
+        -l "BellyDSP signing keychain password" -w "$pw"
     ok "Stored a random password for the signing keychain in your login keychain (item \"$SIGNING_KEYCHAIN_SERVICE\")."
 fi
 

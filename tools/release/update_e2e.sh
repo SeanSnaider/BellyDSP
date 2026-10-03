@@ -13,7 +13,7 @@
 # What it does:
 #   1. installs the old app from its update zip into a scratch folder (not /Applications);
 #   2. serves the new appcast and zip through serve_updates.py, which imitates GitHub's redirects;
-#   3. points the app at it with `defaults write com.seansnaider.ampsim SUFeedURL ...` (Sparkle reads the
+#   3. points the app at it with `defaults write com.seansnaider.bellydsp SUFeedURL ...` (Sparkle reads the
 #      feed URL from the app's user defaults before its Info.plist; no special build needed) and marks
 #      the last check as long ago, so Sparkle checks at launch;
 #   4. launches the old app, waits for Sparkle to download the update, quits the app (as Cmd-Q would),
@@ -22,11 +22,11 @@
 # With --wrong-key, the zip is re-signed with a different key first, and the test passes only if the
 # old app is left exactly as it was.
 #
-# While it runs it changes, and afterwards restores: the app's user defaults (com.seansnaider.ampsim)
-# and the standalone app's settings file (~/Library/Application Support/Amp Sim.settings), which gets a
+# While it runs it changes, and afterwards restores: the app's user defaults (com.seansnaider.bellydsp)
+# and the standalone app's settings file (~/Library/Application Support/BellyDSP.settings), which gets a
 # no-audio-device setup so the app doesn't stop at launch to ask for the microphone. It also clears
-# Sparkle's download cache (~/Library/Caches/com.seansnaider.ampsim/org.sparkle-project.Sparkle) before
-# and after, so a pending update from one run can't leak into the next. Quit Amp Sim before running it.
+# Sparkle's download cache (~/Library/Caches/com.seansnaider.bellydsp/org.sparkle-project.Sparkle) before
+# and after, so a pending update from one run can't leak into the next. Quit BellyDSP before running it.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
@@ -43,9 +43,9 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-BUNDLE_ID=com.seansnaider.ampsim
-OLD_ZIP="$REPO_ROOT/dist/$OLD/AmpSim-$OLD-mac.zip"
-NEW_ZIP="$REPO_ROOT/dist/$NEW/AmpSim-$NEW-mac.zip"
+BUNDLE_ID=com.seansnaider.bellydsp
+OLD_ZIP="$REPO_ROOT/dist/$OLD/BellyDSP-$OLD-mac.zip"
+NEW_ZIP="$REPO_ROOT/dist/$NEW/BellyDSP-$NEW-mac.zip"
 NEW_APPCAST="$REPO_ROOT/dist/$NEW/appcast.xml"
 for f in "$OLD_ZIP" "$NEW_ZIP" "$NEW_APPCAST"; do [ -f "$f" ] || die "missing $f (run release.sh --dry-run for both versions)"; done
 grep -q "http://127.0.0.1:$PORT/" "$NEW_APPCAST" || die "dist/$NEW/appcast.xml doesn't point at http://127.0.0.1:$PORT/ (build it with AMPSIM_DOWNLOAD_BASE)"
@@ -53,8 +53,8 @@ grep -q "http://127.0.0.1:$PORT/" "$NEW_APPCAST" || die "dist/$NEW/appcast.xml d
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/ampsim-e2e.XXXXXX")"
 # Sparkle keeps a downloaded, not yet installed update here between launches; each test starts without one.
 SPARKLE_CACHE="$HOME/Library/Caches/$BUNDLE_ID/org.sparkle-project.Sparkle"
-INSTALLED="$WORK/install/Amp Sim.app"
-SETTINGS="$HOME/Library/Application Support/Amp Sim.settings"
+INSTALLED="$WORK/install/BellyDSP.app"
+SETTINGS="$HOME/Library/Application Support/BellyDSP.settings"
 LOG="$WORK/server.log"
 server_pid=""
 
@@ -82,18 +82,18 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Quits every running Amp Sim the way the Dock's Quit does (an NSRunningApplication terminate, which
+# Quits every running BellyDSP the way the Dock's Quit does (an NSRunningApplication terminate, which
 # sends the app a quit request; it needs no Automation permission, unlike `osascript ... to quit`).
 quit_app() {
     osascript -l JavaScript -e "ObjC.import('AppKit'); var a = \$.NSRunningApplication.runningApplicationsWithBundleIdentifier('$BUNDLE_ID'); for (var i = 0; i < a.count; i++) a.objectAtIndex(i).terminate; a.count"
 }
-running() { pgrep -f "$INSTALLED/Contents/MacOS/Amp Sim" >/dev/null; }
-exe_hash() { shasum -a 256 "$1/Contents/MacOS/Amp Sim" | cut -c1-16; }
+running() { pgrep -f "$INSTALLED/Contents/MacOS/BellyDSP" >/dev/null; }
+exe_hash() { shasum -a 256 "$1/Contents/MacOS/BellyDSP" | cut -c1-16; }
 plist_version() { /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$1/Contents/Info.plist"; }
 
 if curl -s -o /dev/null "http://127.0.0.1:$PORT/"; then die "something is already listening on port $PORT (an earlier test's server?)"; fi
 running_any="$(osascript -l JavaScript -e "ObjC.import('AppKit'); \$.NSRunningApplication.runningApplicationsWithBundleIdentifier('$BUNDLE_ID').count")"
-[ "$running_any" = 0 ] || die "Amp Sim is running; quit it first (the test quits every copy)"
+[ "$running_any" = 0 ] || die "BellyDSP is running; quit it first (the test quits every copy)"
 rm -rf "$SPARKLE_CACHE"
 
 step "1. Install $OLD into a scratch folder" "Unzipped from its update zip, the way a friend's copy would look."
@@ -102,7 +102,7 @@ run ditto -x -k "$OLD_ZIP" "$WORK/install"
 codesign --verify --deep --strict "$INSTALLED" && ok "installed $(plist_version "$INSTALLED") at $INSTALLED"
 before_hash="$(exe_hash "$INSTALLED")"
 mkdir -p "$WORK/new" && ditto -x -k "$NEW_ZIP" "$WORK/new"
-new_hash="$(exe_hash "$WORK/new/Amp Sim.app")"
+new_hash="$(exe_hash "$WORK/new/BellyDSP.app")"
 info "executable SHA-256: installed $before_hash, the $NEW update $new_hash"
 
 step "2. Serve the update like GitHub does" "appcast.xml and the zip, behind the same two redirects as github.com."
@@ -140,7 +140,7 @@ log_start="$(date '+%Y-%m-%d %H:%M:%S')"
 run open -n "$INSTALLED"
 downloaded=0
 for _ in $(seq 1 120); do
-    if grep -q "AmpSim-$NEW-mac.zip HTTP/1.1\" 200" "$LOG"; then downloaded=1; break; fi
+    if grep -q "BellyDSP-$NEW-mac.zip HTTP/1.1\" 200" "$LOG"; then downloaded=1; break; fi
     sleep 1
 done
 sed 's/^/      /' "$LOG"

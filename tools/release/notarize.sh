@@ -5,7 +5,7 @@
 # Notarizes and staples a DMG. Only for the Developer ID path (AMPSIM_SIGN_IDENTITY set): Apple won't
 # notarize a self-signed app. release.sh calls it after packaging.
 #
-#   tools/release/notarize.sh dist/0.2.0/AmpSim-0.2.0.dmg
+#   tools/release/notarize.sh dist/0.2.0/BellyDSP-0.2.0.dmg
 #
 # UNTESTED: there's no Developer ID to test with. What it needs, once you have one ($99/year):
 #   1. A "Developer ID Application" certificate in your login keychain (Xcode or developer.apple.com).
@@ -21,7 +21,7 @@ set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
 DMG="${1:-}"
-[ -f "$DMG" ] || die "usage: $0 path/to/AmpSim-x.y.z.dmg"
+[ -f "$DMG" ] || die "usage: $0 path/to/BellyDSP-x.y.z.dmg"
 PROFILE="${AMPSIM_NOTARY_PROFILE:-ampsim-notary}"
 
 step "Signing the disk image" "Developer ID signs the DMG itself too, so Gatekeeper can check it before mounting."

@@ -1,36 +1,38 @@
-Amp Sim, VERSION_PLACEHOLDER
+BellyDSP, VERSION_PLACEHOLDER
 ================================
 
-1. Install: drag "Amp Sim" onto the Applications folder next to it.
+1. Install: drag "BellyDSP" onto the Applications folder next to it.
 
-2. First launch: macOS will say it can't check Amp Sim for malicious software (it's made by a
-   friend, not an Apple-registered company). That's expected. To allow it, once:
-     - Open Amp Sim from Applications. When the warning appears, click Done (not Move to Trash).
-     - Open System Settings > Privacy & Security, scroll down to the message about "Amp Sim",
+2. First launch: macOS will say it can't check BellyDSP for malicious software (it's free software
+   from an independent developer, not notarized by Apple). That's expected. To allow it, once:
+     - Open BellyDSP from Applications. When the warning appears, click Done (not Move to Trash).
+     - Open System Settings > Privacy & Security, scroll down to the message about "BellyDSP",
        and click Open Anyway. Confirm with your password or Touch ID.
-     - Open Amp Sim again and click Open.
+     - Open BellyDSP again and click Open.
    Or, in Terminal, one line instead of all that:
-       xattr -dr com.apple.quarantine "/Applications/Amp Sim.app"
+       xattr -dr com.apple.quarantine "/Applications/BellyDSP.app"
 
-3. Allow the microphone when Amp Sim asks: that's how it hears your guitar through the audio
+3. Allow the microphone when BellyDSP asks: that's how it hears your guitar through the audio
    interface. (Change it later in System Settings > Privacy & Security > Microphone.)
 
 4. Set your audio interface to 48 kHz: open Audio MIDI Setup (in Applications > Utilities), pick
-   your interface, and set Format to 48,000 Hz. Amp Sim runs at 48 kHz only and stays silent, with
+   your interface, and set Format to 48,000 Hz. BellyDSP runs at 48 kHz only and stays silent, with
    a message, at any other rate.
 
-5. In Amp Sim, click Options at the top of the window > Audio/MIDI Settings:
+5. In BellyDSP, click Options at the top of the window > Audio/MIDI Settings:
      - pick your interface for both output and input, sample rate 48000;
      - turn on only the input your guitar is plugged into (usually Input 1);
      - buffer size 128 samples (lower if it stays clean, higher if you hear crackles);
-     - untick "Mute audio input". Until you do, Amp Sim hears silence (a yellow bar says so).
+     - untick "Mute audio input". Until you do, BellyDSP hears silence (a yellow bar says so).
 
-6. Captures and IRs: put your .nam captures in ~/Library/Application Support/AmpSim/models and your
-   cab IRs in ~/Library/Application Support/AmpSim/irs (in Finder: Go > Go to Folder..., paste the
+6. Captures and IRs: put your .nam captures in ~/Library/Application Support/BellyDSP/models and your
+   cab IRs in ~/Library/Application Support/BellyDSP/irs (in Finder: Go > Go to Folder..., paste the
    path). Click an amp's grille to load a capture.
 
-Updates install themselves: Amp Sim checks once a day, downloads a new version in the background,
-and installs it the next time you quit. Click "rig" at the top-left to see your version or check now.
+Updates install themselves: BellyDSP checks once a day, downloads a new version in the background,
+and installs it the next time you quit. Click "BellyDSP" at the top-left to see your version or check now.
 
-Licences for everything Amp Sim includes are in THIRD_PARTY_NOTICES.txt, and in the app under
-"rig" > About / licenses.
+BellyDSP is free software: Copyright (C) 2026 Sean Snaider, under the GNU Affero General Public
+License, version 3 or later (LICENSE.txt). It comes with ABSOLUTELY NO WARRANTY. Its source code is at
+https://github.com/SeanSnaider/BellyDSP. Licences for everything BellyDSP includes are in
+THIRD_PARTY_NOTICES.txt, and in the app under "BellyDSP" > About / licenses.

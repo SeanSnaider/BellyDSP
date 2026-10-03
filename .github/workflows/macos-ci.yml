@@ -7,13 +7,18 @@
 #
 # UNTESTED: it can't run until the repo is pushed to GitHub.
 #
-# Manual only (Actions tab > macOS tests > Run workflow): the source repo is private, and macOS minutes
-# count ten times against GitHub's free allowance (2,000 a month on the Free plan), so a 20-minute run
-# costs about 200 of them.
+# This file lives in both repos (docs/RELEASING.md). On the public SeanSnaider/BellyDSP it runs on every
+# push and pull request (standard runners are free for public repos). On the private dev repo only by
+# hand (Actions tab > macOS tests > Run workflow): there, macOS minutes count ten times against GitHub's
+# free allowance (2,000 a month on the Free plan), so a 20-minute run costs about 200 of them
+# (ASSUMPTIONS DS40).
 
 name: macOS tests
 
 on:
+  push:
+    branches: ['**']
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -21,6 +26,8 @@ permissions:
 
 jobs:
   test:
+    # Automatic runs only on the public repo; by hand anywhere.
+    if: ${{ github.event_name == 'workflow_dispatch' || !github.event.repository.private }}
     runs-on: macos-15
     timeout-minutes: 90
     steps:
@@ -28,7 +35,7 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Configure (native arm64, no updater: the dev configuration)
+      - name: "Configure (native arm64, no updater: the dev configuration)"
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Build

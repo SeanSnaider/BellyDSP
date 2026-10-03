@@ -5,8 +5,8 @@
 """Writes an appcast: the small RSS file Sparkle (macOS) and WinSparkle (Windows) read to learn about
 the newest version. Standard library only.
 
-    make_appcast.py --platform mac --version 0.1.1 --file dist/AmpSim-0.1.1-mac.zip \
-        --url https://github.com/OWNER/REPO/releases/download/v0.1.1/AmpSim-0.1.1-mac.zip \
+    make_appcast.py --platform mac --version 0.1.1 --file dist/BellyDSP-0.1.1-mac.zip \
+        --url https://github.com/OWNER/REPO/releases/download/v0.1.1/BellyDSP-0.1.1-mac.zip \
         --signature <base64 Ed25519 signature of the file> --notes release-notes/0.1.1.md \
         --out dist/appcast.xml
 
@@ -90,7 +90,7 @@ def markdown_to_html(source):
 
 def notes_html(path, version):
     if not path:
-        return f"<p>Amp Sim {html.escape(version)}.</p>"
+        return f"<p>BellyDSP {html.escape(version)}.</p>"
     with open(path, encoding="utf-8") as f:
         text = f.read()
     if path.lower().endswith((".html", ".htm")):
@@ -107,7 +107,7 @@ def main(argv):
     parser.add_argument("--signature", required=True, help="base64 Ed25519 signature of the file")
     parser.add_argument("--notes", help="release notes, .md or .html")
     parser.add_argument("--min-os", help="minimum OS version (default 11.0 on mac, 10.0 on windows)")
-    parser.add_argument("--repo", default="", help="owner/name of the releases repo, for the channel link")
+    parser.add_argument("--repo", default="", help="owner/name of the public repo, for the channel link")
     parser.add_argument("--out", required=True)
     args = parser.parse_args(argv[1:])
 
@@ -131,12 +131,12 @@ def main(argv):
     xml = f"""<?xml version="1.0" encoding="utf-8"?>
 <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
   <channel>
-    <title>Amp Sim</title>
+    <title>BellyDSP</title>
     <link>{html.escape(link)}</link>
-    <description>Amp Sim updates ({'macOS' if args.platform == 'mac' else 'Windows'})</description>
+    <description>BellyDSP updates ({'macOS' if args.platform == 'mac' else 'Windows'})</description>
     <language>en</language>
     <item>
-      <title>Amp Sim {args.version}</title>
+      <title>BellyDSP {args.version}</title>
       <pubDate>{formatdate(usegmt=True)}</pubDate>
       <sparkle:version>{args.version}</sparkle:version>
       <sparkle:shortVersionString>{args.version}</sparkle:shortVersionString>

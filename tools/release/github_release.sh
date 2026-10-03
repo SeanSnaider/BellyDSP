@@ -2,13 +2,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Sean Snaider
 #
-# Creates (or updates) a GitHub release in the public releases repo and uploads files to it, with the
+# Creates (or updates) a GitHub release on the public repo (RELEASES_REPO) and uploads files to it, with the
 # GitHub REST API and curl. Called by release.sh and by the Windows CI workflow:
 #
 #   tools/release/github_release.sh <tag> <notes file or -> <file>...
 #
 # The token: $GITHUB_TOKEN, or the login keychain item "ampsim-github-token" (docs/RELEASING.md, step 2:
-# a fine-grained token with Contents: read and write on the releases repo only). Never put it in the repo.
+# a fine-grained token with Contents: read and write on the public repo only). Never put it in the repo.
 #
 # Idempotent: if the release exists it's reused, and an asset with the same name is replaced, so a failed
 # upload can simply be run again.
@@ -63,20 +63,20 @@ api() {
 
 json_field() { python_run -c "import json,sys; d=json.load(sys.stdin); print(d.get('$1', '') if isinstance(d, dict) else '')"; }
 
-step "GitHub release $TAG in $REPO" "The public releases repo: friends download from it, and the apps read its latest appcast."
+step "GitHub release $TAG in $REPO" "The public repo: people download from its Releases page, and the apps read its latest appcast."
 if existing="$(api GET "$API/releases/tags/$TAG" 2>/dev/null)"; then
     release_id="$(printf '%s' "$existing" | json_field id)"
     ok "release $TAG exists (id $release_id); adding or replacing files"
 else
-    if [ "$NOTES" = "-" ] || [ ! -f "$NOTES" ]; then notes_text="Amp Sim ${TAG#v}"; else notes_text="$(cat "$NOTES")"; fi
+    if [ "$NOTES" = "-" ] || [ ! -f "$NOTES" ]; then notes_text="BellyDSP ${TAG#v}"; else notes_text="$(cat "$NOTES")"; fi
     payload="$(TAG="$TAG" NOTES_TEXT="$notes_text" python_run -c '
 import json, os
 tag = os.environ["TAG"]
-print(json.dumps({"tag_name": tag, "name": "Amp Sim " + tag.lstrip("v"), "body": os.environ["NOTES_TEXT"],
+print(json.dumps({"tag_name": tag, "name": "BellyDSP " + tag.lstrip("v"), "body": os.environ["NOTES_TEXT"],
                   "draft": False, "prerelease": False, "make_latest": "true"}))')"
     created="$(api POST "$API/releases" -H "Content-Type: application/json" --data "$payload")" \
         || die "Couldn't create the release. Check the token's access (Contents: read and write on $REPO), and that
-       the repo has at least one commit (create it with a README)."
+       the tag is on the repo (release.sh pushes it to the public remote first)."
     release_id="$(printf '%s' "$created" | json_field id)"
     ok "created release $TAG (id $release_id), marked as the latest"
 fi

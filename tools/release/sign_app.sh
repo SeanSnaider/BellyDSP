@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Sean Snaider
 #
-# Code-signs "Amp Sim.app" (called by release.sh; runnable on its own):
+# Code-signs "BellyDSP.app" (called by release.sh; runnable on its own):
 #
-#   tools/release/sign_app.sh "path/to/Amp Sim.app"
+#   tools/release/sign_app.sh "path/to/BellyDSP.app"
 #
 # Signing goes inside out, because signing a bundle seals everything inside it: Sparkle's helper tool
 # (Autoupdate) and helper app (Updater.app) first, then Sparkle.framework, then the app. (`codesign
@@ -27,8 +27,8 @@ set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
 APP="${1:-}"
-[ -d "$APP" ] && [ -f "$APP/Contents/Info.plist" ] || die "usage: $0 path/to/Amp\\ Sim.app"
-ENTITLEMENTS="$REPO_ROOT/tools/release/AmpSim.entitlements"
+[ -d "$APP" ] && [ -f "$APP/Contents/Info.plist" ] || die "usage: $0 path/to/BellyDSP.app"
+ENTITLEMENTS="$REPO_ROOT/tools/release/BellyDSP.entitlements"
 
 flags=(--force)
 if [ -n "${AMPSIM_SIGN_IDENTITY:-}" ]; then

@@ -1,29 +1,32 @@
-Amp Sim for Windows
+BellyDSP for Windows
 ===================
 
 1. Windows may warn that the installer is from an "unknown publisher" (SmartScreen: "Windows
    protected your PC"). That's because it isn't signed with a paid certificate. Click "More info",
    then "Run anyway".
 
-2. Set your audio interface to 48 kHz: Amp Sim runs at 48 kHz only and stays silent, with a
+2. Set your audio interface to 48 kHz: BellyDSP runs at 48 kHz only and stays silent, with a
    message, at any other rate. Use your interface's own control panel, or Windows Sound settings >
    your device > Properties > Advanced.
 
-3. In Amp Sim, click Options at the top of the window > Audio/MIDI Settings:
+3. In BellyDSP, click Options at the top of the window > Audio/MIDI Settings:
      - Audio device type: "Windows Audio (Exclusive Mode)" gives the lowest latency through WASAPI;
        "Windows Audio" (shared) works with everything but adds delay. (ASIO appears only in builds
        made with ASIO support.)
      - pick your interface for output and input, sample rate 48000;
      - turn on only the input your guitar is plugged into (usually Input 1);
      - buffer size: as small as plays without crackles (try 128 samples, then 256);
-     - untick "Mute audio input". Until you do, Amp Sim hears silence.
+     - untick "Mute audio input". Until you do, BellyDSP hears silence.
 
-4. Captures and IRs: put .nam captures in %APPDATA%\AmpSim\models and cab IRs in
-   %APPDATA%\AmpSim\irs (paste the path into File Explorer's address bar). Click an amp's grille to
+4. Captures and IRs: put .nam captures in %APPDATA%\BellyDSP\models and cab IRs in
+   %APPDATA%\BellyDSP\irs (paste the path into File Explorer's address bar). Click an amp's grille to
    load a capture.
 
-Updates: Amp Sim checks once a day. When there's a new version it asks; click "Install update" and
+Updates: BellyDSP checks once a day. When there's a new version it asks; click "Install update" and
 it closes, updates itself, and opens again.
 
-Licences for everything Amp Sim includes are in THIRD_PARTY_NOTICES.txt next to the app, and in the
-app under "rig" (top-left) > About / licenses.
+BellyDSP is free software: Copyright (C) 2026 Sean Snaider, under the GNU Affero General Public
+License, version 3 or later (LICENSE.txt next to the app). It comes with ABSOLUTELY NO WARRANTY. Its
+source code is at https://github.com/SeanSnaider/BellyDSP. Licences for everything BellyDSP includes
+are in THIRD_PARTY_NOTICES.txt next to the app, and in the app under "BellyDSP" (top-left) >
+About / licenses.
