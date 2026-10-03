@@ -37,6 +37,7 @@ The system UI font (San Francisco on macOS) until Sean picks one to embed (U2). 
 | `body` | 14 | Regular | Buttons, menus, combo boxes |
 | `value` | 13 | Medium, tabular figures | Knob values, meters' numbers |
 | `label` | 12 | Regular | Knob captions, column headings |
+| `caption` | 11 | Regular | Chain blocks' state lines, axis labels, legends, card headings (U10) |
 | `huge` | 96 | Bold | The tuner's note |
 
 ## Spacing and shape
@@ -49,7 +50,8 @@ A 4-point grid: spacing tokens 4, 8, 12, 16, 24, 32. Corner radius 6 for panels 
 - **Switch.** A pill toggle (`accent` when on, `outline` hollow when off) with its label to the right. Right-click: the MIDI and scenes menu.
 - **Combo box.** A `surfaceRaised` field with a chevron; menus in `surface` with `accent` for the ticked item.
 - **Meter.** Vertical bars with a 1.5 s peak hold: `good` up to -12 dBFS, `warn` to -3, `error` above; a clip light that latches until clicked. Input and output meters in the top bar; a gain reduction meter (a bar growing down from the top) on the compressors and gates.
-- **Chain block.** A 104 x 64 card: the section bar on top, the block's name, a power switch, and a tiny state line (the mode, or "off"). Selected: `accentSoft` fill and an `accent` outline. Off: 45% opacity. Drag within its section to reorder; the gap opens where it will land; dropping triggers the same click-free reorder as the order strip.
+- **Chain block.** A card sharing its row's width, up to 140 x 48 (U9): the section bar on top, the block's name, a power switch, and a tiny state line (the mode, or "off"). Selected: `accentSoft` fill and an `accent` outline. Off: 45% opacity. Drag within its section to reorder; the gap opens where it will land; dropping triggers the same click-free reorder as the order strip.
+- **Card.** A group of controls inside a page: `surfaceRaised` at 42% over the panel, the `outline` border, radius 6, and a small uppercase heading inside at the top. Cards in a row share its width in proportion to what they hold.
 - **Scene button.** A numbered tile (1 to 8) with the scene's name under it; stored tiles bright, empty ones faint, the active one filled with `accentSoft`.
 
 ## Layout
@@ -57,8 +59,9 @@ A 4-point grid: spacing tokens 4, 8, 12, 16, 24, 32. Corner radius 6 for panels 
 The window opens at 1280 x 820 and resizes from 1100 x 720 up, with a UI scale setting (75, 100, 125, 150%) that scales everything.
 
 - **Top bar (56).** The preset name with its browser (a menu of folders, factory presets, and "Save as..."), Save, A/B with Copy, Undo, Redo, the Tuner button, the tempo field with Tap, input and output meters, and a CPU meter (the audio callback's time against its deadline).
-- **Chain strip (112).** Every block in signal order: input, the pre section (reorderable), the amp, Gate B, the cab, the post section (reorderable), output. Sections are labelled boxes; the amp and cab are fixed cards. Clicking a block selects it; its switch bypasses it.
-- **Editor (the rest).** The selected block's editor, built from the components above: the amp page with three slot cards (capture, status, trims and tone), the cab page with a speaker drawing and three draggable mics (each mic's IR, level, pan, delay; packs place mics on the speaker), the EQ page with the response curve over a live analyzer (the post section's output, a 4096-point FFT at 30 fps) with draggable band handles, and the remaining blocks' existing panels restyled.
+- **Chain strip (156, two rows; U9).** Every block in signal order: input, the pre section (reorderable), the amp, Gate B, and the cab on the first row; a line turns down into the post section (reorderable) and the output on the second. Sections are labelled boxes; the amp and cab are fixed cards. Clicking a block selects it; its switch bypasses it.
+- **Editor (the rest).** The selected block's editor, built from the components above: the amp page with three slot cards (capture, status, trims and tone), the cab page with the speaker's face and the close mics on the pack's map (each mic's IR or pack, level, pan, delay; U17), the EQ page with the response curve over a live analyzer (a 4096-point FFT at 30 fps; U11 says what each EQ's analyzer reads) with draggable band handles, and the remaining blocks' controls in cards.
+- **Warning line (30).** The sample rate, MIDI learn waiting for a controller, a preset's notes or problems; a hint when there's nothing to say.
 - **Scenes bar (48).** Eight scene tiles and Store, at the bottom where a foot-controller's layout would be.
 - **Tuner.** A full-window overlay (the existing needle and strobe views), dismissed by its own button or the footswitch.
 
@@ -72,4 +75,4 @@ The window opens at 1280 x 820 and resizes from 1100 x 720 up, with a UI scale s
 
 ## Proof
 
-Every page is snapshotted by the test suite (`build/proof/editor_*.png`) at UI scale 1 and 1.5, and the editor tests keep exercising MIDI learn, scenes, the tuner overlay, and A/B through the new components.
+Every page is snapshotted by the test suite (`build/proof/editor_<page>.png`) at UI scale 1, at 1.5 (`_150`), and in the smallest window, 1100 x 720 (`_min`), plus the chain strip alone, the EQ with its analyzer showing a signal, and the tuner; the editor tests keep exercising MIDI learn, scenes, the tuner overlay, and A/B through the new components.

@@ -2119,6 +2119,201 @@ public:
                         + juce::String (getParam (p, "delay_highcut"), 0) + " Hz; \"1/4\" picked the note");
         }
 
+        beginTest ("editor wiring: scene tiles store and recall, Store overwrites, A/B from the top bar, a card click opens its page, and a drag is one undo step");
+        {
+            AmpSimProcessor p;
+            std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+            auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
+            const auto now = juce::Time::getCurrentTime();
+            const auto event = [now] (juce::Component& c, juce::Point<float> at, juce::Point<float> down, bool dragged)
+            {
+                return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), at, juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier),
+                                         juce::MouseInputSource::defaultPressure, 0.0f, 0.0f, 0.0f, 0.0f, &c, &c, now, down, now, 1, dragged);
+            };
+
+            // Scenes: an empty tile stores, a stored one recalls; Store, then a tile, overwrites it.
+            auto& scenesBar = ed.getScenesBar();
+            auto& tile = dynamic_cast<juce::Button&> (scenesBar.getTile (2));
+            setParam (p, "delay_on", 1.0f);
+            tile.onClick();
+            const auto stored = p.getScenes().get (2).stored;
+            setParam (p, "delay_on", 0.0f);
+            tile.onClick();
+            const auto recalled = getParam (p, "delay_on");
+            scenesBar.setStoreArmed (true);
+            setParam (p, "reverb_on", 1.0f);
+            tile.onClick(); // overwrites (now with the reverb on too), and disarms
+            const auto disarmed = ! scenesBar.isStoreArmed();
+            setParam (p, "delay_on", 0.0f);
+            setParam (p, "reverb_on", 0.0f);
+            tile.onClick();
+            expect (stored && disarmed);
+            expectEquals (recalled, 1.0f);
+            expectEquals (getParam (p, "delay_on"), 1.0f);
+            expectEquals (getParam (p, "reverb_on"), 1.0f);
+
+            // A/B from the top bar: B starts as A, each keeps its own.
+            setParam (p, "reverb_mix", 30.0f);
+            ed.getTopBar().onAbSelect (true);
+            setParam (p, "reverb_mix", 60.0f);
+            ed.getTopBar().onAbSelect (false);
+            const auto onA = getParam (p, "reverb_mix");
+            ed.getTopBar().onAbSelect (true);
+            expect (p.isOnB());
+            expectWithinAbsoluteError (onA, 30.0f, 0.01f);
+            expectWithinAbsoluteError (getParam (p, "reverb_mix"), 60.0f, 0.01f);
+
+            // A click on a card selects its block and shows its page.
+            auto& card = *ed.getChainStrip().getCard (ui::BlockId::reverb);
+            card.mouseDown (event (card, card.getLocalBounds().getCentre().toFloat(), card.getLocalBounds().getCentre().toFloat(), false));
+            card.mouseUp (event (card, card.getLocalBounds().getCentre().toFloat(), card.getLocalBounds().getCentre().toFloat(), false));
+            expect (ed.getSelectedBlock() == ui::BlockId::reverb && ed.getPage (ui::BlockId::reverb).isVisible());
+            expect (! ed.getPage (ui::BlockId::amp).isVisible());
+
+            // The highlight moves with the click, not at the next refresh: one card drawn selected, the reverb's.
+            int highlighted = 0;
+            for (int b = 0; b < ui::numBlocks; ++b)
+                highlighted += ed.getChainStrip().isCardSelected ((ui::BlockId) b) ? 1 : 0;
+            expect (ed.getChainStrip().isCardSelected (ui::BlockId::reverb));
+            expectEquals (highlighted, 1);
+
+            // Undo: each drag of a knob is one step. The editor hears every press after the control does,
+            // as JUCE's mouse listeners do, and starts the step.
+            ui::Knob* mix = nullptr;
+            for (auto* child : ed.getPage (ui::BlockId::delay).getChildren())
+                if (child->getProperties()[ui::parameterIdProperty].toString() == "delay_mix")
+                    mix = dynamic_cast<ui::Knob*> (child);
+            expect (mix != nullptr);
+            setParam (p, "delay_mix", 25.0f);
+            p.parameters.copyState();
+            p.undoManager.clearUndoHistory();
+            const auto drag = [&] (float pixels)
+            {
+                const juce::Point<float> from { 30.0f, 40.0f }, to { 30.0f, 40.0f - pixels };
+                mix->mouseDown (event (*mix, from, from, false));
+                ed.mouseDown (event (*mix, from, from, false));
+                mix->mouseDrag (event (*mix, to, from, true));
+                mix->mouseUp (event (*mix, to, from, true));
+                p.parameters.copyState(); // the tree catches up, as its timer does in the app
+            };
+            drag (40.0f);
+            const auto afterFirst = getParam (p, "delay_mix");
+            drag (40.0f);
+            const auto afterSecond = getParam (p, "delay_mix");
+            p.undoManager.undo();
+            const auto undoneOnce = getParam (p, "delay_mix");
+            p.undoManager.undo();
+            const auto undoneTwice = getParam (p, "delay_mix");
+            expectWithinAbsoluteError (afterFirst, 45.0f, 0.06f);
+            expectWithinAbsoluteError (afterSecond, 65.0f, 0.06f);
+            expectWithinAbsoluteError (undoneOnce, afterFirst, 0.01f);
+            expectWithinAbsoluteError (undoneTwice, 25.0f, 0.01f);
+            logMessage ("  -> scene tile 3: stored when empty, recalled delay on, overwritten after Store (which disarmed); A/B from the top bar kept "
+                        "30% and 60% reverb mix apart; a click on the reverb's card opened its page; two 40-point drags of the delay mix (25 -> "
+                        + juce::String (afterFirst, 1) + " -> " + juce::String (afterSecond, 1) + "%) undid one at a time (" + juce::String (undoneOnce, 1)
+                        + ", then " + juce::String (undoneTwice, 1) + "%)");
+        }
+
+        beginTest ("scene tile menu: Store, Rename (a dialog in the GUI's look), and Clear; closing the editor with the dialog open cancels it cleanly");
+        {
+            AmpSimProcessor p;
+            std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+            auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
+
+            // The app's message loop, for a moment: a dialog's button click and its result arrive as
+            // messages, as they do when Sean clicks.
+            const auto pump = [] { juce::MessageManager::getInstance()->runDispatchLoopUntil (150); };
+            const auto find = [] (const juce::PopupMenu& menu, const juce::String& text) -> const juce::PopupMenu::Item*
+            {
+                for (juce::PopupMenu::MenuItemIterator it (menu); it.next();)
+                    if (it.getItem().text == text)
+                        return &it.getItem();
+                return nullptr;
+            };
+            const auto choose = [&] (const juce::String& text)
+            {
+                const auto menu = ed.sceneMenuFor (2);
+                const auto* item = find (menu, text);
+                const auto enabled = item != nullptr && item->isEnabled;
+                if (enabled)
+                    item->action();
+                return enabled;
+            };
+            const auto openRename = [&]
+            {
+                choose ("Rename...");
+                return juce::Component::SafePointer<juce::AlertWindow> (dynamic_cast<juce::AlertWindow*> (juce::Component::getCurrentlyModalComponent()));
+            };
+            const auto answer = [&] (juce::Component::SafePointer<juce::AlertWindow>& dialog, const juce::String& name, const juce::String& buttonName)
+            {
+                if (dialog != nullptr)
+                {
+                    dialog->getTextEditor ("name")->setText (name);
+                    dialog->getButton (buttonName)->triggerClick();
+                }
+                pump();
+            };
+            const auto tileTooltip = [&ed] { return dynamic_cast<juce::Button&> (ed.getScenesBar().getTile (2)).getTooltip(); };
+            const auto nameNow = [&p] { return p.getScenes().get (2).name; };
+
+            // An empty tile offers only Store.
+            const auto emptyMenu = ed.sceneMenuFor (2);
+            const auto* renameWhenEmpty = find (emptyMenu, "Rename...");
+            const auto* clearWhenEmpty = find (emptyMenu, "Clear");
+            expect (renameWhenEmpty != nullptr && ! renameWhenEmpty->isEnabled);
+            expect (clearWhenEmpty != nullptr && ! clearWhenEmpty->isEnabled);
+            expect (choose ("Store the current sound here"));
+            expect (p.getScenes().get (2).stored);
+            const auto storedName = nameNow();
+
+            // Rename opens a dialog in the GUI's look, holding the scene's name; typing and pressing
+            // Rename renames the scene and its tile.
+            auto dialog = openRename();
+            expect (dialog != nullptr);
+            const auto ownLook = dialog != nullptr && dynamic_cast<ui::LookAndFeel*> (&dialog->getLookAndFeel()) != nullptr;
+            const auto title = dialog != nullptr ? dialog->getName() : juce::String();
+            const auto prefilled = dialog != nullptr ? dialog->getTextEditorContents ("name") : juce::String();
+            expect (ownLook);
+            expectEquals (title, juce::String ("Rename scene 3"));
+            expectEquals (prefilled, storedName);
+            answer (dialog, "Bridge", "Rename");
+            expect (dialog == nullptr); // dismissed and deleted
+            expectEquals (nameNow(), juce::String ("Bridge"));
+            expect (tileTooltip().startsWith ("Bridge"));
+
+            // Cancel, or a blank name, leaves it alone.
+            dialog = openRename();
+            answer (dialog, "Nope", "Cancel");
+            const auto afterCancel = nameNow();
+            dialog = openRename();
+            answer (dialog, "   ", "Rename");
+            expectEquals (afterCancel, juce::String ("Bridge"));
+            expectEquals (nameNow(), juce::String ("Bridge"));
+
+            // Clear empties the tile.
+            expect (choose ("Clear"));
+            const auto cleared = ! p.getScenes().get (2).stored;
+            expect (cleared);
+
+            // The editor closing (the plugin window shut) with the dialog open: the dialog stops drawing
+            // with the editor's LookAndFeel before that's destroyed, and is cancelled.
+            expect (choose ("Store the current sound here"));
+            const auto nameBeforeClose = nameNow();
+            dialog = openRename();
+            const auto wasOpen = dialog != nullptr && dialog->isCurrentlyModal();
+            editor.reset();
+            const auto detached = dialog != nullptr && &dialog->getLookAndFeel() == &juce::LookAndFeel::getDefaultLookAndFeel();
+            const auto cancelled = dialog != nullptr && ! dialog->isCurrentlyModal();
+            pump();
+            expect (wasOpen && detached && cancelled);
+            expect (dialog == nullptr);
+            expectEquals (nameNow(), nameBeforeClose);
+            logMessage ("  -> tile 3's menu: Store, then Rename opened \"" + title + "\" holding \"" + prefilled + "\" in the GUI's look; \"Bridge\" renamed the scene "
+                        "and its tile; Cancel and a blank name changed nothing; Clear emptied it; with the editor closed under an open dialog, the dialog "
+                        + juce::String (detached ? "let go of the editor's LookAndFeel" : "kept the editor's LookAndFeel") + ", was "
+                        + (cancelled ? "cancelled" : "left open") + ", and was gone after the message loop ran");
+        }
+
         beginTest ("listening renders: the synthetic guitar DI through the full chain");
         {
             const auto input = guitarDI ((int) (4.0 * fs));

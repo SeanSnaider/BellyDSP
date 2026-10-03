@@ -233,6 +233,9 @@ target_sources(ampsim_tests PRIVATE
 target_include_directories(ampsim_tests PRIVATE src tests)
 target_compile_definitions(ampsim_tests PRIVATE
     ${AMPSIM_JUCE_DEFINITIONS}
+    # Tests only: MessageManager::runDispatchLoopUntil, so an editor test can let a dialog's clicks
+    # and callbacks arrive as the app's message loop delivers them. Our code never runs modal loops.
+    JUCE_MODAL_LOOPS_PERMITTED=1
     AMPSIM_NAM_DIR="${NAM_DIR}"
     AMPSIM_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
     AMPSIM_NAM_RENDER="$<TARGET_FILE:nam_render>")

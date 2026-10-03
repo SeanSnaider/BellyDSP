@@ -158,6 +158,13 @@ AmpSimEditor::~AmpSimEditor()
     if (shownPage != nullptr)
         shownPage->pageHidden();
     ampSim.setAnalyzerTap (AmpSimProcessor::AnalyzerTap::off); // nobody reads the ring any more
+    if (renameWindow != nullptr)
+    {
+        // A Rename dialog is a separate window that outlives us: it must stop drawing with our
+        // LookAndFeel before that's destroyed, and it's dismissed (as a cancel).
+        renameWindow->setLookAndFeel (nullptr);
+        renameWindow->exitModalState (0);
+    }
     setLookAndFeel (nullptr);
 }
 
@@ -465,6 +472,11 @@ void AmpSimEditor::clickScene (int index)
 
 void AmpSimEditor::sceneMenu (int index)
 {
+    ui::showMenu (sceneMenuFor (index), &scenesBar.getTile (index), &lookAndFeel);
+}
+
+juce::PopupMenu AmpSimEditor::sceneMenuFor (int index)
+{
     juce::PopupMenu menu;
     const auto& scene = ampSim.getScenes().get (index);
     menu.addSectionHeader (scene.stored ? scene.name : "Scene " + juce::String (index + 1) + " (empty)");
@@ -482,6 +494,8 @@ void AmpSimEditor::sceneMenu (int index)
         if (safe == nullptr)
             return;
         auto* window = new juce::AlertWindow ("Rename scene " + juce::String (index + 1), {}, juce::MessageBoxIconType::NoIcon, safe.getComponent());
+        window->setLookAndFeel (&safe->lookAndFeel); // the editor's destructor detaches it if still open
+        safe->renameWindow = window;
         window->addTextEditor ("name", safe->ampSim.getScenes().get (index).name);
         window->addButton ("Rename", 1, juce::KeyPress (juce::KeyPress::returnKey));
         window->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
@@ -503,7 +517,7 @@ void AmpSimEditor::sceneMenu (int index)
             safe->refreshState();
         }
     });
-    ui::showMenu (menu, &scenesBar.getTile (index), &lookAndFeel);
+    return menu;
 }
 
 // ---- Undo, keys, and right-clicks -------------------------------------------------------------------

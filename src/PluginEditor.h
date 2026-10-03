@@ -60,6 +60,10 @@ public:
     /// For tests: the menu a right-click on this parameter's control would show.
     juce::PopupMenu midiMenuFor (const juce::String& parameterId);
 
+    /// For tests: the menu a right-click on scene tile `index` (0 to 7) would show: store the current
+    /// sound there, rename it (a dialog), or clear it.
+    juce::PopupMenu sceneMenuFor (int index);
+
 private:
     class StatusLine;
 
@@ -103,6 +107,7 @@ private:
     double lastMeterMs = 0.0;
     int ticks = 0;
     std::unique_ptr<juce::FileChooser> chooser;
+    juce::Component::SafePointer<juce::AlertWindow> renameWindow; // the open scene Rename dialog, if any
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AmpSimEditor)
 };

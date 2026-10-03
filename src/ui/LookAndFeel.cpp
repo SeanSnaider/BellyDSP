@@ -196,7 +196,7 @@ juce::Font LookAndFeel::getPopupMenuFont()
     return font (Text::body);
 }
 
-void LookAndFeel::getIdealPopupMenuItemSize (const juce::String& text, bool isSeparator, int standardMenuItemHeight, int& idealWidth,
+void LookAndFeel::getIdealPopupMenuItemSize (const juce::String& itemText, bool isSeparator, int standardMenuItemHeight, int& idealWidth,
                                              int& idealHeight)
 {
     if (isSeparator)
@@ -208,7 +208,7 @@ void LookAndFeel::getIdealPopupMenuItemSize (const juce::String& text, bool isSe
 
     const auto f = getPopupMenuFont();
     idealHeight = standardMenuItemHeight > 0 ? standardMenuItemHeight : 28;
-    idealWidth = juce::roundToInt (juce::GlyphArrangement::getStringWidth (f, text)) + idealHeight * 2 + 12;
+    idealWidth = juce::roundToInt (juce::GlyphArrangement::getStringWidth (f, itemText)) + idealHeight * 2 + 12;
 }
 
 void LookAndFeel::drawPopupMenuItem (juce::Graphics& g, const juce::Rectangle<int>& area, bool isSeparator, bool isActive, bool isHighlighted,

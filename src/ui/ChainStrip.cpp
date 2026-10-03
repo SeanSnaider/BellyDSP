@@ -69,6 +69,17 @@ public:
         }
     }
 
+    bool isSelected() const noexcept { return selected; }
+
+    void setSelected (bool isSelected)
+    {
+        if (isSelected != selected)
+        {
+            selected = isSelected;
+            repaint();
+        }
+    }
+
     void resized() override
     {
         if (power != nullptr)
@@ -230,11 +241,15 @@ void ChainStrip::select (BlockId id)
 
 void ChainStrip::setSelected (BlockId id)
 {
-    if (id == selected)
-        return;
+    // Straight onto the cards, so the highlight moves with the click rather than at the next refresh.
     selected = id;
     for (auto& card : cards)
-        card->repaint();
+        card->setSelected (card->id == id);
+}
+
+bool ChainStrip::isCardSelected (BlockId id) const
+{
+    return cards[(size_t) id]->isSelected();
 }
 
 void ChainStrip::resized()

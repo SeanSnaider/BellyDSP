@@ -26,7 +26,7 @@ juce::String dbText (float db)
 
 // ---- LevelMeter ----------------------------------------------------------------------------------
 
-LevelMeter::LevelMeter (juce::String text, int numChannels) : label (std::move (text)), channels ((size_t) juce::jmax (1, numChannels))
+LevelMeter::LevelMeter (juce::String title, int numChannels) : label (std::move (title)), channels ((size_t) juce::jmax (1, numChannels))
 {
     setTooltip ("Peak level. The red light means a clip; click to clear it.");
     setMouseCursor (juce::MouseCursor::PointingHandCursor);

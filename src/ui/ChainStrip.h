@@ -35,8 +35,9 @@ public:
     /// Message thread, ten times a second: the orders, the switches, and the state lines.
     void refresh (const AmpSimProcessor::Status& status);
 
-    /// For tests: a block's card, and a section's blocks as shown, left to right.
+    /// For tests: a block's card, whether it's drawn selected, and a section's blocks as shown, left to right.
     juce::Component* getCard (BlockId id) const;
+    bool isCardSelected (BlockId id) const;
     std::vector<BlockId> getShownOrder (Section section) const;
 
     void paint (juce::Graphics&) override;
