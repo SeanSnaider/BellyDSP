@@ -1,5 +1,10 @@
-# CMake build output
+# CMake build output (the dev build, and the release script's universal build)
 /build
+/build-release
+
+# Downloaded pinned frameworks (tools/fetch_deps.sh) and release outputs (tools/release/release.sh)
+/build-deps
+/dist
 
 # User-supplied captures and IRs (never committed; see README)
 /models
@@ -8,6 +13,7 @@
 # Audio files, except committed test fixtures
 *.wav
 !tests/fixtures/**/*.wav
+!content/**/*.wav
 
 __pycache__/
 .DS_Store

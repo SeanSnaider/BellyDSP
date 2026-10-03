@@ -1,6 +1,7 @@
 #include "Presets.h"
 #include "BinaryData.h"
 #include "PluginProcessor.h"
+#include "platform/AppInfo.h"
 
 #include <map>
 
@@ -10,6 +11,8 @@ namespace presets
 namespace
 {
 const char* micKeys[] = { "mic1", "mic2", "room" };
+
+const juce::String factoryPrefix { "factory:" };
 
 std::map<juce::String, juce::File>& libraryRoots()
 {
@@ -44,6 +47,9 @@ juce::Array<juce::File> filesUnder (const juce::File& folder)
 
 juce::File resolvePath (const juce::String& path)
 {
+    // "factory:models/x.nam" is a file bundled with the app (content/ in the repo), wherever it's installed.
+    if (path.startsWith (factoryPrefix))
+        return libraryRoot ("factory").getChildFile (path.substring (factoryPrefix.length()));
     for (const auto* kind : { "models", "irs" })
         if (path.startsWith (juce::String (kind) + "/"))
             return libraryRoot (kind).getChildFile (path.fromFirstOccurrenceOf ("/", false, false));
@@ -68,11 +74,26 @@ juce::StringArray toStrings (const juce::var& v)
 }
 } // namespace
 
+namespace
+{
+juce::File userDataFolder()
+{
+    // ~/Library/Application Support/AmpSim on macOS, %APPDATA%\AmpSim on Windows.
+   #if JUCE_MAC
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getChildFile ("Application Support/AmpSim");
+   #else
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getChildFile ("AmpSim");
+   #endif
+}
+} // namespace
+
 juce::File libraryRoot (const juce::String& kind)
 {
     if (const auto it = libraryRoots().find (kind); it != libraryRoots().end())
         return it->second;
-    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getChildFile ("Application Support/AmpSim").getChildFile (kind);
+    if (kind == "factory")
+        return platform::factoryContentFolder();
+    return userDataFolder().getChildFile (kind);
 }
 
 void setLibraryRoot (const juce::String& kind, const juce::File& folder)
@@ -136,8 +157,10 @@ juce::int64 contentSize (const juce::File& f)
 
 FileRef makeRef (const juce::File& f, const juce::String& kind)
 {
-    const auto root = libraryRoot (kind);
-    const auto path = f.isAChildOf (root) ? kind + "/" + f.getRelativePathFrom (root).replaceCharacter ('\\', '/') : f.getFullPathName();
+    const auto root = libraryRoot (kind), factory = libraryRoot ("factory");
+    const auto path = f.isAChildOf (factory) ? factoryPrefix + f.getRelativePathFrom (factory).replaceCharacter ('\\', '/')
+                    : f.isAChildOf (root)    ? kind + "/" + f.getRelativePathFrom (root).replaceCharacter ('\\', '/')
+                                             : f.getFullPathName();
     return { path, contentHash (f), contentSize (f) };
 }
 
@@ -158,19 +181,25 @@ Resolved resolve (const FileRef& ref, const juce::String& kind)
     // Gone from its path: look through the library for the same size first (cheap), then the same hash.
     if (ref.hash.isEmpty())
         return r;
-    const auto root = libraryRoot (kind);
     const auto wantFolder = ! ref.path.endsWithIgnoreCase (".nam") && ! ref.path.endsWithIgnoreCase (".wav")
                             && ! ref.path.endsWithIgnoreCase (".aif") && ! ref.path.endsWithIgnoreCase (".aiff");
     const auto extension = ref.path.fromLastOccurrenceOf (".", true, false);
-    for (const auto& entry : juce::RangedDirectoryIterator (root, true, wantFolder ? "*" : "*" + extension,
-                                                           wantFolder ? juce::File::findDirectories : juce::File::findFiles))
+    // The user's library first, then the app's bundled content (a factory file the user copied into the
+    // library, or a library file that later shipped with the app, is the same file).
+    for (const auto& root : { libraryRoot (kind), libraryRoot ("factory") })
     {
-        const auto candidate = entry.getFile();
-        if (contentSize (candidate) == ref.size && contentHash (candidate) == ref.hash)
+        if (! root.isDirectory())
+            continue;
+        for (const auto& entry : juce::RangedDirectoryIterator (root, true, wantFolder ? "*" : "*" + extension,
+                                                               wantFolder ? juce::File::findDirectories : juce::File::findFiles))
         {
-            r.file = candidate;
-            r.found = r.relinked = true;
-            return r;
+            const auto candidate = entry.getFile();
+            if (contentSize (candidate) == ref.size && contentHash (candidate) == ref.hash)
+            {
+                r.file = candidate;
+                r.found = r.relinked = true;
+                return r;
+            }
         }
     }
     return r;
@@ -402,7 +431,7 @@ juce::Array<juce::var> factoryPresets()
 
 juce::File defaultFolder()
 {
-    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getChildFile ("Application Support/AmpSim/presets");
+    return userDataFolder().getChildFile ("presets");
 }
 
 bool save (const juce::var& preset, const juce::File& file)

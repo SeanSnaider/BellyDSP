@@ -1,9 +1,38 @@
 #include "TopBar.h"
+#include "platform/AppInfo.h"
 
 namespace ui
 {
 
 using namespace theme;
+
+/// The brand: a 7 px emerald dot, 8 px, then "rig" (15 px semibold), exactly as the handoff draws it. It's
+/// also the handle of a small menu (the version, "Check for updates...", the licences), so it looks the
+/// same at rest and only the cursor and the tooltip say it can be clicked (ASSUMPTIONS DS9).
+class TopBar::BrandButton final : public juce::Button
+{
+public:
+    BrandButton() : juce::Button ("rig")
+    {
+        setTooltip ("Amp Sim " + platform::appVersion() + ": updates and licences");
+        setMouseCursor (juce::MouseCursor::PointingHandCursor);
+    }
+
+    static int preferredWidth() { return 15 + (int) std::ceil (textWidth (font(), "rig")) + 2; }
+
+    void paintButton (juce::Graphics& g, bool, bool) override
+    {
+        const auto h = (float) getHeight();
+        g.setColour (accent);
+        g.fillEllipse (juce::Rectangle<float> (7.0f, 7.0f).withCentre ({ 3.5f, h * 0.5f }));
+        g.setFont (font());
+        g.setColour (ink);
+        g.drawText ("rig", juce::Rectangle<float> (15.0f, 0.0f, (float) getWidth() - 15.0f, h), juce::Justification::centredLeft, false);
+    }
+
+private:
+    static juce::FontOptions font() { return geist (Weight::semibold, 15.0f); }
+};
 
 /// The preset's name and tag, centred in a 300 x 32 box: the browser's handle.
 class TopBar::PresetButton final : public juce::Button
@@ -105,8 +134,9 @@ private:
 };
 
 TopBar::TopBar (AmpSimProcessor& processor)
-    : ampSim (processor), preset (std::make_unique<PresetButton>()), tuner (std::make_unique<TunerButton>())
+    : ampSim (processor), brand (std::make_unique<BrandButton>()), preset (std::make_unique<PresetButton>()), tuner (std::make_unique<TunerButton>())
 {
+    brand->onClick = [this] { if (onBrand) onBrand(); };
     preset->onClick = [this] { if (onPresetMenu) onPresetMenu(); };
     previous.onClick = [this] { if (onPrevious) onPrevious(); };
     next.onClick = [this] { if (onNext) onNext(); };
@@ -117,14 +147,19 @@ TopBar::TopBar (AmpSimProcessor& processor)
     previous.setTooltip ("Previous preset");
     next.setTooltip ("Next preset");
     save.setTooltip ("Save the preset to a file");
-    for (auto* c : std::initializer_list<juce::Component*> { preset.get(), &previous, &next, &save, tuner.get(), &inputMeter, &outputMeter })
+    for (auto* c : std::initializer_list<juce::Component*> { brand.get(), preset.get(), &previous, &next, &save, tuner.get(), &inputMeter, &outputMeter })
         addAndMakeVisible (c);
-    for (auto* b : std::initializer_list<juce::Component*> { preset.get(), &previous, &next, &save, tuner.get() })
+    for (auto* b : std::initializer_list<juce::Component*> { brand.get(), preset.get(), &previous, &next, &save, tuner.get() })
         b->setHasFocusOutline (true);
     refresh();
 }
 
 TopBar::~TopBar() = default;
+
+juce::Button& TopBar::getBrandButton() noexcept
+{
+    return *brand;
+}
 
 juce::Button& TopBar::getPresetButton() noexcept
 {
@@ -173,14 +208,7 @@ void TopBar::updateMeters (const AmpSimProcessor::Peaks& peaks, double seconds)
 
 void TopBar::paint (juce::Graphics& g)
 {
-    // The brand: a 7 px emerald dot, 8 px, then "rig" (15 px semibold).
-    auto brand = juce::Rectangle<float> (24.0f, 0.0f, 136.0f, (float) getHeight());
-    g.setColour (accent);
-    g.fillEllipse (juce::Rectangle<float> (7.0f, 7.0f).withCentre ({ brand.getX() + 3.5f, brand.getCentreY() }));
-    g.setFont (geist (Weight::semibold, 15.0f));
-    g.setColour (ink);
-    g.drawText ("rig", brand.withTrimmedLeft (15.0f), juce::Justification::centredLeft, false);
-
+    // The brand is its own button (BrandButton), in the 136 px column at the left.
     g.setColour (line1);
     g.fillRect (0, getHeight() - 1, getWidth(), 1);
 }
@@ -189,7 +217,8 @@ void TopBar::resized()
 {
     // CSS: padding 0 24, gap 20; the brand 136 wide; the preset part fills; the right part its content.
     auto area = getLocalBounds().reduced (24, 0);
-    area.removeFromLeft (136 + 20);
+    brand->setBounds (area.removeFromLeft (136).withWidth (BrandButton::preferredWidth()));
+    area.removeFromLeft (20);
 
     // Right: the tuner button (56 high), 22, In, 22, Out.
     const auto outWidth = outputMeter.getPreferredWidth(), inWidth = inputMeter.getPreferredWidth();

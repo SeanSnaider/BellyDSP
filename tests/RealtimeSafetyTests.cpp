@@ -40,7 +40,10 @@ public:
 
             expectGreaterThan (c.allocations, 0L);
             expectGreaterThan (c.frees, 0L);
-            expectGreaterThan (c.blockingLocks, 0L);
+            if (rtcheck::lockCountingAvailable)
+                expectGreaterThan (c.blockingLocks, 0L);
+            else
+                logMessage ("  -> NOTE: this platform's build can't count blocking locks; the macOS run is the real check");
             logMessage ("  -> deliberately bad code: " + describe (c) + " (detector works)");
         }
 

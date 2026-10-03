@@ -1,5 +1,7 @@
 #include "PluginEditor.h"
 #include "BlockParameters.h"
+#include "platform/AppInfo.h"
+#include "platform/Updater.h"
 
 using namespace ui::theme;
 
@@ -165,6 +167,7 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p) : AudioProcessorEditor (&p), amp
     topBar.onPrevious = [this] { stepPreset (-1); };
     topBar.onNext = [this] { stepPreset (1); };
     topBar.onTuner = [this] { showPage (shownPage == P::tuner ? pageBeforeTuner : P::tuner); };
+    topBar.onBrand = [this] { ui::showMenu (brandMenu(), &topBar.getBrandButton(), &lookAndFeel); };
     outputPage->onAbSelect = [this] (bool b) { abSelect (b); };
     outputPage->onAbCopy = [this] { ampSim.abCopyToOther(); };
     outputPage->onTap = [this] { ampSim.tapTempo(); };
@@ -192,6 +195,11 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p) : AudioProcessorEditor (&p), amp
 
     refreshState();
     startTimerHz (meterFps);
+
+    // Automatic updates, in the standalone app only (a plugin's updates belong to whoever installed it, and
+    // the tests' processors are never "Standalone"). Message thread; the updater never touches audio.
+    if (ampSim.wrapperType == juce::AudioProcessor::wrapperType_Standalone)
+        platform::updater::start();
 }
 
 AmpSimEditor::~AmpSimEditor()
@@ -518,6 +526,59 @@ juce::PopupMenu AmpSimEditor::presetMenu()
 void AmpSimEditor::showPresetMenu()
 {
     ui::showMenu (presetMenu(), &topBar.getPresetButton(), &lookAndFeel);
+}
+
+// ---- The brand's menu: version, updates, licences -------------------------------------------------
+
+juce::PopupMenu AmpSimEditor::brandMenu()
+{
+    juce::PopupMenu menu;
+    const auto safe = juce::Component::SafePointer<AmpSimEditor> (this);
+    menu.addItem ("Amp Sim " + platform::appVersion(), false, false, nullptr);
+    menu.addSeparator();
+    menu.addItem ("Check for updates...", platform::updater::isRunning(), false, [] { platform::updater::checkNow(); });
+    menu.addItem ("About / licenses", [safe] { if (safe != nullptr) safe->showAbout(); });
+    return menu;
+}
+
+juce::String AmpSimEditor::aboutText()
+{
+    juce::String about;
+    about << "Amp Sim " << platform::appVersion() << "\n"
+          << "Sean Snaider's guitar amp sim, with NAM captures running on NeuralAmpModelerCore.\n"
+          << platform::updater::describe() << ".\n\n";
+    const auto notices = platform::noticesFile();
+    if (notices.existsAsFile())
+        about << notices.loadFileAsString();
+    else
+        about << "THIRD_PARTY_NOTICES.txt is missing from this build (expected at " << notices.getFullPathName() << ").\n";
+    return about;
+}
+
+void AmpSimEditor::showAbout()
+{
+    // A plain, non-modal window with the text, read-only and scrollable.
+    auto editor = std::make_unique<juce::TextEditor>();
+    editor->setMultiLine (true);
+    editor->setReadOnly (true);
+    editor->setScrollbarsShown (true);
+    editor->setCaretVisible (false);
+    editor->setFont (geist (Weight::regular, 13.0f));
+    editor->setColour (juce::TextEditor::backgroundColourId, bg);
+    editor->setColour (juce::TextEditor::textColourId, ink);
+    editor->setColour (juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
+    editor->setText (aboutText(), false);
+    editor->setSize (640, 520);
+
+    juce::DialogWindow::LaunchOptions options;
+    options.dialogTitle = "About Amp Sim";
+    options.content.setOwned (editor.release());
+    options.componentToCentreAround = this;
+    options.dialogBackgroundColour = bg;
+    options.escapeKeyTriggersCloseButton = true;
+    options.useNativeTitleBar = true;
+    options.resizable = true;
+    options.launchAsync();
 }
 
 // ---- Captures ---------------------------------------------------------------------------------------

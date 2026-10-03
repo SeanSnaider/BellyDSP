@@ -4,13 +4,88 @@
 #   cmake -B build -DCMAKE_BUILD_TYPE=Release     # configure (once, or after editing this file)
 #   cmake --build build -j                        # compile
 #   ctest --test-dir build --output-on-failure    # run the tests
+#
+# Release builds (universal, signed, with the auto-updater) are made by tools/release/release.sh, which
+# configures a separate build-release/ directory with the options below (docs/RELEASING.md).
 
 cmake_minimum_required(VERSION 3.22)
 
-# Apple Silicon Macs start at macOS 11. Has to be set before project().
-set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
+# Apple Silicon Macs start at macOS 11. Has to be set before project(). Builds with the auto-updater
+# (AMPSIM_UPDATER, below) need macOS 12, because Sparkle 2.10 does (ASSUMPTIONS DS5).
+if(AMPSIM_UPDATER)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version")
+else()
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
+endif()
 
-project(AmpSim VERSION 0.1.0 LANGUAGES C CXX)
+# The version comes from the VERSION file (one line, major.minor.patch); the release script passes
+# -DAMPSIM_VERSION=... for the version it's building. It becomes CFBundleShortVersionString and
+# CFBundleVersion on macOS (Sparkle compares the latter, so it must only ever go up) and the version
+# WinSparkle compares on Windows.
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" AMPSIM_VERSION_FROM_FILE LIMIT_COUNT 1)
+if(NOT DEFINED AMPSIM_VERSION OR AMPSIM_VERSION STREQUAL "")
+    set(AMPSIM_VERSION "${AMPSIM_VERSION_FROM_FILE}")
+endif()
+if(NOT AMPSIM_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+    message(FATAL_ERROR "The version must be major.minor.patch (got '${AMPSIM_VERSION}')")
+endif()
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/VERSION"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tools/release/release.conf"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tools/deps.conf")
+
+project(AmpSim VERSION ${AMPSIM_VERSION} LANGUAGES C CXX)
+
+# ---------------------------------------------------------------------------------------------
+# Release options. A plain `cmake -B build` (Sean's dev build) leaves them all off: native arch, no
+# updater, so a dev build never replaces itself with a release.
+option(AMPSIM_UPDATER "Embed the auto-updater (Sparkle on macOS, WinSparkle on Windows): release builds" OFF)
+option(AMPSIM_WITH_ASIO "Windows: build with ASIO driver support (licensing: docs/RELEASING.md)" OFF)
+set(AMPSIM_X86_SIMD "AVX" CACHE STRING "x86_64 baseline instruction set for the Intel slice and Windows: AVX or SSE2")
+set(AMPSIM_JUCE_LICENCE "undecided" CACHE STRING "How JUCE is licensed, for the notices: undecided, AGPLv3, or JUCE")
+set(AMPSIM_SOURCE_URL "" CACHE STRING "Where recipients can get the source (required by the AGPLv3 if that's the JUCE licence)")
+
+# Values from tools/release/release.conf and tools/deps.conf (KEY=VALUE lines), unless given with -D.
+function(ampsim_conf key file out)
+    if(DEFINED ${out})
+        return()
+    endif()
+    file(STRINGS "${file}" lines REGEX "^${key}=")
+    set(value "")
+    foreach(line IN LISTS lines)
+        string(REGEX REPLACE "^${key}=" "" value "${line}")
+    endforeach()
+    set(${out} "${value}" PARENT_SCOPE)
+endfunction()
+ampsim_conf(RELEASES_REPO "${CMAKE_CURRENT_SOURCE_DIR}/tools/release/release.conf" AMPSIM_RELEASES_REPO)
+ampsim_conf(ED_PUBLIC_KEY "${CMAKE_CURRENT_SOURCE_DIR}/tools/release/release.conf" AMPSIM_ED_PUBLIC_KEY)
+ampsim_conf(SPARKLE_VERSION "${CMAKE_CURRENT_SOURCE_DIR}/tools/deps.conf" AMPSIM_SPARKLE_VERSION)
+ampsim_conf(WINSPARKLE_VERSION "${CMAKE_CURRENT_SOURCE_DIR}/tools/deps.conf" AMPSIM_WINSPARKLE_VERSION)
+
+# The appcast URL: GitHub's "latest release" asset link, which redirects to the newest release's file,
+# so publishing a release is all it takes (no web hosting). One feed per platform.
+if(WIN32)
+    set(_appcast_name "appcast-windows.xml")
+else()
+    set(_appcast_name "appcast.xml")
+endif()
+if(NOT DEFINED AMPSIM_FEED_URL)
+    set(AMPSIM_FEED_URL "https://github.com/${AMPSIM_RELEASES_REPO}/releases/latest/download/${_appcast_name}")
+endif()
+
+# The Intel slice and Windows: AVX, which every Intel Mac that runs macOS 11 has (Ivy Bridge and later;
+# the 2013 Mac Pro has AVX but not AVX2) and nearly every Windows PC since 2011. Eigen, under NAM core,
+# vectorises with it. SSE2 is the fallback for very old or low-end PCs (ASSUMPTIONS DS4).
+if(AMPSIM_X86_SIMD STREQUAL "AVX")
+    if(APPLE AND CMAKE_OSX_ARCHITECTURES MATCHES "x86_64")
+        add_compile_options(-Xarch_x86_64 -mavx)
+    elseif(MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        add_compile_options(/arch:AVX)
+    endif()
+endif()
+if(MSVC)
+    add_compile_options(/bigobj /utf-8) # Eigen-heavy files exceed the default section count
+endif()
 
 set(CMAKE_CXX_STANDARD 20)            # NeuralAmpModelerCore needs C++20
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -38,7 +113,12 @@ target_compile_definitions(nam_core PUBLIC
     NAM_ENABLE_A2_FAST)     # NAM's hand-optimized path for A2 models (its default)
 target_compile_features(nam_core PUBLIC cxx_std_20)
 # Always optimize NAM, even in Debug builds, or the network can't keep up with real time.
-target_compile_options(nam_core PRIVATE -O3 -w)
+if(MSVC)
+    set(AMPSIM_NAM_FLAGS /O2 /w)
+else()
+    set(AMPSIM_NAM_FLAGS -O3 -w)
+endif()
+target_compile_options(nam_core PRIVATE ${AMPSIM_NAM_FLAGS})
 
 # Each NAM architecture (WaveNet, LSTM, ...) registers itself from a static object in its own .cpp
 # file, and nothing else references those objects. A normal static-library link drops them, which
@@ -113,11 +193,58 @@ set(AMPSIM_UI_SOURCES
 
 set(AMPSIM_JUCE_DEFINITIONS
     # Text antialiased without macOS's font smoothing (which thickens glyphs), as the UI handoff's
-    # reference renders it (its CSS: -webkit-font-smoothing: antialiased).
+    # reference renders it (its CSS: -webkit-font-smoothing: antialiased). Ignored on other platforms.
     JUCE_DISABLE_COREGRAPHICS_FONT_SMOOTHING=1
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
-    JUCE_VST3_CAN_REPLACE_VST2=0)
+    JUCE_VST3_CAN_REPLACE_VST2=0
+    AMPSIM_VERSION_STRING="${PROJECT_VERSION}")
+if(WIN32 AND AMPSIM_WITH_ASIO)
+    # ASIO, from the SDK headers JUCE bundles (Steinberg's ASIO licence or GPLv3: docs/RELEASING.md).
+    list(APPEND AMPSIM_JUCE_DEFINITIONS JUCE_ASIO=1)
+endif()
+
+# Where the app finds out about itself (version, bundled files): compiled into the app and the tests.
+set(AMPSIM_PLATFORM_SOURCES src/platform/AppInfo.cpp)
+
+# ---------------------------------------------------------------------------------------------
+# The auto-updater (docs/RELEASING.md). Off: a no-op. On: Sparkle 2 on macOS, WinSparkle on Windows,
+# both checking Ed25519 signatures against AMPSIM_ED_PUBLIC_KEY.
+set(AMPSIM_UPDATER_SOURCE src/platform/Updater_none.cpp)
+set(AMPSIM_PLIST_ARGS "")
+if(AMPSIM_UPDATER)
+    if(AMPSIM_ED_PUBLIC_KEY STREQUAL "")
+        message(FATAL_ERROR "AMPSIM_UPDATER needs the Ed25519 public key: set ED_PUBLIC_KEY in tools/release/release.conf "
+                            "(docs/RELEASING.md, one-time setup) or pass -DAMPSIM_ED_PUBLIC_KEY=...")
+    endif()
+    if(APPLE)
+        set(AMPSIM_SPARKLE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/build-deps/Sparkle-${AMPSIM_SPARKLE_VERSION}" CACHE PATH "Sparkle's release folder")
+        if(NOT EXISTS "${AMPSIM_SPARKLE_DIR}/Sparkle.framework")
+            message(FATAL_ERROR "Sparkle ${AMPSIM_SPARKLE_VERSION} not found in ${AMPSIM_SPARKLE_DIR}: run tools/fetch_deps.sh")
+        endif()
+        if(CMAKE_OSX_DEPLOYMENT_TARGET VERSION_LESS 12.0)
+            message(FATAL_ERROR "Sparkle ${AMPSIM_SPARKLE_VERSION} needs macOS 12 or later: CMAKE_OSX_DEPLOYMENT_TARGET is ${CMAKE_OSX_DEPLOYMENT_TARGET}")
+        endif()
+        set(AMPSIM_UPDATER_SOURCE src/platform/Updater_mac.mm)
+        # Sparkle's settings (src/platform/Updater_mac.mm explains each). SUScheduledCheckInterval is in
+        # seconds: once a day.
+        set(AMPSIM_PLIST_ARGS PLIST_TO_MERGE "<plist><dict>
+            <key>SUFeedURL</key><string>${AMPSIM_FEED_URL}</string>
+            <key>SUPublicEDKey</key><string>${AMPSIM_ED_PUBLIC_KEY}</string>
+            <key>SUEnableAutomaticChecks</key><true/>
+            <key>SUAutomaticallyUpdate</key><true/>
+            <key>SUScheduledCheckInterval</key><integer>86400</integer>
+            </dict></plist>")
+    elseif(WIN32)
+        set(AMPSIM_WINSPARKLE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/build-deps/WinSparkle-${AMPSIM_WINSPARKLE_VERSION}" CACHE PATH "WinSparkle's release folder")
+        if(NOT EXISTS "${AMPSIM_WINSPARKLE_DIR}/include/winsparkle.h")
+            message(FATAL_ERROR "WinSparkle ${AMPSIM_WINSPARKLE_VERSION} not found in ${AMPSIM_WINSPARKLE_DIR} (the CI workflow downloads it)")
+        endif()
+        set(AMPSIM_UPDATER_SOURCE src/platform/Updater_win.cpp)
+    else()
+        message(WARNING "AMPSIM_UPDATER: no updater on this platform; building without one")
+    endif()
+endif()
 
 # ---------------------------------------------------------------------------------------------
 # The app. FORMATS Standalone builds a macOS .app; adding VST3 or AU later is a one-word change.
@@ -134,11 +261,14 @@ juce_add_plugin(AmpSim
     IS_MIDI_EFFECT FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
     MICROPHONE_PERMISSION_ENABLED TRUE
-    MICROPHONE_PERMISSION_TEXT "Amp Sim needs audio input to hear your guitar.")
+    MICROPHONE_PERMISSION_TEXT "Amp Sim needs audio input to hear your guitar."
+    ${AMPSIM_PLIST_ARGS})
 
 target_sources(AmpSim PRIVATE
     src/PluginProcessor.cpp
     src/PluginEditor.cpp
+    ${AMPSIM_PLATFORM_SOURCES}
+    ${AMPSIM_UPDATER_SOURCE}
     ${AMPSIM_UI_SOURCES}
     src/BlockParameters.cpp
     src/Presets.cpp
@@ -178,6 +308,85 @@ target_link_libraries(AmpSim
         juce::juce_recommended_warning_flags)
 
 # ---------------------------------------------------------------------------------------------
+# What ships inside the app besides the code: the licence notices (generated from the actual licence
+# files; tools/notices/make_notices.cmake), the bundled content (content/), and the updater's framework.
+set(AMPSIM_NOTICES "${CMAKE_BINARY_DIR}/THIRD_PARTY_NOTICES.txt")
+if(WIN32 AND AMPSIM_WITH_ASIO)
+    set(_asio ON)
+else()
+    set(_asio OFF)
+endif()
+if(APPLE)
+    set(_platform macOS)
+elseif(WIN32)
+    set(_platform Windows)
+else()
+    set(_platform ${CMAKE_SYSTEM_NAME})
+endif()
+set(_notices_args
+    -DSRC=${CMAKE_CURRENT_SOURCE_DIR} -DOUT=${AMPSIM_NOTICES} -DVERSION=${PROJECT_VERSION}
+    -DPLATFORM=${_platform} -DWITH_ASIO=${_asio}
+    -DJUCE_LICENCE=${AMPSIM_JUCE_LICENCE} -DSOURCE_URL=${AMPSIM_SOURCE_URL})
+if(AMPSIM_UPDATER AND APPLE)
+    list(APPEND _notices_args -DSPARKLE_DIR=${AMPSIM_SPARKLE_DIR})
+elseif(AMPSIM_UPDATER AND WIN32)
+    list(APPEND _notices_args -DWINSPARKLE_DIR=${AMPSIM_WINSPARKLE_DIR})
+endif()
+file(GLOB_RECURSE AMPSIM_CONTENT_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/content/*")
+# Always runs (it's cheap), and only rewrites the file when the text changes.
+add_custom_target(AmpSimNotices
+    COMMAND ${CMAKE_COMMAND} ${_notices_args} -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/notices/make_notices.cmake
+    BYPRODUCTS ${AMPSIM_NOTICES}
+    COMMENT "Generating THIRD_PARTY_NOTICES.txt"
+    VERBATIM)
+
+if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.26)
+    set(_copy_dir copy_directory_if_different)
+else()
+    set(_copy_dir copy_directory)
+endif()
+if(APPLE)
+    set(AMPSIM_RESOURCES_DIR "$<TARGET_BUNDLE_CONTENT_DIR:AmpSim_Standalone>/Resources")
+else()
+    set(AMPSIM_RESOURCES_DIR "$<TARGET_FILE_DIR:AmpSim_Standalone>")
+endif()
+add_dependencies(AmpSim_Standalone AmpSimNotices)
+add_custom_command(TARGET AmpSim_Standalone POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${AMPSIM_NOTICES} "${AMPSIM_RESOURCES_DIR}/THIRD_PARTY_NOTICES.txt"
+    COMMAND ${CMAKE_COMMAND} -E ${_copy_dir} ${CMAKE_CURRENT_SOURCE_DIR}/content "${AMPSIM_RESOURCES_DIR}/content"
+    COMMENT "Copying the notices and the bundled content into the app"
+    VERBATIM)
+
+if(AMPSIM_UPDATER AND APPLE)
+    # Sparkle.framework goes in Contents/Frameworks; the executable finds it through an rpath. Its
+    # XPCServices (Installer.xpc, Downloader.xpc) are only for sandboxed apps, and Amp Sim isn't one, so
+    # they're left out. After that the framework's own (ad-hoc) seal no longer matches, so the bundle is
+    # re-signed ad hoc here; the release script signs it properly afterwards (tools/release/sign_app.sh).
+    target_compile_options(AmpSim PRIVATE "-F${AMPSIM_SPARKLE_DIR}")
+    target_link_libraries(AmpSim PUBLIC "-F${AMPSIM_SPARKLE_DIR}" "-framework Sparkle")
+    target_link_options(AmpSim_Standalone PRIVATE "-Wl,-rpath,@executable_path/../Frameworks")
+    set(_frameworks "$<TARGET_BUNDLE_CONTENT_DIR:AmpSim_Standalone>/Frameworks")
+    add_custom_command(TARGET AmpSim_Standalone POST_BUILD
+        COMMAND rm -rf "${_frameworks}/Sparkle.framework"
+        COMMAND mkdir -p "${_frameworks}"
+        COMMAND ditto "${AMPSIM_SPARKLE_DIR}/Sparkle.framework" "${_frameworks}/Sparkle.framework"
+        COMMAND rm -rf "${_frameworks}/Sparkle.framework/Versions/B/XPCServices" "${_frameworks}/Sparkle.framework/XPCServices"
+        COMMAND codesign --force --deep --sign - "$<TARGET_BUNDLE_DIR:AmpSim_Standalone>"
+        COMMENT "Embedding Sparkle.framework (without its sandbox-only XPC services)"
+        VERBATIM)
+elseif(AMPSIM_UPDATER AND WIN32)
+    target_include_directories(AmpSim PRIVATE "${AMPSIM_WINSPARKLE_DIR}/include")
+    target_link_libraries(AmpSim PUBLIC "${AMPSIM_WINSPARKLE_DIR}/x64/Release/WinSparkle.lib")
+    target_compile_definitions(AmpSim PRIVATE
+        AMPSIM_FEED_URL="${AMPSIM_FEED_URL}"
+        AMPSIM_ED_PUBLIC_KEY="${AMPSIM_ED_PUBLIC_KEY}")
+    add_custom_command(TARGET AmpSim_Standalone POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${AMPSIM_WINSPARKLE_DIR}/x64/Release/WinSparkle.dll" "$<TARGET_FILE_DIR:AmpSim_Standalone>"
+        COMMENT "Copying WinSparkle.dll next to the app"
+        VERBATIM)
+endif()
+
+# ---------------------------------------------------------------------------------------------
 # Offline renderer: WAV in, the same chain, WAV out, plus CPU timing.
 juce_add_console_app(ampsim_render PRODUCT_NAME "ampsim_render")
 target_sources(ampsim_render PRIVATE tools/render/Main.cpp ${AMPSIM_DSP_SOURCES})
@@ -200,7 +409,7 @@ add_executable(nam_render
     ${NAM_DIR}/Dependencies/AudioDSPTools/dsp/wav.cpp)
 target_include_directories(nam_render PRIVATE ${NAM_DIR}/Dependencies/AudioDSPTools/dsp)
 target_link_libraries(nam_render PRIVATE ${NAM_CORE_WHOLE})
-target_compile_options(nam_render PRIVATE -O3 -w)
+target_compile_options(nam_render PRIVATE ${AMPSIM_NAM_FLAGS})
 
 # ---------------------------------------------------------------------------------------------
 # Tests: run with `ctest --test-dir build --output-on-failure`, or run build/.../ampsim_tests
@@ -212,7 +421,7 @@ juce_add_console_app(ampsim_tests PRODUCT_NAME "ampsim_tests")
 target_sources(ampsim_tests PRIVATE
     tests/TestMain.cpp
     tests/TestHelpers.cpp
-    tests/AllocationTracking.cpp
+    $<IF:$<BOOL:${APPLE}>,tests/AllocationTracking.cpp,tests/AllocationTracking_portable.cpp>
     tests/HandoffTests.cpp
     tests/SvfTests.cpp
     tests/AmpSectionTests.cpp
@@ -245,8 +454,11 @@ target_sources(ampsim_tests PRIVATE
     tests/RealtimeSafetyTests.cpp
     tests/HandoffEngineTests.cpp
     tests/EditorTests.cpp
+    tests/ReleaseTests.cpp
     src/PluginProcessor.cpp
     src/PluginEditor.cpp
+    ${AMPSIM_PLATFORM_SOURCES}
+    src/platform/Updater_none.cpp
     ${AMPSIM_UI_SOURCES}
     src/BlockParameters.cpp
     src/Presets.cpp
@@ -272,7 +484,11 @@ target_link_libraries(ampsim_tests
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
-add_dependencies(ampsim_tests nam_render)
+add_dependencies(ampsim_tests nam_render AmpSimNotices)
+# The notices sit next to the test binary too, so the tests read the same generated file the app ships.
+add_custom_command(TARGET ampsim_tests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${AMPSIM_NOTICES} "$<TARGET_FILE_DIR:ampsim_tests>/THIRD_PARTY_NOTICES.txt"
+    VERBATIM)
 
 add_test(NAME ampsim_tests
          COMMAND ampsim_tests --proof-dir ${CMAKE_BINARY_DIR}/proof

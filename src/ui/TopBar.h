@@ -14,15 +14,16 @@ namespace ui
 ///           "User", 12 px faint) in a 300 x 32 box, the next arrow, and Save (outlined)
 ///   right   the Tuner button (the note it hears in emerald while the tuner is engaged, "-" otherwise;
 ///           a 1 px emerald underline while the tuner page is open), then the In and Out meters
-/// A click on the name opens the preset browser; the arrows step through the presets (UH6). The editor
-/// wires the buttons to what they do.
+/// A click on the name opens the preset browser; the arrows step through the presets (UH6). A click on the
+/// brand opens a small menu with the version, "Check for updates...", and the licences (ASSUMPTIONS DS9).
+/// The editor wires the buttons to what they do.
 class TopBar final : public juce::Component
 {
 public:
     explicit TopBar (AmpSimProcessor& processor);
     ~TopBar() override;
 
-    std::function<void()> onPresetMenu, onSave, onPrevious, onNext, onTuner;
+    std::function<void()> onPresetMenu, onSave, onPrevious, onNext, onTuner, onBrand;
 
     /// Message thread: the preset's name and tag.
     void refresh();
@@ -37,6 +38,7 @@ public:
     LevelMeter& getInputMeter() noexcept { return inputMeter; }
     LevelMeter& getOutputMeter() noexcept { return outputMeter; }
     juce::Button& getPresetButton() noexcept;
+    juce::Button& getBrandButton() noexcept;
     juce::Button& getTunerButton() noexcept;
     juce::Button& getSaveButton() noexcept { return save; }
     juce::String getShownPresetName() const;
@@ -46,10 +48,12 @@ public:
     void resized() override;
 
 private:
+    class BrandButton;
     class PresetButton;
     class TunerButton;
 
     AmpSimProcessor& ampSim;
+    std::unique_ptr<BrandButton> brand;
     std::unique_ptr<PresetButton> preset;
     std::unique_ptr<TunerButton> tuner;
     IconButton previous { "Previous preset", IconButton::Icon::left }, next { "Next preset", IconButton::Icon::right };

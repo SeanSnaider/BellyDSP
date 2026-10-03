@@ -20,6 +20,10 @@ class AmpSimProcessor;
 ///     AmpSim) when the file is inside it, absolute otherwise. A file that has moved is found again by
 ///     searching the library for the same size and content hash; one that's truly gone loads as an empty
 ///     slot with a warning, and the rest of the preset still loads.
+///     A file bundled with the app (content/ in the repo, docs/RELEASING.md "Bundled content") is
+///     "factory:models/..." or "factory:irs/...", resolved against the installed app's content folder.
+///     That's still format version 2: an older build sees a path it can't find and warns, as for any
+///     missing file.
 ///
 ///   Version 1 (Phase 5) stored plain absolute paths; migrateV1toV2() turns them into <file> entries
 ///   without a hash (so they can't be relinked if they move). Every step of the format gets one small,
@@ -39,14 +43,16 @@ namespace presets
 constexpr int formatVersion = 2;
 
 /// The library roots relinking searches: "models" for captures, "irs" for cab IRs and packs. Default
-/// ~/Library/Application Support/AmpSim/<kind>; tests point them elsewhere.
+/// ~/Library/Application Support/AmpSim/<kind> (%APPDATA%\AmpSim\<kind> on Windows); tests point them
+/// elsewhere. "factory" is the app's bundled content (platform::factoryContentFolder()), which
+/// "factory:" paths resolve against and relinking also searches.
 juce::File libraryRoot (const juce::String& kind);
 void setLibraryRoot (const juce::String& kind, const juce::File& folder);
 
 /// A file (or cab pack folder) as a preset refers to it.
 struct FileRef
 {
-    juce::String path; ///< "models/..." or "irs/..." inside the library, absolute outside it, empty for none.
+    juce::String path; ///< "models/..." or "irs/..." inside the library, "factory:..." for bundled content, absolute elsewhere, empty for none.
     juce::String hash; ///< contentHash() when saved; empty in presets migrated from version 1.
     juce::int64 size = 0;
 
@@ -100,7 +106,7 @@ ApplyResult apply (AmpSimProcessor& processor, const juce::var& preset);
 /// Checks a preset without applying it.
 ApplyResult validate (const juce::var& preset);
 
-/// ~/Library/Application Support/AmpSim/presets
+/// ~/Library/Application Support/AmpSim/presets (%APPDATA%\AmpSim\presets on Windows)
 juce::File defaultFolder();
 
 /// The factory presets (the five style presets), in the plan's order. They set the sound and its scenes

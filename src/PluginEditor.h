@@ -87,6 +87,13 @@ public:
     /// The preset browser's menu (a click on the preset's name shows it).
     juce::PopupMenu presetMenu();
 
+    /// The brand's menu (a click on "rig" shows it): "Amp Sim <version>", "Check for updates..." (enabled
+    /// when this build has an updater running), and "About / licenses" (ASSUMPTIONS DS9).
+    juce::PopupMenu brandMenu();
+
+    /// What "About / licenses" shows: the name, version, update status, and THIRD_PARTY_NOTICES.txt.
+    static juce::String aboutText();
+
 private:
     class Canvas;
     class StatusLine;
@@ -103,6 +110,7 @@ private:
     void loadPresetFile (const juce::File& file);
     void loadFactoryPreset (const juce::var& preset);
     void showPresetMenu();
+    void showAbout();
     void showMidiMappings();
     void loadCapture (int slot);
     void showCaptureMenu (int slot, juce::Component& near);
