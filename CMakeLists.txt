@@ -461,6 +461,8 @@ target_sources(ampsim_tests PRIVATE
     tests/HandoffEngineTests.cpp
     tests/EditorTests.cpp
     tests/ReleaseTests.cpp
+    tests/CaptureTests.cpp
+    tools/capture/CaptureEngine.cpp
     src/PluginProcessor.cpp
     src/PluginEditor.cpp
     ${AMPSIM_PLATFORM_SOURCES}
@@ -471,7 +473,7 @@ target_sources(ampsim_tests PRIVATE
     src/MidiMap.cpp
     src/Scenes.cpp
     ${AMPSIM_DSP_SOURCES})
-target_include_directories(ampsim_tests PRIVATE src tests)
+target_include_directories(ampsim_tests PRIVATE src tests tools/capture)
 target_compile_definitions(ampsim_tests PRIVATE
     ${AMPSIM_JUCE_DEFINITIONS}
     # Tests only: MessageManager::runDispatchLoopUntil, so an editor test can let a dialog's clicks
@@ -514,6 +516,23 @@ target_compile_definitions(ampsim_device_probe PRIVATE ${AMPSIM_JUCE_DEFINITIONS
 target_link_libraries(ampsim_device_probe
     PRIVATE
         juce::juce_audio_devices
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_lto_flags
+        juce::juce_recommended_warning_flags)
+
+# ---------------------------------------------------------------------------------------------
+# Capturing your own gear for NAM (docs/CAPTURING.md): plays NAM's input file out of the interface and
+# records the gear's return in the same callback. --simulate runs it without hardware.
+juce_add_console_app(ampsim_capture PRODUCT_NAME "ampsim_capture")
+target_sources(ampsim_capture PRIVATE tools/capture/Main.cpp tools/capture/CaptureEngine.cpp ${AMPSIM_DSP_SOURCES})
+target_include_directories(ampsim_capture PRIVATE src tools/capture)
+target_compile_definitions(ampsim_capture PRIVATE ${AMPSIM_JUCE_DEFINITIONS})
+target_link_libraries(ampsim_capture
+    PRIVATE
+        ${NAM_CORE_WHOLE}
+        juce::juce_audio_devices
+        juce::juce_audio_formats
+        juce::juce_dsp
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)

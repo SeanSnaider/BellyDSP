@@ -23,3 +23,7 @@ __pycache__/
 
 # Agent worktrees (Claude Code)
 /.claude/
+
+# Captures and training runs (docs/CAPTURING.md): recordings and trained models stay local until bundled
+/captures
+/trained
