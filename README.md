@@ -14,13 +14,13 @@ Everything in the plan is built (see `docs/PROGRESS.md` for the measurements beh
 - **Drive.** A boost (Clean, Tight, Screamer) and an overdrive (Mid Drive, Distortion, Transparent, Fuzz), modelled from the schematics and validated against circuit simulations, oversampled 4x or 8x with no added latency.
 - **Pre FX** (reorderable): Gate A, compressor (Studio and Pedal), boost, overdrive, EQ (accurate 9-band graphic or 5-band parametric, plus cuts).
 - **Post FX** (reorderable): EQ, compressor, a key-aware 4-voice harmonizer, an 8-voice multivoicer (Poly or Mono), Bloom (bitcrush, phaser with Classic, Modern, and Vibe, flanger with through-zero), chorus (Classic, Dimension, Tri), delay (digital, analog, tape; stereo, ping-pong, dual; ducking), and reverb (Room, Hall, Plate; freeze; shimmer). Delay and reverb tails spill over when bypassed.
-- **Tuner.** Needle and strobe, 0.1 cent resolution, A4 from 430 to 450 Hz, muting while engaged.
+- **Tuner.** A needle on a +-50 cent scale, in tune within 3 cents, the six strings of four tunings, A4 from 430 to 450 Hz, muting while engaged.
 - **Tempo.** A global tempo, tapped from the panel or a footswitch; the delay, chorus, phaser, flanger, and reverb pre-delay can sync to it.
 - **Presets and scenes.** JSON presets with library-relative files found again by content hash when moved, eight scenes per preset switched from a footswitch, undo/redo, A/B, and five factory style presets (Polyphia, CHON, Tech Death, Metal, Midwest Emo).
 - **MIDI.** Right-click any control to MIDI-learn a footswitch (toggle or momentary) or an expression pedal; mappings are saved with presets.
 - **Real time.** Zero added latency (only the opt-in through-zero flanger reports 5 ms), no allocation, freeing, or locking on the audio thread (tested on every feature), and the whole rig with every block on at about 18% of a 128-sample buffer's time.
 
-The GUI follows `docs/UI_DESIGN.md` (a proposal until Sean gives the visual direction): a top bar with the preset browser, A/B, undo, the tuner, tempo, and the meters; the whole chain as a strip of blocks to click, switch, and drag into order; the selected block's page (the amp's three slots, the cab's speaker with draggable mics, the EQ's curve over a live analyzer, and every other block's controls); and the scenes along the bottom. It scales from 75 to 150%.
+The GUI follows the UI handoff in `docs/ui/amp-ui-handoff/` (`docs/UI_DESIGN.md` lists where it differs): a fixed 1280 x 760 canvas that scales with the window; a top bar with the preset (browser, previous and next), Save, the tuner, and the meters; the signal chain along the bottom (Input, Pre FX, Amp, EQ, Cab, Post FX, Output: click a block for its page, its dot to bypass it); the amp page with three heads (Glass, Ember, Monolith), the output spectrum, and a shared Input / Gate / Output strip; the cab page with the cab library, a speaker with two draggable mics, and the mic panel; the tuner page; and the effects as tabs (drag to reorder). Undo and redo are Cmd-Z and Shift-Cmd-Z; A/B, scenes, tempo, and the footswitch settings are on the Output page.
 
 ## Building
 
@@ -42,9 +42,10 @@ open "build/AmpSim_artefacts/Release/Standalone/Amp Sim.app"
 | `src/PluginProcessor.*` | Parameters, state, file loading, MIDI, and the audio callback, which just drives the chain |
 | `src/BlockParameters.*`, `src/Presets.*` | Parameter glue for each effect block, and the preset format |
 | `src/PluginEditor.*` | The editor: lays out the GUI and runs presets, scenes, MIDI learn menus, and undo |
-| `src/ui/` | The GUI: theme tokens, LookAndFeel, controls, meters, the analyzer, the chain strip, and every block's page |
+| `src/ui/` | The GUI: tokens and fonts, LookAndFeel, controls, meters, the analyzer, the signal chain, the amp, cab, and tuner pages, and every effect's page |
 | `presets/factory/` | The factory presets, embedded in the app |
-| `docs/UI_DESIGN.md` | The GUI's design system (a proposal waiting on Sean's direction) |
+| `docs/ui/amp-ui-handoff/` | The GUI's design: the handoff spec, its reference HTML, and screenshots (`docs/UI_DESIGN.md` lists where the build differs) |
+| `resources/fonts/` | Geist and Fraunces (SIL OFL, licences alongside), embedded in the app |
 | `tools/render/` | `ampsim_render`: runs a WAV through the chain offline, with CPU timing |
 | `tools/device_probe/` | `ampsim_device_probe`: opens the interface and reports timing and input levels |
 | `tests/` | The test suite (`ampsim_tests`), including real-time safety and NAM differential tests |

@@ -2,6 +2,7 @@
 // handoff's screenshots (build/proof/compare_<page>.png), and their behaviour.
 
 #include "PluginEditor.h"
+#include "Presets.h"
 #include "TestHelpers.h"
 
 namespace
@@ -368,6 +369,57 @@ public:
             logMessage ("  -> E2 at 82.41 Hz: " + inTune.note + inTune.octave + " " + inTune.hz + " Hz, " + inTune.cents + " cents, \"" + inTune.state
                         + "\", string 6 marked tuned, the top bar's Tuner shows \"" + barNote + "\"; 13 cents sharp: " + sharp.hz + " Hz, " + sharp.cents + " cents, \""
                         + sharp.state + "\"; targeting the A string read " + juce::String (targeted.centsValue, 1) + " cents; leaving the page disengaged the tuner");
+        }
+
+        beginTest ("top bar and keys: the arrows step through the presets with their tags; Cmd-Z and Shift-Cmd-Z undo and redo; messages go to the info row or the bottom line");
+        {
+            AmpSimProcessor p;
+            std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+            auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
+            const auto factory = presets::factoryPresets();
+            const auto first = ed.stepPreset (1);
+            p.runHousekeeping();
+            ed.refresh();
+            const auto firstTag = ed.getTopBar().getShownTag();
+            const auto second = ed.stepPreset (1);
+            p.runHousekeeping();
+            ed.refresh();
+            expectEquals (first, factory[0]["name"].toString());
+            expectEquals (second, factory[1]["name"].toString());
+            expectEquals (ed.getTopBar().getShownPresetName(), second);
+            expectEquals (firstTag, juce::String ("Factory"));
+            const auto back = ed.stepPreset (-1);
+            expectEquals (back, first);
+
+            // Undo and redo from the keyboard (the handoff's frame has no buttons for them).
+            p.parameters.copyState();
+            p.undoManager.clearUndoHistory();
+            p.undoManager.beginNewTransaction();
+            setParam (p, "delay_mix", 70.0f);
+            p.parameters.copyState();
+            juce::Component& asComponent = ed;
+            const auto undone = asComponent.keyPressed (juce::KeyPress ('z', juce::ModifierKeys::commandModifier, 0));
+            const auto afterUndo = getParam (p, "delay_mix");
+            const auto redone = asComponent.keyPressed (juce::KeyPress ('z', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier, 0));
+            const auto afterRedo = getParam (p, "delay_mix");
+            expect (undone && redone);
+            expect (std::abs (afterRedo - 70.0f) < 0.01f && std::abs (afterUndo - 70.0f) > 0.01f);
+
+            // The sample-rate message: on the Amp page in the info row, elsewhere along the bottom.
+            AmpSimProcessor wrongRate;
+            wrongRate.prepareToPlay (44100.0, blockSize);
+            std::unique_ptr<juce::AudioProcessorEditor> warned (wrongRate.createEditor());
+            auto& we = dynamic_cast<AmpSimEditor&> (*warned);
+            we.showPage (ui::PageId::amp);
+            we.refresh();
+            const auto onAmp = we.getAmpView().getRateText();
+            we.showPage (ui::PageId::cab);
+            we.refresh();
+            expectEquals (onAmp, juce::String ("44.1 kHz: muted, set the interface to 48 kHz"));
+            expectEquals (we.getStatusText(), onAmp);
+            expect (savePng (warned->createComponentSnapshot (warned->getLocalBounds(), true, 2.0f), proofDir().getChildFile ("editor_44k_warning_cab.png")));
+            logMessage ("  -> the arrows stepped to \"" + first + "\" (tagged " + firstTag + "), then \"" + second + "\", and back; Cmd-Z took the delay mix from 70 to "
+                        + juce::String (afterUndo, 1) + ", Shift-Cmd-Z back to " + juce::String (afterRedo, 1) + "; at 44.1 kHz: \"" + onAmp + "\"");
         }
 
         beginTest ("a knob mid-drag shows its value underlined in emerald on an amp panel (compared with the handoff's crop)");

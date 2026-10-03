@@ -52,7 +52,7 @@ First-time setup, which the app remembers afterwards:
 2. Audio device: **Scarlett Solo 4th Gen** for both input and output. Sample rate **48000**, buffer size **128** (2.7 ms).
 3. Active input channels: **Input 1** only.
 4. Untick **Mute audio input** (next to "Feedback Loop:"). JUCE mutes the input by default to protect against feedback (a laptop mic into laptop speakers howls), so until you untick it, the app gets silence. While it's muted, a pale yellow bar across the top of the window says "Audio input is muted to avoid feedback loop", and its **Settings...** button opens the same dialog.
-5. Close Options. Click the **Amp** block in the chain strip, then **Load capture...** on Amp 1 and pick an amp-only `.nam` capture; click the **Cab** block, then **IR...** on Close 1 and pick a cab IR (`.wav`). Play.
+5. Close Options. On the Amp page (the **Amp** block in the signal chain along the bottom), click the amp head's grille (or the model name in the line under the head) and pick an amp-only `.nam` capture for the playing slot; the Glass, Ember, and Monolith tabs are slots 1 to 3. Then click the **Cab** block and pick a cab from the Cabinet list (IR files and cab pack folders in `~/Library/Application Support/AmpSim/irs`), or use the drop zone's **Browse**, or drop a `.wav` on the page. Play.
 
 Buffer size is how many samples the driver hands over per callback. At 48 kHz, 128 samples is 2.7 ms. Smaller means lower latency but less time to finish processing. Drop to 64 once things are stable if latency bugs you, and go up to 256 if you get crackles.
 
@@ -69,4 +69,4 @@ Buffer size is how many samples the driver hands over per callback. At 48 kHz, 1
 | Dry and processed sound mixed together | Direct Monitor is on |
 | Crackles and pops | Debug build, buffer too small, or something in `process()` allocating (the real-time safety test should catch that) |
 | Distorted even with no amp loaded | Interface input gain too high (red ring) |
-| A capture fails to load | Its slot's card on the amp page says why, in red: not 48 kHz, not a mono model, or not a valid .nam file |
+| A capture fails to load | The Amp page's line under the head says why (and the pilot light stays dark): not 48 kHz, not a mono model, or not a valid .nam file |
