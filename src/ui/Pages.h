@@ -149,23 +149,6 @@ void dim (juce::Component* c, bool used);
 
 // ---- Pages --------------------------------------------------------------------------------------------
 
-/// (Replaced by the handoff's amp page in step 3.) The amp: three slot cards (load a capture, its status, the trims and the tone controls; click a card's
-/// Play to switch to it) and the input calibration under them.
-class AmpPage final : public BlockPage
-{
-public:
-    AmpPage (AmpSimProcessor& processor, std::function<void (int slot)> onLoad);
-    void refresh() override;
-
-private:
-    class SlotCard;
-    void layoutContent (juce::Rectangle<int> area) override;
-    std::array<SlotCard*, AmpSimProcessor::numAmpSlots> cards {};
-    Switch* calibrate = nullptr;
-    ValueField* interfaceLevel = nullptr;
-    juce::Label* interfaceLabel = nullptr;
-};
-
 /// The cab: a speaker seen from the side with the two close mics on it (drag a mic once its pack is
 /// loaded: across the cone from the cap to the edge, and away from the grille), a card per mic (its IR or
 /// pack, level, pan, delay, polarity, mute, and the file's channel), the room mic's card, alignment, and

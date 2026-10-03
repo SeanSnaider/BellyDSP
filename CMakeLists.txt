@@ -103,6 +103,8 @@ set(AMPSIM_UI_SOURCES
     src/ui/ScenesBar.cpp
     src/ui/TopBar.cpp
     src/ui/TunerView.cpp
+    src/ui/AmpHead.cpp
+    src/ui/AmpView.cpp
     src/ui/MainPages.cpp
     src/ui/Pages.cpp
     src/ui/AmpCabPages.cpp
@@ -110,6 +112,9 @@ set(AMPSIM_UI_SOURCES
     src/ui/FxPages.cpp)
 
 set(AMPSIM_JUCE_DEFINITIONS
+    # Text antialiased without macOS's font smoothing (which thickens glyphs), as the UI handoff's
+    # reference renders it (its CSS: -webkit-font-smoothing: antialiased).
+    JUCE_DISABLE_COREGRAPHICS_FONT_SMOOTHING=1
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0)
@@ -239,6 +244,7 @@ target_sources(ampsim_tests PRIVATE
     tests/ProcessorTests.cpp
     tests/RealtimeSafetyTests.cpp
     tests/HandoffEngineTests.cpp
+    tests/EditorTests.cpp
     src/PluginProcessor.cpp
     src/PluginEditor.cpp
     ${AMPSIM_UI_SOURCES}

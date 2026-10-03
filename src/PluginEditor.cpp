@@ -127,11 +127,9 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p) : AudioProcessorEditor (&p), amp
     eqView = std::make_unique<ui::EqView> (p, *blockPageFor[(size_t) B::postEq], *blockPageFor[(size_t) B::preEq]);
     inputPage = std::make_unique<ui::InputPage> (p);
     outputPage = std::make_unique<ui::OutputPage> (p);
-    ampPage = std::make_unique<ui::AmpPage> (p, [this] (int slot)
-    {
-        chooseFile ("Choose a NAM capture for Amp " + juce::String (slot + 1), "*.nam", AmpSimProcessor::modelPathKey (slot),
-                    [this, slot] (const juce::File& f) { ampSim.loadModel (slot, f); });
-    });
+    ampView = std::make_unique<ui::AmpView> (p);
+    ampView->onLoadCapture = [this] (int slot) { loadCapture (slot); };
+    ampView->onCaptureMenu = [this] (int slot, juce::Component& near) { showCaptureMenu (slot, near); };
     cabPage = std::make_unique<ui::CabPage> (p, [this] (int mic, bool pack)
     {
         if (pack)
@@ -144,7 +142,7 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p) : AudioProcessorEditor (&p), amp
     using P = ui::PageId;
     pageComponents[(size_t) P::input] = inputPage.get();
     pageComponents[(size_t) P::preFx] = prePage.get();
-    pageComponents[(size_t) P::amp] = ampPage.get();
+    pageComponents[(size_t) P::amp] = ampView.get();
     pageComponents[(size_t) P::eq] = eqView.get();
     pageComponents[(size_t) P::cab] = cabPage.get();
     pageComponents[(size_t) P::postFx] = postPage.get();
@@ -350,6 +348,7 @@ void AmpSimEditor::refreshState()
     if (message.isEmpty())
         message = presetMessage.isNotEmpty() ? presetMessage : ampSim.getPresetWarnings().joinIntoString ("; ");
     statusText = message;
+    ampView->setStatus (message);
     statusLine->set (shownPage == ui::PageId::amp ? juce::String() : message);
 }
 
@@ -516,6 +515,36 @@ juce::PopupMenu AmpSimEditor::presetMenu()
 void AmpSimEditor::showPresetMenu()
 {
     ui::showMenu (presetMenu(), &topBar.getPresetButton(), &lookAndFeel);
+}
+
+// ---- Captures ---------------------------------------------------------------------------------------
+
+void AmpSimEditor::loadCapture (int slot)
+{
+    chooseFile ("Choose a NAM capture for " + juce::String (ui::materialName (ui::materialFor (slot))) + " (amp slot " + juce::String (slot + 1) + ")", "*.nam",
+                AmpSimProcessor::modelPathKey (slot), [this, slot] (const juce::File& f) { ampSim.loadModel (slot, f); });
+}
+
+void AmpSimEditor::showCaptureMenu (int slot, juce::Component& near)
+{
+    // The old slot card's functions, on a right-click at the grille or the model's name (H12).
+    juce::PopupMenu menu;
+    const auto safe = juce::Component::SafePointer<AmpSimEditor> (this);
+    const auto path = ampSim.parameters.state.getProperty (AmpSimProcessor::modelPathKey (slot)).toString();
+    const auto file = juce::File::isAbsolutePath (path) ? juce::File (path) : juce::File();
+    menu.addSectionHeader (juce::String (ui::materialName (ui::materialFor (slot))) + ", amp slot " + juce::String (slot + 1));
+    menu.addItem ("Load capture...", [safe, slot] { if (safe != nullptr) safe->loadCapture (slot); });
+    menu.addItem ("Reload " + (file != juce::File() ? file.getFileName() : juce::String ("the capture")), file.existsAsFile(), false, [safe, slot, file]
+    {
+        if (safe != nullptr)
+            safe->ampSim.loadModel (slot, file);
+    });
+    menu.addItem ("Clear the slot (the DI passes through)", file != juce::File(), false, [safe, slot]
+    {
+        if (safe != nullptr)
+            safe->ampSim.clearModel (slot);
+    });
+    ui::showMenu (menu, &near, &lookAndFeel, true);
 }
 
 // ---- A/B and scenes ---------------------------------------------------------------------------------

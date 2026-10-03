@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PluginProcessor.h"
+#include "ui/AmpView.h"
 #include "ui/ChainNav.h"
 #include "ui/LookAndFeel.h"
 #include "ui/MainPages.h"
@@ -47,6 +48,7 @@ public:
     ui::TopBar& getTopBar() noexcept { return topBar; }
     ui::SectionPage& getSectionPage (ui::Section section) { return section == ui::Section::pre ? *prePage : *postPage; }
     ui::EqView& getEqView() noexcept { return *eqView; }
+    ui::AmpView& getAmpView() noexcept { return *ampView; }
     ui::OutputPage& getOutputPage() noexcept { return *outputPage; }
     ui::ScenesBar& getScenesBar() noexcept { return outputPage->getScenesBar(); }
     TunerView& getTunerView() noexcept { return tunerView; }
@@ -100,6 +102,8 @@ private:
     void loadFactoryPreset (const juce::var& preset);
     void showPresetMenu();
     void showMidiMappings();
+    void loadCapture (int slot);
+    void showCaptureMenu (int slot, juce::Component& near);
     void clickScene (int index);
     void sceneMenu (int index);
     bool keyPressed (const juce::KeyPress& key) override;
@@ -113,7 +117,7 @@ private:
     ui::ChainNav chainNav { ampSim };
     std::vector<std::unique_ptr<ui::BlockPage>> blockPages;
     std::array<ui::BlockPage*, ui::numBlocks> blockPageFor {};
-    std::unique_ptr<ui::AmpPage> ampPage;
+    std::unique_ptr<ui::AmpView> ampView;
     std::unique_ptr<ui::CabPage> cabPage;
     std::unique_ptr<ui::SectionPage> prePage, postPage;
     std::unique_ptr<ui::EqView> eqView;
