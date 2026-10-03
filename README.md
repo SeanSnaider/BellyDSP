@@ -20,7 +20,7 @@ Everything in the plan is built (see `docs/PROGRESS.md` for the measurements beh
 - **MIDI.** Right-click any control to MIDI-learn a footswitch (toggle or momentary) or an expression pedal; mappings are saved with presets.
 - **Real time.** Zero added latency (only the opt-in through-zero flanger reports 5 ms), no allocation, freeing, or locking on the audio thread (tested on every feature), and the whole rig with every block on at about 18% of a 128-sample buffer's time.
 
-The panel is the basic one; the real GUI is being built from `docs/UI_DESIGN.md`.
+The GUI follows `docs/UI_DESIGN.md` (a proposal until Sean gives the visual direction): a top bar with the preset browser, A/B, undo, the tuner, tempo, and the meters; the whole chain as a strip of blocks to click, switch, and drag into order; the selected block's page (the amp's three slots, the cab's speaker with draggable mics, the EQ's curve over a live analyzer, and every other block's controls); and the scenes along the bottom. It scales from 75 to 150%.
 
 ## Building
 
@@ -41,7 +41,8 @@ open "build/AmpSim_artefacts/Release/Standalone/Amp Sim.app"
 | `src/dsp/` | The DSP: the Block interface, the chain, every amp, cab, filter, and effect |
 | `src/PluginProcessor.*` | Parameters, state, file loading, MIDI, and the audio callback, which just drives the chain |
 | `src/BlockParameters.*`, `src/Presets.*` | Parameter glue for each effect block, and the preset format |
-| `src/PluginEditor.*` | The panel |
+| `src/PluginEditor.*` | The editor: lays out the GUI and runs presets, scenes, MIDI learn menus, and undo |
+| `src/ui/` | The GUI: theme tokens, LookAndFeel, controls, meters, the analyzer, the chain strip, and every block's page |
 | `presets/factory/` | The factory presets, embedded in the app |
 | `docs/UI_DESIGN.md` | The GUI's design system (a proposal waiting on Sean's direction) |
 | `tools/render/` | `ampsim_render`: runs a WAV through the chain offline, with CPU timing |
