@@ -59,7 +59,7 @@ public:
     void paint (juce::Graphics& g) override
     {
         paintCardBackground (g, getLocalBounds(), active, sectionAmp);
-        auto header = getLocalBounds().reduced (space::l, space::m).withHeight (controlHeight);
+        auto header = getLocalBounds().reduced (space::m).withHeight (controlHeight);
         g.setFont (font ("Semibold", 16.0f));
         g.setColour (theme::text);
         g.drawText ("Amp " + juce::String (slot + 1), header.removeFromLeft (64), juce::Justification::centredLeft, false);
@@ -79,7 +79,7 @@ public:
     void resized() override
     {
         clearHeadings();
-        auto area = getLocalBounds().reduced (space::l, space::m);
+        auto area = getLocalBounds().reduced (space::m);
         auto header = area.removeFromTop (controlHeight);
         load->setBounds (header.removeFromRight (128));
         header.removeFromLeft (64 + space::xs);
@@ -88,16 +88,15 @@ public:
         status->setBounds (area.removeFromTop (34));
         area.removeFromTop (space::s);
 
-        // The tone controls and the trims as one block, centred in what's left.
+        // The tone controls, then the trims.
         const auto size = knobSizeFor (area.getWidth(), (int) tone.size(), 2);
         const auto rowHeight = Knob::preferredHeight (size);
-        const auto blockHeight = 2 * (18 + rowHeight) + space::m;
-        auto block = area.withSizeKeepingCentre (area.getWidth(), juce::jmin (area.getHeight(), blockHeight));
-        heading (block.removeFromTop (18), "Tone");
-        placeKnobs (block.removeFromTop (rowHeight), tone, size, 2);
-        block.removeFromTop (space::m);
-        heading (block.removeFromTop (18), "Trims, before and after the capture");
-        placeKnobs (block.removeFromTop (rowHeight), trims, size, 2);
+        area.removeFromTop (space::s);
+        heading (area.removeFromTop (18), "Tone, after the capture");
+        placeKnobs (area.removeFromTop (rowHeight), tone, size, 2);
+        area.removeFromTop (space::l);
+        heading (area.removeFromTop (18), "Trims, before and after the capture");
+        placeKnobs (area.removeFromTop (rowHeight), trims, size, 2);
     }
 
 private:
@@ -156,12 +155,13 @@ void AmpPage::refresh()
 
 // ---- CabPage: the speaker map ---------------------------------------------------------------------------
 
-/// The speaker seen in section from the side, with the close mics in front of it (UI_DESIGN "Layout": the
-/// cab page's speaker drawing and draggable mics). The map under the speaker is a cab pack's position map:
-/// across, the dust cap (left, on the speaker's axis) to the cone's edge (right); down, the closest capture
-/// (at the grille) to the farthest. A loaded pack's captured positions are dots in the mic's colour;
-/// dragging a mic sets its two position parameters, and the processor re-morphs its IR (the pack logic
-/// of Phase 3, unchanged). A mic without a pack is drawn hollow and doesn't move.
+/// The speaker's face along the top and the close mics in front of it (UI_DESIGN "Layout": the cab page's
+/// speaker drawing and draggable mics). The map under the speaker is a cab pack's position map: across,
+/// the dust cap (left, on the speaker's axis) to the cone's edge (right); down, the closest capture (at the
+/// grille) to the farthest. Each mic's dashed line marks the spot on the face it points at. A loaded pack's
+/// captured positions are dots in the mic's colour; dragging a mic sets its two position parameters, and
+/// the processor re-morphs its IR (the pack logic of Phase 3, unchanged). A mic without a pack is drawn
+/// hollow and doesn't move.
 class CabPage::SpeakerMap final : public juce::Component, public juce::SettableTooltipClient
 {
 public:
@@ -247,12 +247,27 @@ public:
         g.drawText ("close", juce::Rectangle<float> (6.0f, m.getY() - 2.0f, 40.0f, 14.0f), juce::Justification::centredLeft, false);
         g.drawText ("far", juce::Rectangle<float> (6.0f, m.getBottom() - 12.0f, 40.0f, 14.0f), juce::Justification::centredLeft, false);
 
-        // Each pack's captured positions, then the mics.
+        // Each pack's captured positions; each mic's aim, up to the spot on the cone it points at; the mics.
         for (int mic = 0; mic < 2; ++mic)
         {
             g.setColour (colourOf (mic).withAlpha (0.55f));
             for (const auto& p : points[(size_t) mic])
                 g.fillEllipse (juce::Rectangle<float> (6.0f, 6.0f).withCentre (toScreen (p)));
+        }
+        const float dashes[] { 4.0f, 3.0f };
+        for (int mic = 0; mic < 2; ++mic)
+        {
+            if (points[(size_t) mic].empty())
+                continue;
+            const auto tip = toScreen (position (mic));
+            const auto face = speakerBand();
+            juce::Path aim;
+            aim.startNewSubPath (tip);
+            aim.lineTo (tip.x, face.getBottom());
+            juce::PathStrokeType (1.2f).createDashedStroke (aim, aim, dashes, 2);
+            g.setColour (colourOf (mic).withAlpha (0.6f));
+            g.fillPath (aim);
+            g.drawEllipse (juce::Rectangle<float> (12.0f, 12.0f).withCentre ({ tip.x, face.getCentreY() }), 2.0f);
         }
         for (int mic = 0; mic < 2; ++mic)
         {
@@ -269,7 +284,7 @@ public:
         }
 
         // The legend. The room mic has no position: it's the room, off the map.
-        auto legend = bounds.withTrimmedLeft (46.0f).removeFromBottom (22.0f).withTrimmedBottom (4.0f);
+        auto legend = bounds.withTrimmedLeft (14.0f).removeFromBottom (22.0f).withTrimmedBottom (4.0f);
         const auto captionFont = font (Text::caption);
         g.setFont (captionFont);
         for (const auto& [colour, label, live] : { std::tuple<juce::Colour, const char*, bool> { micOne, "Close 1", ! points[0].empty() },
@@ -412,98 +427,85 @@ private:
         g.drawText (label, body.withTrimmedTop (4.0f), juce::Justification::centredTop, false);
     }
 
-    /// The speaker in half section, facing down toward the mics: its axis on the left (where the dust cap
-    /// sits), the cone's edge on the right. At the back the magnet and pole piece and the basket out to the
-    /// frame; then the voice coil, the spider, the cone from its neck out to the surround, the dust cap on
-    /// the axis, and the grille's plane just in front.
+    /// The band across the top where the speaker's face is drawn.
+    juce::Rectangle<float> speakerBand() const
+    {
+        const auto m = map();
+        return { m.getX(), 12.0f, m.getWidth(), speakerHeight - 18.0f };
+    }
+
+    /// The speaker's face, from its centre (the dust cap, on the axis at the map's "cap" end) out to its
+    /// edge: the right half of a speaker seen from the front, in a band across the top, so each spot on the
+    /// face sits straight above the places on the map that aim at it. Concentric, from the outside in: the
+    /// frame with a mounting bolt, the surround's roll, the cone with its ribs, and the dust cap's dome.
+    /// Under it, the grille's plane, where the map's distances start.
     void drawSpeaker (juce::Graphics& g) const
     {
         const auto m = map();
-        const auto L = m.getX(), W = m.getWidth(), T = 12.0f, G = m.getY() - 10.0f; // G: the grille's plane
-        const auto x = [L, W] (float t) { return L + t * W; };
-        const juce::PathStrokeType thin (1.0f), edge (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
+        const auto band = speakerBand();
+        const auto radius = band.getWidth();
+        const juce::Point<float> centre { band.getX(), band.getCentreY() };
+        const auto disc = [&centre, radius] (float t) { return juce::Rectangle<float> (2.0f * t * radius, 2.0f * t * radius).withCentre (centre); };
 
-        // The basket: from the magnet out to the frame's lip, behind the cone.
-        juce::Path basket;
-        basket.startNewSubPath (x (0.27f), T + 4.0f);
-        basket.lineTo (x (0.97f), G - 26.0f);
-        basket.lineTo (x (0.97f), G - 16.0f);
-        basket.lineTo (x (0.27f), T + 26.0f);
-        basket.closeSubPath();
-        g.setColour (outline.withAlpha (0.55f));
-        g.fillPath (basket);
-        g.setColour (outline.brighter (0.25f));
-        g.strokePath (basket, thin);
+        {
+            const juce::Graphics::ScopedSaveState saved (g);
+            juce::Path clip;
+            clip.addRoundedRectangle (band, radiusControl);
+            g.reduceClipRegion (clip);
 
-        // The magnet (a ring) and the pole piece, on the axis at the back.
-        const auto magnet = juce::Rectangle<float> (L, T, 0.27f * W, 24.0f);
-        g.setGradientFill (juce::ColourGradient (outline.brighter (0.2f), 0.0f, magnet.getY(), outline.darker (0.3f), 0.0f, magnet.getBottom(), false));
-        g.fillRect (magnet);
-        g.setColour (outline.brighter (0.45f));
-        g.drawRect (magnet, 1.0f);
-        g.setColour (outline.brighter (0.1f));
-        g.fillRect (juce::Rectangle<float> (L, magnet.getBottom(), 0.045f * W, 18.0f));
+            // The frame and its lip.
+            g.setColour (outline.darker (0.2f));
+            g.fillEllipse (disc (1.05f));
+            g.setColour (outline.brighter (0.1f));
+            g.fillEllipse (disc (0.965f));
 
-        // The voice coil's former and the spider (the wavy suspension behind the cone).
-        g.setColour (textDim.withAlpha (0.5f));
-        g.fillRect (juce::Rectangle<float> (x (0.05f), T + 30.0f, 0.025f * W, 22.0f));
-        juce::Path spider;
-        spider.startNewSubPath (x (0.075f), T + 42.0f);
-        for (int i = 1; i <= 8; ++i)
-            spider.lineTo (x (0.075f + 0.02f * (float) i), T + 42.0f + ((i % 2) == 0 ? 0.0f : -3.0f));
-        g.strokePath (spider, thin);
+            // The surround: a roll, lit on its inner side.
+            g.setGradientFill (juce::ColourGradient (surfaceRaised.brighter (0.3f), centre.x + 0.86f * radius, centre.y, outline.darker (0.1f),
+                                                     centre.x + 0.95f * radius, centre.y, false));
+            g.fillEllipse (disc (0.945f));
 
-        // The cone: from its neck at the voice coil, forward and out to the surround, curved (concave
-        // seen from the front), with some thickness.
-        const juce::Point<float> neck { x (0.075f), T + 52.0f }, rim { x (0.86f), G - 14.0f }, bend { x (0.45f), G - 34.0f };
-        juce::Path cone;
-        cone.startNewSubPath (neck);
-        cone.quadraticTo (bend, rim);
-        cone.lineTo (rim.translated (0.0f, -4.0f));
-        cone.quadraticTo (bend.translated (0.0f, -5.0f), neck.translated (0.0f, -5.0f));
-        cone.closeSubPath();
-        g.setGradientFill (juce::ColourGradient (surfaceRaised.brighter (0.35f), neck.x, neck.y, surfaceRaised.brighter (0.1f), rim.x, rim.y, false));
-        g.fillPath (cone);
-        g.setColour (textDim.withAlpha (0.8f));
-        g.strokePath (cone, thin);
+            // The cone: lighter toward its neck, with faint concentric ribs.
+            g.setGradientFill (juce::ColourGradient (surfaceRaised.brighter (0.3f), centre.x, centre.y, surfaceRaised.darker (0.15f),
+                                                     centre.x + 0.865f * radius, centre.y, true));
+            g.fillEllipse (disc (0.865f));
+            g.setColour (juce::Colours::black.withAlpha (0.18f));
+            for (auto t : { 0.3f, 0.45f, 0.6f, 0.75f })
+                g.drawEllipse (disc (t), 1.0f);
+            g.setColour (juce::Colours::white.withAlpha (0.06f));
+            for (auto t : { 0.305f, 0.455f, 0.605f, 0.755f })
+                g.drawEllipse (disc (t), 1.0f);
 
-        // The dust cap: a dome on the axis, bulging forward from the cone's neck.
-        juce::Path cap;
-        cap.startNewSubPath (L, neck.y - 3.0f);
-        cap.lineTo (neck.translated (0.0f, -3.0f));
-        cap.quadraticTo (x (0.06f), G - 30.0f, L, G - 28.0f);
-        cap.closeSubPath();
-        g.setColour (surfaceRaised.brighter (0.5f));
-        g.fillPath (cap);
-        g.setColour (textDim.withAlpha (0.8f));
-        g.strokePath (cap, thin);
+            // The dust cap: a dome, its highlight up and to the right of the axis.
+            g.setGradientFill (juce::ColourGradient (surfaceRaised.brighter (0.75f), centre.x + 0.05f * radius, centre.y - 0.08f * radius,
+                                                     surfaceRaised.brighter (0.05f), centre.x + 0.16f * radius, centre.y + 0.05f * radius, true));
+            g.fillEllipse (disc (0.16f));
+            g.setColour (juce::Colours::black.withAlpha (0.35f));
+            g.drawEllipse (disc (0.16f), 1.5f);
 
-        // The surround: a half roll joining the cone to the frame, and the frame's front gasket.
-        juce::Path surround;
-        surround.addCentredArc (x (0.905f), G - 15.0f, 0.045f * W, 7.0f, 0.0f, juce::MathConstants<float>::halfPi, juce::MathConstants<float>::halfPi * 3.0f, true);
-        g.strokePath (surround, edge);
-        g.setColour (outline.brighter (0.35f));
-        g.fillRoundedRectangle (juce::Rectangle<float> (x (0.95f), G - 20.0f, 0.05f * W, 12.0f), 2.0f);
-
-        // The axis and the grille's plane.
-        const float dashes[] { 3.0f, 3.0f };
-        juce::Path axis, grille;
-        axis.startNewSubPath (L, T);
-        axis.lineTo (L, m.getBottom());
-        grille.startNewSubPath (L, G);
-        grille.lineTo (m.getRight(), G);
-        juce::PathStrokeType (1.0f).createDashedStroke (axis, axis, dashes, 2);
-        juce::PathStrokeType (1.0f).createDashedStroke (grille, grille, dashes, 2);
-        g.setColour (textDim.withAlpha (0.3f));
-        g.fillPath (axis);
-        g.setColour (textDim.withAlpha (0.45f));
-        g.fillPath (grille);
+            // A mounting bolt on the frame.
+            g.setColour (outline.brighter (0.6f));
+            g.fillEllipse (juce::Rectangle<float> (7.0f, 7.0f).withCentre ({ centre.x + 0.985f * radius, centre.y }));
+        }
+        g.setColour (outline.brighter (0.2f));
+        g.drawRoundedRectangle (band, radiusControl, 1.0f);
 
         g.setFont (font (Text::caption));
+        g.setColour (theme::text.withAlpha (0.75f));
+        g.drawText ("dust cap", band.withTrimmedLeft (8.0f).withTrimmedTop (4.0f).withHeight (13.0f), juce::Justification::centredLeft, false);
+        g.drawText ("cone", band.withTrimmedLeft (0.45f * radius).withTrimmedTop (4.0f).withHeight (13.0f), juce::Justification::centredLeft, false);
+        g.drawText ("edge", band.withTrimmedLeft (0.86f * radius - 30.0f).withWidth (60.0f).withTrimmedTop (4.0f).withHeight (13.0f), juce::Justification::centred, false);
+
+        // The grille's plane, where the distances start.
+        const auto grilleY = m.getY() - 6.0f;
+        const float dashes[] { 3.0f, 3.0f };
+        juce::Path grille;
+        grille.startNewSubPath (m.getX(), grilleY);
+        grille.lineTo (m.getRight(), grilleY);
+        juce::PathStrokeType (1.0f).createDashedStroke (grille, grille, dashes, 2);
+        g.setColour (textDim.withAlpha (0.45f));
+        g.fillPath (grille);
         g.setColour (textDim);
-        g.drawText ("grille", juce::Rectangle<float> (m.getRight() - 64.0f, G + 1.0f, 62.0f, 12.0f), juce::Justification::centredRight, false);
-        g.drawText ("magnet", juce::Rectangle<float> (magnet.getRight() + 6.0f, T - 2.0f, 80.0f, 12.0f), juce::Justification::centredLeft, false);
-        g.drawText ("cone", juce::Rectangle<float> (x (0.5f), G - 52.0f, 60.0f, 12.0f), juce::Justification::centredLeft, false);
+        g.drawText ("grille", juce::Rectangle<float> (m.getRight() - 64.0f, grilleY - 13.0f, 62.0f, 12.0f), juce::Justification::centredRight, false);
     }
 
     AmpSimProcessor& ampSim;
@@ -550,9 +552,14 @@ public:
 
     void setStatus (const juce::String& line, bool isError)
     {
-        status->setText (line == "No IR" ? juce::String ("No IR: this mic is silent") : line, juce::dontSendNotification);
+        const auto shown = line == "No IR" ? juce::String ("No IR: this mic is silent") : line;
+        status->setText (shown, juce::dontSendNotification);
+        status->setTooltip (shown);
         status->setColour (juce::Label::textColourId, isError ? error : (line == "No IR" ? textDim : theme::text));
     }
+
+    /// The narrowest a card can be with all its controls side by side.
+    static int minimumWidth (bool room) { return room ? 175 : 262; }
 
     void paint (juce::Graphics& g) override
     {
@@ -583,10 +590,10 @@ public:
         // The switches along the bottom; the knobs centred between them and the status.
         auto switches = area.removeFromBottom (controlHeight);
         if (invert != nullptr)
-            place (invert, switches, space::s);
-        place (mute, switches, space::s);
+            place (invert, switches, 6);
+        place (mute, switches, 6);
         if (channel != nullptr)
-            channel->setBounds (switches.removeFromRight (78).withSizeKeepingCentre (78, controlHeight));
+            channel->setBounds (switches.removeFromRight (64).withSizeKeepingCentre (64, 24));
         const auto height = Knob::preferredHeight (Knob::Size::compact);
         const auto width = knobRowWidth ((int) knobs.size(), Knob::Size::compact, 2);
         placeKnobs (area.withSizeKeepingCentre (width, height), knobs, Knob::Size::compact, 2);
@@ -610,7 +617,8 @@ CabPage::CabPage (AmpSimProcessor& p, std::function<void (int, bool)> onLoad)
     for (int m = 0; m < AmpSimProcessor::numCabMics; ++m)
         mics[(size_t) m] = &adopt (std::make_unique<MicCard> (p, m, [onLoad, m] { onLoad (m, false); }, [onLoad, m] { onLoad (m, true); }));
 
-    align = &addSwitch ("cab_align", "Auto-align the close mics");
+    align = &addSwitch ("cab_align", "Auto-align");
+    align->setTooltip ("Lines the two close mics up in time (and polarity), measured from their IRs");
     alignment = &addLabel ({}, Text::label, textDim);
     alignment->setJustificationType (juce::Justification::topLeft);
     lowCut = &addSwitch ("cab_lowcut_on", {}); // the cards' headings name them
@@ -624,17 +632,22 @@ CabPage::CabPage (AmpSimProcessor& p, std::function<void (int, bool)> onLoad)
 
 void CabPage::layoutContent (juce::Rectangle<int> area)
 {
-    map->setBounds (area.removeFromLeft (juce::jlimit (300, 460, area.getWidth() * 36 / 100)));
-    area.removeFromLeft (space::m);
-
-    // The alignment and the cuts along the bottom; the three mics' cards above them.
-    auto bottom = area.removeFromBottom (knobCardHeight (Knob::Size::compact));
-    area.removeFromBottom (space::m);
+    // The speaker map takes about a third, but leaves the mics' cards the width they need.
     const auto gap = space::m;
-    const auto width = (area.getWidth() - 2 * gap) / AmpSimProcessor::numCabMics;
-    for (auto* card : mics)
+    const auto cardsNeed = 2 * MicCard::minimumWidth (false) + MicCard::minimumWidth (true) + 2 * gap;
+    map->setBounds (area.removeFromLeft (juce::jlimit (300, 460, juce::jmin (area.getWidth() * 36 / 100, area.getWidth() - cardsNeed - gap))));
+    area.removeFromLeft (gap);
+
+    // The alignment and the cuts along the bottom; the three mics' cards above them (equal thirds when
+    // there's room, otherwise the room mic's card, which holds less, gives way first).
+    auto bottom = area.removeFromBottom (knobCardHeight (Knob::Size::compact));
+    area.removeFromBottom (gap);
+    const auto third = (area.getWidth() - 2 * gap) / AmpSimProcessor::numCabMics;
+    const auto roomWidth = third >= MicCard::minimumWidth (false) ? third : juce::jmax (MicCard::minimumWidth (true), area.getWidth() - 2 * gap - 2 * MicCard::minimumWidth (false));
+    const auto closeWidth = (area.getWidth() - 2 * gap - roomWidth) / 2;
+    for (int m = 0; m < AmpSimProcessor::numCabMics; ++m)
     {
-        card->setBounds (area.removeFromLeft (width));
+        mics[(size_t) m]->setBounds (area.removeFromLeft (m == AmpSimProcessor::roomMic ? roomWidth : closeWidth));
         area.removeFromLeft (gap);
     }
 

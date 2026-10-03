@@ -1736,6 +1736,24 @@ public:
             ampSimEditor->setUiScale (1.0f);
             logMessage ("  -> pages: " + pageFiles.joinIntoString (", "));
 
+            // And at the smallest window (1100 x 720), where the layouts are tightest.
+            editor->setSize (1100, 720);
+            expect (editor->getWidth() == 1100 && editor->getHeight() == 720);
+            juce::StringArray smallest;
+            for (int b = 0; b < ui::numBlocks; ++b)
+            {
+                const auto id = (ui::BlockId) b;
+                if (id == ui::BlockId::output)
+                    continue;
+                ampSimEditor->selectBlock (id);
+                ampSimEditor->refresh();
+                const auto pageFile = proofDir().getChildFile ("editor_" + juce::String (ui::info (id).pageName) + "_min.png");
+                expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f), pageFile));
+                smallest.add (pageFile.getFileName());
+            }
+            editor->setSize (1280, 820);
+            logMessage ("  -> at 1100 x 720: " + smallest.joinIntoString (", "));
+
             // The chain strip alone: blocks on and off (the off ones dimmed, their switches hollow), the
             // delay selected.
             ampSimEditor->selectBlock (ui::BlockId::delay);

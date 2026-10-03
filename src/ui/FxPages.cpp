@@ -527,7 +527,8 @@ void BloomPage::layoutContent (juce::Rectangle<int> area)
     header.removeFromRight (space::s);
     mixLabel->setBounds (header.removeFromRight (32));
     header.removeFromRight (space::xl);
-    chips->setBounds (header.removeFromRight (juce::jmin (header.getWidth(), 420)).withSizeKeepingCentre (juce::jmin (header.getWidth(), 420), 30));
+    const auto chipsWidth = juce::jmin (header.getWidth(), 420);
+    chips->setBounds (header.removeFromRight (chipsWidth).withSizeKeepingCentre (chipsWidth, 30));
 
     // The three effects side by side, in the order they run.
     std::map<juce::String, EffectCard*> byName { { "bitcrush", crush }, { "phaser", phaser }, { "flanger", flanger } };

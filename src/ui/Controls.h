@@ -172,7 +172,7 @@ public:
     Size getKnobSize() const noexcept { return size; }
     void paint (juce::Graphics&) override;
 
-    static int preferredWidth (Size size) { return size == Size::normal ? 76 : 64; }
+    static int preferredWidth (Size size) { return size == Size::normal ? 72 : 62; }
     static int preferredHeight (Size size)
     {
         return (size == Size::normal ? theme::knobNormal : theme::knobCompact) + 2 * theme::captionHeight + 6;

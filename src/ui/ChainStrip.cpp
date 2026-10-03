@@ -197,6 +197,7 @@ private:
 
 ChainStrip::ChainStrip (AmpSimProcessor& processor) : ampSim (processor)
 {
+    setOpaque (true);
     for (int b = 0; b < numBlocks; ++b)
     {
         cards[(size_t) b] = std::make_unique<Card> (*this, (BlockId) b);
@@ -477,6 +478,8 @@ juce::String ChainStrip::describe (BlockId id, const AmpSimProcessor::Status& st
 
 void ChainStrip::paint (juce::Graphics& g)
 {
+    g.fillAll (background);
+
     // The signal's path: one line through every card, turning down from the cab into row two. Cards are
     // drawn over it, so it shows in the gaps between them.
     const auto y1 = (float) ampSlot.getCentreY(), y2 = (float) outputSlot.getCentreY();
@@ -522,7 +525,7 @@ void ChainStrip::paint (juce::Graphics& g)
         const auto labelWidth = juce::roundToInt (juce::GlyphArrangement::getStringWidth (labelFont, label));
         const auto hintWidth = juce::roundToInt (juce::GlyphArrangement::getStringWidth (hintFont, hint));
         const auto legend = juce::Rectangle<int> (box.getX() + 10, box.getY() - 7, labelWidth + hintWidth + 22, 14);
-        g.setColour (findColour (juce::ResizableWindow::backgroundColourId));
+        g.setColour (background);
         g.fillRect (legend);
         g.setFont (labelFont);
         g.setColour (colour);

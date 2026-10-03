@@ -359,8 +359,8 @@ void GatePage::layoutContent (juce::Rectangle<int> area)
     // The gain reduction on the right, as tall as the cards.
     const auto size = knobSizeFor (area.getWidth() - 160, (int) knobs.size(), controlGap + 6);
     const auto cardsHeight = knobCardHeight (size) + space::m + cardHeight (56);
-    auto meterColumn = area.removeFromRight (56).withHeight (cardsHeight);
-    reduction->setBounds (card (meterColumn, {}).reduced (0, 2));
+    auto meterColumn = area.removeFromRight (64).withHeight (cardsHeight);
+    reduction->setBounds (card (meterColumn, {}).expanded (6, 0));
     area.removeFromRight (space::m);
 
     for (auto* knob : knobs)
@@ -426,11 +426,17 @@ void GatePage::paintContent (juce::Graphics& g)
         g.fillRect (juce::Rectangle<float> (xFor (meter.closeDb) - 1.0f, (float) bar.getY() - 3.0f, 2.0f, (float) bar.getHeight() + 6.0f));
     }
 
+    // The scale: the ends aligned to the bar's ends, the rest centred on their marks.
     g.setFont (font (Text::caption));
     g.setColour (textDim);
     for (int db = -100; db <= 0; db += 20)
-        g.drawText (juce::String (db), juce::Rectangle<float> (xFor ((float) db) - 20.0f, (float) scale.getY(), 40.0f, (float) scale.getHeight()),
-                    db == -100 ? juce::Justification::centredLeft : (db == 0 ? juce::Justification::centredRight : juce::Justification::centred), false);
+    {
+        const auto x = xFor ((float) db);
+        const auto left = db == -100 ? x : (db == 0 ? x - 60.0f : x - 30.0f);
+        const auto justification = db == -100 ? juce::Justification::centredLeft : (db == 0 ? juce::Justification::centredRight : juce::Justification::centred);
+        g.drawText (juce::String (db) + (db == 0 ? " dBFS" : ""), juce::Rectangle<float> (left, (float) scale.getY(), 60.0f, (float) scale.getHeight()),
+                    justification, false);
+    }
 
     const auto dB = [] (float value) { return juce::String (juce::roundToInt (value)); };
     juce::String line;
@@ -480,9 +486,9 @@ void CompressorPage::layoutContent (juce::Rectangle<int> area)
         knob->setKnobSize (size);
     const auto rowHeight = knobCardHeight (size);
     const auto side = juce::jmin (2 * rowHeight + space::m, area.getHeight(), 330);
-    auto right = area.removeFromRight (side + 56).withHeight (side);
+    auto right = area.removeFromRight (side + 64).withHeight (side);
     area.removeFromRight (space::m);
-    reduction->setBounds (card (right.removeFromRight (56), {}).reduced (0, 2));
+    reduction->setBounds (card (right.removeFromRight (64), {}).expanded (6, 0));
     right.removeFromRight (space::s);
     curveArea = card (right, "Curve");
 
