@@ -5,148 +5,188 @@ using namespace ui::theme;
 
 namespace
 {
-const juce::Identifier uiPageKey { "uiPage" }; // the page last shown (app state)
+const juce::Identifier uiPageKey { "uiPage" };            // the page last shown (app state)
+const juce::Identifier presetSourceKey { "presetSource" }; // "factory" or "user": the top bar's tag
 
-float snapScale (float scale)
+/// The main area inside the canvas (handoff 2: between the top bar and the chain, padded 18 / 40 / 16).
+juce::Rectangle<int> mainArea()
 {
-    auto best = uiScales[1];
-    for (auto s : uiScales)
-        if (std::abs (s - scale) < std::abs (best - scale))
-            best = s;
-    return best;
+    return { mainPadSide, topBarHeight + mainPadTop, canvasWidth - 2 * mainPadSide, canvasHeight - topBarHeight - chainHeight - mainPadTop - mainPadBottom };
+}
+
+/// A rate as the warning says it: "44.1 kHz", "96 kHz".
+juce::String rateText (double hz)
+{
+    const auto k = hz / 1000.0;
+    return (std::abs (k - std::round (k)) < 0.05 ? juce::String (juce::roundToInt (k)) : juce::String (k, 1)) + " kHz";
+}
+
+/// Every preset the arrows step through: the factory five, then the preset folder's files (sorted, the
+/// subfolders' too).
+struct PresetEntry
+{
+    juce::String name;
+    bool factory = false;
+    juce::var preset;
+    juce::File file;
+};
+
+std::vector<PresetEntry> presetList()
+{
+    std::vector<PresetEntry> list;
+    for (const auto& preset : presets::factoryPresets())
+        list.push_back ({ preset["name"].toString(), true, preset, {} });
+    if (const auto folder = presets::defaultFolder(); folder.isDirectory())
+    {
+        auto files = folder.findChildFiles (juce::File::findFiles, true, "*.json");
+        files.sort();
+        for (const auto& f : files)
+            list.push_back ({ f.getFileNameWithoutExtension(), false, {}, f });
+    }
+    return list;
 }
 } // namespace
 
-/// The warning line above the scenes: the sample rate first, then MIDI learn waiting for a controller,
-/// then a preset's notes or what went wrong loading it. Two lines at most; the whole text is its tooltip.
+/// The 1280 x 760 canvas: the window's background with its 12 px corners and 1 px line border (handoff 2).
+class AmpSimEditor::Canvas final : public juce::Component
+{
+public:
+    void paint (juce::Graphics& g) override
+    {
+        g.setColour (bg);
+        g.fillRoundedRectangle (getLocalBounds().toFloat(), radiusWindow);
+    }
+
+    void paintOverChildren (juce::Graphics& g) override
+    {
+        g.setColour (line1);
+        g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (0.5f), radiusWindow, 1.0f);
+    }
+};
+
+/// The message line at the bottom-left of the main area: 12 px ink-dim, one line, the whole text in its
+/// tooltip.
 class AmpSimEditor::StatusLine final : public juce::Component, public juce::SettableTooltipClient
 {
 public:
-    void set (const juce::String& newMessage, juce::Colour newColour)
+    void set (const juce::String& newMessage)
     {
-        if (newMessage != message || newColour != colour)
+        if (newMessage != message)
         {
             message = newMessage;
-            colour = newColour;
             setTooltip (message);
             repaint();
         }
     }
 
-    const juce::String& getMessage() const noexcept { return message; }
-
     void paint (juce::Graphics& g) override
     {
-        auto area = getLocalBounds().reduced (space::l, 0);
-        g.setFont (font (Text::label));
-        if (message.isEmpty())
-        {
-            g.setColour (textDim.withAlpha (0.75f));
-            g.drawText ("Right-click any control for MIDI learn and scenes.  Cmd-Z undoes.", area, juce::Justification::centredLeft, true);
-            return;
-        }
-
-        // A marker in the message's colour; warnings and errors are written in it too.
-        g.setColour (colour);
-        g.fillRoundedRectangle (area.removeFromLeft (4).withSizeKeepingCentre (4, 18).toFloat(), 2.0f);
-        area.removeFromLeft (space::s);
-        g.setColour (colour == warn || colour == error ? colour : ui::theme::text);
-        g.drawFittedText (message, area, juce::Justification::centredLeft, 2, 0.9f);
+        g.setFont (geist (Weight::regular, 12.0f));
+        g.setColour (inkDim);
+        g.drawFittedText (message, getLocalBounds(), juce::Justification::centredLeft, 1, 0.9f);
     }
 
 private:
     juce::String message;
-    juce::Colour colour { textDim };
 };
 
 AmpSimEditor::AmpSimEditor (AmpSimProcessor& p) : AudioProcessorEditor (&p), ampSim (p)
 {
     setLookAndFeel (&lookAndFeel);
-    addAndMakeVisible (content);
+    canvas = std::make_unique<Canvas>();
+    addAndMakeVisible (*canvas);
+    tooltips = std::make_unique<juce::TooltipWindow> (canvas.get(), 600);
     statusLine = std::make_unique<StatusLine>();
 
-    // A page per block (the input and the output share one), all made now so switching is instant.
-    const auto add = [this] (std::unique_ptr<ui::BlockPage> page, std::initializer_list<ui::BlockId> ids)
-    {
-        for (auto id : ids)
-            pageFor[(size_t) id] = page.get();
-        content.addChildComponent (*page);
-        pages.push_back (std::move (page));
-    };
+    // The effect blocks' editors, all made now so switching is instant.
     using B = ui::BlockId;
-    add (std::make_unique<ui::IoPage> (p), { B::input, B::output });
-    add (std::make_unique<ui::GatePage> (p, false), { B::gateA });
-    add (std::make_unique<ui::CompressorPage> (p, false), { B::preCompressor });
-    add (std::make_unique<ui::BoostPage> (p), { B::boost });
-    add (std::make_unique<ui::OverdrivePage> (p), { B::overdrive });
-    add (std::make_unique<ui::EqPage> (p, false), { B::preEq });
-    add (std::make_unique<ui::AmpPage> (p, [this] (int slot)
+    const auto add = [this] (std::unique_ptr<ui::BlockPage> page, B id)
+    {
+        blockPageFor[(size_t) id] = page.get();
+        blockPages.push_back (std::move (page));
+    };
+    add (std::make_unique<ui::GatePage> (p, false), B::gateA);
+    add (std::make_unique<ui::CompressorPage> (p, false), B::preCompressor);
+    add (std::make_unique<ui::BoostPage> (p), B::boost);
+    add (std::make_unique<ui::OverdrivePage> (p), B::overdrive);
+    add (std::make_unique<ui::EqPage> (p, false), B::preEq);
+    add (std::make_unique<ui::GatePage> (p, true), B::gateB);
+    add (std::make_unique<ui::EqPage> (p, true), B::postEq);
+    add (std::make_unique<ui::CompressorPage> (p, true), B::postCompressor);
+    add (std::make_unique<ui::HarmonizerPage> (p), B::harmonizer);
+    add (std::make_unique<ui::MultivoicerPage> (p), B::multivoicer);
+    add (std::make_unique<ui::BloomPage> (p), B::bloom);
+    add (std::make_unique<ui::ChorusPage> (p), B::chorus);
+    add (std::make_unique<ui::DelayPage> (p), B::delay);
+    add (std::make_unique<ui::ReverbPage> (p), B::reverb);
+
+    // The main pages.
+    const auto pageOf = [this] (B id) -> ui::BlockPage& { return *blockPageFor[(size_t) id]; };
+    prePage = std::make_unique<ui::SectionPage> (p, ui::Section::pre, pageOf);
+    postPage = std::make_unique<ui::SectionPage> (p, ui::Section::post, pageOf);
+    eqView = std::make_unique<ui::EqView> (p, *blockPageFor[(size_t) B::postEq], *blockPageFor[(size_t) B::preEq]);
+    inputPage = std::make_unique<ui::InputPage> (p);
+    outputPage = std::make_unique<ui::OutputPage> (p);
+    ampPage = std::make_unique<ui::AmpPage> (p, [this] (int slot)
     {
         chooseFile ("Choose a NAM capture for Amp " + juce::String (slot + 1), "*.nam", AmpSimProcessor::modelPathKey (slot),
                     [this, slot] (const juce::File& f) { ampSim.loadModel (slot, f); });
-    }), { B::amp });
-    add (std::make_unique<ui::GatePage> (p, true), { B::gateB });
-    add (std::make_unique<ui::CabPage> (p, [this] (int mic, bool pack)
+    });
+    cabPage = std::make_unique<ui::CabPage> (p, [this] (int mic, bool pack)
     {
         if (pack)
             chooseFile ("Choose a cab pack folder", {}, AmpSimProcessor::cabPathKey (mic), [this, mic] (const juce::File& f) { ampSim.loadCabIR (mic, f); }, true);
         else
             chooseFile ("Choose an impulse response", "*.wav;*.aif;*.aiff;*.flac", AmpSimProcessor::cabPathKey (mic),
                         [this, mic] (const juce::File& f) { ampSim.loadCabIR (mic, f); });
-    }), { B::cab });
-    add (std::make_unique<ui::EqPage> (p, true), { B::postEq });
-    add (std::make_unique<ui::CompressorPage> (p, true), { B::postCompressor });
-    add (std::make_unique<ui::HarmonizerPage> (p), { B::harmonizer });
-    add (std::make_unique<ui::MultivoicerPage> (p), { B::multivoicer });
-    add (std::make_unique<ui::BloomPage> (p), { B::bloom });
-    add (std::make_unique<ui::ChorusPage> (p), { B::chorus });
-    add (std::make_unique<ui::DelayPage> (p), { B::delay });
-    add (std::make_unique<ui::ReverbPage> (p), { B::reverb });
+    });
 
-    for (auto* c : std::initializer_list<juce::Component*> { &topBar, &chainStrip, statusLine.get(), &scenesBar })
-        content.addAndMakeVisible (c);
-    content.addChildComponent (tunerView); // over everything while the tuner is engaged
+    using P = ui::PageId;
+    pageComponents[(size_t) P::input] = inputPage.get();
+    pageComponents[(size_t) P::preFx] = prePage.get();
+    pageComponents[(size_t) P::amp] = ampPage.get();
+    pageComponents[(size_t) P::eq] = eqView.get();
+    pageComponents[(size_t) P::cab] = cabPage.get();
+    pageComponents[(size_t) P::postFx] = postPage.get();
+    pageComponents[(size_t) P::output] = outputPage.get();
+    pageComponents[(size_t) P::tuner] = &tunerView;
+    for (auto* page : pageComponents)
+        canvas->addChildComponent (page);
 
-    chainStrip.onSelect = [this] (ui::BlockId id) { selectBlock (id); };
+    canvas->addAndMakeVisible (topBar);
+    canvas->addAndMakeVisible (chainNav);
+    canvas->addAndMakeVisible (*statusLine);
+
+    chainNav.onNavigate = [this] (P page) { showPage (page); };
     topBar.onPresetMenu = [this] { showPresetMenu(); };
     topBar.onSave = [this] { savePreset(); };
-    topBar.onUndo = [this] { undo(); };
-    topBar.onRedo = [this] { redo(); };
-    topBar.onAbSelect = [this] (bool b)
-    {
-        if (b != ampSim.isOnB())
-        {
-            ampSim.parameters.copyState();
-            ampSim.abSwitch();
-            refreshState();
-        }
-    };
-    topBar.onAbCopy = [this] { ampSim.abCopyToOther(); };
-    topBar.onMidi = [this] { showMidiMappings(); };
-    topBar.onSettings = [this] { showSettingsMenu(); };
-    topBar.onTap = [this] { ampSim.tapTempo(); };
-    scenesBar.onClick = [this] (int i) { clickScene (i); };
+    topBar.onPrevious = [this] { stepPreset (-1); };
+    topBar.onNext = [this] { stepPreset (1); };
+    topBar.onTuner = [this] { showPage (shownPage == P::tuner ? pageBeforeTuner : P::tuner); };
+    outputPage->onAbSelect = [this] (bool b) { abSelect (b); };
+    outputPage->onAbCopy = [this] { ampSim.abCopyToOther(); };
+    outputPage->onTap = [this] { ampSim.tapTempo(); };
+    outputPage->onMidiMappings = [this] { showMidiMappings(); };
+    outputPage->getScenesBar().onClick = [this] (int i) { clickScene (i); };
 
     addMouseListener (this, true); // right-clicks anywhere, for MIDI learn; every press starts an undo step
     setWantsKeyboardFocus (true);
 
-    // The app's view state: the page last shown, the UI scale, and the window's size in UI points.
+    // The app's view state: the page last shown, and the window's size (H11; the old UI scale key is
+    // left alone and no longer used).
     const auto& state = ampSim.parameters.state;
-    auto first = B::amp;
-    for (int b = 0; b < ui::numBlocks; ++b)
-        if (state.getProperty (uiPageKey).toString() == ui::info ((B) b).pageName)
-        {
-            first = (B) b;
-            break;
-        }
-    selectBlock (first);
+    auto first = P::amp;
+    for (int i = 0; i < ui::numPages; ++i)
+        if ((P) i != P::tuner && state.getProperty (uiPageKey).toString() == ui::pageName ((P) i))
+            first = (P) i;
+    showPage (first);
 
-    uiScale = snapScale ((float) (double) state.getProperty (AmpSimProcessor::uiScaleKey, 1.0));
-    const auto width = juce::jmax (minimumWidth, (int) state.getProperty (AmpSimProcessor::uiWidthKey, windowWidth));
-    const auto height = juce::jmax (minimumHeight, (int) state.getProperty (AmpSimProcessor::uiHeightKey, windowHeight));
+    // (Read before setting the limits: the limits resize the editor, which would write its size.)
+    const auto width = juce::jmax (minimumWidth, (int) state.getProperty (AmpSimProcessor::uiWidthKey, canvasWidth));
+    const auto height = juce::jmax (minimumHeight, (int) state.getProperty (AmpSimProcessor::uiHeightKey, canvasHeight));
     setResizable (true, false);
-    setResizeLimits (juce::roundToInt ((float) minimumWidth * uiScale), juce::roundToInt ((float) minimumHeight * uiScale), 8192, 8192);
-    setSize (juce::roundToInt ((float) width * uiScale), juce::roundToInt ((float) height * uiScale));
+    setResizeLimits (minimumWidth, minimumHeight, 8192, 8192);
+    setSize (width, height);
 
     refreshState();
     startTimerHz (meterFps);
@@ -155,8 +195,8 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p) : AudioProcessorEditor (&p), amp
 AmpSimEditor::~AmpSimEditor()
 {
     stopTimer();
-    if (shownPage != nullptr)
-        shownPage->pageHidden();
+    if (auto* hooks = hooksFor (shownPage))
+        hooks->pageHidden();
     ampSim.setAnalyzerTap (AmpSimProcessor::AnalyzerTap::off); // nobody reads the ring any more
     if (renameWindow != nullptr)
     {
@@ -168,79 +208,98 @@ AmpSimEditor::~AmpSimEditor()
     setLookAndFeel (nullptr);
 }
 
-// ---- Layout and the UI scale ------------------------------------------------------------------------
+// ---- The canvas and the window ----------------------------------------------------------------------
 
 void AmpSimEditor::paint (juce::Graphics& g)
 {
-    g.fillAll (background);
+    g.fillAll (letterbox);
+}
+
+juce::Rectangle<int> AmpSimEditor::getCanvasBounds() const
+{
+    const auto w = juce::roundToInt ((float) canvasWidth * canvasScale), h = juce::roundToInt ((float) canvasHeight * canvasScale);
+    return { (getWidth() - w) / 2, (getHeight() - h) / 2, w, h };
 }
 
 void AmpSimEditor::resized()
 {
-    // The window is the content's size times the UI scale; the content is laid out in UI points.
-    const auto width = juce::roundToInt ((float) getWidth() / uiScale), height = juce::roundToInt ((float) getHeight() / uiScale);
-    content.setTransform (juce::AffineTransform::scale (uiScale));
-    content.setBounds (0, 0, width, height);
-    layoutContent();
+    // The canvas keeps its 1280 x 760 layout and is scaled uniformly to fit, centred: letterboxed in the
+    // darker colour when the window's aspect differs (H11).
+    canvasScale = juce::jmin ((float) getWidth() / (float) canvasWidth, (float) getHeight() / (float) canvasHeight);
+    const auto target = getCanvasBounds();
+    canvas->setBounds (0, 0, canvasWidth, canvasHeight);
+    canvas->setTransform (juce::AffineTransform::scale (canvasScale).translated ((float) target.getX(), (float) target.getY()));
+    layoutCanvas();
 
     auto& state = ampSim.parameters.state;
-    state.setProperty (AmpSimProcessor::uiWidthKey, width, nullptr);
-    state.setProperty (AmpSimProcessor::uiHeightKey, height, nullptr);
+    state.setProperty (AmpSimProcessor::uiWidthKey, getWidth(), nullptr);
+    state.setProperty (AmpSimProcessor::uiHeightKey, getHeight(), nullptr);
 }
 
-void AmpSimEditor::layoutContent()
+void AmpSimEditor::layoutCanvas()
 {
-    auto area = content.getLocalBounds();
-    tunerView.setBounds (area);
-    topBar.setBounds (area.removeFromTop (topBarHeight));
-    scenesBar.setBounds (area.removeFromBottom (scenesBarHeight));
-    statusLine->setBounds (area.removeFromBottom (statusHeight));
-    chainStrip.setBounds (area.removeFromTop (chainStripHeight));
-
-    const auto pageArea = area.reduced (space::l, 0).withTrimmedTop (space::xs);
-    for (auto& page : pages)
-        page->setBounds (pageArea);
-}
-
-void AmpSimEditor::setUiScale (float scale)
-{
-    // Keep the size in UI points; the window follows the scale.
-    const auto width = content.getWidth(), height = content.getHeight();
-    uiScale = snapScale (scale);
-    ampSim.parameters.state.setProperty (AmpSimProcessor::uiScaleKey, uiScale, nullptr);
-    setResizeLimits (juce::roundToInt ((float) minimumWidth * uiScale), juce::roundToInt ((float) minimumHeight * uiScale), 8192, 8192);
-    setSize (juce::roundToInt ((float) width * uiScale), juce::roundToInt ((float) height * uiScale));
-    resized();
+    topBar.setBounds (0, 0, canvasWidth, topBarHeight);
+    chainNav.setBounds (0, canvasHeight - chainHeight, canvasWidth, chainHeight);
+    for (auto* page : pageComponents)
+        page->setBounds (mainArea());
+    // The tuner page fills the main area too (its own layout centres its column).
+    statusLine->setBounds (mainArea().getX(), mainArea().getBottom(), mainArea().getWidth(), mainPadBottom);
 }
 
 // ---- Pages ------------------------------------------------------------------------------------------
+
+ui::ControlGroup* AmpSimEditor::hooksFor (ui::PageId page)
+{
+    if (page == ui::PageId::count || page == ui::PageId::tuner)
+        return nullptr;
+    return dynamic_cast<ui::ControlGroup*> (pageComponents[(size_t) page]);
+}
+
+void AmpSimEditor::showPage (ui::PageId page)
+{
+    if (page == ui::PageId::count || page == shownPage)
+        return;
+
+    // Leaving the tuner disengages it; opening it engages it (the tuner never runs behind another page).
+    auto* tunerOn = ampSim.parameters.getParameter ("tuner_on");
+    if (shownPage == ui::PageId::tuner && page != ui::PageId::tuner && tunerOn->getValue() >= 0.5f)
+        tunerOn->setValueNotifyingHost (0.0f);
+    if (page == ui::PageId::tuner)
+    {
+        if (shownPage != ui::PageId::count)
+            pageBeforeTuner = shownPage;
+        if (tunerOn->getValue() < 0.5f)
+            tunerOn->setValueNotifyingHost (1.0f);
+    }
+
+    if (shownPage != ui::PageId::count)
+    {
+        pageComponents[(size_t) shownPage]->setVisible (false);
+        if (auto* hooks = hooksFor (shownPage))
+            hooks->pageHidden();
+    }
+    shownPage = page;
+    pageComponents[(size_t) page]->setVisible (true);
+    if (auto* hooks = hooksFor (page))
+    {
+        hooks->pageShown();
+        hooks->refresh();
+    }
+    chainNav.setActive (page);
+    if (page != ui::PageId::tuner)
+        ampSim.parameters.state.setProperty (uiPageKey, ui::pageName (page), nullptr);
+    refreshState();
+}
 
 void AmpSimEditor::selectBlock (ui::BlockId id)
 {
     if (id == ui::BlockId::count)
         return;
-    selected = id;
-    chainStrip.setSelected (id);
-    showPage (pageFor[(size_t) id]);
-    ampSim.parameters.state.setProperty (uiPageKey, ui::info (id).pageName, nullptr);
-}
-
-void AmpSimEditor::showPage (ui::BlockPage* page)
-{
-    if (page == shownPage)
-        return;
-    if (shownPage != nullptr)
-    {
-        shownPage->setVisible (false);
-        shownPage->pageHidden();
-    }
-    shownPage = page;
-    if (shownPage != nullptr)
-    {
-        shownPage->setVisible (true);
-        shownPage->pageShown();
-        shownPage->refresh();
-    }
+    selectedBlock = id;
+    const auto page = ui::pageFor (id);
+    if (page == ui::PageId::preFx || page == ui::PageId::postFx)
+        getSectionPage (page == ui::PageId::preFx ? ui::Section::pre : ui::Section::post).select (id);
+    showPage (page);
 }
 
 // ---- The timer --------------------------------------------------------------------------------------
@@ -251,7 +310,8 @@ void AmpSimEditor::timerCallback()
     const auto now = juce::Time::getMillisecondCounterHiRes();
     const auto seconds = lastMeterMs > 0.0 ? juce::jlimit (0.0, 0.5, (now - lastMeterMs) / 1000.0) : 1.0 / meterFps;
     lastMeterMs = now;
-    topBar.updateMeters (ampSim.takePeaks(), ampSim.getCpuLoad(), seconds);
+    topBar.updateMeters (ampSim.takePeaks(), seconds);
+    outputPage->getCpuMeter().setLoad (ampSim.getCpuLoad());
 
     if (++ticks % 3 == 0)
         refreshState();
@@ -259,53 +319,38 @@ void AmpSimEditor::timerCallback()
 
 void AmpSimEditor::refreshState()
 {
-    const auto status = ampSim.getStatus();
     topBar.refresh();
-    chainStrip.refresh (status);
-    scenesBar.refresh (ampSim.getScenes());
-    if (shownPage != nullptr)
-        shownPage->refresh();
+    if (auto* hooks = hooksFor (shownPage))
+        hooks->refresh();
 
-    // The warning line: the sample rate first, then MIDI learn waiting for a controller, then a preset
-    // that couldn't load or loaded with gaps (or a factory preset's notes).
+    // The tuner follows its switch both ways: a footswitch that engages it opens its page, and one that
+    // disengages it (or the page's own close button) goes back to the page before.
+    const auto tuning = ampSim.parameters.getRawParameterValue ("tuner_on")->load() >= 0.5f;
+    if (tuning && shownPage != ui::PageId::tuner)
+        showPage (ui::PageId::tuner);
+    else if (! tuning && shownPage == ui::PageId::tuner)
+        showPage (pageBeforeTuner);
+
+    // The tuner button's note: the one it hears, only while it's engaged.
+    juce::String note ("-");
+    if (const auto reading = ampSim.getTunerReading(); ampSim.isTunerEngaged() && reading.hasReading)
+        note = juce::MidiMessage::getMidiNoteName (reading.midiNote, true, false, 4);
+    topBar.setTuner (shownPage == ui::PageId::tuner, note);
+
+    // The message: the sample rate first, then MIDI learn waiting for a controller, then a preset that
+    // couldn't load or loaded with gaps (or a factory preset's notes).
     juce::String message;
-    auto colour = warn;
-    if (status.warning.isNotEmpty())
-    {
-        message = status.warning;
-        colour = error;
-    }
+    if (! ampSim.isSampleRateOk())
+        message = rateText (ampSim.getDeviceSampleRate()) + ": muted, set the interface to 48 kHz";
     else if (const auto& midi = ampSim.getMidiMap(); midi.isLearning())
     {
         if (auto* parameter = ampSim.parameters.getParameter (midi.getLearnTarget()))
-        {
             message = "MIDI learn: press a footswitch or move a pedal for " + parameter->getName (64) + " (right-click it again to cancel)";
-            colour = accent;
-        }
     }
-    if (message.isEmpty() && presetMessage.isNotEmpty())
-    {
-        message = presetMessage;
-        colour = presetMessageIsError ? error : textDim;
-    }
-    else if (message.isEmpty())
-    {
-        message = ampSim.getPresetWarnings().joinIntoString ("; ");
-    }
-    statusLine->set (message, colour);
-
-    // The tuner covers everything while it's engaged.
-    if (const auto tuning = ampSim.parameters.getRawParameterValue ("tuner_on")->load() >= 0.5f; tunerView.isVisible() != tuning)
-    {
-        tunerView.setVisible (tuning);
-        if (tuning)
-            tunerView.toFront (false);
-    }
-}
-
-juce::String AmpSimEditor::getStatusText() const
-{
-    return statusLine->getMessage();
+    if (message.isEmpty())
+        message = presetMessage.isNotEmpty() ? presetMessage : ampSim.getPresetWarnings().joinIntoString ("; ");
+    statusText = message;
+    statusLine->set (shownPage == ui::PageId::amp ? juce::String() : message);
 }
 
 // ---- Files and presets ------------------------------------------------------------------------------
@@ -345,8 +390,8 @@ void AmpSimEditor::savePreset()
                               const auto preset = ampSim.capturePreset (file.getFileNameWithoutExtension());
                               const auto saved = presets::save (preset, file);
                               presetMessage = saved ? juce::String() : "Couldn't write " + file.getFullPathName();
-                              presetMessageIsError = ! saved;
                               ampSim.parameters.state.setProperty ("presetName", file.getFileNameWithoutExtension(), nullptr);
+                              ampSim.parameters.state.setProperty (presetSourceKey, "user", nullptr);
                               refreshState();
                           });
 }
@@ -370,11 +415,45 @@ void AmpSimEditor::loadPresetFile (const juce::File& file)
     const auto preset = presets::load (file, problem);
     const auto result = problem.isEmpty() ? ampSim.loadPreset (preset) : presets::ApplyResult { false, problem, {} };
     presetMessage = result.ok ? juce::String() : result.error;
-    presetMessageIsError = ! result.ok;
+    if (result.ok)
+        ampSim.parameters.state.setProperty (presetSourceKey, "user", nullptr);
     refreshState();
 }
 
-void AmpSimEditor::showPresetMenu()
+void AmpSimEditor::loadFactoryPreset (const juce::var& preset)
+{
+    const auto result = ampSim.loadPreset (preset);
+    presetMessage = result.ok ? preset["notes"].toString() : result.error;
+    if (result.ok)
+        ampSim.parameters.state.setProperty (presetSourceKey, "factory", nullptr);
+    refreshState();
+}
+
+juce::String AmpSimEditor::stepPreset (int delta)
+{
+    const auto list = presetList();
+    if (list.empty())
+        return {};
+
+    // Where the current preset is in the list (by its source and name); from nowhere, the first or last.
+    const auto name = ampSim.getPresetName();
+    const auto factory = ampSim.parameters.state.getProperty (presetSourceKey).toString() == "factory";
+    int current = -1;
+    for (int i = 0; i < (int) list.size(); ++i)
+        if (list[(size_t) i].name == name && list[(size_t) i].factory == factory)
+            current = i;
+    const auto count = (int) list.size();
+    const auto next = current < 0 ? (delta > 0 ? 0 : count - 1) : ((current + delta) % count + count) % count;
+
+    const auto& entry = list[(size_t) next];
+    if (entry.factory)
+        loadFactoryPreset (entry.preset);
+    else
+        loadPresetFile (entry.file);
+    return entry.name;
+}
+
+juce::PopupMenu AmpSimEditor::presetMenu()
 {
     // The browser: the factory presets, the preset folder (its subfolders as submenus), open, save as.
     juce::PopupMenu menu;
@@ -383,12 +462,8 @@ void AmpSimEditor::showPresetMenu()
     for (const auto& preset : presets::factoryPresets())
         menu.addItem (preset["name"].toString(), [safe, preset]
         {
-            if (safe == nullptr)
-                return;
-            const auto result = safe->ampSim.loadPreset (preset);
-            safe->presetMessage = result.ok ? preset["notes"].toString() : result.error;
-            safe->presetMessageIsError = ! result.ok;
-            safe->refreshState();
+            if (safe != nullptr)
+                safe->loadFactoryPreset (preset);
         });
 
     std::function<int (juce::PopupMenu&, const juce::File&, int)> addFolder = [&addFolder, safe] (juce::PopupMenu& into, const juce::File& folder, int depth)
@@ -435,28 +510,30 @@ void AmpSimEditor::showPresetMenu()
     menu.addSeparator();
     menu.addItem ("Open a preset file...", [safe] { if (safe != nullptr) safe->loadPreset(); });
     menu.addItem ("Save as...", [safe] { if (safe != nullptr) safe->savePreset(); });
-    ui::showMenu (menu, &topBar.getPresetButton(), &lookAndFeel);
+    return menu;
 }
 
-void AmpSimEditor::showSettingsMenu()
+void AmpSimEditor::showPresetMenu()
 {
-    juce::PopupMenu menu;
-    const auto safe = juce::Component::SafePointer<AmpSimEditor> (this);
-    menu.addSectionHeader ("UI scale");
-    for (auto s : uiScales)
-        menu.addItem (juce::String (juce::roundToInt (s * 100.0f)) + "%", true, std::abs (s - uiScale) < 0.01f, [safe, s]
-        {
-            if (safe != nullptr)
-                safe->setUiScale (s);
-        });
-    ui::showMenu (menu, &topBar.getSettingsButton(), &lookAndFeel);
+    ui::showMenu (presetMenu(), &topBar.getPresetButton(), &lookAndFeel);
 }
 
-// ---- Scenes -----------------------------------------------------------------------------------------
+// ---- A/B and scenes ---------------------------------------------------------------------------------
+
+void AmpSimEditor::abSelect (bool b)
+{
+    if (b != ampSim.isOnB())
+    {
+        ampSim.parameters.copyState();
+        ampSim.abSwitch();
+        refreshState();
+    }
+}
 
 void AmpSimEditor::clickScene (int index)
 {
     // Click to recall a scene, or to store the current sound in an empty one; Store, then a scene, overwrites.
+    auto& scenesBar = getScenesBar();
     auto& scenes = ampSim.getScenes();
     if (scenesBar.isStoreArmed() || ! scenes.get (index).stored)
     {
@@ -468,11 +545,12 @@ void AmpSimEditor::clickScene (int index)
         ampSim.recallScene (index);
     }
     refreshState();
+    outputPage->refresh();
 }
 
 void AmpSimEditor::sceneMenu (int index)
 {
-    ui::showMenu (sceneMenuFor (index), &scenesBar.getTile (index), &lookAndFeel);
+    ui::showMenu (sceneMenuFor (index), &getScenesBar().getTile (index), &lookAndFeel);
 }
 
 juce::PopupMenu AmpSimEditor::sceneMenuFor (int index)
@@ -481,15 +559,20 @@ juce::PopupMenu AmpSimEditor::sceneMenuFor (int index)
     const auto& scene = ampSim.getScenes().get (index);
     menu.addSectionHeader (scene.stored ? scene.name : "Scene " + juce::String (index + 1) + " (empty)");
     const auto safe = juce::Component::SafePointer<AmpSimEditor> (this);
-    menu.addItem ("Store the current sound here", [safe, index]
+    const auto changed = [] (AmpSimEditor& e)
+    {
+        e.refreshState();
+        e.outputPage->refresh();
+    };
+    menu.addItem ("Store the current sound here", [safe, index, changed]
     {
         if (safe != nullptr)
         {
             safe->ampSim.storeScene (index);
-            safe->refreshState();
+            changed (*safe);
         }
     });
-    menu.addItem ("Rename...", scene.stored, false, [safe, index]
+    menu.addItem ("Rename...", scene.stored, false, [safe, index, changed]
     {
         if (safe == nullptr)
             return;
@@ -499,22 +582,22 @@ juce::PopupMenu AmpSimEditor::sceneMenuFor (int index)
         window->addTextEditor ("name", safe->ampSim.getScenes().get (index).name);
         window->addButton ("Rename", 1, juce::KeyPress (juce::KeyPress::returnKey));
         window->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-        window->enterModalState (true, juce::ModalCallbackFunction::create ([safe, index, window] (int result)
+        window->enterModalState (true, juce::ModalCallbackFunction::create ([safe, index, window, changed] (int result)
         {
             if (result == 1 && safe != nullptr)
                 if (const auto name = window->getTextEditorContents ("name").trim(); name.isNotEmpty())
                 {
                     safe->ampSim.getScenes().rename (index, name);
-                    safe->refreshState();
+                    changed (*safe);
                 }
         }), true);
     });
-    menu.addItem ("Clear", scene.stored, false, [safe, index]
+    menu.addItem ("Clear", scene.stored, false, [safe, index, changed]
     {
         if (safe != nullptr)
         {
             safe->ampSim.getScenes().clear (index);
-            safe->refreshState();
+            changed (*safe);
         }
     });
     return menu;
@@ -522,28 +605,22 @@ juce::PopupMenu AmpSimEditor::sceneMenuFor (int index)
 
 // ---- Undo, keys, and right-clicks -------------------------------------------------------------------
 
-void AmpSimEditor::undo()
-{
-    ampSim.parameters.copyState(); // the tree catches up with the last gesture first
-    ampSim.undoManager.undo();
-    refreshState();
-}
-
-void AmpSimEditor::redo()
-{
-    ampSim.undoManager.redo();
-    refreshState();
-}
-
 bool AmpSimEditor::keyPressed (const juce::KeyPress& key)
 {
+    // Undo and redo have no buttons in the handoff's frame: Cmd-Z and Shift-Cmd-Z (H6).
     if (key == juce::KeyPress ('z', juce::ModifierKeys::commandModifier, 0))
     {
         ampSim.parameters.copyState();
-        return ampSim.undoManager.undo();
+        const auto undone = ampSim.undoManager.undo();
+        refreshState();
+        return undone;
     }
     if (key == juce::KeyPress ('z', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier, 0))
-        return ampSim.undoManager.redo();
+    {
+        const auto redone = ampSim.undoManager.redo();
+        refreshState();
+        return redone;
+    }
     return false;
 }
 
@@ -559,7 +636,7 @@ void AmpSimEditor::mouseDown (const juce::MouseEvent& e)
     }
 
     // The scene or control under the click, or the nearest parent that is one (a knob's typing box, a
-    // combo box's label, a chain block's card).
+    // combo box's label, a chain block).
     for (auto* c = e.eventComponent; c != nullptr && c != this; c = c->getParentComponent())
     {
         if (const auto scene = c->getProperties()[ui::ScenesBar::sceneIndexProperty]; ! scene.isVoid())
@@ -681,5 +758,5 @@ void AmpSimEditor::showMidiMappings()
     const auto value = [this] (const char* id) { return juce::String (juce::roundToInt (ampSim.parameters.getRawParameterValue (id)->load())); };
     menu.addSectionHeader ("Built in: program change 1 to 3 picks the amp, CC " + value ("midi_tap_cc") + " taps the tempo, CC "
                            + value ("midi_freeze_cc") + " freezes the reverb, CC " + value ("midi_scene_cc") + " picks a scene");
-    ui::showMenu (menu, &topBar.getMidiButton(), &lookAndFeel);
+    ui::showMenu (menu, &outputPage->getMidiButton(), &lookAndFeel);
 }

@@ -1715,52 +1715,48 @@ public:
             setParam (p, "mv_voices", 5.0f);
             processAll (p, guitarDI ((int) fs / 2));
 
-            // Every page, at UI scale 1 (drawn at 2x, as on a Retina screen) and at 1.5 (drawn at 1x).
+            // Every page and every effect tab, on the 1280 x 760 canvas drawn at 2x (as on a Retina screen).
             juce::StringArray pageFiles;
-            for (auto [suffix, uiScale, pixels] : { std::tuple<const char*, float, float> { "", 1.0f, 2.0f }, std::tuple<const char*, float, float> { "_150", 1.5f, 1.0f } })
+            const auto snap = [&] (const juce::String& name)
             {
-                ampSimEditor->setUiScale (uiScale);
-                expectEquals (editor->getWidth(), juce::roundToInt (1280 * uiScale));
-                for (int b = 0; b < ui::numBlocks; ++b)
-                {
-                    const auto id = (ui::BlockId) b;
-                    if (id == ui::BlockId::output || (id == ui::BlockId::cab && uiScale == 1.0f)) // the output shares the input's page; the cab's is above
-                        continue;
-                    ampSimEditor->selectBlock (id);
-                    ampSimEditor->refresh();
-                    const auto pageFile = proofDir().getChildFile ("editor_" + juce::String (ui::info (id).pageName) + suffix + ".png");
-                    expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, pixels), pageFile));
-                    pageFiles.add (pageFile.getFileName());
-                }
-            }
-            ampSimEditor->setUiScale (1.0f);
-            logMessage ("  -> pages: " + pageFiles.joinIntoString (", "));
-
-            // And at the smallest window (1100 x 720), where the layouts are tightest.
-            editor->setSize (1100, 720);
-            expect (editor->getWidth() == 1100 && editor->getHeight() == 720);
-            juce::StringArray smallest;
+                ampSimEditor->refresh();
+                const auto pageFile = proofDir().getChildFile ("editor_" + name + ".png");
+                expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), pageFile));
+                pageFiles.add (pageFile.getFileName());
+            };
             for (int b = 0; b < ui::numBlocks; ++b)
             {
                 const auto id = (ui::BlockId) b;
-                if (id == ui::BlockId::output)
+                if (id == ui::BlockId::output || id == ui::BlockId::cab)
                     continue;
                 ampSimEditor->selectBlock (id);
-                ampSimEditor->refresh();
-                const auto pageFile = proofDir().getChildFile ("editor_" + juce::String (ui::info (id).pageName) + "_min.png");
-                expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f), pageFile));
-                smallest.add (pageFile.getFileName());
+                snap (ui::info (id).pageName);
             }
-            editor->setSize (1280, 820);
-            logMessage ("  -> at 1100 x 720: " + smallest.joinIntoString (", "));
+            ampSimEditor->showPage (ui::PageId::output);
+            snap ("output");
+            ampSimEditor->showPage (ui::PageId::eq);
+            snap ("eq");
+            logMessage ("  -> pages: " + pageFiles.joinIntoString (", "));
 
-            // The chain strip alone: blocks on and off (the off ones dimmed, their switches hollow), the
-            // delay selected.
+            // A window of another shape: the canvas scales to fit and the rest is letterboxed.
+            editor->setSize (1500, 760);
+            expectWithinAbsoluteError (ampSimEditor->getCanvasScale(), 1.0f, 1.0e-6f);
+            expect (ampSimEditor->getCanvasBounds() == juce::Rectangle<int> (110, 0, 1280, 760));
+            const auto wideFile = proofDir().getChildFile ("editor_letterboxed.png");
+            expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f), wideFile));
+            editor->setSize (1280, 760);
+            logMessage ("  -> " + wideFile.getFullPathName());
+
+            // The signal chain alone: Pre FX bypassed (its icon dim, its name struck through), the delay's page showing.
+            setParam (p, "pre_fx_on", 0.0f);
             ampSimEditor->selectBlock (ui::BlockId::delay);
             ampSimEditor->refresh();
-            auto& strip = ampSimEditor->getChainStrip();
-            const auto stripFile = proofDir().getChildFile ("editor_chain_strip.png");
-            expect (savePng (strip.createComponentSnapshot (strip.getLocalBounds(), true, 2.0f), stripFile));
+            auto& nav = ampSimEditor->getChainNav();
+            expect (nav.isBypassedShown (ui::PageId::preFx) && ! nav.isBypassedShown (ui::PageId::amp));
+            expect (nav.getActive() == ui::PageId::postFx);
+            const auto stripFile = proofDir().getChildFile ("editor_chain.png");
+            expect (savePng (nav.createComponentSnapshot (nav.getLocalBounds(), true, 2.0f), stripFile));
+            setParam (p, "pre_fx_on", 1.0f);
             logMessage ("  -> " + stripFile.getFullPathName());
 
             // The post EQ with the analyzer showing the guitar through the chain: the page reads the ring 30
@@ -1785,11 +1781,11 @@ public:
             expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), analyzerFile));
             logMessage ("  -> " + analyzerFile.getFullPathName());
 
-            // The tuner over the tabs: needle, then strobe, with frozen readings.
+            // The tuner page: needle, then strobe, with frozen readings.
             setParam (p, "tuner_on", 1.0f);
             ampSimEditor->refresh();
             auto& tunerView = ampSimEditor->getTunerView();
-            expect (tunerView.isVisible());
+            expect (tunerView.isVisible() && ampSimEditor->getShownPage() == ui::PageId::tuner);
             ampsim::TunerReading e2;
             e2.hasReading = e2.live = true;
             e2.midiNote = 40;
@@ -1972,44 +1968,49 @@ public:
                         + juce::String (toDb (0.25), 2) + "); the pre tap's 440 Hz reads " + juce::String (preFound, 2) + " Hz");
         }
 
-        beginTest ("chain strip: dragging a block calls the processor's reorder, the same as the order strip did, and the chain applies the new order");
+        beginTest ("effect tabs: dragging a tab calls the processor's reorder, the same as the old chain strip did, and the chain applies the new order");
         {
             using Slot = ampsim::Chain::Slot;
             AmpSimProcessor p;
             p.prepareToPlay (fs, blockSize);
             std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
-            auto& strip = dynamic_cast<AmpSimEditor&> (*editor).getChainStrip();
+            auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
 
-            // A drag in small steps, as a mouse makes it: positions in the strip, events in the card's space.
-            const auto drag = [&strip] (ui::BlockId id, juce::Point<float> to)
+            // A drag in small steps, as a mouse makes it: positions in the tab row, events in the tab's space.
+            const auto drag = [] (ui::TabRow& row, ui::BlockId id, juce::Point<float> to)
             {
-                auto& card = *strip.getCard (id);
-                const auto down = card.getLocalBounds().getCentre().toFloat();
-                const auto from = card.getBounds().getCentre().toFloat();
+                auto& tab = *row.getTab ((int) id);
+                const auto down = tab.getLocalBounds().getCentre().toFloat();
+                const auto from = tab.getBounds().getCentre().toFloat();
                 const auto now = juce::Time::getCurrentTime();
-                const auto event = [&card, down, now] (juce::Point<float> local, bool dragged)
+                const auto event = [&tab, down, now] (juce::Point<float> local, bool dragged)
                 {
                     return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), local, juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier),
-                                             juce::MouseInputSource::defaultPressure, 0.0f, 0.0f, 0.0f, 0.0f, &card, &card, now, down, now, 1, dragged);
+                                             juce::MouseInputSource::defaultPressure, 0.0f, 0.0f, 0.0f, 0.0f, &tab, &tab, now, down, now, 1, dragged);
                 };
-                card.mouseDown (event (down, false));
+                tab.mouseDown (event (down, false));
                 for (int step = 1; step <= 20; ++step)
                 {
-                    const auto inStrip = from + (to - from) * ((float) step / 20.0f);
-                    card.mouseDrag (event (inStrip - card.getPosition().toFloat(), true));
+                    const auto inRow = from + (to - from) * ((float) step / 20.0f);
+                    tab.mouseDrag (event (inRow - tab.getPosition().toFloat(), true));
                 }
-                card.mouseUp (event (to - card.getPosition().toFloat(), true));
+                tab.mouseUp (event (to - tab.getPosition().toFloat(), true));
             };
 
             // The boost onto the compressor's place: gate, comp, boost becomes gate, boost, comp.
-            drag (ui::BlockId::boost, strip.getCard (ui::BlockId::preCompressor)->getBounds().getCentre().toFloat());
+            ed.showPage (ui::PageId::preFx);
+            auto& pre = ed.getSectionPage (ui::Section::pre).getTabs();
+            drag (pre, ui::BlockId::boost, pre.getTab ((int) ui::BlockId::preCompressor)->getBounds().getCentre().toFloat());
             const auto requested = p.getSectionOrder (ampsim::Chain::Section::pre);
             expect (requested == juce::StringArray { "gate", "boost", "comp", "overdrive", "eq" }, requested.joinIntoString (", "));
-            const auto shownPre = strip.getShownOrder (ui::Section::pre);
-            expect (shownPre == std::vector<ui::BlockId> { ui::BlockId::gateA, ui::BlockId::boost, ui::BlockId::preCompressor, ui::BlockId::overdrive, ui::BlockId::preEq });
+            const auto shownPre = pre.getShownOrder();
+            expect (shownPre == std::vector<int> { (int) ui::BlockId::gateA, (int) ui::BlockId::boost, (int) ui::BlockId::preCompressor, (int) ui::BlockId::overdrive,
+                                                   (int) ui::BlockId::preEq });
 
             // The reverb to the front of the post section.
-            drag (ui::BlockId::reverb, strip.getCard (ui::BlockId::postEq)->getBounds().getCentre().toFloat() - juce::Point<float> (20.0f, 0.0f));
+            ed.showPage (ui::PageId::postFx);
+            auto& postTabs = ed.getSectionPage (ui::Section::post).getTabs();
+            drag (postTabs, ui::BlockId::reverb, postTabs.getTab ((int) ui::BlockId::postEq)->getBounds().getCentre().toFloat() - juce::Point<float> (20.0f, 0.0f));
             const auto post = p.getSectionOrder (ampsim::Chain::Section::post);
             expect (post[0] == "reverb" && post[1] == "eq", post.joinIntoString (", "));
 
@@ -2023,13 +2024,13 @@ public:
 
             // A drag that ends where it began changes nothing; a short wiggle isn't a drag at all.
             const auto unchanged = p.getSectionOrder (ampsim::Chain::Section::pre);
-            drag (ui::BlockId::preEq, strip.getCard (ui::BlockId::preEq)->getBounds().getCentre().toFloat());
+            drag (pre, ui::BlockId::preEq, pre.getTab ((int) ui::BlockId::preEq)->getBounds().getCentre().toFloat());
             expect (p.getSectionOrder (ampsim::Chain::Section::pre) == unchanged);
-            logMessage ("  -> dragged the boost onto the compressor: requested \"" + requested.joinIntoString (", ") + "\", applied by the chain 50 ms later; "
-                        "dragged the reverb to the front of the post section: \"" + post.joinIntoString (", ") + "\"; a drag back to its own place changed nothing");
+            logMessage ("  -> dragged the boost tab onto the compressor's: requested \"" + requested.joinIntoString (", ") + "\", applied by the chain 50 ms later; "
+                        "dragged the reverb's tab to the front of the post section: \"" + post.joinIntoString (", ") + "\"; a drag back to its own place changed nothing");
         }
 
-        beginTest ("UI scale: the setting resizes the editor around the same layout, survives saving the state, and stays out of presets");
+        beginTest ("window: the 1280 x 760 canvas scales uniformly to the window, letterboxed; the window's size survives saving the state and stays out of presets");
         {
             AmpSimProcessor p;
             juce::MemoryBlock state;
@@ -2037,86 +2038,115 @@ public:
             {
                 std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
                 auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
-                expect (editor->getWidth() == 1280 && editor->getHeight() == 820 && ed.getUiScale() == 1.0f);
+                expect (editor->getWidth() == 1280 && editor->getHeight() == 760 && ed.getCanvasScale() == 1.0f);
                 const auto topBarWidth = ed.getTopBar().getWidth();
-                ed.setUiScale (1.5f);
-                expect (editor->getWidth() == 1920 && editor->getHeight() == 1230);
-                expectEquals (ed.getTopBar().getWidth(), topBarWidth); // the same layout, in UI points
-                sizes << "100%: 1280x820, 150%: " << editor->getWidth() << "x" << editor->getHeight();
-                ed.setUiScale (0.8f); // snaps to 75%
-                expect (ed.getUiScale() == 0.75f && editor->getWidth() == 960 && editor->getHeight() == 615);
-                sizes << ", 0.8 snapped to 75%: " << editor->getWidth() << "x" << editor->getHeight();
-                ed.setUiScale (1.25f);
+                editor->setSize (1920, 1140); // 150%, the same aspect
+                expectWithinAbsoluteError (ed.getCanvasScale(), 1.5f, 1.0e-6f);
+                expect (ed.getCanvasBounds() == juce::Rectangle<int> (0, 0, 1920, 1140));
+                expectEquals (ed.getTopBar().getWidth(), topBarWidth); // the same layout, on the canvas
+                sizes << "1920 x 1140: scale " << ed.getCanvasScale();
+                editor->setSize (1600, 760); // wider: scale 1, letterboxed left and right
+                expect (ed.getCanvasScale() == 1.0f && ed.getCanvasBounds() == juce::Rectangle<int> (160, 0, 1280, 760));
+                sizes << "; 1600 x 760: scale 1, canvas at x = 160";
+                editor->setSize (960, 760); // narrower: scale 0.75, letterboxed above and below
+                expectWithinAbsoluteError (ed.getCanvasScale(), 0.75f, 1.0e-6f);
+                expect (ed.getCanvasBounds() == juce::Rectangle<int> (0, 95, 960, 570));
+                sizes << "; 960 x 760: scale 0.75, canvas at y = 95";
+                editor->setSize (1600, 950);
                 p.getStateInformation (state);
             }
 
             AmpSimProcessor restored;
             restored.setStateInformation (state.getData(), (int) state.getSize());
             std::unique_ptr<juce::AudioProcessorEditor> editor (restored.createEditor());
-            expectEquals (dynamic_cast<AmpSimEditor&> (*editor).getUiScale(), 1.25f);
-            expect (editor->getWidth() == 1600 && editor->getHeight() == 1025);
+            expect (editor->getWidth() == 1600 && editor->getHeight() == 950);
+            expectWithinAbsoluteError (dynamic_cast<AmpSimEditor&> (*editor).getCanvasScale(), 1.25f, 1.0e-6f);
 
-            // A preset never holds it, and loading one leaves it alone.
-            expect (! juce::JSON::toString (restored.capturePreset ("x")).contains ("uiScale"));
+            // A state saved by the old GUI (a UI scale of 150%) opens without a scale: the key is ignored.
+            restored.parameters.state.setProperty (AmpSimProcessor::uiScaleKey, 1.5, nullptr);
+            std::unique_ptr<juce::AudioProcessorEditor> old (restored.createEditor());
+            expect (old->getWidth() == 1600 && old->getHeight() == 950);
+
+            // A preset never holds the window, and loading one leaves it alone.
+            expect (! juce::JSON::toString (restored.capturePreset ("x")).contains ("uiWidth"));
             expect (restored.loadPreset (juce::JSON::parse (R"({ "format_version": 2, "parameters": {} })")).ok);
             restored.runHousekeeping();
-            expectEquals ((float) (double) restored.parameters.state.getProperty (AmpSimProcessor::uiScaleKey), 1.25f);
-            logMessage ("  -> " + sizes + "; saved at 125%, a restored session opens at " + juce::String (editor->getWidth()) + "x"
-                        + juce::String (editor->getHeight()) + "; presets don't hold the scale and loading one keeps it");
+            expectEquals ((int) restored.parameters.state.getProperty (AmpSimProcessor::uiWidthKey), 1600);
+            logMessage ("  -> " + sizes + "; saved at 1600 x 950, a restored session opens at " + juce::String (editor->getWidth()) + " x "
+                        + juce::String (editor->getHeight()) + " (scale 1.25); presets don't hold the window and loading one keeps it");
         }
 
-        beginTest ("knobs: drag, shift for fine, the wheel, typing a value, and alt-click to reset");
+        beginTest ("knobs: 200 points of drag, shift for 800, a wheel notch and an arrow key move 1/50, double-click and alt-click reset, typing in fields");
         {
             AmpSimProcessor p;
             ui::Knob knob (p.parameters, "delay_mix", "Mix", " %");
-            knob.setBounds (0, 0, 76, 92);
+            knob.setCssPosition (0, 0);
             const auto now = juce::Time::getCurrentTime();
-            const auto event = [&knob, now] (juce::Point<float> at, int modifiers)
+            const juce::Point<float> centre { 42.0f, 40.0f };
+            const auto event = [&knob, now, centre] (juce::Point<float> at, int modifiers, int clicks = 1)
             {
                 return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), at, juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier | modifiers),
-                                         juce::MouseInputSource::defaultPressure, 0.0f, 0.0f, 0.0f, 0.0f, &knob, &knob, now, { 38.0f, 46.0f }, now, 1, true);
+                                         juce::MouseInputSource::defaultPressure, 0.0f, 0.0f, 0.0f, 0.0f, &knob, &knob, now, centre, now, clicks, true);
             };
             const auto dragUp = [&] (float pixels, int modifiers)
             {
-                knob.mouseDown (event ({ 38.0f, 46.0f }, modifiers));
-                knob.mouseDrag (event ({ 38.0f, 46.0f - pixels }, modifiers));
-                knob.mouseUp (event ({ 38.0f, 46.0f - pixels }, modifiers));
+                knob.mouseDown (event (centre, modifiers));
+                knob.mouseDrag (event (centre - juce::Point<float> (0.0f, pixels), modifiers));
+                knob.mouseUp (event (centre - juce::Point<float> (0.0f, pixels), modifiers));
             };
 
             setParam (p, "delay_mix", 0.0f);
             dragUp (100.0f, 0); // half the 200-point travel: half the range
             const auto afterDrag = getParam (p, "delay_mix");
-            dragUp (100.0f, juce::ModifierKeys::shiftModifier); // ten times finer
+            const auto labelWhileIdle = knob.getShownLabel();
+            dragUp (100.0f, juce::ModifierKeys::shiftModifier); // 800 points for the range: an eighth
             const auto afterFine = getParam (p, "delay_mix") - afterDrag;
-            knob.mouseWheelMove (event ({ 38.0f, 46.0f }, 0), juce::MouseWheelDetails { 0.0f, 0.1f, false, false, false });
+            knob.mouseDown (event (centre, 0)); // sideways moves nothing on a knob
+            knob.mouseDrag (event (centre + juce::Point<float> (80.0f, 0.0f), 0));
+            knob.mouseUp (event (centre + juce::Point<float> (80.0f, 0.0f), 0));
+            const auto afterSideways = getParam (p, "delay_mix");
+            knob.mouseWheelMove (event (centre, 0), juce::MouseWheelDetails { 0.0f, 0.1f, false, false, false });
             const auto afterWheel = getParam (p, "delay_mix");
-            const auto typed = knob.setFromText ("12.5");
-            const auto afterTyping = getParam (p, "delay_mix");
-            knob.mouseDown (event ({ 38.0f, 46.0f }, juce::ModifierKeys::altModifier));
-            knob.mouseUp (event ({ 38.0f, 46.0f }, juce::ModifierKeys::altModifier));
+            knob.keyPressed (juce::KeyPress (juce::KeyPress::downKey));
+            const auto afterArrow = getParam (p, "delay_mix");
+            knob.mouseDoubleClick (event (centre, 0, 2));
+            const auto afterDoubleClick = getParam (p, "delay_mix");
+            setParam (p, "delay_mix", 70.0f);
+            knob.mouseDown (event (centre, juce::ModifierKeys::altModifier));
+            knob.mouseUp (event (centre, juce::ModifierKeys::altModifier));
             const auto afterReset = getParam (p, "delay_mix");
-            knob.mouseDown (event ({ 38.0f, 46.0f }, juce::ModifierKeys::ctrlModifier)); // a right-click (ctrl-click) does nothing
-            knob.mouseDrag (event ({ 38.0f, 0.0f }, juce::ModifierKeys::ctrlModifier));
+            knob.mouseDown (event (centre, juce::ModifierKeys::ctrlModifier)); // a right-click (ctrl-click) does nothing
+            knob.mouseDrag (event ({ 42.0f, 0.0f }, juce::ModifierKeys::ctrlModifier));
             const auto afterRightDrag = getParam (p, "delay_mix");
 
-            expectWithinAbsoluteError (afterDrag, 50.0f, 0.06f);
-            expectWithinAbsoluteError (afterFine, 5.0f, 0.06f);
-            expectWithinAbsoluteError (afterWheel - afterDrag - afterFine, 1.5f, 0.06f);
-            expect (typed);
-            expectWithinAbsoluteError (afterTyping, 12.5f, 0.001f);
-            expectWithinAbsoluteError (afterReset, 25.0f, 0.001f); // the parameter's default
-            expectEquals (afterRightDrag, afterReset);
+            // While dragging, the label is the value.
+            knob.mouseDown (event (centre, 0));
+            knob.mouseDrag (event (centre - juce::Point<float> (0.0f, 10.0f), 0));
+            const auto labelWhileDragging = knob.getShownLabel();
+            knob.mouseUp (event (centre - juce::Point<float> (0.0f, 10.0f), 0));
 
-            // Typing understands units and names: "2.5k" on a frequency, a choice by its name.
+            expectWithinAbsoluteError (afterDrag, 50.0f, 0.06f);
+            expectWithinAbsoluteError (afterFine, 12.5f, 0.06f);
+            expectWithinAbsoluteError (afterSideways, afterDrag + afterFine, 0.001f);
+            expectWithinAbsoluteError (afterWheel - afterSideways, 2.0f, 0.06f);
+            expectWithinAbsoluteError (afterWheel - afterArrow, 2.0f, 0.06f);
+            expectWithinAbsoluteError (afterDoubleClick, 25.0f, 0.001f); // the parameter's default
+            expectWithinAbsoluteError (afterReset, 25.0f, 0.001f);
+            expectEquals (afterRightDrag, afterReset);
+            expectEquals (labelWhileIdle, juce::String ("Mix"));
+            expect (labelWhileDragging.endsWith ("%"), labelWhileDragging);
+
+            // Fields: a double-click types. Typing understands units and names: "2.5k" on a frequency, a choice by its name.
             ui::Knob frequency (p.parameters, "delay_highcut", "High cut", " Hz");
             expect (frequency.setFromText ("2.5k"));
             ui::ValueField note (p.parameters, "delay_note", "");
             expect (note.setFromText ("1/4") && ! note.setFromText ("not a note"));
             expectWithinAbsoluteError (getParam (p, "delay_highcut"), 2500.0f, 0.5f);
             logMessage ("  -> on the delay mix (0 to 100%): 100 points up = " + juce::String (afterDrag, 1) + "%, 100 more with shift = +" + juce::String (afterFine, 2)
-                        + "%, one wheel notch = +" + juce::String (afterWheel - afterDrag - afterFine, 2) + "%, typed 12.5 = " + juce::String (afterTyping, 1)
-                        + "%, alt-click = " + juce::String (afterReset, 1) + "% (the default); a ctrl-drag moved nothing; \"2.5k\" set the high cut to "
-                        + juce::String (getParam (p, "delay_highcut"), 0) + " Hz; \"1/4\" picked the note");
+                        + "%, 80 sideways = +0, one wheel notch = +" + juce::String (afterWheel - afterSideways, 2) + "%, one down arrow = -"
+                        + juce::String (afterWheel - afterArrow, 2) + "%, double-click = " + juce::String (afterDoubleClick, 1) + "% (the default), alt-click = "
+                        + juce::String (afterReset, 1) + "%; a ctrl-drag moved nothing; the label reads \"" + labelWhileIdle + "\" at rest and \""
+                        + labelWhileDragging + "\" mid-drag; \"2.5k\" set the high cut to " + juce::String (getParam (p, "delay_highcut"), 0) + " Hz; \"1/4\" picked the note");
         }
 
         beginTest ("editor wiring: scene tiles store and recall, Store overwrites, A/B from the top bar, a card click opens its page, and a drag is one undo step");
@@ -2154,28 +2184,37 @@ public:
 
             // A/B from the top bar: B starts as A, each keeps its own.
             setParam (p, "reverb_mix", 30.0f);
-            ed.getTopBar().onAbSelect (true);
+            ed.abSelect (true);
             setParam (p, "reverb_mix", 60.0f);
-            ed.getTopBar().onAbSelect (false);
+            ed.abSelect (false);
             const auto onA = getParam (p, "reverb_mix");
-            ed.getTopBar().onAbSelect (true);
+            ed.abSelect (true);
             expect (p.isOnB());
             expectWithinAbsoluteError (onA, 30.0f, 0.01f);
             expectWithinAbsoluteError (getParam (p, "reverb_mix"), 60.0f, 0.01f);
 
-            // A click on a card selects its block and shows its page.
-            auto& card = *ed.getChainStrip().getCard (ui::BlockId::reverb);
-            card.mouseDown (event (card, card.getLocalBounds().getCentre().toFloat(), card.getLocalBounds().getCentre().toFloat(), false));
-            card.mouseUp (event (card, card.getLocalBounds().getCentre().toFloat(), card.getLocalBounds().getCentre().toFloat(), false));
-            expect (ed.getSelectedBlock() == ui::BlockId::reverb && ed.getPage (ui::BlockId::reverb).isVisible());
-            expect (! ed.getPage (ui::BlockId::amp).isVisible());
+            // A click on the Post FX block opens its page (its block outlined at once), and a click on the reverb's
+            // tab shows the reverb.
+            auto& node = *ed.getChainNav().getNode (ui::PageId::postFx);
+            const auto middle = juce::Point<float> (20.0f, node.getLocalBounds().getCentre().toFloat().y);
+            node.mouseDown (event (node, middle, middle, false));
+            node.mouseUp (event (node, middle, middle, false));
+            expect (ed.getShownPage() == ui::PageId::postFx && ed.getPageComponent (ui::PageId::postFx).isVisible());
+            expect (! ed.getPageComponent (ui::PageId::amp).isVisible());
+            expect (ed.getChainNav().getActive() == ui::PageId::postFx);
+            auto& tab = *ed.getSectionPage (ui::Section::post).getTabs().getTab ((int) ui::BlockId::reverb);
+            const auto tabMiddle = tab.getLocalBounds().getCentre().toFloat().withX (10.0f);
+            tab.mouseDown (event (tab, tabMiddle, tabMiddle, false));
+            tab.mouseUp (event (tab, tabMiddle, tabMiddle, false));
+            expect (ed.getSectionPage (ui::Section::post).getSelected() == ui::BlockId::reverb && ed.getPage (ui::BlockId::reverb).isVisible());
 
-            // The highlight moves with the click, not at the next refresh: one card drawn selected, the reverb's.
-            int highlighted = 0;
-            for (int b = 0; b < ui::numBlocks; ++b)
-                highlighted += ed.getChainStrip().isCardSelected ((ui::BlockId) b) ? 1 : 0;
-            expect (ed.getChainStrip().isCardSelected (ui::BlockId::reverb));
-            expectEquals (highlighted, 1);
+            // The bypass dot toggles without navigating.
+            auto& dot = *ed.getChainNav().getDot (ui::PageId::amp);
+            dot.mouseDown (event (dot, { 8.0f, 8.0f }, { 8.0f, 8.0f }, false));
+            expectEquals (getParam (p, "amp_bypass"), 1.0f);
+            expect (ed.getShownPage() == ui::PageId::postFx);
+            dot.mouseDown (event (dot, { 8.0f, 8.0f }, { 8.0f, 8.0f }, false));
+            expectEquals (getParam (p, "amp_bypass"), 0.0f);
 
             // Undo: each drag of a knob is one step. The editor hears every press after the control does,
             // as JUCE's mouse listeners do, and starts the step.
@@ -2208,8 +2247,9 @@ public:
             expectWithinAbsoluteError (afterSecond, 65.0f, 0.06f);
             expectWithinAbsoluteError (undoneOnce, afterFirst, 0.01f);
             expectWithinAbsoluteError (undoneTwice, 25.0f, 0.01f);
-            logMessage ("  -> scene tile 3: stored when empty, recalled delay on, overwritten after Store (which disarmed); A/B from the top bar kept "
-                        "30% and 60% reverb mix apart; a click on the reverb's card opened its page; two 40-point drags of the delay mix (25 -> "
+            logMessage ("  -> scene tile 3: stored when empty, recalled delay on, overwritten after Store (which disarmed); A/B kept "
+                        "30% and 60% reverb mix apart; a click on the Post FX block opened its page and its reverb tab showed the reverb; the Amp block's "
+                        "dot bypassed the amp and back without leaving the page; two 40-point drags of the delay mix (25 -> "
                         + juce::String (afterFirst, 1) + " -> " + juce::String (afterSecond, 1) + "%) undid one at a time (" + juce::String (undoneOnce, 1)
                         + ", then " + juce::String (undoneTwice, 1) + "%)");
         }

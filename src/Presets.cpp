@@ -237,6 +237,13 @@ juce::var capture (AmpSimProcessor& processor, const juce::String& name)
         cab->setProperty (micKeys[m], refFor (state.getProperty (AmpSimProcessor::cabPathKey (m)).toString(), "irs"));
     root->setProperty ("cab", juce::var (cab));
 
+    // Follow amp choice: each slot's cab, and whether switching slots loads it.
+    juce::Array<juce::var> assigned;
+    for (int s = 0; s < AmpSimProcessor::numAmpSlots; ++s)
+        assigned.add (refFor (state.getProperty (AmpSimProcessor::cabAssignKey (s)).toString(), "irs"));
+    root->setProperty ("cab_assign", assigned);
+    root->setProperty ("cab_follow", processor.isCabFollowing());
+
     root->setProperty ("midi", processor.getMidiMap().toVar());
     root->setProperty ("scenes", processor.getScenes().toVar());
 
@@ -342,6 +349,25 @@ ApplyResult apply (AmpSimProcessor& processor, const juce::var& saved)
         else
             processor.clearCabIR (m);
     }
+
+    // Follow amp choice. A preset made before it existed assigns nothing and follows (the default); the
+    // preset's own close mic 1 is what plays now, so the slot it selects counts as followed already.
+    const auto* assigned = preset.getProperty ("cab_assign", {}).getArray();
+    for (int s = 0; s < AmpSimProcessor::numAmpSlots; ++s)
+    {
+        const auto ref = assigned != nullptr && s < assigned->size() ? FileRef::fromVar (assigned->getReference (s)) : FileRef {};
+        auto file = juce::File();
+        if (ref.path.isNotEmpty())
+        {
+            const auto r = resolve (ref, "irs");
+            describe ("Amp " + juce::String (s + 1) + "'s cab", ref, r);
+            if (r.found)
+                file = r.file;
+        }
+        processor.setCabAssignment (s, file);
+    }
+    processor.parameters.state.setProperty (AmpSimProcessor::cabFollowKey, (bool) preset.getProperty ("cab_follow", true), nullptr);
+    processor.markCabFollowed();
 
     // MIDI mappings: a preset without any (made before mappings existed) leaves the current ones alone.
     if (preset.hasProperty ("midi"))

@@ -9,11 +9,10 @@
 namespace ui
 {
 
-/// The scenes bar (UI_DESIGN "Scene button", "Layout"): eight numbered tiles with the scene's name under
-/// the number, and Store, along the bottom where a foot controller's switches would be (U7). A stored
-/// scene is bright, an empty one faint, the current one filled with the soft accent. The behaviour is
-/// the editor's (click to recall or to store into an empty scene; Store, then a scene, to overwrite;
-/// right-click for store, rename, and clear).
+/// The scenes (on the Output page, ASSUMPTIONS H4): eight numbered tiles with the scene's name under the
+/// number, and Store. A stored scene is bright, an empty one faint, the current one outlined in emerald
+/// over the soft emerald fill. The behaviour is the editor's (click to recall or to store into an empty
+/// scene; Store, then a scene, to overwrite; right-click for store, rename, and clear).
 class ScenesBar final : public juce::Component
 {
 public:

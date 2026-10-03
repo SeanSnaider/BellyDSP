@@ -12,23 +12,13 @@ float toDb (float linear)
     return linear > 1.0e-5f ? 20.0f * std::log10 (linear) : -100.0f;
 }
 
-/// The meter's colour zones (UI_DESIGN "Colour"): good to -12 dBFS, warn to -3, error above.
-juce::Colour zoneColour (float db)
-{
-    return db < -12.0f ? good : (db < -3.0f ? warn : error);
-}
-
-juce::String dbText (float db)
-{
-    return db <= meterFloorDb ? juce::String ("-inf") : juce::String (db, 1);
-}
 } // namespace
 
 // ---- LevelMeter ----------------------------------------------------------------------------------
 
 LevelMeter::LevelMeter (juce::String title, int numChannels) : label (std::move (title)), channels ((size_t) juce::jmax (1, numChannels))
 {
-    setTooltip ("Peak level. The red light means a clip; click to clear it.");
+    setTooltip ("Peak level, -60 to 0 dBFS. A bright cap at the end means a clip; click to clear it.");
     setMouseCursor (juce::MouseCursor::PointingHandCursor);
 }
 
@@ -90,63 +80,40 @@ void LevelMeter::mouseDown (const juce::MouseEvent& e)
         resetClip();
 }
 
+int LevelMeter::getPreferredWidth() const
+{
+    return juce::roundToInt (std::ceil (textWidth (geist (Weight::regular, 11.0f), label))) + 8 + 56;
+}
+
 void LevelMeter::paint (juce::Graphics& g)
 {
-    // Text on the left (the label over the held peak), bars on the right.
-    auto area = getLocalBounds();
-    const auto barWidth = 6, barGap = 2;
-    const auto barsWidth = (int) channels.size() * barWidth + ((int) channels.size() - 1) * barGap;
-    auto bars = area.removeFromRight (barsWidth).toFloat();
-    area.removeFromRight (6);
+    auto area = getLocalBounds().toFloat();
+    g.setFont (geist (Weight::regular, 11.0f));
+    g.setColour (inkFaint);
+    g.drawText (label, area, juce::Justification::centredLeft, false);
 
-    float held = -100.0f;
+    float shown = -100.0f, held = -100.0f;
     for (const auto& c : channels)
+    {
+        shown = juce::jmax (shown, c.shownDb);
         held = juce::jmax (held, c.heldDb);
+    }
+    const auto fraction = [] (float db) { return juce::jlimit (0.0f, 1.0f, (db - meterFloorDb) / -meterFloorDb); };
 
-    g.setFont (font ("Semibold", 11.0f));
-    g.setColour (textDim);
-    g.drawText (label, area.removeFromTop (area.getHeight() / 2), juce::Justification::bottomRight, false);
-    g.setFont (font (Text::value));
-    g.setColour (isClipped() ? error : text);
-    g.drawText (dbText (held), area, juce::Justification::topRight, false);
-
-    const auto clipHeight = 4.0f;
-    const auto yOf = [&bars, clipHeight] (float db)
+    const auto bar = area.removeFromRight (56.0f).withSizeKeepingCentre (56.0f, 2.0f);
+    g.setColour (line2);
+    g.fillRoundedRectangle (bar, 1.0f);
+    g.setColour (accent);
+    g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * fraction (shown)), 1.0f);
+    if (held > meterFloorDb)
     {
-        const auto t = juce::jlimit (0.0f, 1.0f, (db - meterFloorDb) / -meterFloorDb);
-        return bars.getBottom() - t * (bars.getHeight() - clipHeight - 2.0f);
-    };
-
-    for (size_t c = 0; c < channels.size(); ++c)
+        g.setColour (inkDim);
+        g.fillRect (juce::Rectangle<float> (bar.getX() + bar.getWidth() * fraction (held) - 1.0f, bar.getY(), 1.0f, bar.getHeight()));
+    }
+    if (isClipped())
     {
-        const auto& ch = channels[c];
-        const auto bar = bars.withX (bars.getX() + (float) c * (float) (barWidth + barGap)).withWidth ((float) barWidth);
-        const auto light = bar.withHeight (clipHeight);
-        const auto column = bar.withTrimmedTop (clipHeight + 2.0f);
-
-        g.setColour (background);
-        g.fillRoundedRectangle (column, 1.5f);
-
-        // The bar in its zones: green below -12, amber to -3, red above.
-        const auto top = yOf (ch.shownDb);
-        for (const auto& [from, to] : { std::pair<float, float> { meterFloorDb, -12.0f }, { -12.0f, -3.0f }, { -3.0f, 0.0f } })
-        {
-            const auto y0 = yOf (from), y1 = juce::jmax (yOf (to), top);
-            if (y1 < y0)
-            {
-                g.setColour (zoneColour (from));
-                g.fillRect (juce::Rectangle<float> (column.getX(), y1, column.getWidth(), y0 - y1));
-            }
-        }
-
-        if (ch.heldDb > meterFloorDb)
-        {
-            g.setColour (zoneColour (ch.heldDb));
-            g.fillRect (juce::Rectangle<float> (column.getX(), yOf (ch.heldDb) - 1.0f, column.getWidth(), 2.0f));
-        }
-
-        g.setColour (ch.clipped ? error : outline);
-        g.fillRoundedRectangle (light, 1.0f);
+        g.setColour (ink);
+        g.fillRect (bar.withLeft (bar.getRight() - 3.0f));
     }
 }
 
@@ -166,24 +133,24 @@ void ReductionMeter::paint (juce::Graphics& g)
 {
     auto area = getLocalBounds();
     const auto readout = area.removeFromBottom (captionHeight * 2 + 4);
-    const auto column = area.withSizeKeepingCentre (10, area.getHeight()).toFloat();
+    const auto column = area.withSizeKeepingCentre (4, area.getHeight()).toFloat();
 
-    g.setColour (background);
+    g.setColour (line2);
     g.fillRoundedRectangle (column, 2.0f);
     const auto depth = juce::jlimit (0.0f, 1.0f, reductionDb / range);
     g.setColour (accent);
     g.fillRoundedRectangle (column.withHeight (column.getHeight() * depth), 2.0f);
 
     // Ticks every 6 dB.
-    g.setColour (outline.brighter (0.2f));
+    g.setColour (line2);
     for (float db = 6.0f; db < range; db += 6.0f)
-        g.fillRect (juce::Rectangle<float> (column.getRight() + 2.0f, column.getY() + column.getHeight() * db / range, 4.0f, 1.0f));
+        g.fillRect (juce::Rectangle<float> (column.getRight() + 3.0f, column.getY() + column.getHeight() * db / range, 4.0f, 1.0f));
 
-    g.setFont (font ("Semibold", 11.0f));
-    g.setColour (textDim);
+    g.setFont (geist (Weight::regular, 11.0f));
+    g.setColour (inkFaint);
     g.drawText ("GR", readout.withHeight (captionHeight), juce::Justification::centred, false);
     g.setFont (font (Text::value));
-    g.setColour (text);
+    g.setColour (ink);
     g.drawText (reductionDb >= range ? juce::String (">") + juce::String (juce::roundToInt (range)) : juce::String (-reductionDb, 1),
                 readout.withTrimmedTop (captionHeight), juce::Justification::centred, false);
 }
@@ -202,21 +169,16 @@ void CpuMeter::setLoad (float percent)
 
 void CpuMeter::paint (juce::Graphics& g)
 {
-    auto area = getLocalBounds();
-    auto top = area.removeFromTop (area.getHeight() / 2);
-    g.setFont (font ("Semibold", 11.0f));
-    g.setColour (textDim);
-    g.drawText ("CPU", top, juce::Justification::bottomLeft, false);
-    g.setFont (font (Text::value));
-    g.setColour (load < 50.0f ? text : (load < 80.0f ? warn : error));
-    g.drawText (juce::String (juce::roundToInt (load)) + "%", top, juce::Justification::bottomRight, false);
+    auto area = getLocalBounds().toFloat();
+    g.setFont (tabular (geist (Weight::regular, 11.0f)));
+    g.setColour (inkFaint);
+    g.drawText ("CPU " + juce::String (juce::roundToInt (load)) + "%", area, juce::Justification::centredLeft, false);
 
-    // The bar: green under half the deadline, amber to 80%, red beyond.
-    const auto bar = area.withTrimmedTop (4).withHeight (4).toFloat();
-    g.setColour (background);
-    g.fillRoundedRectangle (bar, 2.0f);
-    g.setColour (load < 50.0f ? good : (load < 80.0f ? warn : error));
-    g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * juce::jlimit (0.0f, 1.0f, load / 100.0f)), 2.0f);
+    const auto bar = area.removeFromRight (56.0f).withSizeKeepingCentre (56.0f, 2.0f);
+    g.setColour (line2);
+    g.fillRoundedRectangle (bar, 1.0f);
+    g.setColour (accent);
+    g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * juce::jlimit (0.0f, 1.0f, load / 100.0f)), 1.0f);
 }
 
 } // namespace ui

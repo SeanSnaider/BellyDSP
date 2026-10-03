@@ -5,7 +5,7 @@ namespace ui
 
 using namespace theme;
 
-/// The preset's name in the title style with a chevron: the browser's handle.
+/// The preset's name and tag, centred in a 300 x 32 box: the browser's handle.
 class TopBar::PresetButton final : public juce::Button
 {
 public:
@@ -15,86 +15,112 @@ public:
         setMouseCursor (juce::MouseCursor::PointingHandCursor);
     }
 
-    void setText (const juce::String& name, bool loading)
+    void set (const juce::String& newName, const juce::String& newTag)
     {
-        if (name != shown || loading != busy)
+        if (newName != name || newTag != tag)
         {
-            shown = name;
-            busy = loading;
+            name = newName;
+            tag = newTag;
+            setTitle (name);
             repaint();
         }
     }
 
-    void paintButton (juce::Graphics& g, bool highlighted, bool down) override
+    juce::String name, tag;
+
+    void paintButton (juce::Graphics& g, bool highlighted, bool) override
     {
-        const auto bounds = getLocalBounds().toFloat().reduced (0.5f);
-        g.setColour (down ? surfaceRaised.darker (0.1f) : (highlighted ? surfaceRaised.brighter (0.05f) : surfaceRaised));
-        g.fillRoundedRectangle (bounds, radiusControl);
-        g.setColour (highlighted ? outline.brighter (0.25f) : outline);
-        g.drawRoundedRectangle (bounds, radiusControl, 1.0f);
+        // CSS: flex, centred, gap 10; the name 14 px medium, the tag 12 px regular ink-faint.
+        const auto nameFont = geist (Weight::medium, 14.0f), tagFont = geist (Weight::regular, 12.0f);
+        const auto nameWidth = juce::jmin (textWidth (nameFont, name), (float) getWidth() - 60.0f);
+        const auto tagWidth = tag.isEmpty() ? 0.0f : textWidth (tagFont, tag);
+        const auto total = nameWidth + (tag.isEmpty() ? 0.0f : 10.0f + tagWidth);
+        auto x = ((float) getWidth() - total) * 0.5f;
+        const auto h = (float) getHeight();
 
-        auto area = getLocalBounds().reduced (12, 0);
-        const auto chevronArea = area.removeFromRight (14).toFloat();
-        g.setFont (font (Text::title));
-        g.setColour (shown.isEmpty() ? textDim : theme::text);
-        g.drawFittedText (shown.isEmpty() ? juce::String ("Untitled") : shown, area.withTrimmedRight (busy ? 64 : 0), juce::Justification::centredLeft, 1, 0.8f);
-        if (busy)
+        g.setFont (nameFont);
+        g.setColour (highlighted ? ink : ink.withMultipliedAlpha (0.96f));
+        g.drawFittedText (name, juce::Rectangle<float> (x, 0.0f, nameWidth + 1.0f, h).toNearestInt(), juce::Justification::centredLeft, 1, 0.9f);
+        if (tag.isNotEmpty())
         {
-            g.setFont (font (Text::caption));
-            g.setColour (textDim);
-            g.drawText ("loading...", area, juce::Justification::centredRight, false);
+            x += nameWidth + 10.0f;
+            g.setFont (tagFont);
+            g.setColour (inkFaint);
+            g.drawText (tag, juce::Rectangle<float> (x, 1.0f, tagWidth + 2.0f, h), juce::Justification::centredLeft, false);
         }
+    }
+};
 
-        const auto c = chevronArea.getCentre();
-        juce::Path chevron;
-        chevron.startNewSubPath (c.x - 4.0f, c.y - 2.0f);
-        chevron.lineTo (c.x, c.y + 2.0f);
-        chevron.lineTo (c.x + 4.0f, c.y - 2.0f);
-        g.setColour (textDim);
-        g.strokePath (chevron, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+/// "Tuner" and the note it hears; underlined in emerald along the bar's bottom edge while its page shows.
+class TopBar::TunerButton final : public juce::Button
+{
+public:
+    TunerButton() : juce::Button ("Tuner")
+    {
+        setTooltip ("The tuner (mutes the output while it's open, unless you switch that off)");
+        setMouseCursor (juce::MouseCursor::PointingHandCursor);
+    }
+
+    void set (bool open, const juce::String& newNote)
+    {
+        if (open != isOpen || newNote != note)
+        {
+            isOpen = open;
+            note = newNote;
+            repaint();
+        }
+    }
+
+    static int preferredWidth (const juce::String& note)
+    {
+        return (int) std::ceil (textWidth (geist (Weight::regular, 13.0f), "Tuner") + 8.0f + juce::jmax (12.0f, textWidth (noteFont(), note)));
+    }
+
+    void paintButton (juce::Graphics& g, bool highlighted, bool) override
+    {
+        const auto labelFont = geist (Weight::regular, 13.0f);
+        const auto w = textWidth (labelFont, "Tuner");
+        const auto h = (float) getHeight();
+        g.setFont (labelFont);
+        g.setColour (isOpen || highlighted ? ink : inkDim);
+        g.drawText ("Tuner", juce::Rectangle<float> (0.0f, 0.0f, w + 1.0f, h), juce::Justification::centredLeft, false);
+
+        // The note: emerald only while the tuner hears one (the CSS .note rule); a plain dash otherwise.
+        g.setFont (noteFont());
+        const bool hearing = note != "-";
+        g.setColour (hearing ? accent : inkFaint);
+        g.drawText (note, juce::Rectangle<float> (w + 8.0f, 0.0f, (float) getWidth() - w - 8.0f, h), juce::Justification::centredLeft, false);
+
+        if (isOpen)
+        {
+            g.setColour (accent);
+            g.fillRect (juce::Rectangle<float> (0.0f, h - 1.0f, (float) getWidth(), 1.0f));
+        }
     }
 
 private:
-    juce::String shown;
-    bool busy = false;
+    static juce::FontOptions noteFont() { return geist (Weight::semibold, 13.0f); }
+    bool isOpen = false;
+    juce::String note { "-" };
 };
 
 TopBar::TopBar (AmpSimProcessor& processor)
-    : ampSim (processor), preset (std::make_unique<PresetButton>()), tempo (processor.parameters, "tempo_bpm", " BPM")
+    : ampSim (processor), preset (std::make_unique<PresetButton>()), tuner (std::make_unique<TunerButton>())
 {
     preset->onClick = [this] { if (onPresetMenu) onPresetMenu(); };
+    previous.onClick = [this] { if (onPrevious) onPrevious(); };
+    next.onClick = [this] { if (onNext) onNext(); };
     save.onClick = [this] { if (onSave) onSave(); };
-    undo.onClick = [this] { if (onUndo) onUndo(); };
-    redo.onClick = [this] { if (onRedo) onRedo(); };
-    abA.onClick = [this] { if (onAbSelect) onAbSelect (false); };
-    abB.onClick = [this] { if (onAbSelect) onAbSelect (true); };
-    abCopy.onClick = [this] { if (onAbCopy) onAbCopy(); };
-    midi.onClick = [this] { if (onMidi) onMidi(); };
-    settings.onClick = [this] { if (onSettings) onSettings(); };
-    tap.onClick = [this] { if (onTap) onTap(); };
+    tuner->onClick = [this] { if (onTuner) onTuner(); };
+    tagged (*tuner, "tuner_on"); // a right-click learns a footswitch for the tuner
 
+    previous.setTooltip ("Previous preset");
+    next.setTooltip ("Next preset");
     save.setTooltip ("Save the preset to a file");
-    abA.setTooltip ("Compare two versions of the settings (captures and IRs stay)");
-    abB.setTooltip ("Compare two versions of the settings (captures and IRs stay)");
-    abA.setConnectedEdges (juce::Button::ConnectedOnRight);
-    abB.setConnectedEdges (juce::Button::ConnectedOnLeft);
-    undo.setTooltip ("Undo (cmd-Z)");
-    redo.setTooltip ("Redo (shift-cmd-Z)");
-    midi.setTooltip ("MIDI mappings. Right-click any control to learn one.");
-    settings.setTooltip ("View settings: UI scale");
-    tap.setTooltip ("Tap the tempo (or use the footswitch's tap CC)");
-    tempo.setTooltip ("Tempo: drag, scroll, or double-click to type");
-    tempo.setFormatter ([] (float bpm) { return juce::String (bpm, 1) + " BPM"; });
-    tempo.setShowsBar (false);
-
-    tuner.setClickingTogglesState (true);
-    tuner.setTooltip ("The tuner (mutes the output while it's showing, unless you switch that off)");
-    tunerAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (processor.parameters, "tuner_on", tagged (tuner, "tuner_on"));
-
-    for (auto* c : std::initializer_list<juce::Component*> { preset.get(), &save, &abA, &abB, &abCopy, &undo, &redo, &midi, &tuner, &tempo, &tap,
-                                                             &inputMeter, &outputMeter, &cpu, &settings })
+    for (auto* c : std::initializer_list<juce::Component*> { preset.get(), &previous, &next, &save, tuner.get(), &inputMeter, &outputMeter })
         addAndMakeVisible (c);
-
+    for (auto* b : std::initializer_list<juce::Component*> { preset.get(), &previous, &next, &save, tuner.get() })
+        b->setHasFocusOutline (true);
     refresh();
 }
 
@@ -105,75 +131,87 @@ juce::Button& TopBar::getPresetButton() noexcept
     return *preset;
 }
 
-void TopBar::refresh()
+juce::Button& TopBar::getTunerButton() noexcept
 {
-    preset->setText (ampSim.getPresetName(), ampSim.isChangingPreset());
-    undo.setEnabled (ampSim.undoManager.canUndo());
-    redo.setEnabled (ampSim.undoManager.canRedo());
-    abA.setToggleState (! ampSim.isOnB(), juce::dontSendNotification);
-    abB.setToggleState (ampSim.isOnB(), juce::dontSendNotification);
-    abCopy.setTooltip (ampSim.isOnB() ? "Copy B to A" : "Copy A to B");
+    return *tuner;
 }
 
-void TopBar::updateMeters (const AmpSimProcessor::Peaks& peaks, float cpuPercent, double seconds)
+juce::String TopBar::getShownPresetName() const
+{
+    return preset->name;
+}
+
+juce::String TopBar::getShownTag() const
+{
+    return preset->tag;
+}
+
+void TopBar::refresh()
+{
+    const auto name = ampSim.getPresetName();
+    const auto source = ampSim.parameters.state.getProperty ("presetSource").toString();
+    const auto tag = name.isEmpty() ? juce::String() : (source == "factory" ? juce::String ("Factory") : juce::String ("User"));
+    preset->set (name.isEmpty() ? juce::String ("Untitled") : name, tag);
+}
+
+void TopBar::setTuner (bool pageOpen, const juce::String& note)
+{
+    if (note != tunerNote)
+    {
+        tunerNote = note;
+        resized();
+    }
+    tuner->set (pageOpen, note);
+}
+
+void TopBar::updateMeters (const AmpSimProcessor::Peaks& peaks, double seconds)
 {
     inputMeter.push (&peaks.input, seconds);
     const float out[] { peaks.left, peaks.right };
     outputMeter.push (out, seconds);
-    cpu.setLoad (cpuPercent);
 }
 
 void TopBar::paint (juce::Graphics& g)
 {
-    g.setColour (surface);
-    g.fillRect (getLocalBounds());
-    g.setColour (outline);
-    g.fillRect (getLocalBounds().removeFromBottom (1));
+    // The brand: a 7 px emerald dot, 8 px, then "rig" (15 px semibold).
+    auto brand = juce::Rectangle<float> (24.0f, 0.0f, 136.0f, (float) getHeight());
+    g.setColour (accent);
+    g.fillEllipse (juce::Rectangle<float> (7.0f, 7.0f).withCentre ({ brand.getX() + 3.5f, brand.getCentreY() }));
+    g.setFont (geist (Weight::semibold, 15.0f));
+    g.setColour (ink);
+    g.drawText ("rig", brand.withTrimmedLeft (15.0f), juce::Justification::centredLeft, false);
+
+    g.setColour (line1);
+    g.fillRect (0, getHeight() - 1, getWidth(), 1);
 }
 
 void TopBar::resized()
 {
-    auto area = getLocalBounds().reduced (space::l, 0).withTrimmedBottom (1);
-    const auto centred = [&area] (juce::Rectangle<int> r, int height) { return r.withSizeKeepingCentre (r.getWidth(), height).withY (area.getCentreY() - height / 2); };
-    const auto take = [&area, &centred] (int width, int height = 32)
-    {
-        auto r = centred (area.removeFromLeft (width), height);
-        return r;
-    };
-    const auto takeRight = [&area, &centred] (int width, int height = 32) { return centred (area.removeFromRight (width), height); };
+    // CSS: padding 0 24, gap 20; the brand 136 wide; the preset part fills; the right part its content.
+    auto area = getLocalBounds().reduced (24, 0);
+    area.removeFromLeft (136 + 20);
 
-    // Right: the view settings, the CPU, and the meters.
-    settings.setBounds (takeRight (32));
-    area.removeFromRight (space::m);
-    cpu.setBounds (takeRight (60, 34));
-    area.removeFromRight (space::l);
-    outputMeter.setBounds (takeRight (56, 40));
-    area.removeFromRight (space::m);
-    inputMeter.setBounds (takeRight (50, 40));
-    area.removeFromRight (space::xl);
+    // Right: the tuner button (56 high), 22, In, 22, Out.
+    const auto outWidth = outputMeter.getPreferredWidth(), inWidth = inputMeter.getPreferredWidth();
+    outputMeter.setBounds (area.removeFromRight (outWidth).withSizeKeepingCentre (outWidth, 14));
+    area.removeFromRight (22);
+    inputMeter.setBounds (area.removeFromRight (inWidth).withSizeKeepingCentre (inWidth, 14));
+    area.removeFromRight (22);
+    const auto tunerWidth = TunerButton::preferredWidth (tunerNote);
+    tuner->setBounds (area.removeFromRight (tunerWidth).withHeight (getHeight()));
+    area.removeFromRight (20);
 
-    // Left: the preset, then the editing tools, the tuner, and the tempo.
-    const auto fixed = 60 + 16 + 64 + 4 + 32 + 16 + 32 + 4 + 32 + 16 + 32 + 8 + 72 + 16 + 100 + 6 + 52;
-    preset->setBounds (take (juce::jlimit (170, 340, area.getWidth() - fixed - 8), 36));
-    area.removeFromLeft (space::s);
-    save.setBounds (take (60));
-    area.removeFromLeft (space::l);
-    abA.setBounds (take (32));
-    abB.setBounds (take (32));
-    area.removeFromLeft (space::xs);
-    abCopy.setBounds (take (32));
-    area.removeFromLeft (space::l);
-    undo.setBounds (take (32));
-    area.removeFromLeft (space::xs);
-    redo.setBounds (take (32));
-    area.removeFromLeft (space::l);
-    midi.setBounds (take (32));
-    area.removeFromLeft (space::s);
-    tuner.setBounds (take (72));
-    area.removeFromLeft (space::l);
-    tempo.setBounds (take (100, 28));
-    area.removeFromLeft (6);
-    tap.setBounds (take (52));
+    // Centre: arrow 28, 4, name 300, 4, arrow 28, 8, Save (12 + text + 12), centred in what's left.
+    const auto saveWidth = 24 + (int) std::ceil (textWidth (geist (Weight::regular, 13.0f), "Save")) + 2;
+    const auto groupWidth = 28 + 4 + 300 + 4 + 28 + 8 + saveWidth;
+    auto group = area.withSizeKeepingCentre (groupWidth, 32);
+    previous.setBounds (group.removeFromLeft (28).withSizeKeepingCentre (28, 28));
+    group.removeFromLeft (4);
+    preset->setBounds (group.removeFromLeft (300));
+    group.removeFromLeft (4);
+    next.setBounds (group.removeFromLeft (28).withSizeKeepingCentre (28, 28));
+    group.removeFromLeft (8);
+    save.setBounds (group.removeFromLeft (saveWidth).withSizeKeepingCentre (saveWidth, 28));
 }
 
 } // namespace ui

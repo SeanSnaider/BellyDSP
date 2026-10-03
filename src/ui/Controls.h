@@ -77,17 +77,23 @@ public:
     }
 };
 
-/// The base of every drawn control bound to one parameter: the knob, the value field, and the fader.
-/// It owns the parameter attachment and the gestures (UI_DESIGN "Knob"):
-///   drag            up or right raises the value; the whole range is about 200 points of travel
-///   shift-drag      ten times finer
-///   scroll wheel    a step per notch (shift: finer)
-///   double-click    type a value ("2.5k" for 2500, a choice by name)
-///   alt-click       back to the default
+/// The keyboard focus ring (handoff 5): a 1px emerald outline 3px outside `box`, radius 4. Only drawn when
+/// the focus came from the keyboard (the CSS :focus-visible rule): a click focuses a control (so its arrow
+/// keys work) without a ring.
+void drawFocusRing (juce::Graphics& g, juce::Rectangle<float> box);
+
+/// The base of every drawn control bound to one parameter: the knob, the value field, and the fader. It
+/// owns the parameter attachment and the gestures (handoff 4.1, "Interaction"):
+///   drag            up raises the value; 200 points of travel cover the whole range (fields: right too)
+///   shift-drag      four times finer (800 points)
+///   scroll wheel    1/50 of the range per notch (a choice: one step)
+///   arrow keys      1/50 of the range per press, when focused (a choice: one step)
+///   double-click    a knob: back to the default; a field: type a value ("2.5k" for 2500, a choice by name)
+///   alt-click       back to the default (kept from the old GUI)
 ///   right-click     ignored here: the editor's MIDI learn and scenes menu
-/// Drags move through the parameter's normalised range, so a skewed knob (a frequency) moves evenly in
-/// its skewed space, the way JUCE's sliders do. Every gesture is a parameter gesture, so the host and the
-/// undo manager see one change per drag.
+/// Drags move through the parameter's normalised range, so a skewed knob (a frequency) moves evenly in its
+/// skewed space. Every gesture is a parameter gesture, so the host and the undo manager see one change per
+/// drag (and per key press).
 class ParameterControl : public juce::Component, public juce::SettableTooltipClient, private juce::Timer
 {
 public:
@@ -98,10 +104,11 @@ public:
     float getValue() const noexcept { return value; } ///< plain value
     float getNormalisedValue() const noexcept { return parameter.convertTo0to1 (value); }
 
-    /// Where an arc or a bar starts: the position of 0 for a range that spans it (bipolar), else the start.
+    /// Where a field's bar starts: the position of 0 for a range that spans it (bipolar), else the start.
     float getZeroPoint() const noexcept;
 
-    /// The value as shown: the parameter's own text plus the unit, with kHz and seconds for big values.
+    /// The value as shown: the formatter's text if there is one, else the parameter's own text plus the
+    /// unit, with kHz and seconds for big values.
     juce::String getValueText() const;
     void setFormatter (std::function<juce::String (float)> f)
     {
@@ -109,13 +116,17 @@ public:
         repaint();
     }
 
-    /// The typing box a double-click opens (public so tests can reach it).
+    /// The typing box (fields: a double-click opens it; public so tests can reach it).
     void showTextEntry();
     bool isEditingText() const noexcept { return textEntry != nullptr; }
     /// Sets the value from typed text as one gesture; returns false if the text isn't a value.
     bool setFromText (const juce::String& text);
 
+    /// Back to the parameter's default, as one gesture.
+    void resetToDefault();
+
     bool isDragging() const noexcept { return dragging; }
+    bool isHovered() const noexcept { return hovered; }
 
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
@@ -124,21 +135,30 @@ public:
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
     void mouseEnter (const juce::MouseEvent&) override;
     void mouseExit (const juce::MouseEvent&) override;
+    bool keyPressed (const juce::KeyPress&) override;
+    void focusGained (FocusChangeType) override;
+    void focusLost (FocusChangeType) override;
+
+    /// One wheel notch, or one arrow key press, as a fraction of the range (handoff 4.1).
+    static constexpr float stepFraction = 1.0f / 50.0f;
 
 protected:
     /// Where the typing box goes.
-    virtual juce::Rectangle<int> getTextEntryBounds() const = 0;
+    virtual juce::Rectangle<int> getTextEntryBounds() const { return getLocalBounds(); }
     virtual void valueChanged() { repaint(); }
 
     float pixelsForFullRange = 200.0f;
-    bool hovered = false;
+    float fineFactor = 0.25f;        // shift: 800 points for the range
+    bool horizontalDrag = false;     // fields: right raises the value too
+    bool doubleClickTypes = false;   // fields: a double-click types a value; knobs reset
+    bool hovered = false, keyboardFocus = false;
 
 private:
     void timerCallback() override; // ends a run of wheel moves as one gesture
     void hideTextEntry (bool apply);
     void setNormalised (float normalised, bool partOfGesture);
-    void beginUndoStep();
     float stepSize() const;
+    void nudge (float steps);
 
     juce::AudioProcessorValueTreeState& state;
     juce::RangedAudioParameter& parameter;
@@ -153,41 +173,63 @@ private:
     std::unique_ptr<juce::TextEditor> textEntry;
 };
 
-/// A rotary knob (UI_DESIGN "Knob"): the caption above, a 270-degree track with the value arc in the
-/// accent from the parameter's zero point, a raised face with a pointer, and the value below.
+/// The knob (handoff 4.1): one widget in four skins and two sizes. Its CSS box is 76 x 86 (the 64 x 64
+/// hit area over a 6 px gap and a 16 px label; small: 68 x 74, a 52 x 52 hit area); the component is that
+/// box grown by 4 px on every side, so the value arc (which overhangs the hit area by a pixel) and the
+/// focus ring (3 px outside the box) are drawn inside it. Geometry, exactly as the reference's SVG and CSS:
+///   track     an arc of radius 32 in a 72 px box centred on the hit area, -135 to +135 degrees (0 = up),
+///             stroke 2, round caps, the skin's track colour (small: the same drawing at 60/72 scale)
+///   value     the same arc from -135 to the value, emerald, hidden at the minimum
+///   body      a 40 px circle (small 32), a radial gradient from the skin's a (highlight at 38% / 30%) to b
+///             at 80%, a 1 px ring, and a soft shadow (0 3 6, black at 35%)
+///   pointer   a 3 x 10 bar, 4 px in from the body's edge, rotating with the value
+///   label     12 px, weight 500, the skin's label colour; while dragging (and on hover) the value instead,
+///             emerald in the chrome, underlined in emerald on the amp panels
 class Knob final : public ParameterControl
 {
 public:
     enum class Size
     {
-        normal,  // 56
-        compact  // 40
+        normal, // 64
+        compact // 52 (the handoff's "sm")
     };
 
     Knob (juce::AudioProcessorValueTreeState& state, const juce::String& parameterId, juce::String caption, juce::String suffix = " dB",
-          Size size = Size::normal);
+          Size size = Size::normal, theme::Skin skin = theme::Skin::chrome);
 
     void setCaption (const juce::String& newCaption);
+    const juce::String& getCaption() const noexcept { return caption; }
     void setKnobSize (Size newSize);
     Size getKnobSize() const noexcept { return size; }
+    void setSkin (theme::Skin newSkin);
+    theme::Skin getSkin() const noexcept { return skin; }
+
+    /// The amp panels underline the value while dragging; the chrome turns it emerald (handoff 4.1).
+    bool isPanelStyle() const noexcept { return skin != theme::Skin::chrome; }
+
+    /// What the label shows now: the caption, or the value while dragging or hovered.
+    juce::String getShownLabel() const;
+
     void paint (juce::Graphics&) override;
 
-    static int preferredWidth (Size size) { return size == Size::normal ? 72 : 62; }
-    static int preferredHeight (Size size)
-    {
-        return (size == Size::normal ? theme::knobNormal : theme::knobCompact) + 2 * theme::captionHeight + 6;
-    }
+    /// The CSS box (76 x 86 or 68 x 74) and the component's bounds for a box at a position.
+    static juce::Point<int> cssSize (Size size) { return size == Size::normal ? juce::Point<int> { 76, 86 } : juce::Point<int> { 68, 74 }; }
+    static constexpr int margin = 4;
+    static int preferredWidth (Size size) { return cssSize (size).x + 2 * margin; }
+    static int preferredHeight (Size size) { return cssSize (size).y + 2 * margin; }
+    void setCssPosition (int x, int y) { setBounds (x - margin, y - margin, preferredWidth (size), preferredHeight (size)); }
 
 private:
     juce::Rectangle<int> getTextEntryBounds() const override;
-    juce::Rectangle<float> dialArea() const;
+    void valueChanged() override;
 
     juce::String caption;
     Size size;
+    theme::Skin skin;
 };
 
 /// A value in a field with a bar behind it, for tables (the voices of the harmonizer and multivoicer)
-/// and the top bar's tempo: drag sideways or up and down, the same gestures as a knob.
+/// and small settings: drag sideways or up and down, the same gestures as a knob; a double-click types.
 class ValueField final : public ParameterControl
 {
 public:
@@ -203,7 +245,6 @@ public:
     }
 
 private:
-    juce::Rectangle<int> getTextEntryBounds() const override { return getLocalBounds(); }
     bool showsBar = true;
 };
 
@@ -221,16 +262,39 @@ private:
     const juce::String caption;
 };
 
-/// The pill switch (UI_DESIGN "Switch"), drawn by the LookAndFeel; attach it with a ButtonAttachment.
-class Switch final : public IgnoresRightClick<juce::ToggleButton>
+/// The toggle (handoff 4.2): a 28 x 16 pill with a 1 px border in the text colour and an 8 px dot, the
+/// label 12 px to its right after an 8 px gap. Off: the dot on the left, muted. On: border and dot emerald,
+/// the dot on the right. Click, Space, or Enter flips it. Attach it with a ButtonAttachment. The component
+/// is the CSS box grown by 4 px each way (the focus ring).
+class Switch : public IgnoresRightClick<juce::ToggleButton>
 {
 public:
-    explicit Switch (const juce::String& text = {}) { setButtonText (text); }
+    explicit Switch (const juce::String& text = {});
+
+    /// The label's colour (the amp panels use their own); default ink-dim.
+    void setTextColour (juce::Colour c)
+    {
+        textColour = c;
+        repaint();
+    }
+
     int getPreferredWidth() const;
+    static constexpr int margin = 4;
+    static constexpr int preferredHeight = 16 + 2 * margin;
+
+    void paintButton (juce::Graphics&, bool highlighted, bool down) override;
+    bool keyPressed (const juce::KeyPress&) override;
+    void focusGained (FocusChangeType) override;
+    void focusLost (FocusChangeType) override;
+
+private:
+    juce::Colour textColour = theme::inkDim;
+    bool keyboardFocus = false;
 };
 
-/// A chain block's power switch: a small pill bound to a block's on switch, or, inverted, to the cab's
-/// bypass. A click flips it as one gesture.
+/// A bypass dot (handoff 4.4): 7 px, emerald when the block is engaged, line-2 when it's bypassed. Bound
+/// to a block's switch, or inverted to a bypass parameter (the amp's, the cab's). A click flips it as one
+/// gesture without anything else happening (the chain block around it doesn't navigate).
 class PowerSwitch final : public juce::Component, public juce::SettableTooltipClient
 {
 public:
@@ -240,6 +304,12 @@ public:
     void mouseDown (const juce::MouseEvent&) override;
     void mouseEnter (const juce::MouseEvent&) override { repaint(); }
     void mouseExit (const juce::MouseEvent&) override { repaint(); }
+    bool keyPressed (const juce::KeyPress&) override;
+    void focusGained (FocusChangeType cause) override;
+    void focusLost (FocusChangeType) override;
+
+    /// Flips it (a click, Space, or Enter), as one gesture in its own undo step.
+    void toggle();
 
     std::function<void()> onChange;
 
@@ -248,10 +318,10 @@ private:
     juce::RangedAudioParameter& parameter;
     const bool inverted;
     juce::ParameterAttachment attachment;
-    bool on = false;
+    bool on = false, keyboardFocus = false;
 };
 
-/// A small square button with a drawn icon (undo, redo, copy, settings), styled like a TextButton.
+/// A small square button with a drawn icon (copy, the preset arrows), styled like a TextButton.
 class IconButton final : public juce::Button
 {
 public:
@@ -273,10 +343,43 @@ private:
     const Icon icon;
 };
 
-/// A section title inside a page: a small uppercase heading and a hairline, over a group of controls.
+/// A segmented choice (the reference's .seg, the tuner's tunings): text options 16 px apart in 12 px
+/// ink-faint, the chosen one in ink with a 1 px emerald underline 4 px below. Hover lightens an option to
+/// ink-dim. A click, or the arrow keys when focused, chooses.
+class Segmented final : public juce::Component
+{
+public:
+    explicit Segmented (juce::StringArray options);
+
+    std::function<void (int)> onChange;
+
+    void setSelected (int index, juce::NotificationType notification = juce::dontSendNotification);
+    int getSelected() const noexcept { return selected; }
+    int getPreferredWidth() const;
+    static constexpr int preferredHeight = 21;
+
+    /// For tests: an option's area.
+    juce::Rectangle<float> optionArea (int index) const;
+
+    void paint (juce::Graphics&) override;
+    void mouseMove (const juce::MouseEvent&) override;
+    void mouseExit (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+    bool keyPressed (const juce::KeyPress&) override;
+    void focusGained (FocusChangeType) override;
+    void focusLost (FocusChangeType) override;
+
+private:
+    int optionAt (juce::Point<float> p) const;
+    juce::StringArray options;
+    int selected = 0, hovered = -1;
+    bool keyboardFocus = false;
+};
+
+/// A section title inside a page: a 12 px heading in ink-faint and a hairline, over a group of controls.
 void drawGroupHeading (juce::Graphics& g, juce::Rectangle<int> area, const juce::String& title);
 
-/// A card: a raised panel with the outline border.
-void drawCard (juce::Graphics& g, juce::Rectangle<float> area, juce::Colour fill = theme::surfaceRaised);
+/// A card: a 1 px border in `line`, radius 10, no fill (the chrome has no raised panels).
+void drawCard (juce::Graphics& g, juce::Rectangle<float> area, juce::Colour fill = juce::Colours::transparentBlack);
 
 } // namespace ui

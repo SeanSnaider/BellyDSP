@@ -70,7 +70,7 @@ public:
             g.setColour (sectionAmp);
             g.fillRoundedRectangle (badge, 10.0f);
             g.setColour (onAccent);
-            g.setFont (font ("Semibold", 10.5f).withExtraKerningFactor (0.06f));
+            g.setFont (font ("Semibold", 10.5f).withKerningFactor (0.06f));
             g.drawText ("PLAYING", badge, juce::Justification::centred, false);
         }
         paintHeadings (g);

@@ -30,32 +30,28 @@ public:
 
     void paintButton (juce::Graphics& g, bool highlighted, bool down) override
     {
+        // Hairline tiles: a stored scene in ink, an empty one faint; the current one outlined in emerald
+        // over the soft emerald fill; armed for storing, every tile outlined in emerald (a target).
         const auto bounds = getLocalBounds().toFloat().reduced (0.5f);
-        const auto alpha = stored ? 1.0f : offAlpha;
-
-        auto fill = stored ? surfaceRaised : surface;
-        if (down)
-            fill = fill.darker (0.15f);
-        else if (highlighted)
-            fill = fill.brighter (0.07f);
-        g.setColour (fill);
-        g.fillRoundedRectangle (bounds, radiusControl);
         if (current && stored)
         {
-            g.setColour (accentSoft);
+            g.setColour (accentDim);
             g.fillRoundedRectangle (bounds, radiusControl);
         }
-
-        // Armed for storing: every tile is a target, outlined in amber.
-        g.setColour (armed ? warn : (current && stored ? accent : outline));
-        g.drawRoundedRectangle (bounds, radiusControl, current || armed ? 1.5f : 1.0f);
+        else if (down)
+        {
+            g.setColour (surface);
+            g.fillRoundedRectangle (bounds, radiusControl);
+        }
+        g.setColour (armed || (current && stored) ? accent : (highlighted ? inkFaint : line2));
+        g.drawRoundedRectangle (bounds, radiusControl, 1.0f);
 
         auto area = getLocalBounds().reduced (10, 4);
-        g.setFont (font ("Semibold", 14.0f));
-        g.setColour (theme::text.withMultipliedAlpha (alpha));
+        g.setFont (tabular (geist (Weight::semibold, 14.0f)));
+        g.setColour (stored ? ink : inkFaint);
         g.drawText (juce::String (index + 1), area.removeFromTop (area.getHeight() / 2 + 1), juce::Justification::bottomLeft, false);
-        g.setFont (font (Text::caption));
-        g.setColour ((current && stored ? theme::text : textDim).withMultipliedAlpha (alpha));
+        g.setFont (geist (Weight::regular, 11.0f));
+        g.setColour (stored ? inkDim : inkFaint);
         g.drawFittedText (stored ? name : juce::String ("Empty"), area, juce::Justification::topLeft, 1, 0.8f);
     }
 
@@ -79,7 +75,6 @@ ScenesBar::ScenesBar()
     }
 
     store.setClickingTogglesState (true);
-    store.setColour (juce::TextButton::buttonOnColourId, warn);
     store.setTooltip ("Then click a scene to store the current sound in it");
     store.onClick = [this] { setStoreArmed (store.getToggleState()); };
     addAndMakeVisible (store);
@@ -107,22 +102,11 @@ void ScenesBar::refresh (const Scenes& scenes)
     }
 }
 
-void ScenesBar::paint (juce::Graphics& g)
-{
-    g.setColour (surface);
-    g.fillRect (getLocalBounds());
-    g.setColour (outline);
-    g.fillRect (getLocalBounds().withHeight (1));
-
-    g.setFont (font ("Semibold", 11.0f).withExtraKerningFactor (0.08f));
-    g.setColour (textDim);
-    g.drawText ("SCENES", getLocalBounds().withTrimmedLeft (space::l).withWidth (60), juce::Justification::centredLeft, false);
-}
+void ScenesBar::paint (juce::Graphics&) {}
 
 void ScenesBar::resized()
 {
-    auto area = getLocalBounds().reduced (space::l, 6).withTrimmedTop (1);
-    area.removeFromLeft (64); // the label
+    auto area = getLocalBounds();
     store.setBounds (area.removeFromRight (112).withSizeKeepingCentre (112, controlHeight));
     area.removeFromRight (space::l);
 

@@ -4,81 +4,160 @@
 
 #include <array>
 
-/// The design tokens from docs/UI_DESIGN.md: every colour, type style, size, and spacing the GUI uses,
-/// by name. Components never hold hex values or magic sizes of their own; changing the look means
-/// changing this file (ASSUMPTIONS U1).
+/// The design tokens from the UI handoff (docs/ui/amp-ui-handoff/ui_reference.html, its :root block and
+/// the knob skins): every colour, type style, size, and radius the GUI uses, by name. Components never
+/// hold hex values of their own; changing the look means changing this file.
+///
+/// The chrome is dark with hairlines and one accent, emerald, which only ever means "active, on, or
+/// correct" (handoff section 3). There are no warning colours: a warning is written in words, in the
+/// neutral inks (ASSUMPTIONS H5).
 namespace ui::theme
 {
 
-// ---- Colour --------------------------------------------------------------------------------------
+// ---- Colour: the handoff's tokens ----------------------------------------------------------------
 
-inline const juce::Colour background { 0xff121417 };    // the window
-inline const juce::Colour surface { 0xff1b1e23 };       // panels, the chain strip's sections, the bars
-inline const juce::Colour surfaceRaised { 0xff242830 }; // cards, knob faces, fields, hovered blocks
-inline const juce::Colour outline { 0xff2f343d };       // borders, separators, knob tracks
-inline const juce::Colour text { 0xffe8eaed };          // primary text and values
-inline const juce::Colour textDim { 0xff9aa1ac };       // labels, units, captions
-inline const juce::Colour accent { 0xff3fa7d6 };        // on, selected, knob arcs, focus
-inline const juce::Colour accentSoft { 0x593fa7d6 };    // accent at 35%: fills behind the accent
-inline const juce::Colour onAccent { 0xff121417 };      // text on an accent fill (7:1; white would be 2.9:1)
-inline const juce::Colour good { 0xff4cd98a };          // in tune, signal present, meters below -12 dBFS
-inline const juce::Colour warn { 0xffffc04d };          // meters -12 to -3 dBFS, warnings
-inline const juce::Colour error { 0xffff6b5e };         // clipping, errors, way out of tune
+inline const juce::Colour bg { 0xff0b0c0c };        // window background
+inline const juce::Colour surface { 0xff111313 };   // knob bodies in chrome, hover fills
+inline const juce::Colour line1 { 0xff1e2221 };     // "line": 1px dividers and borders
+inline const juce::Colour line2 { 0xff2a2f2d };     // "line-2": stronger borders, inactive knob tracks, off states
+inline const juce::Colour ink { 0xffe6ebe9 };       // primary text
+inline const juce::Colour inkDim { 0xff8a938f };    // secondary text
+inline const juce::Colour inkFaint { 0xff525a57 };  // tertiary text, axis labels
+inline const juce::Colour accent { 0xff34d399 };    // emerald: active, on, in tune, value arcs
+inline const juce::Colour accentDim { 0x2434d399 }; // rgba(52, 211, 153, 0.14): soft emerald fills
+inline const juce::Colour letterbox { 0xff050606 }; // around the 1280 x 760 canvas when the window's aspect differs
 
-// The thin bar on each chain block: which section it lives in.
-inline const juce::Colour sectionPre { 0xff7a8cff };
-inline const juce::Colour sectionAmp { 0xffff9f43 };
-inline const juce::Colour sectionCab { 0xffb57cff };
-inline const juce::Colour sectionPost { 0xff3fd0c9 };
-inline const juce::Colour sectionInOut { 0xff9aa1ac };
+// ---- Colour: the older names the effect pages were written with, mapped onto the tokens ----------
+// (The undesigned pages keep their layouts; ASSUMPTIONS H1. These keep them in the new palette.)
 
-// The two close mics on the cab page, so a mic's card and its marker on the speaker match.
-inline const juce::Colour micOne { 0xff3fa7d6 };
-inline const juce::Colour micTwo { 0xffff9f43 };
-inline const juce::Colour micRoom { 0xffb57cff };
+inline const juce::Colour background = bg;
+inline const juce::Colour surfaceRaised = surface;
+inline const juce::Colour outline = line2;
+inline const juce::Colour text = ink;
+inline const juce::Colour textDim = inkDim;
+inline const juce::Colour accentSoft = accentDim;
+inline const juce::Colour onAccent = bg;
+inline const juce::Colour good = accent;   // in range, signal present
+inline const juce::Colour warn = ink;      // was amber: now the text itself carries the warning (H5)
+inline const juce::Colour error = ink;     // was red: likewise
+inline const juce::Colour sectionPre = inkFaint;
+inline const juce::Colour sectionAmp = inkFaint;
+inline const juce::Colour sectionCab = inkFaint;
+inline const juce::Colour sectionPost = inkFaint;
+inline const juce::Colour sectionInOut = inkFaint;
+inline const juce::Colour micOne = accent; // the cab page's mic A
+inline const juce::Colour micTwo = ink;    // mic B
+inline const juce::Colour micRoom = inkDim;
 
-/// An off block, a dimmed control (a knob the current mode doesn't use), and an empty scene.
+/// A dimmed control (a knob the current mode doesn't use) and an off block's icon (handoff 4.4: 35%).
 constexpr float offAlpha = 0.45f;
 constexpr float unusedAlpha = 0.35f;
 
-// ---- Type ----------------------------------------------------------------------------------------
+// ---- Knob skins (handoff 4.1) --------------------------------------------------------------------
 
-/// Type styles (UI_DESIGN "Typography"), sizes in points at UI scale 1. The system UI font (San
-/// Francisco on macOS) stands in until Sean picks one to embed (U2).
-enum class Text
+struct KnobSkin
 {
-    title,   // 18 semibold: panel titles, the preset name
-    body,    // 14 regular: buttons, menus, combo boxes
-    value,   // 13 medium, tabular figures: knob values, meters' numbers
-    label,   // 12 regular: knob captions, column headings
-    caption, // 11 regular: the chain blocks' state lines, axis labels (U10)
-    huge     // 96 bold: the tuner's note
+    juce::Colour a, b, ring, pointer, label, track;
 };
 
-inline juce::Font font (Text style)
+enum class Skin
 {
-    const auto make = [] (const char* weight, float points)
-    { return juce::FontOptions (juce::Font::getSystemUIFontName(), weight, 10.0f).withPointHeight (points); };
+    chrome,  // the default, in the UI
+    glass,   // amp 1's panel
+    ember,   // amp 2's panel
+    monolith // amp 3's panel
+};
 
+inline KnobSkin knobSkin (Skin skin)
+{
+    switch (skin)
+    {
+        case Skin::glass:    return { juce::Colour (0xfffafafa), juce::Colour (0xff9ea2a0), juce::Colour (0xff6d716f), juce::Colour (0xff1d1f1e),
+                                      juce::Colour (0xff2b2e2c), juce::Colour (0x2e000000) };
+        case Skin::ember:    return { juce::Colour (0xff3a3633), juce::Colour (0xff0f0e0d), juce::Colour (0xff000000), juce::Colour (0xffefdfba),
+                                      juce::Colour (0xffd8c49a), juce::Colour (0x29efdfba) };
+        case Skin::monolith: return { juce::Colour (0xff3c3f3e), juce::Colour (0xff141515), juce::Colour (0xff050505), accent,
+                                      juce::Colour (0xff9aa4a0), juce::Colour (0x17ffffff) };
+        case Skin::chrome:   break;
+    }
+    return { juce::Colour (0xff1a1d1c), surface, line2, ink, inkDim, line2 };
+}
+
+// ---- Type ----------------------------------------------------------------------------------------
+
+/// Geist in four weights (and Fraunces for one badge), bundled with the app and loaded from memory once
+/// (Fonts.cpp). If a file fails to load, the system UI font stands in. Sizes are CSS pixels, which are
+/// JUCE's point heights (the em size).
+enum class Weight
+{
+    light,    // 300
+    regular,  // 400
+    medium,   // 500
+    semibold  // 600
+};
+
+juce::FontOptions geist (Weight weight, float size);
+
+/// Fraunces SemiBold Italic, an instance of the variable font at the badge's optical size (52).
+juce::FontOptions fraunces (float size);
+
+/// Tabular figures, for numbers that change live (handoff 3: knob values, Hz, cents).
+inline juce::FontOptions tabular (juce::FontOptions f) { return f.withFeatureEnabled ("tnum"); }
+
+/// Whether the bundled fonts loaded (false: the system font is standing in).
+bool bundledFontsLoaded();
+
+/// The type styles the effect pages use by name.
+enum class Text
+{
+    title,   // 15 medium: a page's title
+    body,    // 13 regular: buttons, menus, combo boxes
+    value,   // 12 medium, tabular: values in fields and meters
+    label,   // 12 regular: captions, headings
+    caption, // 11 regular: axis labels, small meta
+    huge     // 180 light: the tuner's note
+};
+
+inline juce::FontOptions font (Text style)
+{
     switch (style)
     {
-        case Text::title:   return make ("Semibold", 18.0f);
-        case Text::body:    return make ("Regular", 14.0f);
-        case Text::value:   return make ("Medium", 13.0f).withFeatureEnabled ("tnum");
-        case Text::label:   return make ("Regular", 12.0f);
-        case Text::caption: return make ("Regular", 11.0f);
-        case Text::huge:    return make ("Bold", 96.0f);
+        case Text::title:   return geist (Weight::medium, 15.0f);
+        case Text::body:    return geist (Weight::regular, 13.0f);
+        case Text::value:   return tabular (geist (Weight::medium, 12.0f));
+        case Text::label:   return geist (Weight::regular, 12.0f);
+        case Text::caption: return geist (Weight::regular, 11.0f);
+        case Text::huge:    return geist (Weight::light, 180.0f);
     }
-    return make ("Regular", 14.0f);
+    return geist (Weight::regular, 13.0f);
 }
 
-/// The same family at another size and weight (a block's name on the chain strip, the tuner's line).
-inline juce::Font font (const char* weight, float points)
+/// The same family by a weight's name ("Light", "Regular", "Medium", "Semibold", "Bold"), as the effect
+/// pages ask for it. Bold maps to 600, the heaviest weight bundled.
+inline juce::FontOptions font (const char* weight, float size)
 {
-    return juce::FontOptions (juce::Font::getSystemUIFontName(), weight, 10.0f).withPointHeight (points);
+    const juce::String w (weight);
+    const auto x = w.startsWithIgnoreCase ("light")  ? Weight::light
+                 : w.startsWithIgnoreCase ("medium") ? Weight::medium
+                 : w.startsWithIgnoreCase ("semi") || w.startsWithIgnoreCase ("bold") ? Weight::semibold
+                                                                                      : Weight::regular;
+    return geist (x, size);
 }
 
-// ---- Spacing and shape ---------------------------------------------------------------------------
+/// The width of a line of text in a font.
+inline float textWidth (const juce::FontOptions& f, const juce::String& s)
+{
+    return juce::GlyphArrangement::getStringWidth (juce::Font (f), s);
+}
+
+// ---- Shape and spacing (handoff 3, "Shape") ------------------------------------------------------
+
+constexpr float radiusWindow = 12.0f;
+constexpr float radiusHead = 14.0f;
+constexpr float radiusCard = 10.0f; // chain blocks and cards
+constexpr float radiusPanel = 6.0f; // amp panel and grille, and the effect pages' cards
+constexpr float radiusControl = 6.0f; // small buttons, fields
+constexpr float radiusMini = 3.0f;
 
 /// The 4-point grid.
 namespace space
@@ -86,37 +165,28 @@ namespace space
 constexpr int xs = 4, s = 8, m = 12, l = 16, xl = 24, xxl = 32;
 }
 
-constexpr float radiusPanel = 6.0f;   // panels and cards
-constexpr float radiusControl = 4.0f; // buttons and fields
-constexpr int panelPadding = 16;
+constexpr int panelPadding = 0;
 constexpr int controlGap = 8;
 constexpr int groupGap = 16;
 
-constexpr int controlHeight = 28;  // buttons, combo boxes, fields
-constexpr int switchHeight = 24;   // a pill switch with its label
-constexpr int knobNormal = 56;     // knob diameters
-constexpr int knobCompact = 40;
-constexpr int captionHeight = 16;  // a knob's caption above it, its value below it
+constexpr int controlHeight = 28; // buttons, combo boxes, fields
+constexpr int switchHeight = 24;  // a toggle (16 high) with its 4 px focus margin all round
+constexpr int captionHeight = 16; // a knob's label
 
-// ---- Layout --------------------------------------------------------------------------------------
+// ---- Layout (handoff 2) --------------------------------------------------------------------------
 
-constexpr int windowWidth = 1280, windowHeight = 820;   // the window opens at this size (U4)
-constexpr int minimumWidth = 1100, minimumHeight = 720; // and resizes down to this (in UI points)
-constexpr std::array<float, 4> uiScales { 0.75f, 1.0f, 1.25f, 1.5f };
-
+/// The fixed logical canvas. The window scales it uniformly and letterboxes it (H11).
+constexpr int canvasWidth = 1280, canvasHeight = 760;
 constexpr int topBarHeight = 56;
-constexpr int chainStripHeight = 156; // two rows of blocks (U9)
-constexpr int statusHeight = 30;      // the warning line above the scenes
-constexpr int scenesBarHeight = 48;
+constexpr int chainHeight = 72;
+constexpr int mainPadTop = 18, mainPadSide = 40, mainPadBottom = 16;
 
-constexpr int chainBlockMaxWidth = 140; // chain blocks share the row's width up to this (U9)
-constexpr int chainBlockHeight = 48;
-constexpr int chainCapWidth = 44;       // the IN and OUT ends of the chain
-constexpr int chainGap = 6;             // between blocks in a section
+/// The smallest window (the canvas at half size).
+constexpr int minimumWidth = canvasWidth / 2, minimumHeight = canvasHeight / 2;
 
 // ---- Motion --------------------------------------------------------------------------------------
 
-constexpr int meterFps = 30;            // meters and the analyzer while they move
+constexpr int meterFps = 30;            // meters, the analyzer, and the tuner while they move
 constexpr double peakHoldSeconds = 1.5;
 constexpr double meterFallDbPerSecond = 24.0;
 constexpr float meterFloorDb = -60.0f;

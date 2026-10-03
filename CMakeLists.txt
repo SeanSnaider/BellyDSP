@@ -89,17 +89,21 @@ set(AMPSIM_DSP_SOURCES
     src/dsp/Psola.cpp
     src/dsp/Multivoicer.cpp)
 
-# The GUI (Phase 11, docs/UI_DESIGN.md): the theme, the LookAndFeel, the components, and the pages.
+# The GUI (Phase 11; the design is docs/ui/amp-ui-handoff/): the tokens and fonts, the LookAndFeel, the
+# components, and the pages.
 set(AMPSIM_UI_SOURCES
+    src/ui/Fonts.cpp
     src/ui/LookAndFeel.cpp
     src/ui/Controls.cpp
     src/ui/Meters.cpp
     src/ui/Analyzer.cpp
     src/ui/Blocks.cpp
-    src/ui/ChainStrip.cpp
+    src/ui/ChainNav.cpp
+    src/ui/SectionTabs.cpp
     src/ui/ScenesBar.cpp
     src/ui/TopBar.cpp
     src/ui/TunerView.cpp
+    src/ui/MainPages.cpp
     src/ui/Pages.cpp
     src/ui/AmpCabPages.cpp
     src/ui/EqPage.cpp
@@ -144,11 +148,22 @@ juce_add_binary_data(AmpSimFactoryPresets SOURCES
     presets/factory/Metal.json
     presets/factory/MidwestEmo.json)
 
+# The GUI's fonts (SIL Open Font License; the licences sit next to the files): Geist 300 to 600 for
+# everything, Fraunces SemiBold Italic for one amp's badge. Their own namespace, so they don't collide
+# with the presets' BinaryData.
+juce_add_binary_data(AmpSimFonts HEADER_NAME "FontData.h" NAMESPACE FontData SOURCES
+    resources/fonts/Geist/Geist-Light.ttf
+    resources/fonts/Geist/Geist-Regular.ttf
+    resources/fonts/Geist/Geist-Medium.ttf
+    resources/fonts/Geist/Geist-SemiBold.ttf
+    resources/fonts/Fraunces/Fraunces-SemiBoldItalic.ttf)
+
 target_include_directories(AmpSim PRIVATE src)
 target_compile_definitions(AmpSim PUBLIC ${AMPSIM_JUCE_DEFINITIONS})
 target_link_libraries(AmpSim
     PRIVATE
         AmpSimFactoryPresets
+        AmpSimFonts
         ${NAM_CORE_WHOLE}
         juce::juce_audio_utils
         juce::juce_dsp
@@ -223,6 +238,7 @@ target_sources(ampsim_tests PRIVATE
     tests/ChainTests.cpp
     tests/ProcessorTests.cpp
     tests/RealtimeSafetyTests.cpp
+    tests/HandoffEngineTests.cpp
     src/PluginProcessor.cpp
     src/PluginEditor.cpp
     ${AMPSIM_UI_SOURCES}
@@ -243,6 +259,7 @@ target_compile_definitions(ampsim_tests PRIVATE
 target_link_libraries(ampsim_tests
     PRIVATE
         AmpSimFactoryPresets
+        AmpSimFonts
         ${NAM_CORE_WHOLE}
         juce::juce_audio_utils
         juce::juce_dsp

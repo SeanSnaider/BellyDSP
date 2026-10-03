@@ -5,10 +5,10 @@
 namespace ui
 {
 
-/// The GUI's one LookAndFeel (UI_DESIGN "Components"): flat dark surfaces, the accent for "on" and
-/// "selected", pill switches, fields with a chevron, and menus in the panel colour. Everything reads its
-/// colours and type from theme::. The editor sets it on itself (its children inherit it) and on every
-/// menu it opens.
+/// The GUI's one LookAndFeel, in the handoff's chrome: hairline borders on the background, emerald for
+/// "on" and "selected" only, the toggle pill, outlined buttons like the top bar's Save, fields with a
+/// chevron, and menus on the surface colour. Everything reads its colours and type from theme::. The
+/// editor sets it on itself (its children inherit it) and on every menu it opens.
 class LookAndFeel final : public juce::LookAndFeel_V4
 {
 public:
@@ -44,6 +44,10 @@ public:
     juce::Font getAlertWindowTitleFont() override;
     juce::Font getAlertWindowMessageFont() override;
     juce::Font getAlertWindowFont() override;
+
+    /// The keyboard focus ring for JUCE's own controls (buttons, combo boxes): 1 px emerald, 3 px outside
+    /// the control (handoff 5). None when a mouse click gave the focus (the CSS :focus-visible rule).
+    std::unique_ptr<juce::FocusOutline> createFocusOutlineForComponent (juce::Component&) override;
 
     /// A rounded rectangle with each corner rounded or square, for segmented buttons (A | B).
     static juce::Path roundedBox (juce::Rectangle<float> r, float radius, bool roundLeft, bool roundRight);

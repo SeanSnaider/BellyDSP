@@ -88,6 +88,7 @@ public:
             juce::MidiBuffer midi;
             rtcheck::Counts total;
             int blocks = 0, modelFadeBlocks = 0, slotSwitchBlocks = 0, morphsBefore = 0;
+            bool ampWasBypassed = false, sectionsWereBypassed = false;
             juce::StringArray events;
 
             // The GUI's side of the meters and the analyzer (Phase 11): it takes the peaks and empties the
@@ -224,6 +225,13 @@ public:
                     case 52:   p.setAnalyzerTap (AmpSimProcessor::AnalyzerTap::postSection); break;
                     case 2205: p.setAnalyzerTap (AmpSimProcessor::AnalyzerTap::preSection); break;
                     case 3555: p.setAnalyzerTap (AmpSimProcessor::AnalyzerTap::postSection); break;
+                    // The UI handoff's bypass dots: the amp (its captures keep running), and each effect section.
+                    case 1010: setParam (p, "amp_bypass", 1.0f); break;
+                    case 1090: setParam (p, "amp_bypass", 0.0f); break;
+                    case 3610: setParam (p, "pre_fx_on", 0.0f); break;
+                    case 3630: setParam (p, "post_fx_on", 0.0f); break;
+                    case 3650: setParam (p, "pre_fx_on", 1.0f); break;
+                    case 3670: setParam (p, "post_fx_on", 1.0f); break;
                     case 1500: setParam (p, "input_gain", 6.0f); break;
                     case 1600: setParam (p, "output_gain", -6.0f); break;
                     case 2000: p.loadModel (0, a1); break;                                  // switch the capture back
@@ -237,6 +245,10 @@ public:
                 p.processBlock (buffer, midi); // the audio thread's side, measured
                 total += rtcheck::end();
 
+                if (blocks == 1080)
+                    ampWasBypassed = p.getChain().isFullyBypassed (ampsim::Chain::Slot::amp);
+                if (blocks == 3640)
+                    sectionsWereBypassed = p.getChain().isFullyBypassed (ampsim::Chain::Slot::postEq) && p.getChain().isFullyBypassed (ampsim::Chain::Slot::gateA);
                 modelFadeBlocks += p.getChain().amp.isLoadingModel() ? 1 : 0;
                 slotSwitchBlocks += p.getChain().amp.isSwitching() ? 1 : 0;
 
@@ -267,6 +279,8 @@ public:
                 }
             }
 
+            expect (ampWasBypassed, "the amp bypass must have reached the audio thread");
+            expect (sectionsWereBypassed, "the section switches must have reached the audio thread");
             expectGreaterThan (modelFadeBlocks, 16, "the model loads must have crossfaded during the measurement");
             expectGreaterThan (slotSwitchBlocks, 16, "the slot switches must have crossfaded during the measurement");
             expectEquals (p.getChain().amp.getSelectedSlot(), 0);
@@ -304,7 +318,7 @@ public:
                         "a band type change, a cut slope change, and both FX sections reordered, "
                         "the delay switched on, retimed by three footswitch taps, re-moded and re-laid-out with 105% feedback, then bypassed into spillover and back, "
                         "the chorus on with mode, shape, and sync changes, and the reverb on, re-engined twice, frozen and thawed from the footswitch, resized, "
-                        "and bypassed into spillover");
+                        "and bypassed into spillover; the amp bypassed and back (its captures running underneath), and both effect sections switched off and on");
             logMessage ("  -> the GUI hooks: input and output meters and the CPU meter every buffer, the analyzer tapping the post section, the pre section, "
                         "and the post section again; the GUI read " + juce::String (analyzed) + " samples from the ring and stopped for 400 buffers, "
                         "so the ring filled and the audio thread dropped " + juce::String (analyzerDropped) + " samples instead of waiting; CPU meter "

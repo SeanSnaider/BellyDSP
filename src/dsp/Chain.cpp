@@ -32,7 +32,9 @@ Chain::Chain()
     }
     setBypassed (Slot::gateB, true);
 
-    for (auto slot : { Slot::gateA, Slot::boost, Slot::overdrive })
+    // The amp too: bypassed, its captures keep their history current, so switching it back on is
+    // seamless (the processor's amp_bypass).
+    for (auto slot : { Slot::gateA, Slot::boost, Slot::overdrive, Slot::amp })
         bypass[(size_t) slot].keepRunning = true;
 }
 

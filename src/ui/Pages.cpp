@@ -71,16 +71,16 @@ void ControlGroup::heading (juce::Rectangle<int> area, const juce::String& words
 
 void ControlGroup::paintHeadings (juce::Graphics& g) const
 {
-    // Cards first (a raised panel with its heading inside), then the free-standing headings.
+    // Cards first (a hairline box, radius 10, with its heading inside), then the free-standing headings.
     for (const auto& [area, words] : cards)
     {
-        const auto r = area.toFloat().reduced (0.5f);
-        g.setColour (surfaceRaised.withAlpha (0.42f));
-        g.fillRoundedRectangle (r, radiusPanel);
-        g.setColour (outline);
-        g.drawRoundedRectangle (r, radiusPanel, 1.0f);
+        drawCard (g, area.toFloat());
         if (words.isNotEmpty())
-            drawGroupHeading (g, area.reduced (cardPadding, 0).withY (area.getY() + cardPadding - 2).withHeight (16), words);
+        {
+            g.setFont (geist (Weight::medium, 12.0f));
+            g.setColour (inkFaint);
+            g.drawText (words, area.reduced (cardPadding, 0).withY (area.getY() + cardPadding - 2).withHeight (16), juce::Justification::centredLeft, true);
+        }
     }
     for (const auto& [area, words] : headings)
         drawGroupHeading (g, area, words);
@@ -129,7 +129,7 @@ std::vector<juce::Rectangle<int>> ControlGroup::layoutCards (juce::Rectangle<int
     int total = 0;
     for (const auto& spec : specs)
     {
-        const auto headingWidth = juce::roundToInt (juce::GlyphArrangement::getStringWidth (font ("Semibold", 11.0f), spec.title.toUpperCase())) + 24;
+        const auto headingWidth = juce::roundToInt (textWidth (geist (Weight::medium, 12.0f), spec.title)) + 24;
         natural.push_back (2 * cardPadding + juce::jmax (blockWidth (spec), headingWidth));
         total += natural.back();
     }
@@ -170,25 +170,16 @@ BlockPage::~BlockPage() = default;
 
 void BlockPage::paint (juce::Graphics& g)
 {
-    const auto bounds = getLocalBounds().toFloat();
-    g.setColour (surface);
-    g.fillRoundedRectangle (bounds, radiusPanel);
-    g.setColour (outline);
-    g.drawRoundedRectangle (bounds.reduced (0.5f), radiusPanel, 1.0f);
-
-    // The header: the section's colour, the block's name, and where it sits in the chain.
-    auto header = getLocalBounds().reduced (panelPadding).withHeight (headerHeight);
-    g.setColour (sectionColour (info (id).section));
-    g.fillEllipse (header.removeFromLeft (10).toFloat().withSizeKeepingCentre (9.0f, 9.0f));
-    header.removeFromLeft (space::s);
+    // The header: the block's name (15 px medium), then where it sits (12 px faint). No panel: the page
+    // sits on the window's background like the designed pages.
+    auto header = getLocalBounds().withHeight (headerHeight);
     const auto titleFont = font (Text::title);
     g.setFont (titleFont);
-    g.setColour (text);
-    g.drawText (title, header.removeFromLeft (juce::roundToInt (juce::GlyphArrangement::getStringWidth (titleFont, title)) + 2),
-                juce::Justification::centredLeft, false);
+    g.setColour (ink);
+    g.drawText (title, header.removeFromLeft (juce::roundToInt (textWidth (titleFont, title)) + 2), juce::Justification::centredLeft, false);
     header.removeFromLeft (space::m);
     g.setFont (font (Text::label));
-    g.setColour (textDim);
+    g.setColour (inkFaint);
     g.drawText (subtitle, header.withRight (headerSpace.isEmpty() ? header.getRight() : headerSpace.getX()), juce::Justification::centredLeft, true);
 
     paintHeadings (g);
@@ -198,20 +189,20 @@ void BlockPage::paint (juce::Graphics& g)
 void BlockPage::resized()
 {
     clearHeadings();
-    auto area = getLocalBounds().reduced (panelPadding);
+    auto area = getLocalBounds();
     auto header = area.removeFromTop (headerHeight);
-    area.removeFromTop (space::m);
+    area.removeFromTop (space::l);
 
     if (onSwitch != nullptr)
     {
         const auto width = onSwitch->getPreferredWidth();
-        onSwitch->setBounds (header.removeFromRight (width).withSizeKeepingCentre (width, switchHeight));
+        onSwitch->setBounds (header.removeFromRight (width).withSizeKeepingCentre (width, Switch::preferredHeight));
         header.removeFromRight (space::xl);
     }
 
-    const auto titleWidth = juce::roundToInt (juce::GlyphArrangement::getStringWidth (font (Text::title), title));
-    const auto subtitleWidth = juce::roundToInt (juce::GlyphArrangement::getStringWidth (font (Text::label), subtitle));
-    headerSpace = header.withTrimmedLeft (juce::jmin (header.getWidth(), 10 + space::s + titleWidth + space::m + subtitleWidth + space::xl));
+    const auto titleWidth = juce::roundToInt (textWidth (font (Text::title), title));
+    const auto subtitleWidth = juce::roundToInt (textWidth (font (Text::label), subtitle));
+    headerSpace = header.withTrimmedLeft (juce::jmin (header.getWidth(), titleWidth + space::m + subtitleWidth + space::xl));
 
     layoutContent (area);
 }
@@ -262,57 +253,13 @@ void place (juce::Component* c, juce::Rectangle<int>& row, int width, int height
 
 void place (Switch* s, juce::Rectangle<int>& row, int gapAfter)
 {
-    place (s, row, s->getPreferredWidth(), switchHeight, gapAfter);
+    place (s, row, s->getPreferredWidth(), Switch::preferredHeight, gapAfter);
 }
 
 void dim (juce::Component* c, bool used)
 {
     if (c != nullptr)
         c->setAlpha (used ? 1.0f : unusedAlpha);
-}
-
-// ---- IoPage ----------------------------------------------------------------------------------------------
-
-IoPage::IoPage (AmpSimProcessor& p) : BlockPage (p, BlockId::input, "Input & output", "The levels in and out, and the footswitch's controllers")
-{
-    input = &addKnob ("input_gain", "Input");
-    output = &addKnob ("output_gain", "Output");
-    tapLabel = &addLabel ("Tap tempo", Text::body, text);
-    freezeLabel = &addLabel ("Reverb freeze", Text::body, text);
-    sceneLabel = &addLabel ("Scenes (value 0 to 7 is scene 1 to 8)", Text::body, text);
-    tapCc = &addField ("midi_tap_cc", "");
-    freezeCc = &addField ("midi_freeze_cc", "");
-    sceneCc = &addField ("midi_scene_cc", "");
-    for (auto* field : { tapCc, freezeCc, sceneCc })
-    {
-        field->setFormatter ([] (float cc) { return "CC " + juce::String (juce::roundToInt (cc)); });
-        field->setShowsBar (false);
-    }
-    note = &addLabel ("Program change 1 to 3 picks the amp slot. Right-click any control to map a footswitch or a pedal to it; the MIDI button lists the mappings.",
-                      Text::label, textDim);
-    note->setJustificationType (juce::Justification::topLeft);
-}
-
-void IoPage::layoutContent (juce::Rectangle<int> area)
-{
-    const auto height = juce::jmax (knobCardHeight(), cardHeight (3 * controlHeight + 3 * space::s + 32));
-    auto row = area.removeFromTop (height);
-
-    // The levels: the input gain before everything and the output level after it.
-    auto levels = card (row.removeFromLeft (2 * cardPadding + 2 * Knob::preferredWidth (Knob::Size::normal) + space::xl), "Levels");
-    placeKnobs (levels.withSizeKeepingCentre (levels.getWidth(), Knob::preferredHeight (Knob::Size::normal)), { input, output }, Knob::Size::normal, space::xl);
-    row.removeFromLeft (space::m);
-
-    // The footswitch's built-in controllers.
-    auto foot = card (row.removeFromLeft (juce::jmin (row.getWidth(), 620)), "Footswitch controllers");
-    for (auto [label, field] : { std::pair<juce::Label*, ValueField*> { tapLabel, tapCc }, { freezeLabel, freezeCc }, { sceneLabel, sceneCc } })
-    {
-        auto line = foot.removeFromTop (controlHeight);
-        field->setBounds (line.removeFromRight (96));
-        label->setBounds (line);
-        foot.removeFromTop (space::s);
-    }
-    note->setBounds (foot);
 }
 
 // ---- GatePage --------------------------------------------------------------------------------------------
@@ -405,7 +352,7 @@ void GatePage::refresh()
 
 void GatePage::paintContent (juce::Graphics& g)
 {
-    // The detector's level on a -100 to 0 dBFS scale against the open (white) and close (amber)
+    // The detector's level on a -100 to 0 dBFS scale against the open (ink) and close (ink-faint)
     // thresholds; the gap between them is the hysteresis.
     auto area = meterArea;
     const auto textRow = area.removeFromTop (18);
@@ -414,15 +361,15 @@ void GatePage::paintContent (juce::Graphics& g)
     const auto scale = area.withTrimmedTop (2).withHeight (14);
     const auto xFor = [&bar] (float db) { return (float) bar.getX() + (float) bar.getWidth() * juce::jlimit (0.0f, 1.0f, (db + 100.0f) / 100.0f); };
 
-    g.setColour (background);
+    g.setColour (line2);
     g.fillRoundedRectangle (bar.toFloat(), 3.0f);
     if (! linked)
     {
-        g.setColour ((meter.open ? good : textDim).withAlpha (0.85f));
+        g.setColour (meter.open ? accent : inkDim);
         g.fillRoundedRectangle (bar.toFloat().withRight (xFor (meter.detectorDb)), 3.0f);
         g.setColour (text);
         g.fillRect (juce::Rectangle<float> (xFor (meter.openDb) - 1.0f, (float) bar.getY() - 3.0f, 2.0f, (float) bar.getHeight() + 6.0f));
-        g.setColour (warn);
+        g.setColour (inkFaint);
         g.fillRect (juce::Rectangle<float> (xFor (meter.closeDb) - 1.0f, (float) bar.getY() - 3.0f, 2.0f, (float) bar.getHeight() + 6.0f));
     }
 
@@ -446,7 +393,7 @@ void GatePage::paintContent (juce::Graphics& g)
         line = juce::String ("Following Gate A: ") + (meter.reductionDb < 1.0f ? "open" : "closing, " + dB (meter.reductionDb) + " dB down");
     else
         line = (meter.open ? "Open" : "Closed") + juce::String (", level ") + dB (meter.detectorDb) + " dBFS, reduction "
-               + (meter.reductionDb >= 99.0f ? juce::String ("full") : dB (meter.reductionDb) + " dB") + ".  White opens it, amber closes it.";
+               + (meter.reductionDb >= 99.0f ? juce::String ("full") : dB (meter.reductionDb) + " dB") + ".  The bright mark opens it, the dim one closes it.";
     g.setColour (learning ? warn : text);
     g.setFont (font (Text::label));
     g.drawText (line, textRow, juce::Justification::centredLeft, true);

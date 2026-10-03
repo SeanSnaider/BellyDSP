@@ -8,66 +8,66 @@ using namespace theme;
 LookAndFeel::LookAndFeel()
 {
     // The V4 scheme covers whatever JUCE draws itself (the standalone's option panes, scrollbars).
-    setColourScheme ({ background, surface, surface, outline, text, surfaceRaised, onAccent, accent, text });
+    setColourScheme ({ bg, surface, surface, line2, ink, surface, bg, accent, ink });
 
     const auto set = [this] (int id, juce::Colour c) { setColour (id, c); };
-    set (juce::ResizableWindow::backgroundColourId, background);
-    set (juce::DocumentWindow::textColourId, text);
+    set (juce::ResizableWindow::backgroundColourId, bg);
+    set (juce::DocumentWindow::textColourId, ink);
 
-    set (juce::TextButton::buttonColourId, surfaceRaised);
-    set (juce::TextButton::buttonOnColourId, accent);
-    set (juce::TextButton::textColourOffId, text);
-    set (juce::TextButton::textColourOnId, onAccent);
-    set (juce::ToggleButton::textColourId, text);
+    set (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+    set (juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
+    set (juce::TextButton::textColourOffId, inkDim);
+    set (juce::TextButton::textColourOnId, ink);
+    set (juce::ToggleButton::textColourId, inkDim);
     set (juce::ToggleButton::tickColourId, accent);
-    set (juce::ToggleButton::tickDisabledColourId, textDim);
+    set (juce::ToggleButton::tickDisabledColourId, inkFaint);
 
-    set (juce::ComboBox::backgroundColourId, surfaceRaised);
-    set (juce::ComboBox::buttonColourId, surfaceRaised);
-    set (juce::ComboBox::outlineColourId, outline);
-    set (juce::ComboBox::textColourId, text);
-    set (juce::ComboBox::arrowColourId, textDim);
+    set (juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
+    set (juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
+    set (juce::ComboBox::outlineColourId, line2);
+    set (juce::ComboBox::textColourId, ink);
+    set (juce::ComboBox::arrowColourId, inkFaint);
     set (juce::ComboBox::focusedOutlineColourId, accent);
 
     set (juce::PopupMenu::backgroundColourId, surface);
-    set (juce::PopupMenu::textColourId, text);
-    set (juce::PopupMenu::headerTextColourId, textDim);
-    set (juce::PopupMenu::highlightedBackgroundColourId, surfaceRaised);
-    set (juce::PopupMenu::highlightedTextColourId, text);
+    set (juce::PopupMenu::textColourId, ink);
+    set (juce::PopupMenu::headerTextColourId, inkFaint);
+    set (juce::PopupMenu::highlightedBackgroundColourId, line1);
+    set (juce::PopupMenu::highlightedTextColourId, ink);
 
-    set (juce::Label::textColourId, text);
+    set (juce::Label::textColourId, ink);
     set (juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     set (juce::Label::outlineColourId, juce::Colours::transparentBlack);
-    set (juce::Label::textWhenEditingColourId, text);
-    set (juce::Label::backgroundWhenEditingColourId, background);
+    set (juce::Label::textWhenEditingColourId, ink);
+    set (juce::Label::backgroundWhenEditingColourId, bg);
     set (juce::Label::outlineWhenEditingColourId, accent);
 
-    set (juce::TextEditor::backgroundColourId, background);
-    set (juce::TextEditor::textColourId, text);
-    set (juce::TextEditor::highlightColourId, accentSoft);
-    set (juce::TextEditor::highlightedTextColourId, text);
-    set (juce::TextEditor::outlineColourId, outline);
+    set (juce::TextEditor::backgroundColourId, bg);
+    set (juce::TextEditor::textColourId, ink);
+    set (juce::TextEditor::highlightColourId, accentDim);
+    set (juce::TextEditor::highlightedTextColourId, ink);
+    set (juce::TextEditor::outlineColourId, line2);
     set (juce::TextEditor::focusedOutlineColourId, accent);
     set (juce::TextEditor::shadowColourId, juce::Colours::transparentBlack);
     set (juce::CaretComponent::caretColourId, accent);
 
-    set (juce::TooltipWindow::backgroundColourId, surfaceRaised);
-    set (juce::TooltipWindow::textColourId, text);
-    set (juce::TooltipWindow::outlineColourId, outline);
+    set (juce::TooltipWindow::backgroundColourId, surface);
+    set (juce::TooltipWindow::textColourId, ink);
+    set (juce::TooltipWindow::outlineColourId, line2);
 
-    set (juce::ScrollBar::thumbColourId, outline.brighter (0.3f));
+    set (juce::ScrollBar::thumbColourId, line2);
     set (juce::ScrollBar::trackColourId, juce::Colours::transparentBlack);
 
     set (juce::AlertWindow::backgroundColourId, surface);
-    set (juce::AlertWindow::textColourId, text);
-    set (juce::AlertWindow::outlineColourId, outline);
+    set (juce::AlertWindow::textColourId, ink);
+    set (juce::AlertWindow::outlineColourId, line2);
 
-    set (juce::Slider::backgroundColourId, outline);
+    set (juce::Slider::backgroundColourId, line2);
     set (juce::Slider::trackColourId, accent);
     set (juce::Slider::thumbColourId, accent);
     set (juce::Slider::rotarySliderFillColourId, accent);
-    set (juce::Slider::rotarySliderOutlineColourId, outline);
-    set (juce::Slider::textBoxTextColourId, text);
+    set (juce::Slider::rotarySliderOutlineColourId, line2);
+    set (juce::Slider::textBoxTextColourId, ink);
     set (juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
     set (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
 }
@@ -81,72 +81,50 @@ juce::Path LookAndFeel::roundedBox (juce::Rectangle<float> r, float radius, bool
 
 // ---- Buttons --------------------------------------------------------------------------------------
 
-void LookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& button, const juce::Colour& backgroundColour, bool highlighted, bool down)
+void LookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& button, const juce::Colour&, bool highlighted, bool down)
 {
+    // Outlined, like the top bar's Save (handoff 4.3): a 1 px line-2 border, ink-faint on hover, emerald
+    // when the button is toggled on (A or B, Store armed). Pressed: the surface fill.
     const auto bounds = button.getLocalBounds().toFloat().reduced (0.5f);
-    auto fill = backgroundColour;
-    if (down)
-        fill = fill.darker (0.18f);
-    else if (highlighted)
-        fill = fill.brighter (0.07f);
-    if (! button.isEnabled())
-        fill = fill.withMultipliedAlpha (0.4f);
-
     const auto path = roundedBox (bounds, radiusControl, ! button.isConnectedOnLeft(), ! button.isConnectedOnRight());
-    g.setColour (fill);
-    g.fillPath (path);
-
-    if (! button.getToggleState())
+    if (down)
     {
-        g.setColour ((highlighted ? outline.brighter (0.25f) : outline).withMultipliedAlpha (button.isEnabled() ? 1.0f : 0.5f));
-        g.strokePath (path, juce::PathStrokeType (1.0f));
+        g.setColour (surface);
+        g.fillPath (path);
     }
+    const auto border = button.getToggleState() ? accent : (highlighted ? inkFaint : line2);
+    g.setColour (border.withMultipliedAlpha (button.isEnabled() ? 1.0f : 0.5f));
+    g.strokePath (path, juce::PathStrokeType (1.0f));
 }
 
-juce::Font LookAndFeel::getTextButtonFont (juce::TextButton&, int buttonHeight)
+juce::Font LookAndFeel::getTextButtonFont (juce::TextButton&, int)
 {
-    return font (buttonHeight < 24 ? Text::label : Text::body);
+    return geist (Weight::regular, 13.0f);
 }
 
-void LookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& button, bool, bool)
+void LookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& button, bool highlighted, bool)
 {
     g.setFont (getTextButtonFont (button, button.getHeight()));
-    const auto colour = button.findColour (button.getToggleState() ? juce::TextButton::textColourOnId : juce::TextButton::textColourOffId);
+    const auto colour = button.getToggleState() || highlighted ? ink : inkDim;
     g.setColour (colour.withMultipliedAlpha (button.isEnabled() ? 1.0f : 0.45f));
     g.drawFittedText (button.getButtonText(), button.getLocalBounds().reduced (6, 2), juce::Justification::centred, 1, 0.85f);
 }
 
-void LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& button, bool highlighted, bool)
+void LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& button, bool, bool)
 {
-    // The pill switch (UI_DESIGN "Switch"): accent when on, a hollow outline when off, label to the right.
+    // A plain ToggleButton (ui::Switch draws itself): the same 28 x 16 pill.
     const auto bounds = button.getLocalBounds().toFloat();
-    const auto h = juce::jmin (16.0f, bounds.getHeight() - 4.0f);
-    const auto pill = juce::Rectangle<float> (bounds.getX() + 1.0f, bounds.getCentreY() - h * 0.5f, h * 1.8f, h);
-    const auto alpha = button.isEnabled() ? 1.0f : 0.4f;
+    const auto pill = juce::Rectangle<float> (bounds.getX() + 1.0f, bounds.getCentreY() - 8.0f, 28.0f, 16.0f);
     const bool on = button.getToggleState();
-    const auto thumb = juce::Rectangle<float> (h - 4.0f, h - 4.0f).withCentre ({ on ? pill.getRight() - h * 0.5f : pill.getX() + h * 0.5f, pill.getCentreY() });
-
-    if (on)
-    {
-        g.setColour ((highlighted ? accent.brighter (0.15f) : accent).withMultipliedAlpha (alpha));
-        g.fillRoundedRectangle (pill, h * 0.5f);
-        g.setColour (text.withMultipliedAlpha (alpha));
-        g.fillEllipse (thumb);
-    }
-    else
-    {
-        g.setColour ((highlighted ? textDim : outline.brighter (0.35f)).withMultipliedAlpha (alpha));
-        g.drawRoundedRectangle (pill.reduced (0.75f), h * 0.5f, 1.5f);
-        g.setColour (textDim.withMultipliedAlpha (alpha));
-        g.fillEllipse (thumb.reduced (1.0f));
-    }
-
+    const auto colour = on ? accent : inkDim;
+    g.setColour (colour.withMultipliedAlpha (0.9f));
+    g.drawRoundedRectangle (pill.reduced (0.5f), 7.5f, 1.0f);
+    g.fillEllipse (juce::Rectangle<float> (8.0f, 8.0f).withPosition (pill.getX() + (on ? 16.0f : 4.0f), pill.getY() + 4.0f));
     if (button.getButtonText().isNotEmpty())
     {
-        g.setColour (text.withMultipliedAlpha (alpha));
-        g.setFont (font (Text::body));
-        g.drawFittedText (button.getButtonText(), button.getLocalBounds().withTrimmedLeft (juce::roundToInt (pill.getRight()) + 8),
-                          juce::Justification::centredLeft, 1, 0.8f);
+        g.setColour (inkDim);
+        g.setFont (geist (Weight::medium, 12.0f));
+        g.drawText (button.getButtonText(), bounds.withTrimmedLeft (pill.getRight() + 8.0f), juce::Justification::centredLeft, false);
     }
 }
 
@@ -156,24 +134,21 @@ void LookAndFeel::drawComboBox (juce::Graphics& g, int width, int height, bool, 
 {
     const auto bounds = juce::Rectangle<float> (0.0f, 0.0f, (float) width, (float) height).reduced (0.5f);
     const auto hovered = box.isMouseOver (true);
-    g.setColour (hovered ? surfaceRaised.brighter (0.06f) : surfaceRaised);
-    g.fillRoundedRectangle (bounds, radiusControl);
-    g.setColour (box.hasKeyboardFocus (true) ? accent : (hovered ? outline.brighter (0.25f) : outline));
+    g.setColour (box.hasKeyboardFocus (true) ? accent : (hovered ? inkFaint : line2));
     g.drawRoundedRectangle (bounds, radiusControl, 1.0f);
 
-    // The chevron.
     const auto cx = (float) width - 14.0f, cy = (float) height * 0.5f;
     juce::Path chevron;
     chevron.startNewSubPath (cx - 4.0f, cy - 2.0f);
     chevron.lineTo (cx, cy + 2.0f);
     chevron.lineTo (cx + 4.0f, cy - 2.0f);
-    g.setColour (textDim.withMultipliedAlpha (box.isEnabled() ? 1.0f : 0.4f));
+    g.setColour ((hovered ? inkDim : inkFaint).withMultipliedAlpha (box.isEnabled() ? 1.0f : 0.4f));
     g.strokePath (chevron, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 }
 
 juce::Font LookAndFeel::getComboBoxFont (juce::ComboBox& box)
 {
-    return font (box.getHeight() < 26 ? Text::label : Text::body);
+    return geist (Weight::regular, box.getHeight() < 26 ? 12.0f : 13.0f);
 }
 
 void LookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label& label)
@@ -187,7 +162,7 @@ void LookAndFeel::drawPopupMenuBackground (juce::Graphics& g, int width, int hei
 {
     const auto bounds = juce::Rectangle<float> (0.0f, 0.0f, (float) width, (float) height);
     g.fillAll (surface);
-    g.setColour (outline);
+    g.setColour (line2);
     g.drawRect (bounds, 1.0f);
 }
 
@@ -225,8 +200,8 @@ void LookAndFeel::drawPopupMenuItem (juce::Graphics& g, const juce::Rectangle<in
     auto r = area.reduced (4, 1);
     if (isHighlighted && isActive)
     {
-        g.setColour (surfaceRaised);
-        g.fillRoundedRectangle (r.toFloat(), radiusControl);
+        g.setColour (line1);
+        g.fillRoundedRectangle (r.toFloat(), 4.0f);
     }
 
     const auto colour = textColour != nullptr ? *textColour : (isTicked ? accent : text);
@@ -252,7 +227,7 @@ void LookAndFeel::drawPopupMenuItem (juce::Graphics& g, const juce::Rectangle<in
         chevron.startNewSubPath (arrow.x - 2.0f, arrow.y - 4.0f);
         chevron.lineTo (arrow.x + 2.0f, arrow.y);
         chevron.lineTo (arrow.x - 2.0f, arrow.y + 4.0f);
-        g.setColour (textDim);
+        g.setColour (inkFaint);
         g.strokePath (chevron, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         g.setColour (colour.withMultipliedAlpha (isActive ? 1.0f : 0.4f));
     }
@@ -261,7 +236,7 @@ void LookAndFeel::drawPopupMenuItem (juce::Graphics& g, const juce::Rectangle<in
 
     if (shortcutKeyText.isNotEmpty())
     {
-        g.setColour (textDim);
+        g.setColour (inkFaint);
         g.setFont (font (Text::label));
         g.drawText (shortcutKeyText, r.reduced (6, 0), juce::Justification::centredRight, true);
     }
@@ -269,9 +244,9 @@ void LookAndFeel::drawPopupMenuItem (juce::Graphics& g, const juce::Rectangle<in
 
 void LookAndFeel::drawPopupMenuSectionHeader (juce::Graphics& g, const juce::Rectangle<int>& area, const juce::String& sectionName)
 {
-    g.setFont (font ("Semibold", 11.0f));
-    g.setColour (textDim);
-    g.drawFittedText (sectionName.toUpperCase(), area.reduced (12, 0).withTrimmedTop (4), juce::Justification::centredLeft, 1, 0.8f);
+    g.setFont (geist (Weight::medium, 12.0f));
+    g.setColour (inkFaint);
+    g.drawFittedText (sectionName, area.reduced (12, 0).withTrimmedTop (4), juce::Justification::centredLeft, 1, 0.8f);
 }
 
 // ---- Text ----------------------------------------------------------------------------------------
@@ -289,7 +264,7 @@ void LookAndFeel::fillTextEditorBackground (juce::Graphics& g, int width, int he
 
 void LookAndFeel::drawTextEditorOutline (juce::Graphics& g, int width, int height, juce::TextEditor& editor)
 {
-    g.setColour (editor.hasKeyboardFocus (true) ? accent : outline);
+    g.setColour (editor.hasKeyboardFocus (true) ? accent : line2);
     g.drawRoundedRectangle (juce::Rectangle<float> (0.0f, 0.0f, (float) width, (float) height).reduced (0.5f), radiusControl, 1.0f);
 }
 
@@ -307,13 +282,38 @@ juce::Rectangle<int> LookAndFeel::getTooltipBounds (const juce::String& tipText,
 void LookAndFeel::drawTooltip (juce::Graphics& g, const juce::String& tipText, int width, int height)
 {
     const auto bounds = juce::Rectangle<float> (0.0f, 0.0f, (float) width, (float) height);
-    g.setColour (surfaceRaised);
+    g.setColour (surface);
     g.fillRoundedRectangle (bounds, radiusControl);
-    g.setColour (outline);
+    g.setColour (line2);
     g.drawRoundedRectangle (bounds.reduced (0.5f), radiusControl, 1.0f);
-    g.setColour (text);
+    g.setColour (ink);
     g.setFont (font (Text::label));
     g.drawFittedText (tipText, bounds.toNearestInt().reduced (10, 4), juce::Justification::centredLeft, 6, 0.9f);
+}
+
+std::unique_ptr<juce::FocusOutline> LookAndFeel::createFocusOutlineForComponent (juce::Component&)
+{
+    // JUCE makes the outline just after the focus changes (asynchronously), while a click that caused it
+    // still holds the button down: then it's a mouse focus, which gets no ring.
+    if (juce::ModifierKeys::getCurrentModifiersRealtime().isAnyMouseButtonDown())
+        return nullptr;
+
+    struct Ring final : public juce::FocusOutline::OutlineWindowProperties
+    {
+        juce::Rectangle<int> getOutlineBounds (juce::Component& c) override
+        {
+            const auto scale = juce::Component::getApproximateScaleFactorForComponent (&c);
+            return c.getScreenBounds().expanded (juce::roundToInt (4.0f * scale));
+        }
+
+        void drawOutline (juce::Graphics& g, int width, int height) override
+        {
+            // The window is the control grown by 4 (in its own scale): the ring sits 3 outside the control.
+            g.setColour (accent);
+            g.drawRoundedRectangle (juce::Rectangle<float> ((float) width, (float) height).reduced (0.5f), 4.0f, 1.0f);
+        }
+    };
+    return std::make_unique<juce::FocusOutline> (std::make_unique<Ring>());
 }
 
 juce::Font LookAndFeel::getAlertWindowTitleFont() { return font (Text::title); }

@@ -59,6 +59,26 @@ public:
     void clearModel (int slot);
     void clearCabIR (int mic);
 
+    /// Message thread: "Follow amp choice" (the cab page). Each amp slot can have a cab assigned to it: the
+    /// IR file or cab pack last picked for close mic 1 while that slot was playing. While following,
+    /// switching slots (from the GUI, a footswitch, a scene, or the host) loads the new slot's cab into
+    /// close mic 1. Both are saved in the state and in presets (Presets.h: "cab_assign", "cab_follow").
+    bool isCabFollowing() const { return (bool) parameters.state.getProperty (cabFollowKey, true); }
+    void setCabFollow (bool shouldFollow);
+    juce::File getCabAssignment (int slot) const;
+    void setCabAssignment (int slot, const juce::File& fileOrPack);
+
+    /// Message thread: a cab picked on the cab page (from the library list, a dropped file, or the file
+    /// chooser): loads it into close mic 1 and assigns it to the slot that's playing.
+    void pickCab (const juce::File& fileOrPack);
+
+    /// Message thread: the slot change in effect now has been dealt with (a preset or a restored state
+    /// brings its own cab, which following mustn't replace).
+    void markCabFollowed() { lastFollowedSlot = juce::roundToInt (ampSlot->load()); }
+
+    static inline const juce::Identifier cabFollowKey { "cabFollow" };
+    static juce::Identifier cabAssignKey (int slot) { return "cabAssign" + juce::String (slot + 1); }
+
     /// Message thread: a close mic's cab pack positions (empty without a pack), for the position pad.
     std::vector<ampsim::CabPack::Point> getCabPackPoints (int mic) const { return chain.cab.getPackPoints (mic); }
 
@@ -152,7 +172,17 @@ public:
     int getHarmonizerNote() const { return chain.harmonizer.getShownNote(); }
     int getHarmonizerShift (int voice) const { return chain.harmonizer.getShownShift (voice); }
 
-    /// Any thread: compressor gain reduction meters (dB).
+    /// Any thread: the shared strip's gate light. True while Gate A lets the guitar through: its gain
+    /// (0 dB when it's switched off, or its section is) above -6 dB, that is, its largest gain reduction
+    /// in the last buffer under 6 dB.
+    bool isGateOpen() const noexcept { return gateOpen.load (std::memory_order_relaxed); }
+    static constexpr float gateOpenBelowReductionDb = 6.0f;
+
+    /// Any thread: whether the device runs at 48 kHz (otherwise the output is muted), and its rate.
+    bool isSampleRateOk() const noexcept { return sampleRateOk.load(); }
+    double getDeviceSampleRate() const noexcept { return deviceSampleRate.load(); }
+
+    /// Any thread, for compressor gain reduction meters (dB).
     float getCompressorReduction (bool post) const { return post ? chain.postCompressor.getGainReductionDb() : chain.preCompressor.getGainReductionDb(); }
 
     /// True while a model or IR load (or a moving mic's re-morph) is still running. Used by the tests.
@@ -285,6 +315,10 @@ private:
     std::atomic<float>* outputGainDb = nullptr;
     std::atomic<float>* cabBypass = nullptr;
     std::atomic<float>* ampSlot = nullptr;
+    std::atomic<float>* ampBypass = nullptr;
+    std::atomic<float>* preFxOn = nullptr;
+    std::atomic<float>* postFxOn = nullptr;
+    std::atomic<bool> gateOpen { true };
     std::array<SlotParameters, numAmpSlots> slotParameters;
     std::array<MicParameters, ampsim::Cab::numCloseMics> micParameters;
     std::atomic<float>* roomLevel = nullptr;
@@ -299,6 +333,8 @@ private:
     std::atomic<float>* highCutSlope = nullptr;
 
     int lastSlotParameter = -1;              // audio thread: the slot parameter value last acted on
+    int lastFollowedSlot = -1;               // message thread: the slot whose cab "Follow amp choice" last applied
+    void applyCabAssignment (int slot);
     std::atomic<int> midiSlotRequest { -1 }; // audio thread to timer: a footswitch picked this slot
     std::array<int, ampsim::Cab::numCloseMics> loadedChannel { 0, 0 }; // message thread: channel each close mic was read with
 

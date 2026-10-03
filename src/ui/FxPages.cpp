@@ -375,12 +375,6 @@ private:
 
     void drawChip (juce::Graphics& g, juce::Rectangle<float> r, int index, bool lifted) const
     {
-        if (lifted)
-        {
-            juce::Path shape;
-            shape.addRoundedRectangle (r, radiusControl);
-            juce::DropShadow (juce::Colours::black.withAlpha (0.5f), 8, { 0, 3 }).drawForPath (g, shape);
-        }
         g.setColour (surfaceRaised);
         g.fillRoundedRectangle (r, radiusControl);
         g.setColour (lifted ? accent : outline.brighter (0.15f));
@@ -428,12 +422,8 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        const auto r = getLocalBounds().toFloat().reduced (0.5f);
-        g.setColour (surfaceRaised.withAlpha (0.42f));
-        g.fillRoundedRectangle (r, radiusPanel);
-        g.setColour (outline);
-        g.drawRoundedRectangle (r, radiusPanel, 1.0f);
-        g.setFont (font ("Semibold", 15.0f));
+        drawCard (g, getLocalBounds().toFloat());
+        g.setFont (font (Text::title));
         g.setColour (theme::text);
         g.drawText (title, getLocalBounds().reduced (space::m).withHeight (controlHeight), juce::Justification::centredLeft, false);
     }

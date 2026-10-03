@@ -15,12 +15,19 @@ namespace ui
 
 /// A component that builds and owns controls attached to parameters: knobs, switches, combo boxes,
 /// fields, and faders, every one tagged with its parameter for MIDI learn. Pages and the cards inside
-/// them (an amp slot, a cab mic, one of Bloom's effects) are made of these.
+/// them (one of Bloom's effects, the output page's groups) are made of these.
 class ControlGroup : public juce::Component
 {
 public:
     explicit ControlGroup (AmpSimProcessor& processor);
     ~ControlGroup() override;
+
+    /// Ten times a second while showing: status lines, meters, and what a mode dims or hides.
+    virtual void refresh() {}
+
+    /// The page became the visible one, or stopped being it (pages with their own timers start and stop them).
+    virtual void pageShown() {}
+    virtual void pageHidden() {}
 
 protected:
     Knob& addKnob (const juce::String& parameterId, const juce::String& caption, const juce::String& suffix = " dB",
@@ -87,10 +94,11 @@ private:
     std::vector<std::pair<juce::Rectangle<int>, juce::String>> headings, cards;
 };
 
-/// One block's editor, shown under the chain strip when its block is selected (UI_DESIGN "Layout",
-/// Editor). A page is a panel with a header (the section's colour, the block's name, where it sits, and
-/// its switch) over the block's controls, all built from the shared components and attached to their
-/// parameters. Pages exist all the time; only the selected one is visible, and only it is refreshed.
+/// One effect block's editor, shown under its tab on the Pre FX or Post FX page (or on the EQ page). A
+/// header (the block's name, where it sits, and its switch) over the block's controls, all built from the
+/// shared components and attached to their parameters. These pages kept their layouts from before the UI
+/// handoff, restyled in its tokens (ASSUMPTIONS H1). Pages exist all the time; only the selected one is
+/// visible, and only it is refreshed.
 class BlockPage : public ControlGroup
 {
 public:
@@ -98,13 +106,6 @@ public:
     ~BlockPage() override;
 
     BlockId getBlockId() const noexcept { return id; }
-
-    /// Ten times a second while showing: status lines, meters, and what a mode dims or hides.
-    virtual void refresh() {}
-
-    /// The page became the visible one, or stopped being it (pages with their own timers start and stop them).
-    virtual void pageShown() {}
-    virtual void pageHidden() {}
 
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -117,7 +118,7 @@ protected:
     juce::Rectangle<int> headerSpace;
     Switch* onSwitch = nullptr; // the block's own switch, in the header, when it has one
 
-    static constexpr int headerHeight = 36;
+    static constexpr int headerHeight = 28;
 
 private:
     const BlockId id;
@@ -148,20 +149,7 @@ void dim (juce::Component* c, bool used);
 
 // ---- Pages --------------------------------------------------------------------------------------------
 
-/// Input and output: the input gain and output level, and the footswitch's built-in controllers.
-class IoPage final : public BlockPage
-{
-public:
-    explicit IoPage (AmpSimProcessor& processor);
-
-private:
-    void layoutContent (juce::Rectangle<int> area) override;
-    Knob *input = nullptr, *output = nullptr;
-    ValueField *tapCc = nullptr, *freezeCc = nullptr, *sceneCc = nullptr;
-    juce::Label *tapLabel = nullptr, *freezeLabel = nullptr, *sceneLabel = nullptr, *note = nullptr;
-};
-
-/// The amp: three slot cards (load a capture, its status, the trims and the tone controls; click a card's
+/// (Replaced by the handoff's amp page in step 3.) The amp: three slot cards (load a capture, its status, the trims and the tone controls; click a card's
 /// Play to switch to it) and the input calibration under them.
 class AmpPage final : public BlockPage
 {

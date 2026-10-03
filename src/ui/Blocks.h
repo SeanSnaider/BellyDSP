@@ -58,4 +58,28 @@ BlockId blockFor (Section section, const juce::String& orderName);
 
 constexpr int numBlocks = (int) BlockId::count;
 
+/// The main area's pages (handoff 2 and 4.4): one per node of the signal chain along the bottom, and the
+/// tuner, opened from the top bar. The effect blocks live on the Pre FX and Post FX pages as tabs; the
+/// EQ node's page shows the post EQ (with a switch to the pre EQ).
+enum class PageId
+{
+    input,
+    preFx,
+    amp,
+    eq,
+    cab,
+    postFx,
+    output,
+    tuner,
+    count
+};
+
+constexpr int numPages = (int) PageId::count;
+
+/// A page's permanent name (its snapshot name, and the app state's "page last shown").
+const char* pageName (PageId page);
+
+/// The page a block's editor is on (Gate B is on the Pre FX page's gate tab, with Gate A).
+PageId pageFor (BlockId block);
+
 } // namespace ui

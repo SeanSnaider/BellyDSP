@@ -18,6 +18,9 @@ AmpSimProcessor::AmpSimProcessor()
     outputGainDb = raw ("output_gain");
     cabBypass = raw ("cab_bypass");
     ampSlot = raw (slotParamId);
+    ampBypass = raw ("amp_bypass");
+    preFxOn = raw ("pre_fx_on");
+    postFxOn = raw ("post_fx_on");
 
     for (int s = 0; s < numAmpSlots; ++s)
     {
@@ -79,6 +82,8 @@ AmpSimProcessor::AmpSimProcessor()
     highCutFreq = raw ("cab_highcut_freq");
     highCutSlope = raw ("cab_highcut_slope");
 
+    markCabFollowed();
+
     // The analyzer's ring and scratch are allocated once, here, never while audio runs.
     analyzerRing.prepare (analyzerRingSize);
     analyzerScratch.assign (2048, 0.0f);
@@ -121,6 +126,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout AmpSimProcessor::createParam
     layout.add (std::make_unique<Float> (juce::ParameterID { "output_gain", 1 }, "Output Level", levelRange, 0.0f, dB));
     layout.add (std::make_unique<Bool> (juce::ParameterID { "cab_bypass", 1 }, "Cab Bypass", false));
     layout.add (std::make_unique<Choice> (juce::ParameterID { slotParamId, 1 }, "Amp Slot", juce::StringArray { "Amp 1", "Amp 2", "Amp 3" }, 0));
+
+    // The signal chain's bypass dots (the UI handoff's bottom chain): the whole amp, and each effect
+    // section as a unit. A section switch never touches its blocks' own switches: a block runs when its
+    // own switch and its section's are both on (BUILD_PLAN decision log, 2026-10-03).
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "amp_bypass", 1 }, "Amp Bypass", false));
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "pre_fx_on", 1 }, "Pre FX On", true));
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "post_fx_on", 1 }, "Post FX On", true));
 
     // Input calibration (global settings, not part of presets): the analog level that reaches 0 dBFS on
     // this interface. +12 dBu is the Scarlett Solo 4th Gen's instrument input at minimum gain.
@@ -337,7 +349,16 @@ void AmpSimProcessor::applyCabParameters()
 void AmpSimProcessor::applyEffectParameters()
 {
     using Slot = ampsim::Chain::Slot;
-    chain.setBypassed (Slot::gateA, ! gateAParams.isOn()); // off, it keeps detecting (Chain: keepRunning)
+
+    // A block runs when its own switch is on and so is its section's (pre_fx_on, post_fx_on). The section
+    // switch goes through each block's own bypass crossfade, so switching a section is as click-free as
+    // switching its blocks one by one, and the blocks' parameters are never touched.
+    const auto preOn = preFxOn->load (std::memory_order_relaxed) >= 0.5f;
+    const auto postOn = postFxOn->load (std::memory_order_relaxed) >= 0.5f;
+    const auto pre = [preOn] (bool on) { return ! (on && preOn); };   // bypassed?
+    const auto post = [postOn] (bool on) { return ! (on && postOn); };
+
+    chain.setBypassed (Slot::gateA, pre (gateAParams.isOn())); // off, it keeps detecting (Chain: keepRunning)
     chain.gateA.setSettings (gateAParams.read());
     chain.setBypassed (Slot::gateB, ! gateBParams.isOn());
     chain.gateB.gate.setSettings (gateBParams.read());
@@ -346,34 +367,34 @@ void AmpSimProcessor::applyEffectParameters()
     // The drive circuits run on volts: 0 dBFS is the interface's full scale (as for the NAM calibration).
     const auto oversampling = params::oversamplingFactor (driveOversampling);
     const auto volts = params::voltsAtFullScale ((double) interfaceInputDbu->load (std::memory_order_relaxed));
-    chain.setBypassed (Slot::boost, ! boostParams.isOn()); // off, both keep running (Chain: keepRunning)
+    chain.setBypassed (Slot::boost, pre (boostParams.isOn())); // off, both keep running (Chain: keepRunning)
     chain.boost.setSettings (boostParams.read (oversampling, volts));
-    chain.setBypassed (Slot::overdrive, ! overdriveParams.isOn());
+    chain.setBypassed (Slot::overdrive, pre (overdriveParams.isOn()));
     chain.overdrive.setSettings (overdriveParams.read (oversampling, volts));
-    chain.setBypassed (Slot::preCompressor, ! preCompParams.isOn());
+    chain.setBypassed (Slot::preCompressor, pre (preCompParams.isOn()));
     chain.preCompressor.setSettings (preCompParams.read());
-    chain.setBypassed (Slot::preEq, ! preEqParams.isOn());
+    chain.setBypassed (Slot::preEq, pre (preEqParams.isOn()));
     chain.preEq.setSettings (preEqParams.read());
-    chain.setBypassed (Slot::postEq, ! postEqParams.isOn());
+    chain.setBypassed (Slot::postEq, post (postEqParams.isOn()));
     chain.postEq.setSettings (postEqParams.read());
-    chain.setBypassed (Slot::postCompressor, ! postCompParams.isOn());
+    chain.setBypassed (Slot::postCompressor, post (postCompParams.isOn()));
     chain.postCompressor.setSettings (postCompParams.read());
     // The harmonizer maps notes with the tuner's A4 (BUILD_PLAN "Harmonizer", Key and scale).
-    chain.setBypassed (Slot::harmonizer, ! harmonizerParams.isOn());
+    chain.setBypassed (Slot::harmonizer, post (harmonizerParams.isOn()));
     chain.harmonizer.setSettings (harmonizerParams.read ((double) tunerA4->load (std::memory_order_relaxed)));
-    chain.setBypassed (Slot::multivoicer, ! multivoicerParams.isOn());
+    chain.setBypassed (Slot::multivoicer, post (multivoicerParams.isOn()));
     chain.multivoicer.setSettings (multivoicerParams.read());
-    chain.setBypassed (Slot::bloom, ! bloomParams.isOn()); // Bloom takes this as its own bypass and keeps running
+    chain.setBypassed (Slot::bloom, post (bloomParams.isOn())); // Bloom takes this as its own bypass and keeps running
     chain.bloom.setSettings (bloomParams.read (getTempo(), bloomOrder()));
-    chain.setBypassed (Slot::chorus, ! chorusParams.isOn());
+    chain.setBypassed (Slot::chorus, post (chorusParams.isOn()));
     chain.chorus.setSettings (chorusParams.read (getTempo()));
-    chain.setBypassed (Slot::delay, ! delayParams.isOn()); // the delay and reverb take this as spillover
+    chain.setBypassed (Slot::delay, post (delayParams.isOn())); // the delay and reverb take this as spillover
     chain.delay.setSettings (delayParams.read (getTempo()));
 
     // Once the timer has written a footswitch's freeze into the switch, the switch is in charge again.
     if (freezeOverride >= 0 && freezeRequest.load (std::memory_order_relaxed) < 0 && (reverbParams.isFrozen() ? 1 : 0) == freezeOverride)
         freezeOverride = -1;
-    chain.setBypassed (Slot::reverb, ! reverbParams.isOn());
+    chain.setBypassed (Slot::reverb, post (reverbParams.isOn()));
     chain.reverb.setSettings (reverbParams.read (getTempo(), freezeOverride));
 }
 
@@ -589,6 +610,11 @@ void AmpSimProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     chain.outputGain.setGainDecibels (outputGainDb->load (std::memory_order_relaxed));
     chain.setBypassed (ampsim::Chain::Slot::cab, cabBypass->load (std::memory_order_relaxed) >= 0.5f);
 
+    // The amp's bypass crossfades the amp section out to its own input with the chain's 10 ms bypass
+    // fade. The three captures keep running on a copy of that input meanwhile (Chain: keepRunning), so
+    // their history is current and switching the amp back on is as seamless as switching slots.
+    chain.setBypassed (ampsim::Chain::Slot::amp, ampBypass->load (std::memory_order_relaxed) >= 0.5f);
+
     for (int s = 0; s < numAmpSlots; ++s)
     {
         auto& slot = chain.amp.slot (s);
@@ -623,6 +649,15 @@ void AmpSimProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         chain.process (io.getSubBlock (start, juce::jmin (maxChunk, (size_t) numSamples - start)));
 
     samplesProcessed += numSamples;
+
+    // The strip's gate light: whether Gate A is letting the guitar through. Its gain is the gate's (0 dB
+    // while it's off or its section is), and the light is on while that gain is above -6 dB (the gate's
+    // largest reduction in this buffer under 6 dB), so it goes out as the gate closes, not at the end of
+    // the release.
+    {
+        const auto gateRunning = gateAParams.isOn() && preFxOn->load (std::memory_order_relaxed) >= 0.5f;
+        gateOpen.store (! gateRunning || chain.gateA.getGainReductionDb() < gateOpenBelowReductionDb, std::memory_order_relaxed);
+    }
 
     // The analyzer's post tap: the post section's output (times the output level, which the GUI takes out).
     if (analyzerSource == AnalyzerTap::postSection)
@@ -726,6 +761,9 @@ void AmpSimProcessor::setStateInformation (const void* data, int sizeInBytes)
     // The tuner never comes back engaged: a session saved while tuning would otherwise open muted.
     if (auto* tunerSwitch = parameters.getParameter ("tuner_on"))
         tunerSwitch->setValueNotifyingHost (0.0f);
+
+    // A restored session brings its own cab: following starts from the slot it was saved on.
+    markCabFollowed();
 
     // MIDI mappings (states saved before they existed have none).
     midiMap = MidiMap::fromVar (juce::JSON::parse (state.getProperty (midiMapKey).toString()), parameters);
@@ -841,6 +879,45 @@ void AmpSimProcessor::loadCabIR (int mic, const juce::File& file)
             packActive[(size_t) mic] = chain.cab.hasPack (mic); // a file replaces the pack; a failed load keeps it
         --loadsInFlight;
     });
+}
+
+void AmpSimProcessor::setCabFollow (bool shouldFollow)
+{
+    parameters.state.setProperty (cabFollowKey, shouldFollow, nullptr);
+    markCabFollowed();
+    if (shouldFollow)
+        applyCabAssignment (lastFollowedSlot);
+}
+
+juce::File AmpSimProcessor::getCabAssignment (int slot) const
+{
+    const auto path = parameters.state.getProperty (cabAssignKey (juce::jlimit (0, numAmpSlots - 1, slot))).toString();
+    return juce::File::isAbsolutePath (path) ? juce::File (path) : juce::File();
+}
+
+void AmpSimProcessor::setCabAssignment (int slot, const juce::File& fileOrPack)
+{
+    const auto key = cabAssignKey (juce::jlimit (0, numAmpSlots - 1, slot));
+    if (fileOrPack == juce::File())
+        parameters.state.removeProperty (key, nullptr);
+    else
+        parameters.state.setProperty (key, fileOrPack.getFullPathName(), nullptr);
+}
+
+void AmpSimProcessor::pickCab (const juce::File& fileOrPack)
+{
+    loadCabIR (0, fileOrPack);
+    setCabAssignment (juce::roundToInt (ampSlot->load()), fileOrPack);
+}
+
+void AmpSimProcessor::applyCabAssignment (int slot)
+{
+    // Only a slot with a cab assigned changes anything, and only if close mic 1 holds something else.
+    const auto assigned = getCabAssignment (slot);
+    if (assigned == juce::File() || ! assigned.exists())
+        return;
+    if (parameters.state.getProperty (cabPathKey (0)).toString() != assigned.getFullPathName())
+        loadCabIR (0, assigned);
 }
 
 ampsim::NamAmp::Calibration AmpSimProcessor::currentCalibration() const
@@ -990,6 +1067,14 @@ void AmpSimProcessor::timerCallback()
     if (const auto slot = midiSlotRequest.exchange (-1); slot >= 0)
         if (auto* param = parameters.getParameter (slotParamId))
             param->setValueNotifyingHost (param->convertTo0to1 ((float) slot));
+
+    // Follow amp choice: a new slot brings its own cab into close mic 1.
+    if (const auto slot = juce::roundToInt (ampSlot->load()); slot != lastFollowedSlot)
+    {
+        lastFollowedSlot = slot;
+        if (isCabFollowing())
+            applyCabAssignment (slot);
+    }
 
     const auto now = juce::Time::getMillisecondCounterHiRes();
 

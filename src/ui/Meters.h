@@ -7,10 +7,11 @@
 namespace ui
 {
 
-/// A peak meter (UI_DESIGN "Meter"): vertical bars on a -60 to 0 dBFS scale, green to -12 dBFS, amber
-/// to -3, red above; a peak-hold line that stays 1.5 s; and a clip light that latches until the meter is
-/// clicked. The editor feeds it the processor's peaks 30 times a second (the audio thread only writes
-/// atomics); it falls at 24 dB a second and repaints only when what it shows changes.
+/// A peak meter (handoff 4.3: the top bar's In and Out): the label in 11 px ink-faint, then a 56 x 2 bar on
+/// a -60 to 0 dBFS scale, emerald on line-2. It keeps a peak hold (1.5 s) and a clip latch that a click
+/// clears; the hold shows as a 1 px ink-dim tick and a latched clip as an ink cap at the bar's end (no
+/// warning colours, H5). The editor feeds it the processor's peaks 30 times a second (the audio thread
+/// only writes atomics); it falls at 24 dB a second and repaints only when what it shows changes.
 class LevelMeter final : public juce::Component, public juce::SettableTooltipClient
 {
 public:
@@ -39,6 +40,11 @@ private:
         bool clipped = false;
     };
 
+public:
+    /// Where the bar is, for layout: the label's width plus the gap.
+    int getPreferredWidth() const;
+
+private:
     juce::String label;
     std::vector<Channel> channels;
     std::vector<Channel> drawn; // what was painted last, to repaint only on change
@@ -57,7 +63,8 @@ private:
     float reductionDb = 0.0f;
 };
 
-/// The CPU meter: the audio callback's time against its deadline (ASSUMPTIONS U5), as a number and a bar.
+/// The CPU meter: the audio callback's time against its deadline (ASSUMPTIONS U5), as a number and a
+/// 56 x 2 bar like the level meters.
 class CpuMeter final : public juce::Component
 {
 public:

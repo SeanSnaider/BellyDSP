@@ -68,7 +68,7 @@ void TunerView::paint (juce::Graphics& g)
     g.fillAll (background);
 
     // The heading.
-    g.setFont (font ("Semibold", 12.0f).withExtraKerningFactor (0.1f));
+    g.setFont (font ("Semibold", 12.0f).withKerningFactor (0.1f));
     g.setColour (textDim);
     g.drawText ("TUNER", getLocalBounds().reduced (space::xl, space::l).withHeight (32), juce::Justification::centredLeft, false);
 
