@@ -6,17 +6,21 @@ Current target: a standalone macOS app that plays live through a Focusrite Scarl
 
 ## Features
 
-Working now (see `docs/PROGRESS.md` for status and the measurements behind each item):
+Everything in the plan is built (see `docs/PROGRESS.md` for the measurements behind each item, and `docs/ASSUMPTIONS.md` for the choices waiting on Sean's review):
 
-- **Amps.** Three always-running NAM slots (any `.nam` capture), switched seamlessly from the GUI or a MIDI footswitch (program change 1/2/3). Each is loudness-normalized, calibrated to the capture's recorded input level, and has trims plus five tone bands (depth, bass, mid, treble, presence).
-- **Cab.** Two close mics and a stereo room mic, each an IR, with level, pan, polarity, delay, and mute; auto phase alignment; low and high cuts. A close mic loaded with a cab pack (a folder of IRs at different mic positions) moves on a position pad, morphing between captures without comb filtering.
-- **Pre FX** (reorderable): compressor (Studio and Pedal modes) and EQ (accurate 9-band graphic or 5-band parametric, plus cuts).
-- **Post FX** (reorderable): EQ, compressor, chorus (Classic, Dimension, Tri), delay (digital, analog, tape; stereo, ping-pong, dual; tempo sync, tap tempo, ducking), and reverb (Room, Hall, Plate; freeze). Delay and reverb tails spill over when bypassed.
-- **Tempo.** A global tempo, tapped from the GUI or a footswitch CC; the delay, chorus, and reverb pre-delay can sync to it.
-- **Presets.** Save and load the whole sound as JSON; loading while playing fades out and back in.
-- A basic panel (Amps, Cab, Pre FX, Post FX, Time FX); the real GUI comes last.
+- **Amps.** Three always-running NAM slots (any `.nam` capture), switched seamlessly from the panel or a MIDI footswitch (program change 1/2/3). Each is loudness-normalized, calibrated to the capture's recorded input level, and has trims plus five tone bands.
+- **Cab.** Two close mics and a stereo room mic, each an IR, with level, pan, polarity, delay, and mute; auto phase alignment; low and high cuts. A close mic loaded with a cab pack moves on a position pad, morphing between captures.
+- **Gates.** Gate A before the amp and Gate B after it, linked by default (one decision applied at both points), detecting from the clean DI, with adaptive release, hysteresis, hold, and Learn.
+- **Drive.** A boost (Clean, Tight, Screamer) and an overdrive (Mid Drive, Distortion, Transparent, Fuzz), modelled from the schematics and validated against circuit simulations, oversampled 4x or 8x with no added latency.
+- **Pre FX** (reorderable): Gate A, compressor (Studio and Pedal), boost, overdrive, EQ (accurate 9-band graphic or 5-band parametric, plus cuts).
+- **Post FX** (reorderable): EQ, compressor, a key-aware 4-voice harmonizer, an 8-voice multivoicer (Poly or Mono), Bloom (bitcrush, phaser with Classic, Modern, and Vibe, flanger with through-zero), chorus (Classic, Dimension, Tri), delay (digital, analog, tape; stereo, ping-pong, dual; ducking), and reverb (Room, Hall, Plate; freeze; shimmer). Delay and reverb tails spill over when bypassed.
+- **Tuner.** Needle and strobe, 0.1 cent resolution, A4 from 430 to 450 Hz, muting while engaged.
+- **Tempo.** A global tempo, tapped from the panel or a footswitch; the delay, chorus, phaser, flanger, and reverb pre-delay can sync to it.
+- **Presets and scenes.** JSON presets with library-relative files found again by content hash when moved, eight scenes per preset switched from a footswitch, undo/redo, A/B, and five factory style presets (Polyphia, CHON, Tech Death, Metal, Midwest Emo).
+- **MIDI.** Right-click any control to MIDI-learn a footswitch (toggle or momentary) or an expression pedal; mappings are saved with presets.
+- **Real time.** Zero added latency (only the opt-in through-zero flanger reports 5 ms), no allocation, freeing, or locking on the audio thread (tested on every feature), and the whole rig with every block on at about 18% of a 128-sample buffer's time.
 
-Planned: two linked noise gates, boost, overdrive and fuzz, a tuner, Bloom (bitcrush, phaser, flanger), a multivoicer and shimmer reverb, a key-aware 4-voice harmonizer, scenes, MIDI learn, five style presets (Polyphia, CHON, Tech Death, Metal, Midwest Emo), and the real UI.
+The panel is the basic one; the real GUI is being built from `docs/UI_DESIGN.md`.
 
 ## Building
 
@@ -37,7 +41,9 @@ open "build/AmpSim_artefacts/Release/Standalone/Amp Sim.app"
 | `src/dsp/` | The DSP: the Block interface, the chain, every amp, cab, filter, and effect |
 | `src/PluginProcessor.*` | Parameters, state, file loading, MIDI, and the audio callback, which just drives the chain |
 | `src/BlockParameters.*`, `src/Presets.*` | Parameter glue for each effect block, and the preset format |
-| `src/PluginEditor.*` | The basic panel |
+| `src/PluginEditor.*` | The panel |
+| `presets/factory/` | The factory presets, embedded in the app |
+| `docs/UI_DESIGN.md` | The GUI's design system (a proposal waiting on Sean's direction) |
 | `tools/render/` | `ampsim_render`: runs a WAV through the chain offline, with CPU timing |
 | `tools/device_probe/` | `ampsim_device_probe`: opens the interface and reports timing and input levels |
 | `tests/` | The test suite (`ampsim_tests`), including real-time safety and NAM differential tests |
