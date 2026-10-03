@@ -158,7 +158,7 @@ tools/release/update_e2e.sh 0.1.0 0.1.1 --wrong-key some-other.key   # make one 
 
 ## Bundled content
 
-`content/` holds captures and IRs that ship inside the app (empty until the starter pack is chosen). The build copies it into `Amp Sim.app/Contents/Resources/content` (Windows: `content\` next to the exe, which the installer installs). Presets refer to those files as `factory:models/...` and `factory:irs/...`, resolved against the installed app wherever it is; the preset format stays version 2. Every file needs an entry in `content/manifest.json` (source, author, licence, licence text), or the build stops; the entries become their section of `THIRD_PARTY_NOTICES.txt`. Details in `content/README.md`.
+`content/` holds captures and IRs that ship inside the app: so far 21 cab IRs from two CC0 packs (`content/irs`), with Sean's own captures to come (`docs/CAPTURING.md`). The build copies it into `Amp Sim.app/Contents/Resources/content` (Windows: `content\` next to the exe, which the installer installs). Presets refer to those files as `factory:models/...` and `factory:irs/...`, resolved against the installed app wherever it is; the preset format stays version 2. Every file needs an entry in `content/manifest.json` (source, author, licence, licence text), or the build stops; the entries become their section of `THIRD_PARTY_NOTICES.txt`. Details in `content/README.md`.
 
 ## Licences
 

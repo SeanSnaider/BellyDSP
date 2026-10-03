@@ -53,9 +53,11 @@ Friends get Amp Sim from a public releases repo, and it updates itself (Sparkle 
 | `resources/fonts/` | Geist and Fraunces (SIL OFL, licences alongside), embedded in the app |
 | `tools/render/` | `ampsim_render`: runs a WAV through the chain offline, with CPU timing |
 | `tools/device_probe/` | `ampsim_device_probe`: opens the interface and reports timing and input levels |
+| `tools/capture/`, `tools/train_capture.sh`, `tools/fetch_nam_input.sh` | Capturing your own gear for NAM: `ampsim_capture` plays NAM's input file through the gear and records it, and the trainer wrapper runs NAM's official trainer on it (`docs/CAPTURING.md`) |
+| `tools/content/` | The scripts that imported the bundled cab IRs and ranked them |
 | `tools/release/`, `tools/fetch_deps.sh`, `tools/notices/` | The release pipeline: signing, packaging, appcasts, publishing, the update test, the licence notices |
 | `installer/` | The DMG's read-me and the Windows installer script (Inno Setup) |
-| `content/` | Captures and IRs bundled with the app (empty for now), each with its licence in `manifest.json` |
+| `content/` | Captures and IRs bundled with the app (so far two CC0 cab IR packs, 21 IRs), each with its licence in `manifest.json` |
 | `release-notes/` | One Markdown file per released version |
 | `.github/workflows/` | The Windows build and installer, and an on-demand macOS test run |
 | `tests/` | The test suite (`ampsim_tests`), including real-time safety and NAM differential tests |

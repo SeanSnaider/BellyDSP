@@ -613,6 +613,11 @@ void AmpSimEditor::showCaptureMenu (int slot, juce::Component& near)
 
 void AmpSimEditor::showMicMenu (int mic, juce::Component& near)
 {
+    ui::showMenu (micMenu (mic), &near, &lookAndFeel, true);
+}
+
+juce::PopupMenu AmpSimEditor::micMenu (int mic)
+{
     // A mic's file: load an IR (or, for a close mic, a cab pack), or clear it. Close mic 1's loads count as
     // picks: they're assigned to the playing amp slot (UH8).
     juce::PopupMenu menu;
@@ -632,6 +637,31 @@ void AmpSimEditor::showMicMenu (int mic, juce::Component& near)
         if (safe != nullptr)
             safe->chooseFile ("Choose an impulse response", "*.wav;*.aif;*.aiff;*.flac", AmpSimProcessor::cabPathKey (mic), load);
     });
+    // The IRs bundled with the app (inside the app, where a file chooser can't easily reach), a submenu
+    // per cab as on the cab page's list.
+    juce::StringArray groups;
+    std::vector<juce::PopupMenu> groupMenus;
+    for (const auto& e : cabView->getEntries())
+    {
+        if (! e.builtIn || e.pack)
+            continue;
+        auto index = groups.indexOf (e.group);
+        if (index < 0)
+        {
+            groups.add (e.group);
+            groupMenus.emplace_back();
+            index = groups.size() - 1;
+        }
+        const auto file = e.file;
+        groupMenus[(size_t) index].addItem (e.name, [load, file] { load (file); });
+    }
+    if (! groups.isEmpty())
+    {
+        juce::PopupMenu builtIn;
+        for (int i = 0; i < groups.size(); ++i)
+            builtIn.addSubMenu (groups[i].startsWith ("Built in, ") ? groups[i].substring (10) : groups[i], groupMenus[(size_t) i]);
+        menu.addSubMenu ("Built-in IRs", builtIn);
+    }
     if (mic != AmpSimProcessor::roomMic)
         menu.addItem ("Load a cab pack folder (makes the mic movable)...", [safe, mic, load]
         {
@@ -644,7 +674,7 @@ void AmpSimEditor::showMicMenu (int mic, juce::Component& near)
         if (safe != nullptr)
             safe->ampSim.clearCabIR (mic);
     });
-    ui::showMenu (menu, &near, &lookAndFeel, true);
+    return menu;
 }
 
 // ---- A/B and scenes ---------------------------------------------------------------------------------

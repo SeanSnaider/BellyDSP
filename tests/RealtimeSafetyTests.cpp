@@ -320,7 +320,7 @@ public:
             logMessage ("  -> " + juce::String (blocks) + " blocks (" + juce::String (blocks * blockSize / fs, 1)
                         + " s of audio): 3 capture loads (" + juce::String (modelFadeBlocks) + " blocks mid-crossfade), "
                         "3 slot switches from the GUI and the footswitch (" + juce::String (slotSwitchBlocks)
-                        + " blocks mid-crossfade), 3 IR loads into the three cab mics plus an IR swap, auto alignment, 6 cab mic changes, cuts on, off, re-sloped and swept, "
+                        + " blocks mid-crossfade), 3 IR loads into the three cab mics plus an IR swap and a built-in 1 s IR from the app's content folder, auto alignment, 6 cab mic changes, cuts on, off, re-sloped and swept, "
                         "a cab pack loaded into close mic 2 and dragged around (" + juce::String (morphs) + " re-morphs), cab bypass off and on, 5 knob ramps, "
                         "an interface-level change that recalibrated and reloaded every capture, "
                         "both compressors switched on (one to pedal mode, one to RMS), EQ sliders and bands moved, graphic -> parametric, "

@@ -90,6 +90,9 @@ public:
     /// The brand's menu (a click on "rig" shows it): "Amp Sim <version>", "Check for updates..." (enabled
     /// when this build has an updater running), and "About / licenses" (ASSUMPTIONS DS9).
     juce::PopupMenu brandMenu();
+    /// A cab mic's load menu (0, 1, or the room): Load an IR file, Built-in IRs (a submenu per bundled
+    /// cab, as on the cab page), Load a cab pack folder (close mics), Clear.
+    juce::PopupMenu micMenu (int mic);
 
     /// What "About / licenses" shows: the name, version, update status, and THIRD_PARTY_NOTICES.txt.
     static juce::String aboutText();

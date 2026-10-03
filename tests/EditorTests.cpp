@@ -405,6 +405,38 @@ public:
             expectEquals (presets::makeRef (picked, "irs").path, mic1.path);
             expect (mic1.hash.startsWith ("fnv1a64:") && mic1.size == picked.getSize());
 
+            // Mic B's load menu reaches the same IRs (inside the app, where a file chooser can't easily go):
+            // a "Built-in IRs" submenu with a submenu per cab; choosing one loads it into close mic 2.
+            juce::StringArray micMenuCabs;
+            int micMenuItems = 0;
+            std::function<void()> loadVintage;
+            const auto micBMenu = ed.micMenu (1); // kept alive: the iterator only refers to it
+            for (juce::PopupMenu::MenuItemIterator it (micBMenu); it.next();)
+                if (it.getItem().text == "Built-in IRs" && it.getItem().subMenu != nullptr)
+                    for (juce::PopupMenu::MenuItemIterator cabs (*it.getItem().subMenu); cabs.next();)
+                    {
+                        micMenuCabs.add (cabs.getItem().text);
+                        if (cabs.getItem().subMenu != nullptr)
+                            for (juce::PopupMenu::MenuItemIterator irs (*cabs.getItem().subMenu); irs.next();)
+                            {
+                                ++micMenuItems;
+                                if (irs.getItem().text == "Dynamic, upper, var. 2")
+                                    loadVintage = irs.getItem().action;
+                            }
+                    }
+            expect (micMenuCabs == juce::StringArray { "Modern 4x12", "Vintage 4x12" }, micMenuCabs.joinIntoString (", "));
+            expectEquals (micMenuItems, bundledIRs);
+            expect (loadVintage != nullptr);
+            if (loadVintage != nullptr)
+                loadVintage();
+            waitForLoads (p);
+            p.runHousekeeping();
+            expect (p.getStatus().cab[1].contains ("Vintage 4x12, dynamic, upper, var. 2"), p.getStatus().cab[1]);
+            expectEquals (presets::FileRef::fromVar (p.capturePreset ("Two cabs")["cab"]["mic2"]).path,
+                          juce::String ("factory:irs/Vintage 4x12/Vintage 4x12, dynamic, upper, var. 2.wav"));
+            p.clearCabIR (1);
+            waitForLoads (p);
+
             // The selection scrolled into view: the picked entry's row is inside the viewport.
             const auto top = cab.entryTop (pickIndex);
             const auto viewY = viewport.getViewPositionY();
@@ -429,6 +461,8 @@ public:
             logMessage ("  -> widest built-in name \"" + widestName + "\": " + juce::String (widest, 1) + " px of " + juce::String (textArea) + " px");
             logMessage ("  -> picked \"" + entries[(size_t) pickIndex].name + "\": close mic 1 \"" + p.getStatus().cab[0] + "\", saved as \"" + mic1.path + "\" ("
                         + mic1.hash + ", " + juce::String (mic1.size) + " bytes), also assigned to slot 1; scrolled into view: " + (visibleAfterPick ? "yes" : "no"));
+            logMessage ("  -> Mic B's menu: Built-in IRs > " + micMenuCabs.joinIntoString (", ") + " (" + juce::String (micMenuItems)
+                        + " IRs); choosing \"Dynamic, upper, var. 2\" loaded close mic 2, saved as factory:irs/Vintage 4x12/...");
         }
 
         beginTest ("tuner page: a real tone through the tuner thread, in tune and 13 cents sharp; strings, targeting, tunings; compared with the handoff");

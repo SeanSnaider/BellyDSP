@@ -64,6 +64,8 @@ New algorithms get prototyped in `prototypes/` first when there's any doubt abou
 | `open "build/AmpSim_artefacts/Release/Standalone/Amp Sim.app"` | Run the app |
 | `build/ampsim_render_artefacts/Release/ampsim_render --model amp.nam --ir cab.wav di.wav out.wav` | Render a DI file offline through the same chain, with CPU timing |
 | `build/ampsim_device_probe_artefacts/Release/ampsim_device_probe` | Open the Solo with silent output and report callback timing and input levels |
+| `build/ampsim_capture_artefacts/Release/ampsim_capture --level-check --in-channel 1` | Capture tool (docs/CAPTURING.md): play NAM's input file through gear and record it; `--simulate drive` needs no hardware |
+| `tools/train_capture.sh --input build-deps/nam/input.wav --output <rec.wav> --name <n> --tone-type <t> --gear-type <g>` | Train a capture with NAM's official trainer (pinned in tools/deps.conf) |
 | `python prototypes/amp_sim.py <di.wav> --all-channels` | Render the old gray-box Python amps (reference only) |
 | `tools/fetch_deps.sh` | Download the pinned Sparkle (and with `--windows`, WinSparkle) into `build-deps/` |
 | `tools/release/release.sh <version> [--dry-run]` | Build, test, sign, package, and publish a release (docs/RELEASING.md). Never run it without `--dry-run` unless Sean asks |
