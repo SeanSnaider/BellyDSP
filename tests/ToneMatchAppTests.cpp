@@ -60,7 +60,9 @@ juce::String snapshotOf (AmpSimProcessor& p)
         for (const auto* name : { "input_trim", "depth", "bass", "mid", "treble", "presence" })
             ids.add (AmpSimProcessor::ampParamId (slot, name));
     ids.addArray ({ "eq_post_on", "eq_post_mode", "eq_post_b1_type", "eq_post_b1_gain", "eq_post_b2_freq", "eq_post_b3_q", "eq_post_b5_gain",
-                    "cab_mic2_mute", "cab_room_mute", "post_fx_on" });
+                    "cab_mic2_mute", "cab_room_mute", "post_fx_on",
+                    // the pre effects Apply switches off, and the gates it leaves alone
+                    "comp_pre_on", "boost_on", "od_on", "eq_pre_on", "gate_a_on", "gate_b_on", "pre_fx_on" });
     juce::StringArray values;
     for (const auto& id : ids)
         values.add (id + "=" + juce::String (getParam (p, id), 2));
@@ -181,8 +183,17 @@ public:
             // Settings that Apply must change, and that undo must bring back.
             setParam (p, AmpSimProcessor::slotParamId, 0.0f);
             setParam (p, "eq_post_mode", 0.0f);
+            // Pre effects in a mix of states: Apply must switch the tone-coloring ones off, leave the gate
+            // alone, and undo must put each back exactly as it was.
+            setParam (p, "pre_fx_on", 1.0f);
+            setParam (p, "comp_pre_on", 1.0f);
+            setParam (p, "boost_on", 1.0f);
+            setParam (p, "od_on", 0.0f);
+            setParam (p, "eq_pre_on", 1.0f);
+            setParam (p, "gate_a_on", 1.0f);
             p.loadCabIR (0, platform::factoryContentFolder().getChildFile ("irs/Vintage 4x12/Vintage 4x12, supercardioid, upper.wav"));
             waitForLoads (p);
+            p.parameters.copyState(); // writes the settings above into the state now, before the history is cleared
             p.undoManager.beginNewTransaction();
             p.undoManager.clearUndoHistory();
             const auto before = snapshotOf (p);
@@ -201,6 +212,9 @@ public:
             expect (session.hasResult(), session.getError());
             const auto r = session.getResult(); // a copy: Discard clears the session's
             pngs.add (snap ("04_result"));
+            const auto note = page.getApplyNote();
+            expectEquals (note, juce::String ("Apply sets these as normal settings, in one undo step, and switches off the pre effects: compressor, boost, overdrive, pre EQ (on now: compressor, boost, pre EQ). "
+                                              "The noise gate stays as it is."));
 
             page.apply();
             waitForLoads (p);
@@ -214,6 +228,10 @@ public:
             expectEquals (cabPath (p), r.cab.getFullPathName());
             expectEquals (p.getCabAssignment (r.slot).getFullPathName(), r.cab.getFullPathName());
             expect (getParam (p, "cab_mic2_mute") > 0.5f && getParam (p, "cab_room_mute") > 0.5f);
+            for (const auto* id : { "comp_pre_on", "boost_on", "od_on", "eq_pre_on" })
+                expect (getParam (p, id) < 0.5f, juce::String (id) + " must be off after Apply");
+            expect (getParam (p, "gate_a_on") > 0.5f, "Apply must leave the noise gate on");
+            expect (getParam (p, "pre_fx_on") > 0.5f, "Apply leaves the pre section's own switch alone");
             pngs.add (snap ("05_applied"));
 
             // One undo step puts everything back, the cab included; redo applies it again.
@@ -229,6 +247,7 @@ public:
             waitForLoads (p);
             expectEquals (cabPath (p), r.cab.getFullPathName());
             expectEquals ((int) getParam (p, AmpSimProcessor::slotParamId), r.slot);
+            expect (getParam (p, "boost_on") < 0.5f && getParam (p, "comp_pre_on") < 0.5f && getParam (p, "eq_pre_on") < 0.5f);
 
             page.discard();
             expect (! session.hasResult() && ! page.getApplyButton().isEnabled());
@@ -240,7 +259,8 @@ public:
                         + juce::String (midMs, 0) + " ms in");
             logMessage ("  -> before: " + before);
             logMessage ("  -> applied: " + after);
-            logMessage ("  -> one undo: " + undone + " (identical to before, the cab included; nothing left to undo); redo re-applied; Discard cleared the result");
+            logMessage ("  -> one undo: " + undone + " (identical to before, the cab and every pre effect switch included; nothing left to undo); redo re-applied; Discard cleared the result");
+            logMessage ("  -> the page's Apply note: \"" + note + "\"");
             logMessage ("  -> snapshots: tone_match/" + pngs.joinIntoString (", tone_match/"));
         }
 
@@ -264,6 +284,63 @@ public:
             expectEquals (page.getStatusText(), juce::String ("Cancelled"));
             expect (page.getMatchButton().isEnabled());
             logMessage ("  -> cancelled 300 ms into a same-part match: no result, the page says \"" + page.getStatusText() + "\", and Match is enabled again");
+        }
+
+        beginTest ("the result lines break only between items, so a value never parts from its unit");
+        {
+            const auto f = juce::Font (ui::theme::font (ui::theme::Text::label));
+            const juce::StringArray bands { "low shelf 134 Hz -3.2 dB", "401 Hz -6.6 dB", "943 Hz +2.2 dB", "high shelf 2000 Hz -2.8 dB", "5362 Hz -1.8 dB" };
+            juce::StringArray report;
+            for (const auto width : { 560.0f, 420.0f, 300.0f, 200.0f })
+            {
+                const auto lines = ui::ToneMatchPage::packItems (f, "Match EQ", bands, width);
+                // Every band is on exactly one line, whole; the lines hold all of them, in order.
+                juce::StringArray rebuilt;
+                for (int l = 0; l < lines.size(); ++l)
+                    rebuilt.add ((l == 0 ? lines[l].fromFirstOccurrenceOf ("Match EQ  ", false, false) : lines[l]).trimCharactersAtEnd (","));
+                expectEquals (rebuilt.joinIntoString (", ").replace (",,", ","), bands.joinIntoString (", "));
+                int wholeBands = 0;
+                for (const auto& band : bands)
+                    for (const auto& line : lines)
+                        wholeBands += line.contains (band) ? 1 : 0;
+                expectEquals (wholeBands, bands.size());
+                for (const auto& line : lines)
+                    expect (! line.endsWith ("Hz") && ! line.endsWithChar ('2') && ! line.startsWith ("dB") && ! line.startsWith ("Hz"), line);
+                report.add (juce::String (width, 0) + " px: " + juce::String (lines.size()) + " lines");
+            }
+            logMessage ("  -> five bands at " + report.joinIntoString ("; ") + "; each band whole on one line at every width");
+        }
+
+        beginTest ("a separation that fails shows its reason on the page, in full; snapshot at 2x");
+        {
+            WithBuiltInCaptures builtIns;
+            AmpSimProcessor p;
+            waitForLoads (p);
+            p.prepareToPlay (fs, blockSize);
+            std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+            auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
+            ed.showPage (ui::PageId::toneMatch);
+            auto& page = ed.getToneMatchPage();
+            auto& session = page.getSession();
+            expect (session.setTargetFile (fixtures().getChildFile ("target_anything.wav")));
+            expect (session.setReferenceFile (fixtures().getChildFile ("reference_di.wav")));
+            session.setSeparate (true);
+            // The message the installer gives when the server says 404 (ToneMatchSeparationTests checks the real one).
+            const juce::String reason = "couldn't download the separation model: huggingface.co answered HTTP 404 Not Found (details: "
+                                        + juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getFullPathName()
+                                        + "/Application Support/BellyDSP/separation-log.txt)";
+            session.setSeparator ([reason] (const std::vector<float>&, const std::atomic<bool>&, const ampsim::tonematch::ProgressFn&, juce::String& error) {
+                error = reason;
+                return std::vector<float>();
+            });
+            page.startMatch();
+            expect (session.waitForMatch (10000));
+            page.refresh();
+            expectEquals (page.getStatusText(), "Separation failed: " + reason);
+            const auto file = shots.getChildFile ("06_separation_error.png");
+            ed.refresh();
+            expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), file));
+            logMessage ("  -> the page says \"" + page.getStatusText() + "\"; snapshot tone_match/" + file.getFileName());
         }
     }
 

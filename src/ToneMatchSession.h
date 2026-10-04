@@ -9,6 +9,7 @@
 #include <atomic>
 #include <mutex>
 #include <thread>
+#include <vector>
 
 /// Tone match in the app (docs/TONE_MATCH.md): what the tone match page drives. It holds the target (a
 /// file and the range chosen in it), the reference (the player's DI, recorded through the processor's
@@ -90,8 +91,20 @@ public:
 
     /// The result as settings: amp_slot, that slot's Gain and tone, the post EQ (on, parametric, the five
     /// bands, its cuts off), close mic 1's cab with close mic 2 and the room muted and the cab's cuts off,
-    /// the amp, cab, and post section on. One undo step (the cab load included). False without a result.
+    /// the amp, cab, and post section on; and the pre effects that color the tone before the amp switched
+    /// off (preEffectsApplyTurnsOff; the noise gate is left as it is: ASSUMPTIONS TM19). One undo step (the
+    /// cab load included). False without a result.
     bool apply();
+
+    /// The pre effects Apply switches off: their on/off parameter IDs and names, in chain order.
+    struct PreEffect
+    {
+        const char* parameterId;
+        const char* name;
+    };
+    static const std::vector<PreEffect>& preEffectsApplyTurnsOff();
+    /// The names of those that are on right now ("boost, overdrive"), for the page.
+    juce::StringArray preEffectsOnNow() const;
     void discard();
 
     /// The cab files the search chooses from: the built-in IRs, sorted by path (as the prototype sorts them).

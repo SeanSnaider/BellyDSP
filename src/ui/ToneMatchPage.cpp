@@ -345,14 +345,15 @@ ToneMatchPage::ToneMatchPage (AmpSimProcessor& p)
       session (p)
 {
     // Separation (Stage C): on the session's worker thread, install the model the first time (the download's
-    // size is said on the page before anyone switches it on), then separate.
-    session.setSeparator ([sep = separator.get()] (const std::vector<float>& x, const std::atomic<bool>& cancel,
-                                                   const ampsim::tonematch::ProgressFn& progress, juce::String& problem) {
-        using GS = ampsim::tonematch::GuitarSeparator;
+    // size is said on the page before anyone switches it on), then separate. The separator and the URL are
+    // read when a match starts (setSeparationSource doesn't change them while one runs).
+    session.setSeparator ([this] (const std::vector<float>& x, const std::atomic<bool>& cancel,
+                                  const ampsim::tonematch::ProgressFn& progress, juce::String& problem) {
+        auto* sep = separator.get();
         const auto installShare = sep->isInstalled() ? 0.0 : 0.3;
         if (! sep->isInstalled())
         {
-            problem = sep->install (GS::weightsUrl, cancel, [&] (double f, const juce::String& s) { progress (installShare * f, s); });
+            problem = sep->install (separationUrl, cancel, [&] (double f, const juce::String& s) { progress (installShare * f, s); });
             if (problem.isNotEmpty())
                 return std::vector<float>();
         }
@@ -398,6 +399,15 @@ ToneMatchPage::ToneMatchPage (AmpSimProcessor& p)
 ToneMatchPage::~ToneMatchPage()
 {
     stopTimer();
+}
+
+void ToneMatchPage::setSeparationSource (const juce::File& modelFolder, const juce::String& url)
+{
+    jassert (! session.isMatching());
+    if (session.isMatching())
+        return;
+    separator = std::make_unique<ampsim::tonematch::GuitarSeparator> (modelFolder);
+    separationUrl = url;
 }
 
 void ToneMatchPage::pageShown()
@@ -518,27 +528,76 @@ void ToneMatchPage::filesDropped (const juce::StringArray& files, int x, int y)
 
 void ToneMatchPage::updateResultText()
 {
+    resultLabels.clear();
+    resultItems.clear();
     if (! session.hasResult())
     {
         resultText.clear();
         return;
     }
     const auto& r = session.getResult();
-    juce::StringArray lines;
     const auto capture = ampSim.getSlotCapture (r.slot).getFileNameWithoutExtension();
-    lines.add ("Amp  " + capture + " (slot " + juce::String (r.slot + 1) + "), Gain " + signedDb (r.gainDb));
+    auto add = [this] (const juce::String& label, juce::StringArray items) {
+        resultLabels.add (label);
+        resultItems.push_back (std::move (items));
+    };
+    add ("Amp", { capture + " (slot " + juce::String (r.slot + 1) + ")", "Gain " + signedDb (r.gainDb) });
     juce::StringArray tone;
     for (size_t b = 0; b < ampsim::AmpTone::numBands; ++b)
         tone.add (juce::String (ampsim::AmpTone::bands[b].name) + " " + signedDb (r.tone[b]));
-    lines.add ("Tone  " + tone.joinIntoString (", "));
-    lines.add ("Cab  " + r.cab.getFileNameWithoutExtension());
+    add ("Tone", tone);
+    add ("Cab", { r.cab.getFileNameWithoutExtension() });
+
+    // The match EQ's audible bands, low to high.
+    auto bands = std::vector<ampsim::Equalizer::Band> (r.eq.begin(), r.eq.end());
+    std::sort (bands.begin(), bands.end(), [] (const auto& x, const auto& y) { return x.frequency < y.frequency; });
     juce::StringArray eq;
-    for (const auto& band : r.eq)
+    for (const auto& band : bands)
         if (std::abs (band.gainDb) >= 0.5f)
             eq.add ((band.type == ampsim::Equalizer::BandType::lowShelf ? "low shelf " : band.type == ampsim::Equalizer::BandType::highShelf ? "high shelf " : "")
                     + juce::String (juce::roundToInt (band.frequency)) + " Hz " + signedDb (band.gainDb));
-    lines.add ("Match EQ  " + (eq.isEmpty() ? juce::String ("flat") : eq.joinIntoString (", ")));
+    add ("Match EQ", eq.isEmpty() ? juce::StringArray { "flat" } : eq);
+
+    juce::StringArray lines;
+    for (int i = 0; i < resultLabels.size(); ++i)
+        lines.add (resultLabels[i] + "  " + resultItems[(size_t) i].joinIntoString (", "));
     resultText = lines.joinIntoString ("\n");
+}
+
+juce::StringArray ToneMatchPage::packItems (const juce::Font& f, const juce::String& label, const juce::StringArray& items, float width)
+{
+    // Greedy: each item goes on the current line if the line still fits, otherwise it starts the next.
+    // An item is never broken (a value and its unit stay together), so a line may only overrun when one
+    // item alone is wider than the space, and then it's drawn whole.
+    const auto prefix = label + "  ";
+    const auto indent = juce::GlyphArrangement::getStringWidth (f, prefix);
+    juce::StringArray lines;
+    juce::String current;
+    for (int i = 0; i < items.size(); ++i)
+    {
+        const auto piece = items[i] + (i + 1 < items.size() ? "," : "");
+        const auto candidate = current.isEmpty() ? piece : current + " " + piece;
+        if (current.isNotEmpty() && juce::GlyphArrangement::getStringWidth (f, candidate) > width - indent)
+        {
+            lines.add (current);
+            current = piece;
+        }
+        else
+            current = candidate;
+    }
+    lines.add (current);
+    lines.set (0, prefix + lines[0]);
+    return lines;
+}
+
+juce::String ToneMatchPage::getApplyNote() const
+{
+    juce::StringArray names;
+    for (const auto& fx : ToneMatchSession::preEffectsApplyTurnsOff())
+        names.add (fx.name);
+    const auto on = session.preEffectsOnNow();
+    return "Apply sets these as normal settings, in one undo step, and switches off the pre effects: " + names.joinIntoString (", ") + (on.isEmpty() ? " (none is on now)" : " (on now: " + on.joinIntoString (", ") + ")")
+           + ". The noise gate stays as it is.";
 }
 
 void ToneMatchPage::refresh()
@@ -563,7 +622,7 @@ void ToneMatchPage::refresh()
         eqCurve->setResult (&session.getResult());
     }
     else if (! session.hasResult())
-        resultText.clear();
+        updateResultText(); // clears it
 
     if (session.getError().isNotEmpty())
         statusText = session.getError();
@@ -617,11 +676,14 @@ void ToneMatchPage::resized()
     // Match.
     {
         auto in = card (matchCard, "Match");
-        matchButton->setBounds (in.removeFromTop (controlHeight).withWidth (120));
+        auto top = in.removeFromTop (controlHeight);
+        matchButton->setBounds (top.removeFromLeft (120));
+        top.removeFromLeft (space::s);
+        cancelButton->setBounds (top.removeFromLeft (90));
         in.removeFromTop (space::m);
         progressArea = in.removeFromTop (6);
-        in.removeFromTop (space::xl + 18);
-        cancelButton->setBounds (in.removeFromTop (controlHeight).withWidth (90));
+        in.removeFromTop (space::s);
+        statusArea = in; // the stage, or what went wrong (an error can take several lines)
     }
 
     // Result.
@@ -634,6 +696,8 @@ void ToneMatchPage::resized()
         applyButton->setBounds (buttons.removeFromLeft (90));
         buttons.removeFromLeft (space::s);
         discardButton->setBounds (buttons.removeFromLeft (90));
+        buttons.removeFromLeft (space::m);
+        applyNoteArea = buttons; // the score's caveat, beside the buttons
         resultTextArea = left;
     }
 }
@@ -703,10 +767,11 @@ void ToneMatchPage::paint (juce::Graphics& g)
             g.setColour (accent);
             g.fillRoundedRectangle (p.withWidth (p.getWidth() * (float) (session.isMatching() ? session.getProgress() : 1.0)), 3.0f);
         }
-        auto line = progressArea.withY (progressArea.getBottom() + space::s).withHeight (36);
-        drawWrapped (g, statusText.isEmpty() ? (session.hasResult() ? "Done in " + juce::String (session.getResult().runtimeSeconds, 1) + " s" : "Ready")
-                                             : statusText,
-                     line, Text::caption, session.getError().isNotEmpty() ? ink : inkDim);
+        const auto shown = statusText.isEmpty() ? (session.hasResult() ? "Done in " + juce::String (session.getResult().runtimeSeconds, 1) + " s" : "Ready")
+                                               : statusText;
+        g.setFont (font (Text::caption));
+        g.setColour (session.getError().isNotEmpty() ? ink : inkDim);
+        g.drawFittedText (shown, statusArea, juce::Justification::topLeft, juce::jmax (1, statusArea.getHeight() / 15), 1.0f);
     }
 
     // Result: the settings, the closeness, and what it means.
@@ -718,6 +783,7 @@ void ToneMatchPage::paint (juce::Graphics& g)
             return;
         }
         const auto& r = session.getResult();
+        const auto noteArea = in.removeFromBottom (34).withTrimmedBottom (4); // what Apply does: two caption lines above the buttons
         auto big = in.removeFromTop (34);
         g.setFont (tabular (geist (Weight::light, 30.0f)));
         g.setColour (ink);
@@ -726,13 +792,26 @@ void ToneMatchPage::paint (juce::Graphics& g)
                          + juce::String (r.distortion, 1) + ", " + (r.mode == Mode::samePart ? "same part" : "anything") + ")",
                   big, Text::label, inkDim);
         in.removeFromTop (space::s);
-        g.setFont (font (Text::label));
+        // The settings, one line each, broken only between items (packItems), continuation lines indented.
+        const auto f = juce::Font (font (Text::label));
+        g.setFont (f);
         g.setColour (ink);
-        g.drawFittedText (resultText, in.removeFromTop (78), juce::Justification::topLeft, 5, 1.0f);
+        const auto lineHeight = (int) std::ceil (f.getHeight() * 1.25f);
+        for (int i = 0; i < resultLabels.size(); ++i)
+        {
+            const auto lines = packItems (f, resultLabels[i], resultItems[(size_t) i], (float) in.getWidth());
+            const auto indent = (int) std::ceil (juce::GlyphArrangement::getStringWidth (f, resultLabels[i] + "  "));
+            for (int l = 0; l < lines.size(); ++l)
+                g.drawText (lines[l], in.removeFromTop (lineHeight).withTrimmedLeft (l == 0 ? 0 : indent), juce::Justification::centredLeft, false);
+        }
         in.removeFromTop (space::s);
-        drawWrapped (g, "The score says how close the spectra and the distortion measurements came, not how it sounds: only your ears can judge that. "
-                        "Apply sets these as normal settings (one undo step), so a preset saves them.",
-                     in.removeFromTop (40), Text::caption, inkFaint);
+        // What Apply does, full width above the buttons; the score's caveat beside them.
+        g.setFont (font (Text::caption));
+        g.setColour (inkDim);
+        g.drawFittedText (getApplyNote(), noteArea, juce::Justification::bottomLeft, 2, 1.0f);
+        g.setColour (inkFaint);
+        g.drawFittedText ("The score measures the spectra and the distortion, not the sound: only your ears can judge that.", applyNoteArea,
+                          juce::Justification::centredLeft, 2, 1.0f);
     }
 }
 

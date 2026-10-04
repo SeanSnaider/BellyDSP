@@ -240,7 +240,12 @@ bool ToneMatchSession::startMatch()
             }
         }
         if (! targetSignal.empty())
+        {
             r = ToneMatcher::match (targetSignal, referenceCopy, settings, cancelFlag, report (separationShare, 1.0));
+            if (doSeparate && ! r.ok && ! r.cancelled && r.error.startsWith ("The target has too little playing"))
+                r.error = "The separated guitar has too little playing in it: the separation found almost no guitar in this section. "
+                          "Choose a section where the guitar plays, or switch separation off.";
+        }
 
         {
             const std::lock_guard<std::mutex> l (lock);
@@ -352,9 +357,30 @@ bool ToneMatchSession::apply()
     setPlain (p, eq + "_lowcut_on", 0.0f);
     setPlain (p, eq + "_highcut_on", 0.0f);
 
+    // The pre effects that color the tone before the amp are switched off, so the match is heard as it
+    // was made (Sean, 2026-10-04: "switch them off"). The noise gate stays as it is: it only mutes
+    // between notes, so it doesn't change the tone that was matched (ASSUMPTIONS TM19).
+    for (const auto& fx : preEffectsApplyTurnsOff())
+        setPlain (p, fx.parameterId, 0.0f);
+
     p.parameters.copyState();
     p.undoManager.beginNewTransaction();
     return true;
+}
+
+const std::vector<ToneMatchSession::PreEffect>& ToneMatchSession::preEffectsApplyTurnsOff()
+{
+    static const std::vector<PreEffect> list { { "comp_pre_on", "compressor" }, { "boost_on", "boost" }, { "od_on", "overdrive" }, { "eq_pre_on", "pre EQ" } };
+    return list;
+}
+
+juce::StringArray ToneMatchSession::preEffectsOnNow() const
+{
+    juce::StringArray on;
+    for (const auto& fx : preEffectsApplyTurnsOff())
+        if (auto* param = ampSim.parameters.getRawParameterValue (fx.parameterId); param != nullptr && param->load() >= 0.5f)
+            on.add (fx.name);
+    return on;
 }
 
 void ToneMatchSession::discard()

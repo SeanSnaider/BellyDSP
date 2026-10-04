@@ -52,9 +52,21 @@ public:
     void apply();
     void discard();
 
+    /// Where the separation model lives and comes from: the data folder's Separation and the pinned URL,
+    /// unless a test points it elsewhere (a temporary folder, a local server). Not while matching.
+    void setSeparationSource (const juce::File& modelFolder, const juce::String& url);
+    ampsim::tonematch::GuitarSeparator& getSeparator() noexcept { return *separator; }
+
+    /// One line of the result ("Match EQ  low shelf 134 Hz -3.2 dB, ...") broken to fit `width`, only
+    /// between items, so a value never parts from its unit. Continuation lines are drawn indented by
+    /// the label's width; the first line starts with the label.
+    static juce::StringArray packItems (const juce::Font& font, const juce::String& label, const juce::StringArray& items, float width);
+
     /// For tests: what's shown.
     juce::String getResultText() const { return resultText; }
     juce::String getStatusText() const { return statusText; }
+    /// The note above Apply: what it sets, the pre effects it switches off, and which of them are on now.
+    juce::String getApplyNote() const;
     juce::TextButton& getMatchButton() noexcept { return *matchButton; }
     juce::TextButton& getApplyButton() noexcept { return *applyButton; }
     juce::TextButton& getRecordButton() noexcept { return *recordButton; }
@@ -72,6 +84,7 @@ private:
 
     // Declared before the session, so it outlives the session's worker (which may be using it).
     std::unique_ptr<ampsim::tonematch::GuitarSeparator> separator;
+    juce::String separationUrl { ampsim::tonematch::GuitarSeparator::weightsUrl };
     ToneMatchSession session;
     std::unique_ptr<Waveform> waveform;
     std::unique_ptr<EqCurve> eqCurve;
@@ -82,7 +95,9 @@ private:
     std::unique_ptr<juce::FileChooser> chooser;
 
     juce::String resultText, statusText;
-    juce::Rectangle<int> header, targetCard, referenceCard, matchCard, resultCard, progressArea, resultTextArea;
+    juce::StringArray resultLabels;           // "Amp", "Tone", "Cab", "Match EQ"
+    std::vector<juce::StringArray> resultItems; // each line's items, packed at paint time
+    juce::Rectangle<int> header, targetCard, referenceCard, matchCard, resultCard, progressArea, statusArea, resultTextArea, applyNoteArea;
     bool applied = false;
 };
 

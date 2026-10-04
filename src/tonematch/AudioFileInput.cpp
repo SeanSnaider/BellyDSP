@@ -78,8 +78,21 @@ AudioFileInput AudioFileInput::read (const juce::File& file, double maxSeconds)
         return r;
     }
 
-    juce::AudioBuffer<float> buffer ((int) reader->numChannels, length);
-    reader->read (&buffer, 0, length, 0, true, true);
+    juce::AudioBuffer<float> buffer;
+    try
+    {
+        buffer.setSize ((int) reader->numChannels, length);
+    }
+    catch (const std::bad_alloc&)
+    {
+        r.error = "Not enough memory to read " + file.getFileName();
+        return r;
+    }
+    if (! reader->read (&buffer, 0, length, 0, true, true))
+    {
+        r.error = "Couldn't decode " + file.getFileName() + " (" + r.formatName + "; the file may be damaged)";
+        return r;
+    }
 
     std::vector<float> mono ((size_t) length, 0.0f);
     const auto gain = 1.0f / (float) buffer.getNumChannels();

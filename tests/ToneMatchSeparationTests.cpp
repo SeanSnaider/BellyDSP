@@ -8,12 +8,24 @@
 // The weights aren't in the repo. The installer and golden tests use a local copy of the pinned upstream
 // file: $AMPSIM_DEMUCS_WEIGHTS, or the Hugging Face cache that `uv run --with demucs` fills (the prototype's
 // separation). With neither, they download it when AMPSIM_NETWORK_TESTS=1, and otherwise say they didn't run.
+//
+// Two groups are off unless asked for, so the default suite stays offline and quick:
+//   AMPSIM_HTTP_TESTS=1     the download against a local server (tests/model_server.py, run with uv) that
+//                           redirects like Hugging Face and misbehaves on purpose: a dropped connection,
+//                           503s, a 404, a damaged body, a 25 s wait for the first byte; then the page's
+//                           whole flow (empty model folder, install, separate an MP3 section, match).
+//   AMPSIM_NETWORK_TESTS=1  the page's whole flow against the real URL, into an empty temporary folder.
 
 #include "BuiltInCaptures.h"
 #include "PluginProcessor.h"
 #include "TestHelpers.h"
 #include "ToneMatchSession.h"
 #include "tonematch/GuitarSeparator.h"
+#include "ui/ToneMatchPage.h"
+
+#if JUCE_MAC
+ #include <sys/resource.h>
+#endif
 
 namespace
 {
@@ -78,6 +90,121 @@ double correlation (const std::vector<float>& a, const std::vector<float>& b)
         bb += (double) b[i] * b[i];
     }
     return ab / std::sqrt (aa * bb);
+}
+
+bool allFinite (const std::vector<float>& x)
+{
+    return std::all_of (x.begin(), x.end(), [] (float v) { return std::isfinite (v); });
+}
+
+double rmsOf (const std::vector<float>& x, size_t from, size_t to)
+{
+    double sum = 0.0;
+    for (size_t i = from; i < to && i < x.size(); ++i)
+        sum += (double) x[i] * x[i];
+    return std::sqrt (sum / (double) std::max<size_t> (1, to - from));
+}
+
+bool flagSet (const char* name)
+{
+    return juce::SystemStats::getEnvironmentVariable (name, {}) == "1";
+}
+
+/// tests/model_server.py, run with uv, serving `file` on a free local port. Stopped when it goes.
+struct ModelServer
+{
+    explicit ModelServer (const juce::File& file)
+    {
+        portFile = tempDir().getChildFile ("model_server_port.txt");
+        portFile.deleteFile();
+        auto uv = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile (".local/bin/uv");
+        const juce::String uvPath = uv.existsAsFile() ? uv.getFullPathName() : juce::String ("uv");
+        started = process.start (juce::StringArray { uvPath, "run", "--no-project", "--python", "3.11", "python",
+                                                     juce::File (AMPSIM_SOURCE_DIR).getChildFile ("tests/model_server.py").getFullPathName(),
+                                                     "--file", file.getFullPathName(), "--port-file", portFile.getFullPathName() },
+                                 0);
+        for (int i = 0; i < 600 && started && ! portFile.existsAsFile(); ++i)
+            juce::Thread::sleep (50);
+        port = portFile.loadFileAsString().getIntValue();
+    }
+    ~ModelServer() { process.kill(); }
+
+    bool ok() const { return started && port > 0; }
+    juce::String url (const juce::String& mode) const
+    {
+        return "http://127.0.0.1:" + juce::String (port) + "/" + mode + "/resolve/3c5ee475be622df764938de97e4281a7b07ffa58/5c90dfd2.safetensors";
+    }
+
+    juce::ChildProcess process;
+    juce::File portFile;
+    bool started = false;
+    int port = 0;
+};
+
+/// The page's whole separation flow, as Sean uses it: a page whose model folder is empty, a song file,
+/// a selection that doesn't start at 0, the DI, Separate on, Match; the model installs from `url`, the
+/// section is separated, and the stem matched. Returns what the page showed at the end.
+struct PageRun
+{
+    bool hasResult = false;
+    juce::String status, error, stages, logText;
+    double seconds = 0.0, installSeconds = 0.0;
+    juce::int64 peakMB = 0;
+    int workers = 0;
+    ampsim::tonematch::MatchResult result;
+};
+
+PageRun runPage (const juce::File& modelFolder, const juce::String& url, const juce::File& song, double start, double length, const juce::File& di)
+{
+    PageRun run;
+    testing::WithBuiltInCaptures builtIns;
+    AmpSimProcessor p;
+    for (int i = 0; i < 4000 && p.isLoading(); ++i)
+        juce::Thread::sleep (5);
+    ui::ToneMatchPage page (p);
+    modelFolder.deleteRecursively();
+    modelFolder.getParentDirectory().getChildFile ("separation-log.txt").deleteFile();
+    page.setSeparationSource (modelFolder, url);
+    auto& session = page.getSession();
+    if (! session.setTargetFile (song) || ! session.setReferenceFile (di))
+    {
+        run.error = session.getError();
+        return run;
+    }
+    session.setRange (start, start + length);
+    session.setSeparate (true);
+    page.getModeChoice().setSelected (1, juce::sendNotification); // Anything, as the docs advise for a stem
+    page.startMatch();
+    juce::StringArray stages;
+    const auto t0 = juce::Time::getMillisecondCounterHiRes();
+    while (session.isMatching() && juce::Time::getMillisecondCounterHiRes() - t0 < 20.0 * 60000.0)
+    {
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+        page.refresh();
+        const auto st = page.getStatusText().upToFirstOccurrenceOf (" (", false, false).upToFirstOccurrenceOf (":", false, false);
+        if (st.isNotEmpty() && ! stages.contains (st))
+        {
+            stages.add (st);
+            if (st.startsWith ("Separating") && run.installSeconds == 0.0)
+                run.installSeconds = (juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0;
+        }
+    }
+    page.refresh();
+    run.seconds = (juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0;
+    run.hasResult = session.hasResult();
+    run.status = page.getStatusText();
+    run.error = session.getError();
+    run.stages = stages.joinIntoString (" | ");
+    run.workers = page.getSeparator().getLastWorkers();
+    run.logText = page.getSeparator().logFile().loadFileAsString();
+    if (run.hasResult)
+        run.result = session.getResult();
+   #if JUCE_MAC
+    rusage r {};
+    getrusage (RUSAGE_SELF, &r);
+    run.peakMB = (juce::int64) r.ru_maxrss / (1024 * 1024);
+   #endif
+    return run;
 }
 
 /// One installed model for the whole run (installing converts 55 MB; separation loads it once).
@@ -272,6 +399,178 @@ public:
             logMessage ("  -> with a separator set, Separate on: the separation took the first half of the progress (" + juce::String (highestDuringSeparation, 2)
                         + " at its end), the match the rest, and the result came from the stem (" + session.getResult().cab.getFileNameWithoutExtension()
                         + "); a failing separator: \"" + session.getError() + "\"");
+        }
+
+        beginTest ("the worker rule: about 2.2 GB a worker, within 40% of the machine's memory and what's free now, 1 to 4, at most half the cores");
+        {
+            struct Case { juce::int64 physical, available; int cores, expected; };
+            const Case cases[] = { { 24576, 17000, 15, 4 }, // this Mac (M5 Pro, 24 GB)
+                                   { 16384, 12000, 10, 2 }, // 6.5 GB budget: two
+                                   { 8192, 6000, 8, 1 },    // 3.3 GB budget: one
+                                   { 65536, 60000, 16, 4 }, // never more than four
+                                   { 24576, 3500, 15, 1 },  // most of the memory in use: one
+                                   { 24576, 6200, 15, 2 },  // (6200 - 1500) / 2200 = 2
+                                   { 24576, 17000, 2, 1 },  // two cores: one
+                                   { 4096, 1000, 4, 1 } };  // never fewer than one
+            juce::StringArray table;
+            for (const auto& c : cases)
+            {
+                const auto w = GuitarSeparator::chooseWorkers (c.physical, c.available, c.cores);
+                expectEquals (w, c.expected, juce::String (c.physical) + " / " + juce::String (c.available) + " / " + juce::String (c.cores));
+                table.add (juce::String (c.physical / 1024) + " GB, " + juce::String ((double) c.available / 1024.0, 1) + " GB free, " + juce::String (c.cores) + " cores: " + juce::String (w));
+            }
+            const auto here = GuitarSeparator::chooseWorkers (GuitarSeparator::physicalMemoryMB(), GuitarSeparator::availableMemoryMB(), (int) std::thread::hardware_concurrency());
+            expect (here >= 1 && here <= GuitarSeparator::maxWorkers);
+            logMessage ("  -> " + table.joinIntoString ("; ") + ". This machine now: " + juce::String (GuitarSeparator::physicalMemoryMB()) + " MB, "
+                        + juce::String (GuitarSeparator::availableMemoryMB()) + " MB available -> " + juce::String (here));
+        }
+
+        beginTest ("the separation log is appended to and capped: past 256 KB it moves to separation-log.old.txt");
+        {
+            const auto dir = tempDir().getChildFile ("tone_match_log");
+            dir.deleteRecursively();
+            GuitarSeparator s (dir.getChildFile ("Separation"));
+            s.log ("first line");
+            expect (s.logFile().loadFileAsString().contains ("first line"));
+            const juce::String filler = juce::String::repeatedString ("x", 1000);
+            for (int i = 0; i < 300; ++i)
+                s.log (filler);
+            s.log ("after the cap");
+            const auto old = dir.getChildFile ("separation-log.old.txt");
+            expect (old.existsAsFile() && old.loadFileAsString().contains ("first line"));
+            expect (s.logFile().getSize() < GuitarSeparator::maxLogBytes, juce::String (s.logFile().getSize()));
+            expect (s.logFile().loadFileAsString().contains ("after the cap"));
+            logMessage ("  -> 300 KB logged: separation-log.txt is " + juce::String (s.logFile().getSize()) + " bytes, separation-log.old.txt "
+                        + juce::String (old.getSize()) + " bytes (at most two files, about 512 KB)");
+        }
+
+        beginTest ("digital silence in a part doesn't turn the stem into NaN (Demucs divides by the part's standard deviation)");
+        {
+            juce::String problem;
+            auto& s = installedSeparator (problem);
+            if (problem.isNotEmpty())
+                logMessage ("  -> NOT RUN: " + problem);
+            else
+            {
+                // A song with a 12.5 s silent intro: the first 10 s part (with its 0.75 s of context) is
+                // all zeros. Before the fix that part came back NaN, the crossfade and the resampler's
+                // filter carried the NaN to the end, and the whole stem was NaN (30 s: 1,439,998 of
+                // 1,440,000 samples), which the matcher then called "too little playing".
+                const auto mix = readMono (fixtures().getChildFile ("separation_mix.wav"));
+                std::vector<float> x ((size_t) (12.5 * 48000.0), 0.0f);
+                x.insert (x.end(), mix.begin(), mix.end());
+                juce::String error;
+                const auto stem = s.separate (x, std::atomic<bool> { false }, {}, error, 2);
+                expect (error.isEmpty(), error);
+                expectEquals (stem.size(), x.size());
+                expect (allFinite (stem));
+                const auto silentRms = rmsOf (stem, 0, (size_t) (9.0 * 48000.0));
+                const auto musicRms = rmsOf (stem, (size_t) (13.5 * 48000.0), stem.size());
+                expect (silentRms < 1.0e-3 && musicRms > 1.0e-3, juce::String (silentRms) + " / " + juce::String (musicRms));
+                const auto logged = s.logFile().loadFileAsString().contains ("were digital silence");
+                expect (logged);
+                logMessage ("  -> 12.5 s of silence then the 10 s mix: every sample finite; the stem's RMS is " + juce::String (20.0 * std::log10 (silentRms + 1.0e-12), 1)
+                            + " dBFS over the silence and " + juce::String (20.0 * std::log10 (musicRms), 1) + " dBFS over the music; the log says the silent part wasn't run");
+            }
+        }
+
+        beginTest ("out of memory: retried with one worker, and if even one doesn't fit, the page is told so");
+        {
+            juce::String problem;
+            auto& s = installedSeparator (problem);
+            if (problem.isNotEmpty())
+                logMessage ("  -> NOT RUN: " + problem);
+            else
+            {
+                const auto mix = readMono (fixtures().getChildFile ("separation_mix.wav"));
+                std::vector<float> x (mix);
+                x.insert (x.end(), mix.begin(), mix.begin() + (std::ptrdiff_t) (3 * 48000)); // 13 s: two parts
+                juce::String error;
+                s.simulateOutOfMemoryAtWorkers = 2; // two at once fail; one alone runs
+                const auto stem = s.separate (x, std::atomic<bool> { false }, {}, error, 2);
+                expect (error.isEmpty(), error);
+                expect (! stem.empty() && allFinite (stem));
+                expectEquals (s.getLastWorkers(), 1);
+                expect (s.logFile().loadFileAsString().contains ("out of memory with 2 workers; trying again with 1"));
+
+                s.simulateOutOfMemoryAtWorkers = 1; // even one fails
+                juce::String error2;
+                const auto none = s.separate (x, std::atomic<bool> { false }, {}, error2, 2);
+                s.simulateOutOfMemoryAtWorkers = 0;
+                expect (none.empty());
+                expect (error2.startsWith ("not enough memory to separate"), error2);
+                expect (error2.contains ("separation-log.txt"), error2);
+                logMessage ("  -> two workers out of memory: separated with 1 instead; one worker out of memory: \"" + error2 + "\"");
+            }
+        }
+
+        beginTest ("the download against a local server that redirects like Hugging Face and misbehaves (AMPSIM_HTTP_TESTS=1)");
+        {
+            const auto weights = localWeights();
+            if (! flagSet ("AMPSIM_HTTP_TESTS") || weights == juce::File())
+                logMessage ("  -> NOT RUN: set AMPSIM_HTTP_TESTS=1 (needs uv, and a local copy of the weights to serve)");
+            else
+            {
+                ModelServer server (weights);
+                expect (server.ok(), "the local server didn't start");
+                if (server.ok())
+                {
+                    juce::StringArray report;
+                    auto attempt = [&] (const juce::String& mode, bool shouldInstall, const juce::String& messagePart) {
+                        const auto dir = tempDir().getChildFile ("tone_match_http_" + mode);
+                        dir.deleteRecursively();
+                        GuitarSeparator g (dir.getChildFile ("Separation"));
+                        g.retryDelayMs = 200;
+                        const auto t0 = juce::Time::getMillisecondCounterHiRes();
+                        const auto e = g.install (server.url (mode), std::atomic<bool> { false }, {});
+                        const auto secs = (juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0;
+                        expect (g.isInstalled() == shouldInstall, mode + ": " + e);
+                        expect (e.contains (messagePart), mode + ": " + e);
+                        int triesLogged = 0;
+                        for (const auto& line : juce::StringArray::fromLines (g.logFile().loadFileAsString()))
+                            triesLogged += line.contains ("  try ") ? 1 : 0;
+                        report.add (mode + ": " + (shouldInstall ? "installed" : "\"" + e.upToFirstOccurrenceOf (" (details", false, false) + "\"") + " in "
+                                    + juce::String (secs, 1) + " s, " + juce::String (triesLogged) + (triesLogged == 1 ? " try" : " tries"));
+                        return e;
+                    };
+                    attempt ("ok", true, "");
+                    attempt ("drop", true, "");
+                    attempt ("flaky", true, "");
+                    attempt ("stall", true, "");
+                    attempt ("missing", false, "answered HTTP 404 Not Found");
+                    attempt ("corrupt", false, "SHA-256 doesn't match");
+                    logMessage ("  -> 302 to another host with a 1 KB signed query (%2F, %3D, %7E, ~; the server refuses it changed): " + report.joinIntoString ("; "));
+
+                    const auto run = runPage (tempDir().getChildFile ("tone_match_http_page/Separation"), server.url ("drop-page"),
+                                              fixtures().getChildFile ("song_44k.mp3"), 7.3, 10.0, fixtures().getChildFile ("reference_di.wav"));
+                    expect (run.hasResult, run.error);
+                    expect (run.stages.contains ("Downloading the separation model") && run.stages.contains ("Separating the guitar"), run.stages);
+                    expect (run.logText.contains ("resuming"), run.logText);
+                    logMessage ("  -> the page, empty model folder, a 44.1 kHz MP3 from 7.3 s to 17.3 s, the server dropping the first connection at 20 MB: "
+                                + (run.hasResult ? "matched " + run.result.cab.getFileNameWithoutExtension() + ", closeness " + juce::String (run.result.closeness, 0) : "\"" + run.status + "\"")
+                                + " in " + juce::String (run.seconds, 1) + " s; stages: " + run.stages);
+                }
+            }
+        }
+
+        beginTest ("the page's whole flow from an empty model folder, downloading from the real URL (AMPSIM_NETWORK_TESTS=1)");
+        {
+            if (! flagSet ("AMPSIM_NETWORK_TESTS"))
+                logMessage ("  -> NOT RUN: set AMPSIM_NETWORK_TESTS=1 (downloads 55 MB from huggingface.co)");
+            else
+            {
+                const auto song = juce::SystemStats::getEnvironmentVariable ("AMPSIM_SONG", fixtures().getChildFile ("song_44k.mp3").getFullPathName());
+                const auto di = juce::SystemStats::getEnvironmentVariable ("AMPSIM_SONG_DI", fixtures().getChildFile ("reference_di.wav").getFullPathName());
+                const auto start = juce::SystemStats::getEnvironmentVariable ("AMPSIM_SONG_START", "7.3").getDoubleValue();
+                const auto length = juce::SystemStats::getEnvironmentVariable ("AMPSIM_SONG_SECONDS", "10").getDoubleValue();
+                const auto run = runPage (tempDir().getChildFile ("tone_match_network/Separation"), GuitarSeparator::weightsUrl, juce::File (song), start, length, juce::File (di));
+                expect (run.hasResult, run.error);
+                logMessage ("  -> " + juce::File (song).getFileName() + ", " + juce::String (start, 1) + " s to " + juce::String (start + length, 1) + " s, empty model folder: "
+                            + (run.hasResult ? "matched " + run.result.cab.getFileNameWithoutExtension() + ", closeness " + juce::String (run.result.closeness, 0) : "\"" + run.status + "\"")
+                            + "; install done " + juce::String (run.installSeconds, 1) + " s in, all done in " + juce::String (run.seconds, 1) + " s, " + juce::String (run.workers)
+                            + " workers, the process's peak memory " + juce::String (run.peakMB) + " MB; stages: " + run.stages);
+                logMessage ("  -> the log:\n" + run.logText);
+            }
         }
     }
 };
