@@ -43,7 +43,7 @@
   "amps": [
     {
       "path": "factory:models/Glass/gainset.json",
-      "hash": "fnv1a64:86152948e9e19a7b",
+      "hash": "fnv1a64:910d7b5e1dbb7d3d",
       "size": 707
     },
     {
@@ -53,7 +53,7 @@
     },
     {
       "path": "factory:models/Monolith/gainset.json",
-      "hash": "fnv1a64:36695bf2e42fdffa",
+      "hash": "fnv1a64:13aa6684a718af14",
       "size": 734
     }
   ],

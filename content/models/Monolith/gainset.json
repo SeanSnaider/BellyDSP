@@ -8,12 +8,12 @@
     {
       "gain": 0.0,
       "file": "Monolith, gain 0.nam",
-      "hash": "fnv1a64:279cb64e5d255116"
+      "hash": "fnv1a64:f6382ebfbc73d28a"
     },
     {
       "gain": 2.5,
       "file": "Monolith, gain 2.5.nam",
-      "hash": "fnv1a64:ba135cf921e82746"
+      "hash": "fnv1a64:1b47817a8764725d"
     },
     {
       "gain": 5.0,
@@ -28,7 +28,7 @@
     {
       "gain": 10.0,
       "file": "Monolith, gain 10.nam",
-      "hash": "fnv1a64:aa2dd720a00662d5"
+      "hash": "fnv1a64:25fc3f347b429faf"
     }
   ]
 }

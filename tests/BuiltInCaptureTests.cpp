@@ -304,7 +304,7 @@ public:
                 }
                 expect (! status.cabError[0] && status.cab[0] != "No IR", status.cab[0]);
                 expect (juce::File (p.parameters.state.getProperty (AmpSimProcessor::cabPathKey (0)).toString()).isAChildOf (platform::factoryContentFolder()));
-                expect (preset["notes"].toString().contains ("built-in captures"));
+                expect (preset["notes"].toString().contains ("built-in gain sets"));
                 juce::StringArray sceneSlots;
                 for (int i = 0; i < 3; ++i)
                 {

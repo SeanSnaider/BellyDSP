@@ -697,7 +697,7 @@ public:
             expect (chon.loadPreset (factory[1]).ok);
             expect (getParam (chon, "delay_stereo") == 2.0f && getParam (chon, "chorus_on") == 1.0f);
             expect (chon.recallScene (2));
-            expectEquals (getParam (chon, "amp_slot"), 2.0f);
+            expectEquals (getParam (chon, "amp_slot"), 1.0f); // Crunch on Ember at Gain 5 since the gain sets (ASSUMPTIONS AG12)
             logMessage ("  -> " + names.joinIntoString (", "));
         }
 

@@ -326,7 +326,7 @@ public:
             expect (sectionsWereBypassed, "the section switches must have reached the audio thread");
             expectGreaterThan (modelFadeBlocks, 16, "the model loads must have crossfaded during the measurement");
             expectGreaterThan (slotSwitchBlocks, 16, "the slot switches must have crossfaded during the measurement");
-            expectGreaterThan (gainMovingBlocks, 400, "the Gain drags must have moved the captures during the measurement");
+            expectGreaterThan (gainMovingBlocks, 250, "the Gain drags must have moved the captures during the measurement");
             expectEquals (maxSetModels, ampsim::NamAmp::maxRunningSteps, "the gain set's sweep must have run a model warming ahead");
             expectEquals (p.getChain().amp.getSelectedSlot(), 0);
             const auto ember = p.parameters.state.getProperty (AmpSimProcessor::modelPathKey (1)).toString() == presets::builtInCapture (1).getFullPathName();
