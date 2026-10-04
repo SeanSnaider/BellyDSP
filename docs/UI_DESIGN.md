@@ -27,6 +27,7 @@ Everything is still drawn in code with JUCE's Graphics and one LookAndFeel: no a
 | Knobs | Hover also shows the value | UH14 |
 | Motion | No 150 ms colour fades; no reduced-motion setting to read | UH15 |
 | Screenshots' text | The screenshots were rendered with a fallback font, so their text is wider than Geist's | UH10 |
+| Brand | Reads "BellyDSP", the product's name, where the handoff has its placeholder "rig" (same dot, 15 px semibold; dot and name take 84 of its 136 px column); a click opens the version, licence, updates, source, and licences menu | DS9, DS38 |
 
 ## Implementation map
 

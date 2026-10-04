@@ -1,6 +1,6 @@
-# Amp Sim Build Plan
+# BellyDSP Build Plan
 
-A Neural DSP style guitar rig in C++ on JUCE: three always-running neural amp slots (NAM models on NeuralAmpModelerCore, the official engine), pre FX (two gates, compressor, boost, overdrive, EQ), a three-mic cab with movable mics, post FX (EQ, compressor, chorus, delay, reverb), a Bloom modulation container, a multivoicer, a key-aware harmonizer, a tuner, presets with scenes, and MIDI footswitch control. Standalone on macOS first; VST3/AU export later from the same JUCE target.
+BellyDSP, a modern neural amp rig in C++ on JUCE: three always-running neural amp slots (NAM models on NeuralAmpModelerCore, the official engine), pre FX (two gates, compressor, boost, overdrive, EQ), a three-mic cab with movable mics, post FX (EQ, compressor, chorus, delay, reverb), a Bloom modulation container, a multivoicer, a key-aware harmonizer, a tuner, presets with scenes, and MIDI footswitch control. Standalone on macOS first; VST3/AU export later from the same JUCE target.
 
 ## Architecture
 
@@ -288,7 +288,7 @@ Design settled in design review round 6.
 
 **Built (Phase 4).** Graphic bands are bells at Q 0.9 on exact octaves (62.5 Hz to 16 kHz), designed by the accurate cascade method with two passes and the midpoint targets weighted 0.5 against the centres: in `prototypes/graphic_eq.py`, no Q met +-1 dB with equal weights (best 1.05 dB), and with the weighting the centres land within 0.36 dB. Parametric bands are +-18 dB, Q 0.1 to 18, defaulting to a 100 Hz low shelf, peaks at 400 Hz, 1 kHz, and 3 kHz, and an 8 kHz high shelf. Switching modes crossfades the two banks over 10 ms; a band type change or cut slope change dips to the unprocessed signal for 10 ms each way. Both instances start on and flat (bit-transparent). Parameter IDs: `eq_pre_*` and `eq_post_*` (`on`, `mode`, `g1`..`g9`, `b1_type`, `b1_freq`, `b1_gain`, `b1_q` .. `b5_*`, `lowcut_on/freq/slope`, `highcut_on/freq/slope`).
 
-**GUI (Phase 11).** Neural DSP-style visual EQ: a draggable response curve with a live spectrum analyzer behind it. The audio thread copies output samples into a lock-free ring buffer; the GUI thread runs the FFT and draws. The analyzer never runs FFTs on the audio thread.
+**GUI (Phase 11).** A visual EQ with a draggable response curve over a live analyzer. The audio thread copies output samples into a lock-free ring buffer; the GUI thread runs the FFT and draws. The analyzer never runs FFTs on the audio thread.
 
 **Testing.**
 - **Magnitude response.** Measured against the analytic target at many frequencies for every band type.
@@ -298,7 +298,7 @@ Design settled in design review round 6.
 
 ### Cab
 
-The cab section is an IR system, not a set of bundled cabs. Neural DSP's own IRs are proprietary, so the plugin loads user-provided IR `.wav` files. Design settled in design review round 3.
+The cab section is an IR system, not a set of modelled cabs. Commercial products' IRs (Neural DSP's among them) are proprietary and not ours to ship, so the app loads user-provided IR `.wav` files, plus the free CC0 IRs bundled in `content/`. Design settled in design review round 3.
 
 **Mic slots.** Three: two close mics and a room mic.
 
@@ -611,7 +611,7 @@ Design settled in design review round 15.
 
 **Preset vs global.** A preset holds every parameter, each amp slot's capture, cab IRs and mic positions, pre and post chain order, Bloom order, MIDI mappings, harmonizer key presets, custom scales, tempo, and its scenes. Global settings (never changed by loading a preset): input calibration, audio and MIDI devices, A4 reference, tuner mute preference, CPU fallback mode, window size and UI scale.
 
-**Format.** One JSON file per preset with a `format_version` field, stored in `~/Library/Application Support/AmpSim/presets/`.
+**Format.** One JSON file per preset with a `format_version` field, stored in `~/Library/Application Support/BellyDSP/presets/` (`AmpSim` before the rename; the first launch copies it over).
 
 **Evolution.** Missing parameter IDs take defaults; unknown IDs are ignored with a warning; structural changes bump `format_version` with one small, pure, tested migration function per step. A set of golden preset files lives in the test suite and must load identically on every build.
 
@@ -765,3 +765,7 @@ The compiler is Apple clang from the command line tools (`xcode-select --install
 2026-10-03: The amp captures bundled with the app will be Sean's own, made with ampsim_capture and NAM's official trainer (docs/CAPTURING.md). Sean's decision: the GPL-3 "pelennor" capture set was rejected over its provenance, and TONE3000's captures over its terms.
 2026-10-03: The built-in cabs are two CC0 IR packs by Bastian Karschewski (Jester Dyne Productions), "Emerald" (a vintage 4x12, 6 IRs) and "Brutal" (a modern closed 4x12, 15 IRs), 48 kHz files renamed without brands (ASSUMPTIONS DS22 to DS27). This replaces 2026-09-27's "No bundled IRs"; the cab section is still a loader for the user's own IRs and packs too.
 2026-10-03: Capture tooling: ampsim_capture (plays NAM's v3.0.0 input file and records the return in the same callback), tools/fetch_nam_input.sh (the input file, fetch-only, pinned by SHA-256), and tools/train_capture.sh with neural-amp-modeler pinned at 0.12.3 (the last version with the standard/lite/feather/nano choice; 0.13.0 trains only its packed slimmable model, ASSUMPTIONS DS30).
+2026-10-03: Renamed BellyDSP (was "Amp Sim"; the UI's brand placeholder "rig" is now "BellyDSP"). Only what a user or a repo visitor sees changes: the app, bundle, window, brand, data folder (~/Library/Application Support/BellyDSP, %APPDATA%\BellyDSP), settings file, artifacts, installer, and docs. The code keeps its codename (namespace ampsim, AmpSimProcessor, the ampsim_* tools and targets, source file names, the state's "AmpSim" root tag), and the first launch copies the old data folder and settings to the new names, never moving or deleting them (ASSUMPTIONS DS36, DS37).
+2026-10-03: Licensing (Sean's decision): BellyDSP is free, open source software under AGPL-3.0-or-later (required in practice because JUCE is used under the AGPLv3; JUCE_LICENCE=AGPLv3), "Copyright (C) 2026 Sean Snaider", with SPDX headers on every source file we own. Sean's own NAM captures are CC BY 4.0, attribution "Sean Snaider" (replacing the DS32 placeholder). Third-party content keeps its own licence (the bundled IRs are CC0).
+2026-10-03: Two repos (Sean's decision): this private repo stays the dev and test environment (remote origin); the public SeanSnaider/BellyDSP is "prod" (remote public) and only gets main and version tags. Releases (binaries and appcasts) are published on the public repo itself; the separate amp-sim-releases repo is dropped. The rule, enforced by release.sh: every binary given to anyone is built from a commit that is on public/main and tagged there, and the tag is pushed to public before any file is uploaded (the AGPL's Corresponding Source). CI runs on push and pull requests only on the public repo (ASSUMPTIONS DS40).
+2026-10-03: Bundle ID com.seansnaider.bellydsp (was com.seansnaider.ampsim; free to change because no release had shipped), with a new Inno Setup AppId and plugin code Bdsp for the same reason. From the first release on, none of the three may change.

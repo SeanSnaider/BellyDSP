@@ -1,40 +1,40 @@
-# Installing Amp Sim
+# Installing BellyDSP
 
-Amp Sim is a guitar amp and effects app. You plug your guitar into an audio interface, and it plays through amp captures, a cab, pedals, and effects. Here's how to get it running. It takes about five minutes, and after that it keeps itself up to date.
+BellyDSP is a guitar amp and effects app. You plug your guitar into an audio interface, and it plays through amp captures, a cab, pedals, and effects. Here's how to get it running. It takes about five minutes, and after that it keeps itself up to date.
 
 You need: an audio interface (anything with an instrument input, like a Focusrite Scarlett), headphones or speakers on that interface, and a Mac with macOS 12 or later (Apple silicon or Intel) or a Windows 10 or 11 PC.
 
-Downloads: **https://github.com/SeanSnaider/amp-sim-releases/releases/latest**
+Downloads: **https://github.com/SeanSnaider/BellyDSP/releases/latest**
 
 ## Mac
 
-1. **Download** `AmpSim-<version>.dmg` from the link above and open it.
-2. **Drag Amp Sim onto the Applications folder** in the window that opens. (Run it from Applications, not from the disk image or Downloads, or it can't update itself.)
-3. **Open it the first time.** macOS will say it "can't verify" Amp Sim, because it's a friend's app rather than one registered with Apple. That's expected:
+1. **Download** `BellyDSP-<version>.dmg` from the link above and open it.
+2. **Drag BellyDSP onto the Applications folder** in the window that opens. (Run it from Applications, not from the disk image or Downloads, or it can't update itself.)
+3. **Open it the first time.** macOS will say it "can't verify" BellyDSP, because it's free software from an independent developer rather than an app notarized by Apple. That's expected:
    - Click **Done** (not Move to Trash).
-   - Open **System Settings > Privacy & Security**, scroll down to the line about Amp Sim, and click **Open Anyway**. Confirm with your password or Touch ID.
-   - Open Amp Sim again and click **Open**.
+   - Open **System Settings > Privacy & Security**, scroll down to the line about BellyDSP, and click **Open Anyway**. Confirm with your password or Touch ID.
+   - Open BellyDSP again and click **Open**.
 
    If you're comfortable with Terminal, this one line does the same thing:
    ```
-   xattr -dr com.apple.quarantine "/Applications/Amp Sim.app"
+   xattr -dr com.apple.quarantine "/Applications/BellyDSP.app"
    ```
    You only do this once. Updates don't ask again.
-4. **Allow the microphone** when Amp Sim asks. That's how macOS names any audio input, including your guitar. (Changed your mind? System Settings > Privacy & Security > Microphone.)
-5. **Set your interface to 48 kHz.** Open **Audio MIDI Setup** (Applications > Utilities), click your interface, and set Format to **48,000 Hz**. Amp Sim only runs at 48 kHz; at any other rate it stays silent and tells you so.
+4. **Allow the microphone** when BellyDSP asks. That's how macOS names any audio input, including your guitar. (Changed your mind? System Settings > Privacy & Security > Microphone.)
+5. **Set your interface to 48 kHz.** Open **Audio MIDI Setup** (Applications > Utilities), click your interface, and set Format to **48,000 Hz**. BellyDSP only runs at 48 kHz; at any other rate it stays silent and tells you so.
 6. **Choose the input** (see "Audio settings" below).
 
 ## Windows
 
-1. **Download** `AmpSim-<version>-windows-setup.exe` from the link above and run it.
+1. **Download** `BellyDSP-<version>-windows-setup.exe` from the link above and run it.
 2. Windows may show **"Windows protected your PC"** (the installer isn't signed with a paid certificate). Click **More info**, then **Run anyway**.
 3. Click through the installer. It installs just for you, so it doesn't need an administrator password.
-4. **Set your interface to 48 kHz** in its own control panel (or Settings > Sound > your device > Properties > Advanced). Amp Sim only runs at 48 kHz.
+4. **Set your interface to 48 kHz** in its own control panel (or Settings > Sound > your device > Properties > Advanced). BellyDSP only runs at 48 kHz.
 5. **Choose the input** (below). For the lowest delay, pick the device type **Windows Audio (Exclusive Mode)**.
 
 ## Audio settings (both)
 
-Click **Options** at the top of Amp Sim's window, then **Audio/MIDI Settings**:
+Click **Options** at the top of BellyDSP's window, then **Audio/MIDI Settings**:
 
 - **Output** and **Input**: your audio interface. **Sample rate**: 48000.
 - **Active input channels**: only the one your guitar is plugged into (usually Input 1).
@@ -45,14 +45,14 @@ On the interface itself: turn the instrument (INST or Hi-Z) switch on for the gu
 
 ## Captures and cab IRs
 
-Amp Sim uses NAM captures (`.nam` files) for its amps and impulse responses (`.wav` files) for the cab. Free ones are all over the place (TONE3000 has thousands of captures; pick "amp only" ones, since Amp Sim adds its own cab).
+BellyDSP uses NAM captures (`.nam` files) for its amps and impulse responses (`.wav` files) for the cab. Free ones are all over the place (TONE3000 has thousands of captures; pick "amp only" ones, since BellyDSP adds its own cab).
 
 Keep them here, so presets can find them again even if you rename things:
 
 | | Mac | Windows |
 |---|---|---|
-| Captures | `~/Library/Application Support/AmpSim/models` | `%APPDATA%\AmpSim\models` |
-| Cab IRs | `~/Library/Application Support/AmpSim/irs` | `%APPDATA%\AmpSim\irs` |
+| Captures | `~/Library/Application Support/BellyDSP/models` | `%APPDATA%\BellyDSP\models` |
+| Cab IRs | `~/Library/Application Support/BellyDSP/irs` | `%APPDATA%\BellyDSP\irs` |
 
 (Mac: in Finder, Go > Go to Folder... and paste the path. Windows: paste the path into File Explorer's address bar. Make the folders if they're not there yet.)
 
@@ -62,10 +62,10 @@ Then click an amp's grille on the Amp page to load a capture, and pick a cab on 
 
 They happen by themselves:
 
-- **Mac**: once a day Amp Sim checks for a new version, downloads it quietly, and installs it the next time you quit. Nothing to click.
+- **Mac**: once a day BellyDSP checks for a new version, downloads it quietly, and installs it the next time you quit. Nothing to click.
 - **Windows**: once a day it checks, and when there's a new version it asks. Click **Install update**: it closes, updates, and opens again.
 
-To see which version you have, or to check right now, click **rig** at the top-left of the window.
+To see which version you have, or to check right now, click **BellyDSP** at the top-left of the window.
 
 ## Something's wrong
 
@@ -74,7 +74,11 @@ To see which version you have, or to check right now, click **rig** at the top-l
 | No sound at all | "Mute audio input" still ticked in Options; the guitar's input channel not enabled; the microphone permission denied (Mac); the interface not at 48 kHz |
 | You hear your dry guitar too | Turn Direct Monitor off on the interface |
 | Crackles | A bigger buffer size in Options |
-| Mac says Amp Sim "is damaged" or can't be opened | Do the first-launch steps above (or the `xattr` line) |
-| Mac never updates | Make sure Amp Sim is in Applications, and quit it now and then |
+| Mac says BellyDSP "is damaged" or can't be opened | Do the first-launch steps above (or the `xattr` line) |
+| Mac never updates | Make sure BellyDSP is in Applications, and quit it now and then |
 
-Licences for everything Amp Sim includes: click **rig** > **About / licenses**.
+## Licence
+
+BellyDSP is free software: Copyright (C) 2026 Sean Snaider, under the GNU Affero General Public License, version 3 or later. It comes with ABSOLUTELY NO WARRANTY. The source code is at https://github.com/SeanSnaider/BellyDSP, and **BellyDSP** (top-left) > **Source code for this version** opens the exact source of the copy you're running. Licences for everything BellyDSP includes: **BellyDSP** > **About / licenses** (also `THIRD_PARTY_NOTICES.txt` and `LICENSE.txt` in the download).
+
+**Coming from Amp Sim** (the app's old name)? The first time BellyDSP starts, it copies your presets, captures, IRs, and audio settings from the old Amp Sim folders to BellyDSP's. The old folders stay exactly as they were; delete them yourself once you're happy.

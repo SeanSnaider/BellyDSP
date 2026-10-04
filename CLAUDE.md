@@ -6,7 +6,9 @@ If another CLAUDE.md is also loaded (for example `~/Desktop/CLAUDE.md`, left ove
 
 ## The project
 
-Sean's personal guitar amp sim and multi-FX, in C++ on JUCE, with neural amp models (NAM) running on NeuralAmpModelerCore, the official NAM engine. Sean wants to contribute to the NAM project, so understanding NAM's architecture deeply matters here. It's a passion project and a tool he'll actually use, not a portfolio piece, so sound quality and his own playing experience are the success criteria. He plays progressive and math rock and wants a genuinely tight tech death tone.
+BellyDSP: Sean's guitar amp sim and multi-FX, in C++ on JUCE, with neural amp models (NAM) running on NeuralAmpModelerCore, the official NAM engine. Sean wants to contribute to the NAM project, so understanding NAM's architecture deeply matters here. It's a passion project and a tool he'll actually use, which he also shares publicly as open source and on his resume; sound quality and his own playing experience are the success criteria. He plays progressive and math rock and wants a genuinely tight tech death tone.
+
+It's free software: the code is AGPL-3.0-or-later (`LICENSE`; required in practice because JUCE is used under the AGPLv3), and Sean's own NAM captures are CC BY 4.0. Every source file we own starts with the SPDX header (`tools/spdx_headers.py` adds it; `--check` lists files without it). This repo is the private dev environment (remote `origin`); the public repo `SeanSnaider/BellyDSP` (remote `public`) is "prod" and only gets `main` and version tags. Every binary given to anyone is built from a commit that's on the public repo and tagged (`docs/RELEASING.md`). Internally the code keeps its codename: the namespace `ampsim`, the `ampsim_*` tools, `AmpSimProcessor`, and the source file names (ASSUMPTIONS DS36).
 
 The current target is the standalone macOS app with a Focusrite Scarlett Solo 4th Gen. CoreAudio calls it "Scarlett Solo 4th Gen", with 4 inputs (Input 1, Input 2, Loopback 1, Loopback 2) and 2 outputs. The guitar is on Input 1, which is channel 0. A level probe confirmed that on 2026-09-28, and `ampsim_device_probe` showed the same layout on 2026-10-01. VST3/AU export comes later from the same JUCE target.
 
@@ -61,14 +63,15 @@ New algorithms get prototyped in `prototypes/` first when there's any doubt abou
 | `cmake --build build -j` | Compile everything |
 | `ctest --test-dir build --output-on-failure` | Run the test suite |
 | `build/ampsim_tests_artefacts/Release/ampsim_tests --proof-dir build/proof` | Run the tests with every measurement printed. Renders and editor snapshots land in `build/proof` |
-| `open "build/AmpSim_artefacts/Release/Standalone/Amp Sim.app"` | Run the app |
+| `open build/BellyDSP_artefacts/Release/Standalone/BellyDSP.app` | Run the app |
 | `build/ampsim_render_artefacts/Release/ampsim_render --model amp.nam --ir cab.wav di.wav out.wav` | Render a DI file offline through the same chain, with CPU timing |
 | `build/ampsim_device_probe_artefacts/Release/ampsim_device_probe` | Open the Solo with silent output and report callback timing and input levels |
 | `build/ampsim_capture_artefacts/Release/ampsim_capture --level-check --in-channel 1` | Capture tool (docs/CAPTURING.md): play NAM's input file through gear and record it; `--simulate drive` needs no hardware |
 | `tools/train_capture.sh --input build-deps/nam/input.wav --output <rec.wav> --name <n> --tone-type <t> --gear-type <g>` | Train a capture with NAM's official trainer (pinned in tools/deps.conf) |
 | `python prototypes/amp_sim.py <di.wav> --all-channels` | Render the old gray-box Python amps (reference only) |
 | `tools/fetch_deps.sh` | Download the pinned Sparkle (and with `--windows`, WinSparkle) into `build-deps/` |
-| `tools/release/release.sh <version> [--dry-run]` | Build, test, sign, package, and publish a release (docs/RELEASING.md). Never run it without `--dry-run` unless Sean asks |
+| `tools/release/release.sh <version> [--dry-run]` | Build, test, sign, package, tag, push the tag to `public`, and publish a release (docs/RELEASING.md). Never run it without `--dry-run` unless Sean asks, and never push to `public` without him |
+| `uv run --no-project python tools/spdx_headers.py` | Add the licence header to new source files (`--check` to list any without it) |
 
 Use Release builds for anything involving live audio. NAM core is always compiled with -O3, but JUCE and our code aren't in Debug.
 
