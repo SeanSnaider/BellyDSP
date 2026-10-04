@@ -608,7 +608,7 @@ void AmpSimEditor::showAbout()
 
 void AmpSimEditor::loadCapture (int slot)
 {
-    chooseFile ("Choose a NAM capture for " + juce::String (ui::materialName (ui::materialFor (slot))) + " (amp slot " + juce::String (slot + 1) + ")", "*.nam",
+    chooseFile ("Choose a NAM capture, or a gain set's gainset.json, for " + juce::String (ui::materialName (ui::materialFor (slot))) + " (amp slot " + juce::String (slot + 1) + ")", "*.nam;*.json",
                 AmpSimProcessor::modelPathKey (slot), [this, slot] (const juce::File& f) { ampSim.loadModel (slot, f); });
 }
 

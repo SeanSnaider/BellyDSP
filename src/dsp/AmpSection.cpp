@@ -44,7 +44,7 @@ void AmpSection::prepare (double sampleRate, int maxBlockSize)
     for (int s = 0; s < numSlots; ++s)
     {
         auto& slot = slots[(size_t) s];
-        slot.inputTrim.prepare (sampleRate, maxBlockSize);
+        slot.model.setGain (slot.inputTrim.getPosition());
         slot.model.prepare (sampleRate, maxBlockSize);
         slot.tone.prepare (sampleRate);
         slot.outputTrim.prepare (sampleRate, maxBlockSize);
@@ -67,7 +67,7 @@ void AmpSection::process (juce::dsp::AudioBlock<float> block, const BlockContext
         auto channel = outputs.getSingleChannelBlock (s);
         std::copy (input, input + numSamples, channel.getChannelPointer (0));
 
-        slot.inputTrim.process (channel, context);
+        slot.model.setGain (slot.inputTrim.getPosition());
         slot.model.process (channel, context);
         slot.tone.process (channel.getChannelPointer (0), (int) numSamples);
         slot.outputTrim.process (channel, context);
@@ -102,7 +102,6 @@ void AmpSection::reset()
     for (int s = 0; s < numSlots; ++s)
     {
         auto& slot = slots[(size_t) s];
-        slot.inputTrim.reset();
         slot.model.reset();
         slot.tone.reset();
         slot.outputTrim.reset();

@@ -1,7 +1,7 @@
 {
   "format_version": 2,
   "name": "Modern Prog",
-  "notes": "Slots 1 to 3 start on the built-in captures, Glass (clean), Ember (crunch), and Monolith (high gain, with a Screamer boost built in): stand-ins until your own. Scenes: Clean on Glass, Crunch on Ember, Lead on Monolith. Close mic 1 starts on a built-in vintage 4x12 IR (pick another on the Cab page). Swap in your own captures; these settings are starting points to tune by ear.",
+  "notes": "Slots 1 to 3 start on the built-in gain sets, Glass (clean to the edge of breakup), Ember (light to heavy crunch), and Monolith (tight high gain to a saturated lead, with a Screamer boost built in): stand-ins until your own. Scenes: Clean on Glass at Gain 2.5 (bright), Crunch on Ember at 5, Lead on Monolith at 7.5 with the Boost on. Close mic 1 starts on a built-in vintage 4x12 IR (pick another on the Cab page). Swap in your own captures; these settings are starting points to tune by ear.",
   "parameters": {
     "amp_slot": 0,
     "comp_pre_on": 1,
@@ -25,23 +25,44 @@
     "reverb_engine": 1,
     "reverb_mix": 18.0,
     "reverb_decay": 1.8,
-    "tempo_bpm": 120.0
+    "tempo_bpm": 120.0,
+    "amp1_input_trim": -12.0,
+    "amp1_bass": -1.2,
+    "amp1_mid": -1.2,
+    "amp1_treble": 3.6,
+    "amp1_presence": 2.4,
+    "amp1_depth": 0.0,
+    "amp1_output_trim": -6.6,
+    "amp2_input_trim": 0.0,
+    "amp2_bass": 0.0,
+    "amp2_mid": 1.2,
+    "amp2_treble": 1.2,
+    "amp2_presence": 1.2,
+    "amp2_depth": 0.0,
+    "amp2_output_trim": -2.9,
+    "amp3_input_trim": 12.0,
+    "amp3_bass": -1.2,
+    "amp3_mid": 2.4,
+    "amp3_treble": 1.2,
+    "amp3_presence": 1.2,
+    "amp3_depth": 1.2,
+    "amp3_output_trim": -2.6
   },
   "amps": [
     {
-      "path": "factory:models/Glass.nam",
-      "hash": "fnv1a64:7b491dabe79fb5ff",
-      "size": 298414
+      "path": "factory:models/Glass/gainset.json",
+      "hash": "fnv1a64:910d7b5e1dbb7d3d",
+      "size": 707
     },
     {
-      "path": "factory:models/Ember.nam",
-      "hash": "fnv1a64:3ed633e1059221a7",
-      "size": 297888
+      "path": "factory:models/Ember/gainset.json",
+      "hash": "fnv1a64:8ab3c14a7c2fe381",
+      "size": 708
     },
     {
-      "path": "factory:models/Monolith.nam",
-      "hash": "fnv1a64:5eab4a3764459b96",
-      "size": 297266
+      "path": "factory:models/Monolith/gainset.json",
+      "hash": "fnv1a64:13aa6684a718af14",
+      "size": 734
     }
   ],
   "cab": {

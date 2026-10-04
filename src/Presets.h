@@ -127,9 +127,17 @@ juce::String currentFactoryPresetName (const juce::String& name);
 /// the head it plays in: slot 1 Glass (clean), slot 2 Ember (crunch), slot 3 Monolith (high gain). Stand-ins
 /// trained from the project's own gray-box amp (prototypes/amp_sim.py, tools/content/make_default_captures.py)
 /// until Sean's own captures replace them. A fresh slot starts on its built-in (AmpSimProcessor).
+/// Since 2026-10-04 each is a gain set (BUILD_PLAN "Amp gain"): content/models/Glass/ holds five captures across
+/// the amp's gain knob and the gainset.json that lists them, and the JSON is what slots, presets, and the state
+/// refer to.
 juce::String builtInCaptureName (int slot);
-juce::String builtInCapturePath (int slot); ///< "factory:models/Glass.nam", as a preset refers to it
+juce::String builtInCapturePath (int slot); ///< "factory:models/Glass/gainset.json", as a preset refers to it
 juce::File builtInCapture (int slot);       ///< that file in the app's content folder
+
+/// The built-in captures used to be single files ("factory:models/Glass.nam"). For a reference to one of those
+/// (that factory path, or a saved absolute path ending in content/models/Glass.nam), the gain set that replaced
+/// it; anything else, nothing. resolve() and a restored state use it, so old presets and states get the sets.
+juce::File replacementForRetiredCapture (const juce::String& path);
 
 /// Whether a file ships with the app (it's inside the app's content folder, libraryRoot ("factory")).
 bool isBundled (const juce::File& file);

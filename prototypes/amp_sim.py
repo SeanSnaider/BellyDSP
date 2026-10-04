@@ -207,6 +207,25 @@ def tonestack(x, fs, bass, mid, treble, voice="fender"):
 # ---------------------------------------------------------------- channels
 # A channel is just a different set of circuit choices. Same building blocks,
 # different values. This is how real multi-channel amps work too.
+#
+# gain_taper_db is the channel's gain pot: the first stage's drive in dB, relative
+# to its design value, at gain knob 0, 2.5, 5, 7.5 and 10, linear in dB in between.
+# Until 2026-10-04 every channel had the same law, 10^((gain - 5) / 10), which is
+# -10, -5, 0, +5, +10 dB (ORIGINAL_TAPER_DB). That spans only 20 dB, and the crunch
+# and lead channels were already saturated at knob 0, so their gain knob did almost
+# nothing (docs/ASSUMPTIONS.md AG2). Each channel now has its own taper, voiced so
+# its five knob positions are evenly spread in distortion: the nonlinear energy
+# ratio (the share of the output a linear filter of the input can't explain,
+# from the magnitude-squared coherence; tools/content/make_default_captures.py
+# --voice finds these numbers) goes in equal dB steps from the channel's cleanest
+# sound to its most driven one, with the built-in captures' other knobs:
+#   clean   clean (-36 dB) to the edge of breakup (-20 dB), master 4
+#   crunch  light crunch (-18 dB) to heavy crunch (-7 dB), master 3.5
+#   lead    rhythm-tight high gain (-9 dB) to a saturated lead (-4.3 dB), master 2,
+#           behind the app's Screamer boost at +6 dB
+
+TAPER_KNOBS = [0.0, 2.5, 5.0, 7.5, 10.0]
+ORIGINAL_TAPER_DB = [-10.0, -5.0, 0.0, 5.0, 10.0]
 
 CHANNELS = {
     "clean": dict(
@@ -214,26 +233,36 @@ CHANNELS = {
         low_cut_db=0.0, mid_push_db=0.0,     # flat pre-emphasis: full-range clean
         stages=[(1.5, 0.05)],                # one gentle stage: (drive, bias)
         interstage_lp=10000,
+        gain_taper_db=[-10.2, -5.7, -2.8, -0.1, 2.9],
     ),
     "crunch": dict(
         voice="marshall",
         low_cut_db=-4.0, mid_push_db=4.0,
         stages=[(6.0, 0.2), (3.0, 0.1)],
         interstage_lp=7000,
+        gain_taper_db=[-15.8, -13.3, -10.3, -6.2, 0.5],
     ),
     "lead": dict(
         voice="marshall",
         low_cut_db=-9.0, mid_push_db=8.0,    # tight: kill lows before heavy clipping
         stages=[(10.0, 0.25), (6.0, 0.15), (3.0, 0.1)],
         interstage_lp=6000,
+        gain_taper_db=[-36.4, -32.8, -29.1, -24.1, -12.1],
     ),
 }
+
+
+def gain_drive_db(channel, gain):
+    """The first stage's drive (dB, relative to its design value) at a gain knob position."""
+    return float(np.interp(gain, TAPER_KNOBS, CHANNELS[channel]["gain_taper_db"]))
 
 
 # ---------------------------------------------------------------- the amp
 
 def amp(x, fs, channel="crunch", gain=5.0, bass=5.0, mid=5.0, treble=5.0,
-        master=5.0, oversample=4, ir=None, cab=True):
+        master=5.0, oversample=4, ir=None, cab=True, drive_db=None):
+    """drive_db, if given, sets the first stage's drive directly (dB relative to its
+    design value) in place of the gain knob's taper: how the tapers are voiced."""
     ch = CHANNELS[channel]
 
     # 1. Input: get rid of sub-bass rumble that would make distortion muddy
@@ -244,8 +273,11 @@ def amp(x, fs, channel="crunch", gain=5.0, bass=5.0, mid=5.0, treble=5.0,
     x = filt(x, "peak", 800, fs, q=0.8, gain_db=ch["mid_push_db"])
 
     # 3. Preamp. The gain knob (0-10) scales the first stage's drive
-    #    exponentially, because volume is perceived logarithmically.
-    gain_mult = 10 ** ((gain - 5) / 10)      # knob 0 -> 0.32x, 5 -> 1x, 10 -> 3.2x
+    #    exponentially (the channel's taper is in dB), because loudness and drive
+    #    are perceived logarithmically.
+    if drive_db is None:
+        drive_db = gain_drive_db(channel, gain)
+    gain_mult = 10 ** (drive_db / 20)
     for i, (drive, bias) in enumerate(ch["stages"]):
         d = drive * gain_mult if i == 0 else drive
         x = oversampled(lambda s, d=d, bias=bias: tube_clip(s, d, bias), x, oversample)

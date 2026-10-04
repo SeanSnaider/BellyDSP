@@ -8,6 +8,7 @@
 #include "BuiltInCaptures.h"
 #include "PluginEditor.h"
 #include "Presets.h"
+#include "dsp/GainSet.h"
 #include "TestHelpers.h"
 #include "platform/AppInfo.h"
 
@@ -101,31 +102,43 @@ public:
             juce::StringArray described;
             for (int s = 0; s < 3; ++s)
             {
+                // Each built-in is a gain set since 2026-10-04 (BUILD_PLAN "Amp gain"): content/models/<Amp>/gainset.json
+                // and its five captures, each with its metadata and its own manifest entry.
                 const auto file = presets::builtInCapture (s);
                 expect (file.existsAsFile() && file.isAChildOf (platform::factoryContentFolder()), file.getFullPathName());
-                expectEquals (presets::builtInCapturePath (s), "factory:models/" + juce::String (names[(size_t) s]) + ".nam");
+                expectEquals (presets::builtInCapturePath (s), "factory:models/" + juce::String (names[(size_t) s]) + "/gainset.json");
                 expect (presets::isBundled (file));
-                const auto m = metadataOf (file);
-                expectEquals (m["name"].toString(), juce::String (names[(size_t) s]));
-                expectEquals (m["modeled_by"].toString(), juce::String ("BellyDSP"));
-                expectEquals (m["gear_type"].toString(), juce::String ("amp"));
-                expectEquals (m["tone_type"].toString(), juce::String (toneTypes[(size_t) s]));
-                expectWithinAbsoluteError ((double) m["input_level_dbu"], 12.0, 1.0e-9);
-
-                const juce::var* entry = nullptr;
-                if (const auto* files = manifest["files"].getArray())
-                    for (const auto& f : *files)
-                        if (f["path"].toString() == "models/" + juce::String (names[(size_t) s]) + ".nam")
-                            entry = &f;
-                expect (entry != nullptr, names[(size_t) s]);
-                if (entry != nullptr)
+                ampsim::GainSet set;
+                juce::String error;
+                expect (ampsim::GainSet::read (file, set, error), error);
+                expectEquals (set.name, juce::String (names[(size_t) s]));
+                expectEquals (set.toneType, juce::String (toneTypes[(size_t) s]));
+                juce::int64 bytes = 0;
+                for (const auto& step : set.steps)
                 {
-                    expectEquals ((*entry)["license"].toString(), juce::String ("CC BY 4.0"));
-                    expectEquals ((*entry)["author"].toString(), juce::String ("Sean Snaider"));
-                    expect ((*entry)["notes"].toString().contains ("prototypes/amp_sim.py"));
+                    const auto m = metadataOf (step.file);
+                    expectEquals (m["name"].toString(), juce::String (names[(size_t) s]) + ", gain " + juce::String (step.gain, 1).trimCharactersAtEnd ("0").trimCharactersAtEnd ("."));
+                    expectEquals (m["modeled_by"].toString(), juce::String ("BellyDSP"));
+                    expectEquals (m["gear_type"].toString(), juce::String ("amp"));
+                    expectEquals (m["tone_type"].toString(), juce::String (toneTypes[(size_t) s]));
+                    expectWithinAbsoluteError ((double) m["input_level_dbu"], 12.0, 1.0e-9);
+                    bytes += step.file.getSize();
+
+                    const juce::var* entry = nullptr;
+                    if (const auto* files = manifest["files"].getArray())
+                        for (const auto& f : *files)
+                            if (f["path"].toString() == "models/" + juce::String (names[(size_t) s]) + "/" + step.file.getFileName())
+                                entry = &f;
+                    expect (entry != nullptr, step.file.getFileName());
+                    if (entry != nullptr)
+                    {
+                        expectEquals ((*entry)["license"].toString(), juce::String ("CC BY 4.0"));
+                        expectEquals ((*entry)["author"].toString(), juce::String ("Sean Snaider"));
+                        expect ((*entry)["notes"].toString().contains ("prototypes/amp_sim.py"));
+                    }
                 }
-                described.add (juce::String (names[(size_t) s]) + " (" + m["tone_type"].toString() + ", " + juce::String (file.getSize() / 1024) + " KB, "
-                               + "input_level_dbu " + m["input_level_dbu"].toString() + ")");
+                described.add (juce::String (names[(size_t) s]) + " (" + set.toneType + ", a gain set of " + juce::String ((int) set.steps.size()) + ", "
+                               + juce::String (bytes / 1024) + " KB, input_level_dbu 12)");
             }
             logMessage ("  -> content/models: " + described.joinIntoString (", ") + "; each with a CC BY 4.0 manifest entry");
         }
@@ -162,7 +175,7 @@ public:
                 amp.getSpectrum().update();
                 ed.refresh();
                 expectEquals (amp.getVoiceText(), juce::String (voices[(size_t) s]));
-                expectEquals (amp.getModelText(), juce::String (names[(size_t) s]) + " (built in)");
+                expectEquals (amp.getModelText(), juce::String (names[(size_t) s]) + " (built in, gain set)");
                 expectEquals (amp.getRateText(), juce::String ("48 kHz"));
                 expect (amp.getJewel().isLit());
                 expect (ed.getStatusText().isEmpty(), ed.getStatusText());
@@ -291,7 +304,7 @@ public:
                 }
                 expect (! status.cabError[0] && status.cab[0] != "No IR", status.cab[0]);
                 expect (juce::File (p.parameters.state.getProperty (AmpSimProcessor::cabPathKey (0)).toString()).isAChildOf (platform::factoryContentFolder()));
-                expect (preset["notes"].toString().contains ("built-in captures"));
+                expect (preset["notes"].toString().contains ("built-in gain sets"));
                 juce::StringArray sceneSlots;
                 for (int i = 0; i < 3; ++i)
                 {

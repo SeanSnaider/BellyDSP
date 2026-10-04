@@ -1,7 +1,7 @@
 {
   "format_version": 2,
   "name": "Tech Death",
-  "notes": "Slots 1 to 3 start on the built-in captures, Glass (clean), Ember (crunch), and Monolith (high gain, with a Screamer boost built in): stand-ins until your own. Scenes: Rhythm and Lead on Monolith, Clean on Glass. The Boost block is off because Monolith has its boost built in: switch it on (Screamer, +6 dB) for an amp-only capture of your own. Press Learn on Gate A with the strings muted first. Close mic 1 starts on a built-in modern 4x12 IR (pick another on the Cab page). Swap in your own captures; these settings are starting points to tune by ear.",
+  "notes": "Slots 1 and 3 start on the built-in gain sets, Glass (clean to the edge of breakup) and Monolith (tight high gain to a saturated lead, with a Screamer boost built in): stand-ins until your own. Scenes: Rhythm on Monolith at Gain 5 (tight: bass and depth down), Lead on Monolith at Gain 8.75 with more mid (the scenes hold Monolith's Gain and Middle), Clean on Glass at 2.5 with the pre compressor on. The Boost block is off because Monolith has its boost built in: switch it on (Screamer, +4 dB) for an amp-only capture of your own. Press Learn on Gate A with the strings muted first. Close mic 1 starts on a built-in modern 4x12 IR (pick another on the Cab page). Swap in your own captures; these settings are starting points to tune by ear.",
   "parameters": {
     "amp_slot": 2,
     "gate_a_on": 1,
@@ -9,7 +9,7 @@
     "gate_link": 1,
     "boost_on": 0,
     "boost_mode": 2,
-    "boost_level": 6.0,
+    "boost_level": 4.0,
     "cab_lowcut_on": 1,
     "cab_lowcut_freq": 80.0,
     "cab_highcut_on": 1,
@@ -17,23 +17,40 @@
     "reverb_on": 1,
     "reverb_engine": 0,
     "reverb_mix": 8.0,
-    "reverb_decay": 0.8
+    "reverb_decay": 0.8,
+    "comp_pre_threshold": -32.0,
+    "comp_pre_ratio": 6.0,
+    "comp_pre_attack": 10.0,
+    "amp1_input_trim": -12.0,
+    "amp1_bass": 0.0,
+    "amp1_mid": 0.0,
+    "amp1_treble": 1.2,
+    "amp1_presence": 1.2,
+    "amp1_depth": 0.0,
+    "amp1_output_trim": -2.8,
+    "amp3_input_trim": 0.0,
+    "amp3_bass": -2.4,
+    "amp3_mid": 1.2,
+    "amp3_treble": 0.0,
+    "amp3_presence": 0.0,
+    "amp3_depth": -1.2,
+    "amp3_output_trim": -1.2
   },
   "amps": [
     {
-      "path": "factory:models/Glass.nam",
-      "hash": "fnv1a64:7b491dabe79fb5ff",
-      "size": 298414
+      "path": "factory:models/Glass/gainset.json",
+      "hash": "fnv1a64:910d7b5e1dbb7d3d",
+      "size": 707
     },
     {
-      "path": "factory:models/Ember.nam",
-      "hash": "fnv1a64:3ed633e1059221a7",
-      "size": 297888
+      "path": "factory:models/Ember/gainset.json",
+      "hash": "fnv1a64:8ab3c14a7c2fe381",
+      "size": 708
     },
     {
-      "path": "factory:models/Monolith.nam",
-      "hash": "fnv1a64:5eab4a3764459b96",
-      "size": 297266
+      "path": "factory:models/Monolith/gainset.json",
+      "hash": "fnv1a64:13aa6684a718af14",
+      "size": 734
     }
   ],
   "cab": {
@@ -79,7 +96,10 @@
     ]
   },
   "scenes": {
-    "parameters": [],
+    "parameters": [
+      "amp3_input_trim",
+      "amp3_mid"
+    ],
     "list": [
       {
         "name": "Rhythm",
@@ -89,7 +109,10 @@
           "gate_b_on": 1,
           "boost_on": 0,
           "delay_on": 0,
-          "chorus_on": 0
+          "chorus_on": 0,
+          "comp_pre_on": 0,
+          "amp3_input_trim": 0.0,
+          "amp3_mid": 1.2
         }
       },
       {
@@ -100,7 +123,10 @@
           "gate_b_on": 1,
           "boost_on": 0,
           "delay_on": 1,
-          "chorus_on": 0
+          "chorus_on": 0,
+          "comp_pre_on": 0,
+          "amp3_input_trim": 18.0,
+          "amp3_mid": 3.6
         }
       },
       {
@@ -111,7 +137,10 @@
           "gate_b_on": 0,
           "boost_on": 0,
           "delay_on": 1,
-          "chorus_on": 1
+          "chorus_on": 1,
+          "comp_pre_on": 1,
+          "amp3_input_trim": 0.0,
+          "amp3_mid": 1.2
         }
       },
       null,

@@ -7,12 +7,17 @@ the app opens.
   Bastian Karschewski (Jester Dyne Productions), which he released under CC0 (public domain). Renamed
   without brand names and the modern ones cut to 1 s by `tools/content/import_jester_irs.py`; each file's
   manifest entry cites its original by the pack handbook's patch number. The cab page lists them under "Built in", one entry per IR.
-- `models/`: the three built-in captures, one per amp slot and named after its head: `Glass.nam` (clean),
-  `Ember.nam` (crunch), `Monolith.nam` (high gain). A fresh start loads them, the factory presets use
-  them, and an amp's right-click menu puts one back. For now they're stand-ins, trained by
-  `tools/content/make_default_captures.py` from the project's own gray-box amp (`prototypes/amp_sim.py`,
-  amp only; settings in each manifest entry), until Sean's own captures replace them under the same
-  names (`docs/CAPTURING.md`, "Replacing a built-in capture"). Licensed under **CC BY 4.0** (Creative
+- `models/`: the three built-in amps, one per amp slot and named after its head, each a **gain set**: five
+  captures of one amp across its gain knob, and a `gainset.json` listing them (`src/dsp/GainSet.h`), which
+  is what the app loads and the presets refer to. `Glass/` (clean to the edge of breakup), `Ember/` (light
+  to heavy crunch), `Monolith/` (tight high gain to a saturated lead), each holding `<Amp>, gain 0.nam`,
+  `2.5`, `5`, `7.5`, and `10`. The amp head's Gain moves across the steps (BUILD_PLAN "Amp gain"). A fresh
+  start loads them, the factory presets use them, and an amp's right-click menu puts one back. For now
+  they're stand-ins, trained by `tools/content/make_default_captures.py` from the project's own gray-box
+  amp (`prototypes/amp_sim.py`, amp only, each channel at five positions of its gain knob; settings in each
+  manifest entry), until Sean's own captures replace them under the same names (`docs/CAPTURING.md`,
+  "Replacing a built-in capture"). They replaced the single `Glass.nam`, `Ember.nam`, and `Monolith.nam`
+  on 2026-10-04; presets and saved states that name those load the sets. Licensed under **CC BY 4.0** (Creative
   Commons Attribution 4.0 International, `licenses/CC-BY-4.0.txt`, the official legal code from
   creativecommons.org) with the attribution "Sean Snaider": anyone may share and adapt them, including
   commercially, as long as they credit him.
@@ -39,7 +44,8 @@ and each carries its own licence, listed per file in `manifest.json`: CC0 1.0 fo
   unless it has a `cabpack.json`.
 - Every file needs an entry in `manifest.json`, or the build fails. The entry generates the file's
   section of `THIRD_PARTY_NOTICES.txt` (shipped in the app and the DMG, and shown under the brand
-  menu's "About / licenses").
+  menu's "About / licenses"). A gain set's `gainset.json` is the one exception: it only lists its
+  captures, and each capture has its own entry (`tools/notices/make_notices.cmake`).
 
 ## manifest.json
 

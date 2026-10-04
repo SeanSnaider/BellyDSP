@@ -207,31 +207,86 @@ the real test; the ESR below is a guide.
 4. `cmake --build build -j && ctest --test-dir build --output-on-failure`: the tests check every factory
    preset loads its files with no warnings.
 
+## Gain sets: capturing the gain knob itself
+
+A capture is a snapshot of your amp at **one** gain setting. Turning the app's Gain up on a single capture
+drives the model harder than anything it learned from, so past a point it extrapolates: it gets louder and
+fizzier rather than gaining up the way the amp would, and it can't clean up below where it was captured
+either (ASSUMPTIONS AG1). On a single capture the app's Gain is therefore an input trim (-24 to +24 dB),
+loudness-compensated so it changes the drive and not the volume (AG8), which is honest but limited.
+
+A **gain set** captures the knob: several captures of the same amp at different gain-knob settings, listed in
+a `gainset.json`. In an amp slot, the head's Gain moves across them: on a step, that capture plays; between two
+steps, both play and the app blends them. Every step is loudness-normalized, so Gain changes the saturation
+and the Master stays the volume. The built-in amps are gain sets of five steps (0, 2.5, 5, 7.5, 10).
+
+**1. Plan the steps.** Pick the gain-knob settings on your amp, from the cleanest you'd use to the most
+driven, spread so each step sounds about as different from the next (equal distortion steps, not equal knob
+turns: the built-ins' steps are about 4 dB apart in "nonlinear energy", `make_default_captures.py --voice`).
+Five is a good number; two works. Give each one the Gain position (0 to 10) it should sit at in the app.
+
+**2. Capture each step** exactly as in "The commands, in order", steps 4 and 5, changing **only** the amp's
+gain knob between them (same output level, same Solo gain, same everything else, written down):
+
+```
+ampsim_capture --in-channel 1 --output-level-db -20 --output "captures/Crunch g0.wav"
+(gain knob to the next setting)
+ampsim_capture --in-channel 1 --output-level-db -20 --output "captures/Crunch g2.5.wav"
+...
+```
+
+**3. Train and package them in one command:**
+
+```
+uv run --no-project python tools/train_gain_set.py --name "Crunch amp" --tone-type crunch --gear-type amp \
+    --description "Light crunch to heavy crunch" \
+    --step 0 "captures/Crunch g0.wav" --step 2.5 "captures/Crunch g2.5.wav" --step 5 "captures/Crunch g5.wav" \
+    --step 7.5 "captures/Crunch g7.5.wav" --step 10 "captures/Crunch g10.wav" --out-dir "trained/Crunch amp"
+```
+
+It runs `tools/train_capture.sh` once per step (about 6 minutes each on this Mac; a step already trained is
+skipped, so a stopped run picks up where it was), names them "Crunch amp, gain 0" and so on, and writes
+`trained/Crunch amp/gainset.json`. Load that JSON into an amp slot (click the grille) and sweep Gain.
+
+The format, if you write one by hand (`src/dsp/GainSet.h`): `"format": "bellydsp-gain-set"`, `"version": 1`,
+`"name"`, optional `"description"` and `"tone_type"`, and `"steps"`, each `{ "gain": <0 to 10>, "file":
+"<a .nam next to the JSON>" }`, in ascending gain, 1 to 11 of them. The steps should be the same amp at the
+same input level: the app takes the input calibration from the first step's metadata.
+
+**What it costs.** Each step is a full model, but a slot only runs what it needs: one model on a step, two
+between steps, and briefly a third that warms up (85 ms for a standard WaveNet) before the knob reaches it.
+Prefer Gain settings on a step for presets you play live: that's one model per slot, like a single capture.
+
 ## Replacing a built-in capture
 
-BellyDSP ships three built-in captures, one per amp slot and named after its head: **Glass** (slot 1,
-clean), **Ember** (slot 2, crunch), and **Monolith** (slot 3, high gain). A fresh start loads them, the
-factory presets use them, and an amp's right-click menu has "Use the built-in capture" to put one back.
-For now they're stand-ins: trained from the project's own gray-box Python amp (`prototypes/amp_sim.py`)
-by `tools/content/make_default_captures.py`, not from real gear (ASSUMPTIONS DS44 to DS49). Your own
-captures replace them:
+BellyDSP ships three built-in amps, one per amp slot and named after its head: **Glass** (slot 1, clean to
+the edge of breakup), **Ember** (slot 2, light to heavy crunch), and **Monolith** (slot 3, tight high gain to
+a saturated lead). Each is a gain set in `content/models/<Amp>/` (five captures and a `gainset.json`). A fresh
+start loads them, the factory presets use them, and an amp's right-click menu has "Use the built-in capture"
+to put one back. For now they're stand-ins: trained from the project's own gray-box Python amp
+(`prototypes/amp_sim.py`, each channel at five positions of its gain knob) by
+`tools/content/make_default_captures.py`, not from real gear (ASSUMPTIONS DS44 to DS49, AG2, AG3). Your own
+replace them:
 
-1. Capture and train as above (steps 1 to 7), with the same tone types: a clean for Glass, a crunch for
-   Ember, a tight high gain for Monolith (`--tone-type clean`, `crunch`, `hi_gain`). Monolith's stand-in has
-   a Screamer boost built in (the Tech Death preset's Boost is off because of it); if yours doesn't, switch
-   the preset's Boost back on (Screamer, +6 dB).
-2. Copy it over the built-in, keeping the name: `cp "trained/Crunch, amp only.nam" content/models/Ember.nam`.
-   The name is what the app and the presets look for (`factory:models/Ember.nam`).
-3. Update its entry in `content/manifest.json`: title, description, notes ("Amp through a load box;
-   trained with neural-amp-modeler 0.12.3, standard, ESR 0.0xx"), source; the author and CC BY 4.0 stay.
+1. Capture and train a gain set as above, with the same tone types: a clean for Glass, a crunch for Ember, a
+   tight high gain for Monolith (`--tone-type clean`, `crunch`, `hi_gain`), and the built-in's name and
+   folder: `--name Ember --out-dir content/models/Ember` (delete the stand-in's .nam files there first).
+   Monolith's stand-in has a Screamer boost built in (the Tech Death preset's Boost is off because of it);
+   if yours doesn't, switch the preset's Boost back on (Screamer, +4 dB). A single capture can replace a
+   built-in too: a `gainset.json` with one step.
+2. The app and the presets look for `factory:models/Ember/gainset.json`, so keep that path.
+3. Give each .nam its entry in `content/manifest.json`: title, description, notes ("Amp through a load box,
+   gain knob at 3; trained with neural-amp-modeler 0.12.3, standard, ESR 0.0xx"), source; the author and
+   CC BY 4.0 stay. (`gainset.json` itself needs no entry.)
 4. Update the factory presets' content hashes (they'd warn "has changed since the preset was saved"):
-   `uv run --with numpy --with scipy --with soundfile python tools/content/make_default_captures.py --presets-only`
-   rewrites the `"amps"` entries of every `presets/factory/*.json` with the current files' hashes and sizes.
+   `uv run --no-project --with numpy --with scipy --with soundfile python tools/content/make_default_captures.py --package-only`
+   rewrites the `"amps"` entries of every `presets/factory/*.json` with the current sets' hashes and sizes
+   (it also rewrites the stand-ins' manifest entries and gainset.json files: undo its changes to yours).
 5. `cmake --build build -j && ctest --test-dir build --output-on-failure`. The built-in capture tests check
-   the metadata (name, `modeled_by` "BellyDSP", tone type, `input_level_dbu` 12): change those expectations
-   in `tests/BuiltInCaptureTests.cpp` to your capture's (your name as `modeled_by`, your measured input
-   level or none). Don't run `make_default_captures.py` without `--presets-only` after that: it would train
-   the stand-ins again and copy them over yours.
+   the metadata (name, `modeled_by` "BellyDSP", tone type, `input_level_dbu` 12, five steps at 0, 2.5, 5, 7.5,
+   10): change those expectations in `tests/BuiltInCaptureTests.cpp` and `tests/AmpGainTests.cpp` to your
+   set's. Don't run `make_default_captures.py` to train after that: it would train the stand-ins again and
+   copy them over yours.
 
 Without `--input-level-dbu`, the app plays your capture exactly as recorded, whatever the interface level
 setting; with it, the capture hears your guitar at the level the gear did (see "Input level metadata").

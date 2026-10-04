@@ -31,7 +31,7 @@ struct Options
     float boostLevelDb = 0.0f;
 
     // Tone match (docs/TONE_MATCH.md) renders candidates with these. Defaults leave the chain as before.
-    float trimDb = 0.0f;                                            // slot 1's input trim: the amp page's Gain
+    float trimDb = 0.0f;                                            // slot 1's Gain, as amp1_input_trim stores it (dB)
     std::array<float, ampsim::AmpTone::numBands> tone {};          // slot 1's Depth, Bass, Mid, Treble, Presence (dB)
     bool postEqOn = false;                                         // the post EQ, parametric mode
     ampsim::Equalizer::Settings postEq;
@@ -75,7 +75,7 @@ bool parsePostEq (const juce::String& text, ampsim::Equalizer::Settings& eq)
 void printUsage()
 {
     std::cerr << "Usage: ampsim_render [options] <input.wav> <output.wav>\n"
-                 "  --model <file.nam>     amp capture (omit for passthrough)\n"
+                 "  --model <file>         amp capture: a .nam, or a gain set's gainset.json (omit for passthrough)\n"
                  "  --ir <file.wav>        cab close mic 1 impulse response (omit for no cab)\n"
                  "  --ir2 <file.wav>       cab close mic 2 impulse response (auto-aligned to mic 1)\n"
                  "  --room <file.wav>      cab room mic impulse response (mono or stereo)\n"
@@ -88,7 +88,9 @@ void printUsage()
                  "                         (the TS808 circuit at minimum drive, tone at noon; 0 dBFS = +12 dBu)\n"
                  "  --boost-level <dB>     the boost's Level (default 0)\n"
                  "  --compare <ref.wav>    report the difference between the output and a reference\n"
-                 "  --trim <dB>            slot 1's input trim, the amp page's Gain (default 0)\n"
+                 "  --trim <dB>            slot 1's Gain as its parameter stores it, -24 to +24 dB (default 0)\n"
+                 "  --gain <0-10>          slot 1's Gain as the amp head shows it (5 is --trim 0): a gain set's\n"
+                 "                         position across its steps, or a single capture's compensated trim\n"
                  "  --tone <d,b,m,t,p>     slot 1's Depth, Bass, Mid, Treble, Presence in dB (default all 0)\n"
                  "  --post-eq <bands>      switch the post EQ on in parametric mode: up to five comma-separated\n"
                  "                         bands type:freq:gain:q, type pk, ls, hs, or notch\n"
@@ -122,6 +124,7 @@ bool parse (int argc, char* argv[], Options& o)
         else if (a == "--boost" && hasValue)         o.boost = argv[++i];
         else if (a == "--boost-level" && hasValue)   o.boostLevelDb = juce::String (argv[++i]).getFloatValue();
         else if (a == "--trim" && hasValue)          o.trimDb = juce::String (argv[++i]).getFloatValue();
+        else if (a == "--gain" && hasValue)          o.trimDb = ampsim::AmpSection::GainKnob::dbForPosition (juce::String (argv[++i]).getFloatValue());
         else if (a == "--tone" && hasValue)
         {
             const auto values = juce::StringArray::fromTokens (argv[++i], ",", "");
