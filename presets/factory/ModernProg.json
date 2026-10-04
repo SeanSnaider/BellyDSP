@@ -32,26 +32,26 @@
     "amp1_treble": 3.6,
     "amp1_presence": 2.4,
     "amp1_depth": 0.0,
-    "amp1_output_trim": 0.0,
+    "amp1_output_trim": -6.8,
     "amp2_input_trim": 0.0,
     "amp2_bass": 0.0,
     "amp2_mid": 1.2,
     "amp2_treble": 1.2,
     "amp2_presence": 1.2,
     "amp2_depth": 0.0,
-    "amp2_output_trim": 0.0,
+    "amp2_output_trim": -2.9,
     "amp3_input_trim": 12.0,
     "amp3_bass": -1.2,
     "amp3_mid": 2.4,
     "amp3_treble": 1.2,
     "amp3_presence": 1.2,
     "amp3_depth": 1.2,
-    "amp3_output_trim": 0.0
+    "amp3_output_trim": -2.6
   },
   "amps": [
     {
       "path": "factory:models/Glass/gainset.json",
-      "hash": "fnv1a64:bbe02950b2ea5fec",
+      "hash": "fnv1a64:86152948e9e19a7b",
       "size": 707
     },
     {

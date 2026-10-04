@@ -95,16 +95,23 @@ STEPS = [0.0, 2.5, 5.0, 7.5, 10.0]  # the gain knob positions each set is captur
 # The three amps, in slot order. Knobs are amp_sim's 0-10. The gain knob is the step; its taper is the
 # channel's (amp_sim.CHANNELS[...]["gain_taper_db"], found by --voice with these other knobs). NL_RANGE is
 # the nonlinear energy ratio (dB) at gain 0 and gain 10 that --voice aims for.
+#
+# latency: the round trip the trainer removes, pinned per amp (train_capture --latency). Left to the trainer,
+# it measures it from the blips separately for each step, and the measurement moved by a sample between steps
+# (Glass 89, 89, 88, 88, 88; Monolith 97, 97, 96, 96, 95), so neighbouring steps' models came out a sample apart
+# in time. Blending two signals a sample apart is a comb filter (a treble loss mid-blend: Glass 2.5 to 5 had a
+# correlation of 0.78 against 0.999 for its aligned pairs). Every step of an amp is the same circuit with the
+# same delay, so they all get the one value (the most common measurement).
 AMPS = {
-    "Glass": dict(channel="clean", tone_type="clean", boost_db=None, epochs=100, nl_range=(-36.0, -20.0),
+    "Glass": dict(channel="clean", tone_type="clean", boost_db=None, epochs=100, latency=88, nl_range=(-36.0, -20.0),
                   description="Clean to the edge of breakup",
                   knobs=dict(bass=5.0, mid=5.0, treble=6.0, master=4.0)),
-    "Ember": dict(channel="crunch", tone_type="crunch", boost_db=None, epochs=100, nl_range=(-18.0, -7.0),
+    "Ember": dict(channel="crunch", tone_type="crunch", boost_db=None, epochs=100, latency=90, nl_range=(-18.0, -7.0),
                   description="Light crunch to heavy crunch",
                   knobs=dict(bass=5.0, mid=6.0, treble=5.0, master=3.5)),
     # Monolith: 200 epochs. A single high-gain capture at 100 had a validation ESR of 0.0048 and 0.0033 at
     # 200 (ASSUMPTIONS DS49).
-    "Monolith": dict(channel="lead", tone_type="hi_gain", boost_db=6.0, epochs=200, nl_range=(-9.0, -4.3),
+    "Monolith": dict(channel="lead", tone_type="hi_gain", boost_db=6.0, epochs=200, latency=96, nl_range=(-9.0, -4.3),
                      description="Tight high gain to a saturated lead",
                      knobs=dict(bass=4.0, mid=6.0, treble=6.0, master=2.0)),
 }
@@ -241,7 +248,7 @@ def train(name, spec, gain, output_wav, work, epochs):
     label = step_name(name, gain)
     log = run([REPO / "tools/train_capture.sh", "--input", INPUT, "--output", output_wav, "--name", label,
                "--modeled-by", "BellyDSP", "--tone-type", spec["tone_type"], "--gear-type", "amp",
-               "--input-level-dbu", INPUT_LEVEL_DBU, "--epochs", epochs, "--out-dir", work])
+               "--input-level-dbu", INPUT_LEVEL_DBU, "--epochs", epochs, "--latency", spec["latency"], "--out-dir", work])
     (work / f"{label}_training_log.txt").write_text(log)
     for line in log.splitlines():
         if line.startswith(("Done in", "Final validation", "WARNING")):

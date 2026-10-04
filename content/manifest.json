@@ -271,7 +271,7 @@
       "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
       "license": "CC BY 4.0",
       "license_file": "licenses/CC-BY-4.0.txt",
-      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, clean channel, gain 0 (first stage -10.2 dB), bass 5, mid 5, treble 6, master 4; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0003; a stand-in until Sean's own captures"
+      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, clean channel, gain 0 (first stage -10.2 dB), bass 5, mid 5, treble 6, master 4; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0005; a stand-in until Sean's own captures"
     },
     {
       "path": "models/Glass/Glass, gain 10.nam",

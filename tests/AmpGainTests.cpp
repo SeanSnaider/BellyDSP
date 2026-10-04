@@ -499,7 +499,7 @@ public:
             auto& amp = ed.getAmpView();
             expect (amp.getShownGainSteps() == std::vector<float> { 0.0f, 2.5f, 5.0f, 7.5f, 10.0f });
             expect (amp.getLitGainSteps() == std::vector<bool> { false, false, true, true, false });
-            expectEquals (amp.getKnob (2, 0).getValueText(), juce::String ("6.3"));
+            expectEquals (amp.getKnob (2, 0).getValueText(), juce::String (6.25f, 1));
             expect (amp.getModelText() == "Monolith (built in, gain set)", amp.getModelText());
             expectEquals (amp.getVoiceText(), juce::String ("High gain"));
             const auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f);
@@ -520,7 +520,7 @@ public:
             expect (amp.getShownGainSteps().empty());
             const auto single = editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f);
             expect (savePng (single, proof.getChildFile ("editor_amp_single_capture.png")));
-            logMessage ("  -> Monolith at 6.25: dots at 0, 2.5, 5, 7.5, 10 with 5 and 7.5 lit, the knob reads 6.3, the info row \"" + amp.getModelText()
+            logMessage ("  -> Monolith at 6.25: dots at 0, 2.5, 5, 7.5, 10 with 5 and 7.5 lit, the knob reads \"" + amp.getKnob (2, 0).getValueText() + "\", the info row \"" + amp.getModelText()
                         + "\"; at 7.5 only 7.5 is lit; a single capture shows no dots. amp_gain/editor_amp_monolith_gain_6.25.png, editor_amp_gain_knob_crop.png, "
                           "editor_amp_single_capture.png");
         }
@@ -632,8 +632,9 @@ public:
             const auto input = guitarDI ((int) (8.0 * fs));
             const auto folder = proofDir().getChildFile ("presets");
             folder.createDirectory();
-            juce::StringArray table { "| Preset | Scene | Amp | Gain | Bass | Mid | Treble | Presence | Depth | Master | LUFS | Peak dBFS |",
-                                      "|---|---|---|---|---|---|---|---|---|---|---|---|" };
+            juce::Array<juce::var> levels;
+            juce::StringArray table { "| Preset | Scene | Amp | Gain | Bass | Mid | Treble | Presence | Depth | Master | LUFS | Peak dBFS | LUFS, DI at -12 |",
+                                      "|---|---|---|---|---|---|---|---|---|---|---|---|---|" };
             for (const auto& preset : presets::factoryPresets())
             {
                 const auto name = preset["name"].toString();
@@ -660,16 +661,35 @@ public:
                     const auto peak = stereo.getMagnitude (0, stereo.getNumSamples());
                     const auto loud = ampsim::loudness::integrated ({ out.left.data(), out.right.data() }, (int) out.left.size(), fs);
                     expectLessOrEqual ((double) toDb (peak), -1.0, name + " " + sceneName);
+
+                    // The same at -12 dBFS peaks (a lighter touch, or a lower pickup): its loudness, after the
+                    // first second (the louder pass's echoes).
+                    auto softer = input;
+                    for (auto& v : softer)
+                        v *= 0.5f;
+                    const auto quiet = play (p, softer);
+                    const auto skip = (size_t) fs;
+                    const auto loud12 = ampsim::loudness::integrated ({ quiet.left.data() + skip, quiet.right.data() + skip }, (int) (quiet.left.size() - skip), fs);
+
                     const auto slot = juce::roundToInt (getParam (p, AmpSimProcessor::slotParamId));
                     const auto knob = [&] (const char* id, float range) { return juce::String ((getParam (p, AmpSimProcessor::ampParamId (slot, id)) + range) / (2.0f * range) * 10.0f, 1); };
                     table.add ("| " + name + " | " + sceneName + " | " + names[(size_t) slot] + " | " + knob ("input_trim", 24.0f) + " | " + knob ("bass", 12.0f) + " | "
                                + knob ("mid", 12.0f) + " | " + knob ("treble", 12.0f) + " | " + knob ("presence", 12.0f) + " | " + knob ("depth", 12.0f) + " | "
-                               + knob ("output_trim", 24.0f) + " | " + juce::String (loud, 1) + " | " + juce::String (toDb (peak), 1) + " |");
+                               + knob ("output_trim", 24.0f) + " | " + juce::String (loud, 1) + " | " + juce::String (toDb (peak), 1) + " | " + juce::String (loud12, 1) + " |");
+                    auto* row = new juce::DynamicObject();
+                    row->setProperty ("preset", name);
+                    row->setProperty ("scene", sceneName);
+                    row->setProperty ("slot", slot);
+                    row->setProperty ("lufs", loud);
+                    row->setProperty ("peak_dbfs", toDb (peak));
+                    row->setProperty ("lufs_at_minus_12", loud12);
+                    levels.add (juce::var (row));
                 }
             }
             for (const auto& row : table)
                 logMessage ("  " + row);
-            logMessage ("  -> build/proof/presets/<Preset>_<Scene>.wav: 8 s of the synthetic DI (peaks -6 dBFS) through each scene, the limiter (if any) off");
+            folder.getChildFile ("levels.json").replaceWithText (juce::JSON::toString (juce::var (levels)));
+            logMessage ("  -> build/proof/presets/<Preset>_<Scene>.wav: 8 s of the synthetic DI (peaks -6 dBFS) through each scene, the output limiter off; levels.json");
         }
     }
 };

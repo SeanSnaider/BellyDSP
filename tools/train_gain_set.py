@@ -23,6 +23,9 @@ What it does:
      type, and the steps in ascending gain with their files.
   3. Prints each step's validation ESR. Load the gainset.json into an amp slot to play it.
 
+Every step is trained with the same latency (the trainer's measurement on the first step, or --latency): a
+measurement a sample off between steps would leave their models a sample apart, which blends as a comb filter.
+
 Arguments after --train-args are passed to every training (e.g. --train-args --seed 1).
 """
 
@@ -48,6 +51,7 @@ def main():
     p.add_argument("--epochs", type=int)
     p.add_argument("--arch", choices=["standard", "lite", "feather", "nano"])
     p.add_argument("--input-level-dbu", type=float)
+    p.add_argument("--latency", type=int, help="the round trip in samples for every step (default: what the trainer measures on the first)")
     p.add_argument("--modeled-by")
     p.add_argument("--retrain", action="store_true", help="train every step even if its .nam exists")
     p.add_argument("--package-only", action="store_true", help="only write gainset.json from the .nam files already there")
@@ -61,6 +65,18 @@ def main():
     out = pathlib.Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
+    # One latency for every step. The trainer measures the round trip from each recording's blips, and the
+    # measurement can move by a sample between recordings of the same rig; models a sample apart in time blend
+    # into a comb filter (a treble loss halfway between steps). So the first step's measurement (or --latency)
+    # is passed to every other step.
+    latency = args.latency
+    if latency is None:
+        for gain, _ in steps:
+            stats = out / f"{args.name}, gain {gain:g} training.json"
+            if stats.exists() and json.loads(stats.read_text()).get("latency_samples") is not None:
+                latency = int(json.loads(stats.read_text())["latency_samples"])
+                break
+
     entries, summary = [], []
     for gain, recording in steps:
         label = f"{args.name}, gain {gain:g}"
@@ -71,13 +87,16 @@ def main():
             cmd = [str(REPO / "tools/train_capture.sh"), "--input", args.input, "--output", str(recording), "--name", label,
                    "--tone-type", args.tone_type, "--gear-type", args.gear_type, "--out-dir", str(out)]
             for flag, value in (("--epochs", args.epochs), ("--arch", args.arch), ("--input-level-dbu", args.input_level_dbu),
-                                ("--modeled-by", args.modeled_by)):
+                                ("--modeled-by", args.modeled_by), ("--latency", latency)):
                 if value is not None:
                     cmd += [flag, str(value)]
             cmd += args.train_args
-            print(f"\n== {label}: training on {recording}", flush=True)
+            print(f"\n== {label}: training on {recording}" + (f" (latency pinned at {latency} samples)" if latency is not None else ""), flush=True)
             if subprocess.run(cmd).returncode != 0:
                 raise SystemExit(f"Training {label} failed (see above); the steps already trained are kept.")
+            stats = out / f"{label} training.json"
+            if latency is None and stats.exists():
+                latency = json.loads(stats.read_text()).get("latency_samples")
         if not nam.exists():
             raise SystemExit(f"{nam} is missing")
         entries.append({"gain": gain, "file": nam.name})

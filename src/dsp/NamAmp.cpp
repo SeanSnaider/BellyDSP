@@ -237,8 +237,8 @@ NamAmp::LoadResult NamAmp::loadModel (const juce::File& file, bool normalize, co
     }
     else if (normalize && std::isfinite (result.measuredLufs))
     {
-        // A single capture: its loudness at every 3 dB of trim, -24 to +24 dB, on the first second of the
-        // reference DI (chugs and a power chord), from a freshly reset model each time. The compensation at a trim is the loudness at
+        // A single capture: its loudness at every 3 dB of trim, -24 to +24 dB, on one pass of the reference
+        // DI's 2 s phrase, from a freshly reset model each time. The compensation at a trim is the loudness at
         // 0 dB minus the loudness there, so Gain keeps the normalized level (0 dB at unity trim exactly).
         // It costs 17 renders, so the curve is kept per file (path, size, modification time) and input gain for
         // the life of the process: reloading a capture (a calibration change, a preset, tone match rendering
@@ -266,7 +266,11 @@ NamAmp::LoadResult NamAmp::loadModel (const juce::File& file, bool normalize, co
             for (int j = 0; j < compensationPoints; ++j)
             {
                 const auto trimDb = -singleTrimRangeDb + compensationStepDb * (float) j;
-                const auto out = renderOffline (dsp, probe, model->inputGain * juce::Decibels::decibelsToGain (trimDb));
+                // Measured after the normalization, as it's heard: BS.1770's absolute gate (-70 LUFS) would
+                // otherwise drop the quiet blocks of a quiet model at low trims and bias the curve (lstm.nam, whose
+                // raw output is far below -18 LUFS, came out 1.1 LU loud at Gain 0 without this).
+                auto out = renderOffline (dsp, probe, model->inputGain * juce::Decibels::decibelsToGain (trimDb));
+                juce::FloatVectorOperations::multiply (out.data(), model->steps.front().normalizationGain, (int) out.size());
                 dsp.Reset (requiredSampleRate, maxBlock);
                 lufs[(size_t) j] = loudness::integratedMono (out.data(), (int) out.size(), requiredSampleRate);
             }
