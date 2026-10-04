@@ -570,7 +570,7 @@ public:
                 logMessage ("  -> " + juce::File (song).getFileName() + ", " + juce::String (start, 1) + " s to " + juce::String (start + length, 1) + " s, empty model folder: "
                             + (run.hasResult ? "matched " + run.result.cab.getFileNameWithoutExtension() + ", closeness " + juce::String (run.result.closeness, 0) : "\"" + run.status + "\"")
                             + "; install done " + juce::String (run.installSeconds, 1) + " s in, all done in " + juce::String (run.seconds, 1) + " s, " + juce::String (run.workers)
-                            + " workers, the process's peak memory " + juce::String (run.peakMB) + " MB; stages: " + run.stages);
+                            + (run.workers == 1 ? " worker" : " workers") + ", the process's peak memory so far " + juce::String (run.peakMB) + " MB; stages: " + run.stages);
                 logMessage ("  -> the log:\n" + run.logText);
             }
         }

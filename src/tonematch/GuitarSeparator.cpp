@@ -214,7 +214,7 @@ juce::String GuitarSeparator::download (const juce::String& url, const juce::Fil
     // A download over HTTP(S) is tried up to downloadAttempts times. Each try asks for what's still missing
     // (Range: bytes=<have>-) and appends it, so a connection that drops 40 MB in loses nothing. A server
     // that ignores the Range header answers 200 with the whole file, which then replaces the partial one.
-    // Every try's outcome goes in the log: the HTTP status, the redirected host, how many bytes came.
+    // Every try's outcome goes in the log: the HTTP status, the time to answer, how many bytes came.
     // (JUCE's macOS stream reports a failed connection, a timeout, a TLS or DNS error alike, as no stream
     // at all, so "no response" is as specific as that case can be.)
     const juce::URL source (url);
@@ -247,6 +247,8 @@ juce::String GuitarSeparator::download (const juce::String& url, const juce::Fil
             part.deleteFile();
             have = 0;
         }
+        if (have == weightsBytes)
+            return {}; // complete from an earlier try that was interrupted afterwards; the checksum decides
 
         int status = 0;
         juce::StringPairArray headers;
