@@ -20,13 +20,16 @@
     "reverb_engine": 1,
     "reverb_mix": 12.0,
     "reverb_decay": 1.5,
+    "comp_pre_threshold": -32.0,
+    "comp_pre_ratio": 6.0,
+    "comp_pre_attack": 10.0,
     "amp1_input_trim": 0.0,
     "amp1_bass": 1.2,
     "amp1_mid": 0.0,
     "amp1_treble": 1.2,
     "amp1_presence": 0.0,
     "amp1_depth": 0.0,
-    "amp1_output_trim": -4.3,
+    "amp1_output_trim": -5.1,
     "amp2_input_trim": 12.0,
     "amp2_bass": 0.0,
     "amp2_mid": 0.0,
@@ -40,10 +43,7 @@
     "amp3_treble": 2.4,
     "amp3_presence": 1.2,
     "amp3_depth": 1.2,
-    "amp3_output_trim": -0.6,
-    "comp_pre_threshold": -26.0,
-    "comp_pre_ratio": 4.0,
-    "comp_pre_attack": 10.0
+    "amp3_output_trim": -0.7
   },
   "amps": [
     {
