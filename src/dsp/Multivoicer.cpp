@@ -61,16 +61,26 @@ Multivoicer::Settings Multivoicer::startingPoint (StartingPoint point)
     return s;
 }
 
-Multivoicer::MixGains Multivoicer::mixGains (double mix) noexcept
+Multivoicer::MixGains Multivoicer::mixGains (double mix, double addAmount) noexcept
 {
-    // Equal power: the wet is decorrelated from the dry. cos(0) is exactly 1 (mix 0 is bit-exact), and the
-    // far end is pinned because cos(pi/2) in floating point is 6e-17.
+    // Blend is equal power: the wet is decorrelated from the dry. cos(0) is exactly 1 (mix 0 is bit-exact),
+    // and the far end is pinned because cos(pi/2) in floating point is 6e-17. Add keeps the dry at exactly 1
+    // and the same wet gain (Multivoicer.h, step 7); a mode switch moves the dry gain linearly between them.
+    MixGains g;
     if (mix <= 0.0)
-        return { 1.0, 0.0 };
-    if (mix >= 1.0)
-        return { 0.0, 1.0 };
-    const auto angle = mix * juce::MathConstants<double>::halfPi;
-    return { std::cos (angle), std::sin (angle) };
+        g = { 1.0, 0.0 };
+    else if (mix >= 1.0)
+        g = { 0.0, 1.0 };
+    else
+    {
+        const auto angle = mix * juce::MathConstants<double>::halfPi;
+        g = { std::cos (angle), std::sin (angle) };
+    }
+    if (addAmount >= 1.0)
+        g.dry = 1.0;
+    else if (addAmount > 0.0)
+        g.dry += addAmount * (1.0 - g.dry);
+    return g;
 }
 
 std::pair<double, double> Multivoicer::panGains (double pan) noexcept
@@ -145,6 +155,7 @@ void Multivoicer::setSettings (const Settings& newSettings) noexcept
     normalization.setTargetValue (power > 0.0 ? 1.0 / std::sqrt (power) : 1.0);
 
     mix.setTargetValue (juce::jlimit (0.0, 1.0, settings.mix));
+    addAmount.setTargetValue (settings.mixMode == MixMode::add ? 1.0 : 0.0);
 
     const auto hz = juce::jlimit (minHighPassHz, maxHighPassHz, settings.wetHighPassHz);
     if (settings.wetHighPass && highPassOn.getCurrentValue() <= 0.0 && ! highPassOn.isSmoothing())
@@ -195,7 +206,7 @@ void Multivoicer::prepare (double newSampleRate, int)
         st.running = false;
     }
 
-    for (auto* s : { &mix, &normalization, &highPassOn })
+    for (auto* s : { &mix, &addAmount, &normalization, &highPassOn })
         s->reset (sampleRate, smoothingSeconds);
     highPassHz.reset (sampleRate, highPassSmoothingSeconds);
     psolaShare.reset (sampleRate, engineFadeSeconds);
@@ -224,7 +235,7 @@ void Multivoicer::reset()
     for (auto& st : voices)
         for (auto* s : { &st.level, &st.left, &st.right, &st.drift })
             s->setCurrentAndTargetValue (s->getTargetValue());
-    for (auto* s : { &mix, &normalization, &highPassOn })
+    for (auto* s : { &mix, &addAmount, &normalization, &highPassOn })
         s->setCurrentAndTargetValue (s->getTargetValue());
     highPassHz.setCurrentAndTargetValue (highPassHz.getTargetValue());
     designHighPass (highPassHz.getTargetValue());
@@ -311,7 +322,8 @@ void Multivoicer::process (juce::dsp::AudioBlock<float> block, const BlockContex
             for (size_t ch = 0; ch < 2; ++ch)
                 wet[ch] += hp * (highPass[ch].processSample (wet[ch]) - wet[ch]);
 
-        const auto gains = mixGains (mix.getNextValue());
+        const auto mixNow = mix.getNextValue();
+        const auto gains = mixGains (mixNow, addAmount.getNextValue());
         left[n] = (float) (gains.dry * x[0] + gains.wet * wet[0]);
         if (right != nullptr)
             right[n] = (float) (gains.dry * x[1] + gains.wet * wet[1]);

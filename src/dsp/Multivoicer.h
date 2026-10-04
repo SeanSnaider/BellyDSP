@@ -36,9 +36,21 @@ namespace ampsim
 ///      each other (different intervals and delays), so their powers add, and this holds the wet at the
 ///      input's level whatever the voice count, which is what the equal-power mix below assumes.
 ///   6. Optional wet high-pass (12 dB/oct Butterworth, off by default so octave-down voices keep their lows).
-///   7. Mix, equal power: out = cos(mix pi/2) dry + sin(mix pi/2) wet, with exact endpoints (mix 0 is the
-///      input bit for bit). The wet is decorrelated from the dry (it is shifted and delayed), so this holds
-///      the level at every mix, like the chorus, delay, and reverb.
+///   7. Mix, in one of two modes (Sean's play test, 2026-10-04: an octave or a fifth on top shouldn't cost
+///      the dry its level):
+///      Blend (the default, and the only mode before): equal power, out = cos(mix pi/2) dry + sin(mix pi/2)
+///        wet, with exact endpoints (mix 0 is the input bit for bit). The wet is decorrelated from the dry (it
+///        is shifted and delayed), so this holds the level at every mix, like the chorus, delay, and reverb.
+///      Add: out = dry + sin(mix pi/2) wet. The dry is untouched (bit for bit: its gain is exactly 1), and
+///        Mix sets the voices' level on top of it. The wet gain is the same sin(mix pi/2) as Blend's, so at
+///        any Mix the voices are exactly as loud in both modes and switching modes only changes the dry
+///        (Blend turns it down by cos(mix pi/2), Add doesn't). Loudness: the wet holds the input's power
+///        (step 5) and is decorrelated from the dry, so the powers add: Add's total is 1 + sin^2(mix pi/2) of
+///        the dry's, +0.8 dB at mix 25%, +1.8 dB at 50% (voices 3 dB under the dry), +3 dB at 100% (voices
+///        as loud as the dry). That's the point of the mode: it adds the voices instead of trading the dry
+///        for them, so it's louder by exactly what was added, never more. A linear wet law (wet = mix) was
+///        the alternative; sin keeps the two modes' voices identical and gives finer control near the top.
+///      A mode switch crossfades the dry gain over 20 ms (smoothed with the mix).
 ///
 /// Smoothing: levels, pans, spread, drift amounts, the mix, and the high-pass amount over 20 ms; the
 /// high-pass frequency over 25 ms with coefficients every 32 samples; intervals glide in the log domain over
@@ -78,6 +90,12 @@ public:
         double drift = 0.0;     // 0 to 1
     };
 
+    enum class MixMode
+    {
+        blend, // equal power: the mix trades the dry for the voices
+        add    // the dry stays at unity; the mix sets the voices on top
+    };
+
     enum class StartingPoint
     {
         unisonDouble,
@@ -92,7 +110,8 @@ public:
         int voiceCount = 4;
         std::array<Voice, maxVoices> voices {};
         double spread = 1.0; // 0 to 1, scales every pan
-        double mix = 0.5;    // 0 dry to 1 wet
+        double mix = 0.5;    // 0 dry to 1 wet (Blend); the voices' level on top of the dry (Add)
+        MixMode mixMode = MixMode::blend;
         bool wetHighPass = false;
         double wetHighPassHz = 100.0;
     };
@@ -107,12 +126,13 @@ public:
     /// The default settings: Double + Octaves.
     static Settings defaults() { return startingPoint (StartingPoint::doubleOctaves); }
 
-    /// The equal-power mix law with exact endpoints.
+    /// The mix law with exact endpoints. addAmount is 0 for Blend and 1 for Add (between the two while a mode
+    /// switch fades): the dry gain goes from cos(mix pi/2) to exactly 1; the wet is sin(mix pi/2) in both.
     struct MixGains
     {
         double dry, wet;
     };
-    static MixGains mixGains (double mix) noexcept;
+    static MixGains mixGains (double mix, double addAmount = 0.0) noexcept;
 
     /// The constant-power pan law scaled by sqrt(2): {left, right} for a pan in [-1, 1].
     static std::pair<double, double> panGains (double pan) noexcept;
@@ -162,7 +182,7 @@ private:
     bool psolaRunning = false; // the PSOLA voices are computed while any of them can be heard
     std::array<VoiceState, maxVoices> voices;
 
-    juce::SmoothedValue<double> mix { 0.5 }, normalization { 1.0 }, highPassOn { 0.0 }, psolaShare { 0.0 };
+    juce::SmoothedValue<double> mix { 0.5 }, addAmount { 0.0 }, normalization { 1.0 }, highPassOn { 0.0 }, psolaShare { 0.0 };
     juce::SmoothedValue<double, juce::ValueSmoothingTypes::Multiplicative> highPassHz { 100.0 };
     std::array<Svf, 2> highPass;
     int samplesUntilUpdate = 0;

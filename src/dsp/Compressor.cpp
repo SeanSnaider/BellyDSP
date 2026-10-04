@@ -48,9 +48,9 @@ double Compressor::feedbackReductionDb (double y, double t, double r, double w)
     return (r - 1.0) * k * k / (2.0 * w);
 }
 
-double Compressor::autoMakeupDb (double t, double r, double w)
+double Compressor::autoMakeupDb (double t, double r, double w, double reference)
 {
-    return autoMakeupReferenceDb - staticCurveDb (autoMakeupReferenceDb, t, r, w);
+    return reference - staticCurveDb (reference, t, r, w);
 }
 
 double Compressor::coefficient (double milliseconds) const
@@ -180,7 +180,7 @@ void Compressor::process (juce::dsp::AudioBlock<float> block, const BlockContext
         mostReduction = std::max (mostReduction, applied);
 
         // 5. Gain, makeup, and the parallel mix.
-        const auto makeup = settings.autoMakeup ? autoMakeupDb (t, r, w) : manualMakeup;
+        const auto makeup = settings.autoMakeup ? autoMakeupDb (t, r, w, settings.autoMakeupReferenceDb) : manualMakeup;
         const auto compressorGain = std::pow (10.0, -applied / 20.0);
         const auto wetGain = compressorGain * std::pow (10.0, makeup / 20.0);
 

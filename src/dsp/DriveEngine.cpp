@@ -85,6 +85,8 @@ void DriveEngine::setSettings (const Settings& newSettings)
     mix.setTargetValue (juce::jlimit (0.0, 1.0, (double) settings.mix));
     level.setTargetValue (juce::Decibels::decibelsToGain (juce::jlimit (-60.0, 24.0, (double) settings.levelDb)));
     tightHz.setTargetValue (juce::jlimit ((double) tightOffHz, (double) maxTightHz, (double) settings.tightHz));
+    for (size_t c = 0; c < circuitGain.size(); ++c)
+        circuitGain[c] = juce::Decibels::decibelsToGain (juce::jlimit (-60.0, 24.0, (double) settings.circuitTrimDb[c]));
 
     if (numCircuits == 0)
         return;
@@ -218,6 +220,9 @@ void DriveEngine::processChunk (float* x, int n) noexcept
     if (active == 1 && juce::exactlyEqual (position[(size_t) only], 1.0) && juce::exactlyEqual (target[(size_t) only], 1.0))
     {
         circuits[(size_t) only]->process (high.data(), m);
+        if (const auto trim = circuitGain[(size_t) only]; ! juce::exactlyEqual (trim, 1.0))
+            for (int j = 0; j < m; ++j)
+                high[(size_t) j] *= trim;
         wetDownsampler.process (high.data(), wet.data(), n);
     }
     else
@@ -233,10 +238,11 @@ void DriveEngine::processChunk (float* x, int n) noexcept
             // Equal-power crossfade from independent linear ramps: sin(pi/2 p).
             auto p = position[(size_t) c];
             const auto goal = target[(size_t) c];
+            const auto trim = circuitGain[(size_t) c];
             for (int j = 0; j < m; ++j)
             {
                 p = goal > p ? juce::jmin (goal, p + positionStep) : juce::jmax (goal, p - positionStep);
-                wetHigh[(size_t) j] += std::sin (juce::MathConstants<double>::halfPi * p) * scratch[(size_t) j];
+                wetHigh[(size_t) j] += std::sin (juce::MathConstants<double>::halfPi * p) * trim * scratch[(size_t) j];
             }
             position[(size_t) c] = p;
             if (juce::exactlyEqual (p, 0.0) && juce::exactlyEqual (goal, 0.0) && c != warming)

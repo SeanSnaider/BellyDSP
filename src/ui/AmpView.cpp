@@ -319,11 +319,12 @@ private:
     AmpView& view;
 };
 
-/// The strip's 6 px gate light: emerald while Gate A lets the guitar through.
+/// The strip's 6 px gate light: emerald while Gate A is on and lets the guitar through, dark while it's
+/// closing or switched off.
 class AmpView::GateLight final : public juce::Component, public juce::SettableTooltipClient
 {
 public:
-    GateLight() { setTooltip ("Gate A: lit while it lets the guitar through (its gain above -6 dB)"); }
+    GateLight() { setTooltip ("Gate A: lit while it's on and lets the guitar through (its gain above -6 dB)"); }
     void set (bool on)
     {
         if (on != lit)
@@ -388,6 +389,12 @@ AmpView::AmpView (AmpSimProcessor& p) : ControlGroup (p), tabs (p), spectrum (p)
     threshold->setFormatter ([] (float v) { return juce::String (juce::roundToInt (v)) + " dB"; });
     release = &addKnob ("gate_a_release", "Release", " ms", Knob::Size::compact);
     release->setFormatter ([] (float v) { return juce::String (juce::roundToInt (v)) + " ms"; });
+    // The Gate group's switch (Sean's play test, 2026-10-04: "the noise gate doesn't work"): the strip's
+    // Threshold and Release are Gate A's, which starts off like every effect, and the strip had no way to
+    // switch it on, so turning them did nothing. The handoff's toggle (4.2), without a label, under the
+    // group's name; the same parameter as Gate A's dot on the Pre FX page.
+    gateOn = &addSwitch ("gate_a_on", {});
+    gateOn->setTooltip ("Gate A on or off (Threshold and Release only act while it's on)");
     output = &addKnob ("output_gain", "Output", " dB", Knob::Size::compact);
     gateLight = std::make_unique<GateLight>();
     addAndMakeVisible (*gateLight);
@@ -497,7 +504,7 @@ void AmpView::pageHidden()
 
 void AmpView::timerCallback()
 {
-    gateOpen = ampSim.isGateOpen();
+    gateOpen = ampSim.isGateOpen() && state.getRawParameterValue ("gate_a_on")->load() >= 0.5f;
     gateLight->set (gateOpen);
 }
 
@@ -528,8 +535,10 @@ void AmpView::paint (juce::Graphics& g)
         g.fillRect (dividers[i], knobsTop, 1, 74);
     g.setFont (geist (Weight::regular, 12.0f));
     g.setColour (inkFaint);
-    for (const auto& [x, name] : { std::pair<int, const char*> { 0, "Input" }, { dividers[0] + 27, "Gate" }, { dividers[1] + 27, "Output" } })
+    for (const auto& [x, name] : { std::pair<int, const char*> { 0, "Input" }, { dividers[1] + 27, "Output" } })
         g.drawText (name, juce::Rectangle<int> (x, knobsTop, 52, 74), juce::Justification::centredLeft, false);
+    // The Gate group's name sits above its switch, the pair centred on the knobs' row.
+    g.drawText ("Gate", juce::Rectangle<int> (dividers[0] + 27, knobsTop + 37 - 22, 52, 16), juce::Justification::centredLeft, false);
 }
 
 void AmpView::resized()
@@ -567,6 +576,7 @@ void AmpView::resized()
     input->setCssPosition (x, knobsTop);
     x += 68 + 26;
     dividers[0] = x;
+    gateOn->setBounds (dividers[0] + 27 - Switch::margin, knobsTop + 37 - 4, 28 + 2 * Switch::margin, Switch::preferredHeight);
     x += 1 + 26 + 52 + 2;
     threshold->setCssPosition (x, knobsTop);
     x += 68 + 2;

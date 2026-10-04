@@ -107,6 +107,7 @@ public:
     {
         startingPoints();
         dryPath();
+        addMode();
         voicePitch();
         panAndSpread();
         normalization();
@@ -215,6 +216,86 @@ private:
         logMessage ("  -> latency 0 samples; mix 0: largest difference from the stereo input " + juce::String (maxAbsDifference (passthrough.left, left))
                     + " (bit-exact); at mix 25/50/80%, output minus sin(mix pi/2) x wet differs from cos(mix pi/2) x input by at most "
                     + juce::String (worst, 9) + " (float rounding): the dry is untouched and on time");
+    }
+
+    void addMode()
+    {
+        beginTest ("mix mode Add: the dry is bit for bit with the voices muted; the voices sit on top at sin(mix pi/2), exactly as loud as in Blend; switching modes doesn't click");
+
+        const auto left = guitarDI ((int) (2.0 * fs));
+        auto right = left;
+        for (size_t i = 0; i < right.size(); ++i)
+            right[i] = 0.7f * left[i] + 0.1f * (float) std::sin ((double) i * 0.01);
+
+        // Voices muted (every level at -60 dB, the off position): the input comes out bit for bit, at any mix.
+        bool exact = true;
+        for (const auto mixValue : { 0.3, 0.5, 1.0 })
+        {
+            Multivoicer m;
+            auto s = Multivoicer::defaults();
+            s.mixMode = Multivoicer::MixMode::add;
+            s.mix = mixValue;
+            for (auto& v : s.voices)
+                v.levelDb = Multivoicer::minLevelDb;
+            m.setSettings (s);
+            m.prepare (fs, blockSize);
+            const auto out = run (m, left, right);
+            exact = exact && out.left == left && out.right == right;
+        }
+        expect (exact);
+
+        // Voices on: out - dry = sin(mix pi/2) x (the wet alone), sample for sample.
+        double worst = 0.0;
+        juce::StringArray levels;
+        for (const auto mixValue : { 0.25, 0.5, 1.0 })
+        {
+            Multivoicer a, b;
+            auto sa = Multivoicer::defaults();
+            sa.mixMode = Multivoicer::MixMode::add;
+            sa.mix = mixValue;
+            auto sb = Multivoicer::defaults();
+            sb.mix = 1.0;
+            a.setSettings (sa);
+            b.setSettings (sb);
+            a.prepare (fs, blockSize);
+            b.prepare (fs, blockSize);
+            const auto added = run (a, left, right);
+            const auto wet = run (b, left, right);
+            const auto g = std::sin (mixValue * juce::MathConstants<double>::halfPi);
+            expectEquals (Multivoicer::mixGains (mixValue, 1.0).dry, 1.0);
+            expectEquals (Multivoicer::mixGains (mixValue, 1.0).wet, Multivoicer::mixGains (mixValue, 0.0).wet);
+            for (size_t i = 0; i < left.size(); ++i)
+            {
+                worst = std::max (worst, std::abs ((double) added.left[i] - (double) left[i] - g * (double) wet.left[i]));
+                worst = std::max (worst, std::abs ((double) added.right[i] - (double) right[i] - g * (double) wet.right[i]));
+            }
+            const auto skip = (size_t) (0.3 * fs);
+            const auto level = [] (const std::vector<float>& x) { return toDb (rms (x.data() + skip, x.size() - skip)); };
+            levels.add ("mix " + juce::String (juce::roundToInt (100.0 * mixValue)) + "%: voices " + str (level (wet.left) + toDb (g), 1) + " dB, total "
+                        + str (level (added.left) - level (left), 1) + " dB re. the dry (predicted " + str (10.0 * std::log10 (1.0 + g * g), 1) + ")");
+        }
+        expectLessThan (worst, 1.0e-6);
+
+        // Blend to Add and back mid-note: the dry gain moves over 20 ms, no step.
+        Multivoicer m;
+        auto s = Multivoicer::defaults();
+        m.setSettings (s);
+        m.prepare (fs, blockSize);
+        const auto switched = run (m, left, right, [&] (size_t start)
+        {
+            s.mixMode = start >= (size_t) (0.6 * fs) && start < (size_t) (1.2 * fs) ? Multivoicer::MixMode::add : Multivoicer::MixMode::blend;
+            m.setSettings (s);
+        });
+        Multivoicer steady;
+        auto ss = Multivoicer::defaults();
+        steady.setSettings (ss);
+        steady.prepare (fs, blockSize);
+        const auto reference = run (steady, left, right);
+        const auto stepRatio = maxStep (switched.left, (size_t) (0.5 * fs), (size_t) (1.4 * fs)) / maxStep (reference.left, (size_t) (0.5 * fs), (size_t) (1.4 * fs));
+        expectLessThan (stepRatio, 1.1);
+        logMessage ("  -> Add with every voice at -60 dB: the stereo input bit for bit at mix 30/50/100%. With the default voices, output minus the dry equals sin(mix pi/2) x "
+                    "the wet alone within " + juce::String (worst, 9) + " (float rounding): " + levels.joinIntoString ("; ")
+                    + ". Blend to Add and back mid-phrase: largest sample step " + str (stepRatio, 3) + " x steady playing's");
     }
 
     void voicePitch()

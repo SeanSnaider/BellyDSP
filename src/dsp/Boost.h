@@ -57,7 +57,15 @@ public:
         float midDb = 6.0f;    // Tight: mid push, 0 to 12 dB
         int oversampling = 4;  // Screamer
         double voltsAtFullScale = drive::defaultVoltsAtFullScale;
+        bool unityTrim = false; // Screamer: apply screamerUnityTrimDb (the app does; the circuit tests don't)
     };
+
+    /// The Screamer's unity trim (dB): the Mid Drive circuit at drive 0 and tone noon lowers the loudness of a
+    /// DI peaking at -9 dBFS by 2.0 dB (its mid hump and slight clipping; the gain staging audit,
+    /// 2026-10-04), so with this its Level 0 dB is as loud as bypassed, like Clean's, and Level is the boost.
+    /// Tight keeps its +1.4 dB: that's its 800 Hz push, the point of the mode. ampsim_render, which made the
+    /// Monolith capture with the Screamer at +6 dB, leaves it off, so that recipe still means what it meant.
+    static constexpr float screamerUnityTrimDb = 2.0f;
 
     Boost();
 

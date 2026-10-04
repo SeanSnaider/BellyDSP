@@ -355,26 +355,35 @@ private:
     juce::Rectangle<int> hearingArea, columnsArea;
 };
 
-/// The multivoicer: engine, voice count, mix, spread, the wet high-pass, the starting points, and a row
-/// per voice (rows past the voice count dimmed).
+/// The multivoicer: engine, mix mode (Blend or Add), voice count, mix, spread, the wet high-pass, the four
+/// one-click shapes, the starting points, and a row per voice (rows past the voice count dimmed), each with
+/// an interval picker (a chevron beside its semitones) for the named intervals.
 class MultivoicerPage final : public BlockPage
 {
 public:
     explicit MultivoicerPage (AmpSimProcessor& processor);
     void refresh() override;
 
+    /// For tests: the shape buttons (Octave up, Octave down, Power fifth, Octave stack), a voice's interval
+    /// picker, and the menu that picker shows.
+    juce::Button& getShapeButton (int index) { return *shapes[(size_t) index]; }
+    juce::Button& getIntervalPicker (int voice) { return *rows[(size_t) voice].picker; }
+    juce::PopupMenu intervalMenu (int voice);
+
 private:
     void layoutContent (juce::Rectangle<int> area) override;
     void paintContent (juce::Graphics&) override;
 
-    juce::ComboBox* engine = nullptr;
+    juce::ComboBox *engine = nullptr, *mixMode = nullptr;
     Switch* highPass = nullptr;
     juce::TextButton* startingPoints = nullptr;
+    std::array<juce::TextButton*, 4> shapes {};
     Knob *voices = nullptr, *mix = nullptr, *spread = nullptr, *highPassHz = nullptr;
     struct Row
     {
         juce::Label* number = nullptr;
         std::array<ValueField*, 6> fields {}; // semitones, cents, delay, pan, level, drift
+        juce::Button* picker = nullptr;       // beside the semitones: the named intervals
     };
     std::array<Row, ampsim::Multivoicer::maxVoices> rows;
     int shownVoices = -1;

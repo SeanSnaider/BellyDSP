@@ -115,7 +115,33 @@ struct MultivoicerParameters
     /// Message thread: sets every voice (and the voice count) to a starting point.
     static void applyStartingPoint (State& state, ampsim::Multivoicer::StartingPoint point);
 
-    Raw on, engine, voiceCount, mix, spread, highPass, highPassHz;
+    /// The one-click shapes (Sean's play test, 2026-10-04): each sets the voice count and those voices'
+    /// intervals (cents, delays, drift 0; level 0 dB; a little pan apart when there are two) and switches the
+    /// mix to Add, so the dry stays whole and the voices sit on top at the current Mix. The engine, Mix,
+    /// spread, high-pass, and the voices past the count are left alone. Call inside one undo transaction.
+    enum class Shape
+    {
+        octaveUp,     // +12
+        octaveDown,   // -12
+        powerFifth,   // +7, +12
+        octaveStack   // -12, +12
+    };
+    static void applyShape (State& state, Shape shape);
+    static juce::String shapeName (Shape shape);
+
+    /// The interval picker's named intervals, in semitones, with their names (the semitone field takes any).
+    struct NamedInterval
+    {
+        int semitones;
+        const char* name;
+    };
+    static const std::array<NamedInterval, 7>& namedIntervals();
+
+    /// Message thread: one voice's interval from the picker (its cents to 0, an exact interval). Call inside one
+    /// undo transaction.
+    static void applyInterval (State& state, int voice, int semitones);
+
+    Raw on, engine, voiceCount, mix, mixMode, spread, highPass, highPassHz;
     struct Voice
     {
         Raw semitones, cents, delay, pan, level, drift;

@@ -420,7 +420,8 @@ CompressorPage::CompressorPage (AmpSimProcessor& p, bool isPost)
     reduction = &adopt (std::make_unique<ReductionMeter> (24.0f));
     mode->setTooltip ("Studio: feed-forward and precise. Pedal: feedback, like a stompbox.");
     autoRelease->setTooltip ("Auto release: fast after short peaks, slow after long compression");
-    autoMakeup->setTooltip ("Auto makeup: brings a -12 dBFS signal back to its level whatever the threshold and ratio");
+    autoMakeup->setTooltip (juce::String ("Auto makeup: keeps the level steady whatever the threshold and ratio (it restores a ")
+                            + (post ? "-12" : "-21") + " dBFS signal, where the " + (post ? "signal after the cab" : "guitar") + " typically sits)");
 }
 
 void CompressorPage::layoutContent (juce::Rectangle<int> area)
