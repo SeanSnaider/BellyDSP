@@ -9,6 +9,8 @@
 
 #include <cmath>
 #include <filesystem>
+#include <map>
+#include <mutex>
 
 namespace ampsim
 {
@@ -235,28 +237,53 @@ NamAmp::LoadResult NamAmp::loadModel (const juce::File& file, bool normalize, co
     }
     else if (normalize && std::isfinite (result.measuredLufs))
     {
-        // A single capture: its loudness at every 3 dB of trim, -24 to +24 dB, on one pass of the reference
-        // DI's phrase, from a freshly reset model each time. The compensation at a trim is the loudness at
+        // A single capture: its loudness at every 3 dB of trim, -24 to +24 dB, on the first second of the
+        // reference DI (chugs and a power chord), from a freshly reset model each time. The compensation at a trim is the loudness at
         // 0 dB minus the loudness there, so Gain keeps the normalized level (0 dB at unity trim exactly).
-        static const auto probe = referenceGuitarDI ((int) (compensationProbeSeconds * requiredSampleRate));
-        auto& dsp = *model->steps.front().dsp;
-        std::array<double, compensationPoints> lufs {};
-
-        for (int j = 0; j < compensationPoints; ++j)
+        // It costs 17 renders, so the curve is kept per file (path, size, modification time) and input gain for
+        // the life of the process: reloading a capture (a calibration change, a preset, tone match rendering
+        // it at each candidate Gain) measures it once.
+        static std::mutex cacheLock;
+        static std::map<juce::String, std::array<float, compensationPoints>> cache;
+        const auto key = file.getFullPathName() + "|" + juce::String (file.getSize()) + "|" + juce::String (file.getLastModificationTime().toMilliseconds())
+                       + "|" + juce::String (model->inputGain, 6);
+        bool cached = false;
         {
-            const auto trimDb = -singleTrimRangeDb + compensationStepDb * (float) j;
-            const auto out = renderOffline (dsp, probe, model->inputGain * juce::Decibels::decibelsToGain (trimDb));
-            dsp.Reset (requiredSampleRate, maxBlock);
-            lufs[(size_t) j] = loudness::integratedMono (out.data(), (int) out.size(), requiredSampleRate);
+            const std::lock_guard<std::mutex> lock (cacheLock);
+            if (const auto it = cache.find (key); it != cache.end())
+            {
+                model->compensationDb = it->second;
+                cached = true;
+            }
         }
 
-        const auto unity = lufs[(size_t) compensationPoints / 2];
-        for (int j = 0; j < compensationPoints; ++j)
+        if (! cached)
         {
-            const auto c = std::isfinite (lufs[(size_t) j]) && std::isfinite (unity) ? unity - lufs[(size_t) j] : 0.0;
-            model->compensationDb[(size_t) j] = (float) juce::jlimit (-60.0, 60.0, c);
-            result.compensationDb.push_back (model->compensationDb[(size_t) j]);
+            static const auto probe = referenceGuitarDI ((int) (compensationProbeSeconds * requiredSampleRate));
+            auto& dsp = *model->steps.front().dsp;
+            std::array<double, compensationPoints> lufs {};
+
+            for (int j = 0; j < compensationPoints; ++j)
+            {
+                const auto trimDb = -singleTrimRangeDb + compensationStepDb * (float) j;
+                const auto out = renderOffline (dsp, probe, model->inputGain * juce::Decibels::decibelsToGain (trimDb));
+                dsp.Reset (requiredSampleRate, maxBlock);
+                lufs[(size_t) j] = loudness::integratedMono (out.data(), (int) out.size(), requiredSampleRate);
+            }
+
+            const auto unity = lufs[(size_t) compensationPoints / 2];
+            for (int j = 0; j < compensationPoints; ++j)
+            {
+                const auto c = std::isfinite (lufs[(size_t) j]) && std::isfinite (unity) ? unity - lufs[(size_t) j] : 0.0;
+                model->compensationDb[(size_t) j] = (float) juce::jlimit (-60.0, 60.0, c);
+            }
+
+            const std::lock_guard<std::mutex> lock (cacheLock);
+            cache[key] = model->compensationDb;
         }
+
+        for (const auto c : model->compensationDb)
+            result.compensationDb.push_back (c);
 
         notes.add (juce::String (result.measuredLufs, 1) + " LUFS on the reference DI, normalized " + juce::String (result.normalizationDb, 1) + " dB");
     }

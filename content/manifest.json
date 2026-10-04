@@ -224,6 +224,16 @@
       "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, clean channel, gain 0 (first stage -10.2 dB), bass 5, mid 5, treble 6, master 4; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0003; a stand-in until Sean's own captures"
     },
     {
+      "path": "models/Glass/Glass, gain 10.nam",
+      "title": "Glass, gain 10 (clean, amp only)",
+      "description": "Built-in gain set for amp slot 1, step 5 of 5",
+      "author": "Sean Snaider",
+      "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
+      "license": "CC BY 4.0",
+      "license_file": "licenses/CC-BY-4.0.txt",
+      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, clean channel, gain 10 (first stage +2.9 dB), bass 5, mid 5, treble 6, master 4; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0003; a stand-in until Sean's own captures"
+    },
+    {
       "path": "models/Glass/Glass, gain 2.5.nam",
       "title": "Glass, gain 2.5 (clean, amp only)",
       "description": "Built-in gain set for amp slot 1, step 2 of 5",
@@ -234,6 +244,26 @@
       "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, clean channel, gain 2.5 (first stage -5.7 dB), bass 5, mid 5, treble 6, master 4; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0003; a stand-in until Sean's own captures"
     },
     {
+      "path": "models/Glass/Glass, gain 5.nam",
+      "title": "Glass, gain 5 (clean, amp only)",
+      "description": "Built-in gain set for amp slot 1, step 3 of 5",
+      "author": "Sean Snaider",
+      "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
+      "license": "CC BY 4.0",
+      "license_file": "licenses/CC-BY-4.0.txt",
+      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, clean channel, gain 5 (first stage -2.8 dB), bass 5, mid 5, treble 6, master 4; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0002; a stand-in until Sean's own captures"
+    },
+    {
+      "path": "models/Glass/Glass, gain 7.5.nam",
+      "title": "Glass, gain 7.5 (clean, amp only)",
+      "description": "Built-in gain set for amp slot 1, step 4 of 5",
+      "author": "Sean Snaider",
+      "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
+      "license": "CC BY 4.0",
+      "license_file": "licenses/CC-BY-4.0.txt",
+      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, clean channel, gain 7.5 (first stage -0.1 dB), bass 5, mid 5, treble 6, master 4; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0001; a stand-in until Sean's own captures"
+    },
+    {
       "path": "models/Monolith/Monolith, gain 0.nam",
       "title": "Monolith, gain 0 (high gain, amp only)",
       "description": "Built-in gain set for amp slot 3, step 1 of 5",
@@ -242,6 +272,16 @@
       "license": "CC BY 4.0",
       "license_file": "licenses/CC-BY-4.0.txt",
       "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, the app's Screamer boost (TS808 at minimum drive, tone noon, level +6 dB) into the lead channel, gain 0 (first stage -36.4 dB), bass 4, mid 6, treble 6, master 2; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 200 epochs, validation ESR 0.0003; a stand-in until Sean's own captures"
+    },
+    {
+      "path": "models/Monolith/Monolith, gain 2.5.nam",
+      "title": "Monolith, gain 2.5 (high gain, amp only)",
+      "description": "Built-in gain set for amp slot 3, step 2 of 5",
+      "author": "Sean Snaider",
+      "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
+      "license": "CC BY 4.0",
+      "license_file": "licenses/CC-BY-4.0.txt",
+      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, the app's Screamer boost (TS808 at minimum drive, tone noon, level +6 dB) into the lead channel, gain 2.5 (first stage -32.8 dB), bass 4, mid 6, treble 6, master 2; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 200 epochs, validation ESR 0.0004; a stand-in until Sean's own captures"
     }
   ]
 }

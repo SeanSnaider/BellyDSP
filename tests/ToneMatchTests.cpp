@@ -306,7 +306,20 @@ public:
                 }
                 const auto cand = ToneMatcher::score (slot, gain, 0, y, ToneMatcher::loadIR (cabNamed (c["cab"].toString())), ta, mode, alignment.get());
                 const auto featDiff = maxDiff (vec (cand.analysis.features), doubles (c["features"]));
-                const auto resDiff = maxDiff (cand.residual, doubles (c["residual"]));
+                // Up to a constant: since 2026-10-04 a single capture's Gain is loudness-compensated in the engine
+                // (BUILD_PLAN "Amp gain"), which the prototype's renders weren't, so away from Gain 5 the residual
+                // carries a level offset. The score ignores level, so only the shape is compared.
+                auto residual = cand.residual;
+                const auto expectedResidual = doubles (c["residual"]);
+                if (residual.size() == expectedResidual.size() && ! residual.empty())
+                {
+                    double offset = 0.0;
+                    for (size_t i = 0; i < residual.size(); ++i)
+                        offset += (expectedResidual[i] - residual[i]) / (double) residual.size();
+                    for (auto& r : residual)
+                        r += offset;
+                }
+                const auto resDiff = maxDiff (residual, expectedResidual);
                 const auto toneDiff = maxDiff (vec (cand.tone), doubles (c["tone_linear"]));
                 expect (featDiff < 0.02, juce::String (featDiff));
                 expect (resDiff < 0.02, juce::String (resDiff));

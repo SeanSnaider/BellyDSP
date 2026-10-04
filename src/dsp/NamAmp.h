@@ -62,10 +62,11 @@ public:
     static float singleTrimDb (float position) noexcept { return (position - gainDefault) * (singleTrimRangeDb / gainDefault); }
 
     /// The single capture's loudness compensation is measured at every 3 dB of trim (17 points), on this
-    /// many seconds of the reference DI (one pass of its 2 s phrase).
+    /// many seconds of the reference DI (the first half of its 2 s phrase: the chugs and the power chord), once
+    /// per file (NamAmp.cpp keeps the curves).
     static constexpr int compensationPoints = 17;
     static constexpr float compensationStepDb = 3.0f;
-    static constexpr double compensationProbeSeconds = 2.0;
+    static constexpr double compensationProbeSeconds = 1.0;
 
     /// The Gain position moves toward the knob at most this fast (positions per second): 0 to 10 in 0.4 s.
     /// It's the knob's smoothing: a linear ramp, like the other knobs', but rate-limited rather than
