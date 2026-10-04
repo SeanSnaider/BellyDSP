@@ -34,7 +34,7 @@ Communication: start responses with "Sean". Talk like a real person: direct, blu
 
 ## Architecture rules
 
-Layout: `src/dsp/` holds the DSP blocks (they may use JUCE's `juce_dsp` and `juce_audio_basics`, never processor or GUI types). `src/PluginProcessor.*` and `src/PluginEditor.*` are thin glue. `tools/` holds the offline renderer and the hardware probe, `tests/` the test suite, and `third_party/` the pinned git submodules (JUCE 8.0.15, NeuralAmpModelerCore v0.6.0). Don't edit submodules. Upgrading one is a deliberate decision that goes in the decision log, and changes to NAM core go upstream as PRs.
+Layout: `src/dsp/` holds the DSP blocks (they may use JUCE's `juce_dsp` and `juce_audio_basics`, never processor or GUI types). `src/PluginProcessor.*` and `src/PluginEditor.*` are thin glue. `tools/` holds the offline renderer and the hardware probe, `tests/` the test suite, and `third_party/` the pinned git submodules (JUCE 8.0.15, NeuralAmpModelerCore v0.6.0, demucs.cpp at f1206e9 for tone match's guitar separation). Don't edit submodules. Upgrading one is a deliberate decision that goes in the decision log, and changes to NAM core go upstream as PRs.
 
 Every DSP unit implements the `ampsim::Block` interface (`prepare`, `process`, `reset`, `latencySamples`, `isStereo`). The chain owns the blocks as typed members in signal-chain order, takes the DI snapshot, makes the one mono-to-stereo copy, and crossfades bypass. Don't special-case blocks inside the chain. See "Block design" in `docs/BUILD_PLAN.md`.
 
