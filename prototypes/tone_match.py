@@ -41,7 +41,8 @@ Usage (Python through uv, see docs/TONE_MATCH.md):
   uv run --with numpy --with scipy python prototypes/tone_match.py match TARGET.wav DI.wav [--mode same|anything]
   uv run --with numpy --with scipy python prototypes/tone_match.py study [--quick]
   uv run --with numpy --with scipy python prototypes/tone_match.py features
-  uv run --with numpy --with scipy --with lameenc python prototypes/tone_match.py golden tests/fixtures/tone_match
+  uv run --python 3.11 --with demucs --with numpy --with scipy --with lameenc python prototypes/tone_match.py golden \
+      tests/fixtures/tone_match --separation
   uv run --python 3.11 --with demucs --with numpy --with scipy python prototypes/tone_match.py study --separation
 
 The renders need the Release build of ampsim_render (cmake --build build -j). They're cached by content
@@ -1112,7 +1113,7 @@ def run_case(case, mode, variant, signals, seed, log=lambda *a: None):
 _demucs = {}
 
 
-def separate_guitar(x, device=None):
+def separate_guitar(x, device=None, shifts=0):
     """The guitar stem of x (48 kHz mono) from Demucs htdemucs_6s (Rouard, Massa, and Defossez, "Hybrid
     Transformers for Music Source Separation", ICASSP 2023), as the Demucs command line runs it: 44.1 kHz
     stereo in, normalized by the mix's mean and standard deviation, split into overlapping 7.8 s segments
@@ -1134,7 +1135,7 @@ def separate_guitar(x, device=None):
     wav = (wav - mean) / std
     t0 = time.time()
     with torch.no_grad():
-        out = apply_model(model, wav[None], device=device, shifts=0, split=True, overlap=0.25, progress=False)[0]
+        out = apply_model(model, wav[None], device=device, shifts=shifts, split=True, overlap=0.25, progress=False)[0]
     _demucs["last_seconds"] = time.time() - t0
     out = out * std + mean
     guitar = out[model.sources.index("guitar")].mean(0).cpu().numpy().astype(np.float64)
@@ -1310,6 +1311,26 @@ def golden(args):
         print(f"{mode}: true {AMPS[slot]} {gain:+.1f} {cab}; matched {r['amp']} {r['gain_db']:+.1f} {r['cab']}, "
               f"spectral {r['spectral_error_after_eq_db']:.2f} dB, distortion {r['distortion_distance']:.2f}")
 
+    if args.separation:
+        # Stage C's golden pair: 10 s of the study's first test case (a Glass lead with a room on it) in the
+        # synthetic band, and what Python's Demucs makes of it (htdemucs_6s, on the CPU, one shift: what
+        # demucs.cpp does too).
+        import torch
+        torch.manual_seed(0)
+        sig = study_signals()
+        mix, _ = make_target(TEST_CASES[0], sig["anything"][1], "mix", 300)
+        mix = save16("separation_mix.wav", np.concatenate([mix, mix])[: 10 * SR])
+        stem = separate_guitar(mix, device="cpu", shifts=1)
+        save16("separation_guitar_python.wav", stem)
+        # How far Demucs differs from itself between runs (the shift trick's random offset): the yardstick
+        # for the C++ port, which can't draw the same random offset.
+        reruns = []
+        for seed in (1, 2, 3):
+            torch.manual_seed(seed)
+            again = separate_guitar(mix, device="cpu", shifts=1)
+            reruns.append(float(10.0 * np.log10(np.sum(stem ** 2) / np.sum((stem - again) ** 2))))
+        expected["separation"] = {"model": "htdemucs_6s", "seconds": 10.0, "rms_mix": float(np.sqrt(np.mean(mix ** 2))),
+                                  "rms_stem": float(np.sqrt(np.mean(stem ** 2))), "python_rerun_sdr_db": reruns}
     (out / "expected.json").write_text(json.dumps(expected, indent=1))
     print(f"wrote {out}")
 
@@ -1342,6 +1363,7 @@ def main():
     sub.add_parser("features", help="the distortion feature study")
     gd = sub.add_parser("golden", help="write the C++ golden fixtures")
     gd.add_argument("dir")
+    gd.add_argument("--separation", action="store_true", help="also the Demucs pair (needs --with demucs)")
     args = ap.parse_args()
     if args.cmd == "features":
         feature_study(args)

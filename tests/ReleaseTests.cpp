@@ -127,6 +127,7 @@ public:
                 "NeuralAmpModelerCore", "Copyright (c) 2023 Steven Atkinson",    // NAM core's MIT licence, from its LICENSE
                 "Eigen", "Mozilla Public License Version 2.0",                   // Eigen's MPL2 text, from COPYING.MPL2
                 "JSON for Modern C++", "Niels Lohmann",
+                "demucs.cpp", "Copyright (c) 2023 Sevag H", "Demucs", "Meta Platforms",  // tone match's separation (MIT)
                 "Geist", "Fraunces", "SIL OPEN FONT LICENSE",                    // both OFL.txt files
                 "zlib", "libpng", "Independent JPEG Group", "FLAC", "Ogg Vorbis", "HarfBuzz", "SheenBidi",
                 "Bundled captures and impulse responses"

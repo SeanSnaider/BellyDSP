@@ -6,3 +6,7 @@
 	path = third_party/NeuralAmpModelerCore
 	url = https://github.com/sdatkinson/NeuralAmpModelerCore.git
 	shallow = true
+[submodule "third_party/demucs.cpp"]
+	path = third_party/demucs.cpp
+	url = https://github.com/sevagh/demucs.cpp
+	shallow = true

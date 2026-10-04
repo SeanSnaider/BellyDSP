@@ -135,6 +135,26 @@ target_compile_options(nam_core PRIVATE ${AMPSIM_NAM_FLAGS})
 set(NAM_CORE_WHOLE "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam_core>")
 
 # ---------------------------------------------------------------------------------------------
+# demucs.cpp (MIT; sevagh/demucs.cpp, pinned): Demucs v4 inference in C++ on Eigen, for tone match's
+# guitar separation (docs/TONE_MATCH.md, Stage C). Built from its src/ only, against NAM core's Eigen (its
+# own vendored Eigen, googletest, and libnyquist are never used), single-threaded per call: our separator
+# runs segments on its own threads. Always optimized, like NAM, or a minute of audio takes far too long.
+set(DEMUCS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/demucs.cpp)
+file(GLOB DEMUCS_SOURCES CONFIGURE_DEPENDS ${DEMUCS_DIR}/src/*.cpp)
+add_library(demucs_cpp STATIC ${DEMUCS_SOURCES})
+target_include_directories(demucs_cpp SYSTEM PUBLIC ${DEMUCS_DIR}/src ${NAM_DIR}/Dependencies/eigen)
+target_compile_features(demucs_cpp PUBLIC cxx_std_17)
+target_compile_options(demucs_cpp PRIVATE ${AMPSIM_NAM_FLAGS})
+target_compile_definitions(demucs_cpp PRIVATE NDEBUG)
+if(APPLE)
+    # Matrix products through Accelerate's BLAS (Apple's, multithreaded) instead of Eigen's own: 
+    # measured below in the separation test. Eigen is renamed for demucs.cpp (namespace EigenDemucs) so
+    # its BLAS-backed templates can never be confused with the plain ones NAM core is compiled with.
+    target_compile_definitions(demucs_cpp PUBLIC Eigen=EigenDemucs PRIVATE EIGEN_USE_BLAS)
+    target_link_libraries(demucs_cpp PUBLIC "-framework Accelerate")
+endif()
+
+# ---------------------------------------------------------------------------------------------
 # Our DSP blocks. Compiled into each target that uses them, because JUCE modules must not be
 # linked into a shared static library and then again into the app.
 set(AMPSIM_DSP_SOURCES
@@ -182,7 +202,8 @@ set(AMPSIM_DSP_SOURCES
 set(AMPSIM_TONEMATCH_SOURCES
     src/tonematch/ToneMatchAnalysis.cpp
     src/tonematch/ToneMatcher.cpp
-    src/tonematch/AudioFileInput.cpp)
+    src/tonematch/AudioFileInput.cpp
+    src/tonematch/GuitarSeparator.cpp)
 
 # The GUI (Phase 11; the design is docs/ui/amp-ui-handoff/): the tokens and fonts, the LookAndFeel, the
 # components, and the pages.
@@ -322,7 +343,9 @@ target_link_libraries(BellyDSP
         AmpSimFactoryPresets
         AmpSimFonts
         ${NAM_CORE_WHOLE}
+        demucs_cpp
         juce::juce_audio_utils
+        juce::juce_cryptography
         juce::juce_dsp
     PUBLIC
         juce::juce_recommended_config_flags
@@ -429,6 +452,23 @@ target_link_libraries(ampsim_render
         juce::juce_recommended_warning_flags)
 
 # ---------------------------------------------------------------------------------------------
+# Tone match's guitar separation from the command line (docs/TONE_MATCH.md): any audio file in, the guitar
+# stem out, with timing; installs the model on first use like the app.
+juce_add_console_app(ampsim_separate PRODUCT_NAME "ampsim_separate")
+target_sources(ampsim_separate PRIVATE tools/separate/Main.cpp src/tonematch/GuitarSeparator.cpp src/tonematch/AudioFileInput.cpp
+    src/platform/AppInfo.cpp)
+target_include_directories(ampsim_separate PRIVATE src)
+target_compile_definitions(ampsim_separate PRIVATE ${AMPSIM_JUCE_DEFINITIONS})
+target_link_libraries(ampsim_separate
+    PRIVATE
+        demucs_cpp
+        juce::juce_audio_formats
+        juce::juce_cryptography
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_lto_flags
+        juce::juce_recommended_warning_flags)
+
+# ---------------------------------------------------------------------------------------------
 # NeuralAmpModelerCore's own render tool, built unchanged from its source. The tests run it as the
 # reference ("oracle") that our NAM slot must match.
 add_executable(nam_render
@@ -487,6 +527,7 @@ target_sources(ampsim_tests PRIVATE
     tests/CaptureTests.cpp
     tests/ToneMatchTests.cpp
     tests/ToneMatchAppTests.cpp
+    tests/ToneMatchSeparationTests.cpp
     tools/capture/CaptureEngine.cpp
     src/PluginProcessor.cpp
     src/PluginEditor.cpp
@@ -516,7 +557,9 @@ target_link_libraries(ampsim_tests
         AmpSimFactoryPresets
         AmpSimFonts
         ${NAM_CORE_WHOLE}
+        demucs_cpp
         juce::juce_audio_utils
+        juce::juce_cryptography
         juce::juce_dsp
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags

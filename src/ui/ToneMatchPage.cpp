@@ -340,8 +340,25 @@ private:
 
 // ---- The page -------------------------------------------------------------------------------------------------
 
-ToneMatchPage::ToneMatchPage (AmpSimProcessor& p) : ControlGroup (p), session (p)
+ToneMatchPage::ToneMatchPage (AmpSimProcessor& p)
+    : ControlGroup (p), separator (std::make_unique<ampsim::tonematch::GuitarSeparator> (ampsim::tonematch::GuitarSeparator::defaultFolder())),
+      session (p)
 {
+    // Separation (Stage C): on the session's worker thread, install the model the first time (the download's
+    // size is said on the page before anyone switches it on), then separate.
+    session.setSeparator ([sep = separator.get()] (const std::vector<float>& x, const std::atomic<bool>& cancel,
+                                                   const ampsim::tonematch::ProgressFn& progress, juce::String& problem) {
+        using GS = ampsim::tonematch::GuitarSeparator;
+        const auto installShare = sep->isInstalled() ? 0.0 : 0.3;
+        if (! sep->isInstalled())
+        {
+            problem = sep->install (GS::weightsUrl, cancel, [&] (double f, const juce::String& s) { progress (installShare * f, s); });
+            if (problem.isNotEmpty())
+                return std::vector<float>();
+        }
+        return sep->separate (x, cancel, [&] (double f, const juce::String& s) { progress (installShare + (1.0 - installShare) * f, s); }, problem);
+    });
+
     waveform = std::make_unique<Waveform> (session);
     waveform->onRangeChanged = [this] { repaint(); };
     addAndMakeVisible (*waveform);
@@ -644,9 +661,17 @@ void ToneMatchPage::paint (juce::Graphics& g)
         drawText (g, session.getTarget().empty() ? juce::String() : "Matching " + timeText (start) + " to " + timeText (end) + "  (" + juce::String (end - start, 1) + " s)",
                   in.removeFromTop (16), Text::value, inkDim);
         in.removeFromTop (space::s + Switch::preferredHeight + space::s);
-        drawWrapped (g, "Pick a section where the lead guitar dominates. A song's other instruments and its mix change what's measured"
-                        + juce::String (session.hasSeparator() ? "; separation keeps every guitar, not just the lead." : "."),
-                     in.removeFromTop (34), Text::caption, inkFaint);
+        juce::String hint = "Pick a section where the lead guitar dominates. A song's other instruments and its mix change what's measured";
+        if (session.hasSeparator())
+        {
+            hint << "; separation (Demucs) keeps every guitar, not just the lead, and takes about a minute per minute of audio.";
+            if (! separator->isInstalled())
+                hint << " The first time, it downloads the model (" << juce::String (juce::roundToInt ((double) ampsim::tonematch::GuitarSeparator::weightsBytes / 1.0e6))
+                     << " MB) from its author's page into the BellyDSP data folder.";
+        }
+        else
+            hint << ".";
+        drawWrapped (g, hint, in.removeFromTop (48), Text::caption, inkFaint);
     }
 
     // Your DI: what's recorded or chosen, and what the mode means.

@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "Progress.h"
 #include "ToneMatchAnalysis.h"
 
 #include "../dsp/NamAmp.h"
@@ -85,7 +86,6 @@ struct MatchResult
     std::vector<RunnerUp> runnersUp;
 };
 
-using ProgressFn = std::function<void (double fraction, const juce::String& stage)>;
 
 class ToneMatcher
 {

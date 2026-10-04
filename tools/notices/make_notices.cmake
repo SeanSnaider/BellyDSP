@@ -168,6 +168,16 @@ component_text("JSON for Modern C++ 3.12.0 (https://github.com/nlohmann/json)"
     "Reads .nam files, in NeuralAmpModelerCore."
     "MIT License\n\nCopyright (c) 2013-2025 Niels Lohmann\n\n${mit_body}")
 
+# ---- Tone match's guitar separation (docs/TONE_MATCH.md) ----------------------------------------
+component("demucs.cpp (https://github.com/sevagh/demucs.cpp)"
+    "Runs Demucs to separate the guitar out of a song for tone match."
+    "${SRC}/third_party/demucs.cpp/LICENSE")
+component_text("Demucs (https://github.com/adefossez/demucs)"
+    "The source separation model demucs.cpp implements (Hybrid Transformer Demucs, htdemucs_6s). Its
+weights are not part of BellyDSP: the app downloads them from the author's page the first time
+separation is used."
+    "MIT License\n\nCopyright (c) Meta Platforms, Inc. and affiliates.\n\n${mit_body}")
+
 # ---- Updaters ----------------------------------------------------------------------------------
 if(DEFINED SPARKLE_DIR AND NOT SPARKLE_DIR STREQUAL "")
     component("Sparkle 2 (https://sparkle-project.org)" "Automatic updates on macOS." "${SPARKLE_DIR}/LICENSE")

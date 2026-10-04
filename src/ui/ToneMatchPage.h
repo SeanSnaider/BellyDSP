@@ -5,6 +5,7 @@
 
 #include "Pages.h"
 #include "ToneMatchSession.h"
+#include "tonematch/GuitarSeparator.h"
 
 namespace ui
 {
@@ -69,6 +70,8 @@ private:
     void targetChanged();
     void updateResultText();
 
+    // Declared before the session, so it outlives the session's worker (which may be using it).
+    std::unique_ptr<ampsim::tonematch::GuitarSeparator> separator;
     ToneMatchSession session;
     std::unique_ptr<Waveform> waveform;
     std::unique_ptr<EqCurve> eqCurve;
