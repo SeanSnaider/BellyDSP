@@ -71,6 +71,7 @@ struct MatchResult
     std::array<double, numFeatures> targetFeatures {}, resultFeatures {};
     std::vector<double> residual;        ///< per band, after the tone: what the match EQ fits
     std::vector<double> eqTarget;        ///< the capped curve the EQ was fitted to
+    std::vector<double> weights;         ///< each band's weight in the fit (perceptual times confidence)
     double runtimeSeconds = 0.0;
     int renders = 0, candidates = 0;
 

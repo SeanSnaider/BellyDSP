@@ -63,6 +63,7 @@ const char* pageName (PageId page)
         case PageId::postFx: return "post_fx";
         case PageId::output: return "output";
         case PageId::tuner:  return "tuner";
+        case PageId::toneMatch: return "tone_match";
         case PageId::count:  break;
     }
     return "amp";

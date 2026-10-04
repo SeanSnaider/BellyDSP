@@ -11,6 +11,7 @@
 #include "ui/MainPages.h"
 #include "ui/Pages.h"
 #include "ui/TopBar.h"
+#include "ui/ToneMatchPage.h"
 #include "ui/TunerPage.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -57,6 +58,7 @@ public:
     ui::OutputPage& getOutputPage() noexcept { return *outputPage; }
     ui::ScenesBar& getScenesBar() noexcept { return outputPage->getScenesBar(); }
     ui::TunerPage& getTunerPage() noexcept { return *tunerPage; }
+    ui::ToneMatchPage& getToneMatchPage() noexcept { return *toneMatchPage; }
 
     /// The canvas's scale and where it sits in the window (letterboxed when the aspect differs).
     float getCanvasScale() const noexcept { return canvasScale; }
@@ -91,9 +93,9 @@ public:
     juce::PopupMenu presetMenu();
 
     /// The brand's menu (a click on "BellyDSP" shows it): "BellyDSP <version>" and "Free software under the
-    /// GNU AGPL v3 or later" (labels), "Check for updates..." (enabled when this build has an updater
-    /// running), "Source code for this version" (opens <source>/tree/v<version>), and "About / licenses"
-    /// (ASSUMPTIONS DS9, DS38).
+    /// GNU AGPL v3 or later" (labels), "Match tone..." (the tone match page; docs/TONE_MATCH.md), "Check for
+    /// updates..." (enabled when this build has an updater running), "Source code for this version" (opens
+    /// <source>/tree/v<version>), and "About / licenses" (ASSUMPTIONS DS9, DS38, TM).
     juce::PopupMenu brandMenu();
     /// A cab mic's load menu (0, 1, or the room): Load an IR file, Built-in IRs (a submenu per bundled
     /// cab, as on the cab page), Load a cab pack folder (close mics), Clear.
@@ -146,8 +148,9 @@ private:
     std::unique_ptr<ui::InputPage> inputPage;
     std::unique_ptr<ui::OutputPage> outputPage;
     std::unique_ptr<ui::TunerPage> tunerPage;
+    std::unique_ptr<ui::ToneMatchPage> toneMatchPage;
     std::array<juce::Component*, ui::numPages> pageComponents {};
-    ui::PageId shownPage = ui::PageId::count, pageBeforeTuner = ui::PageId::amp;
+    ui::PageId shownPage = ui::PageId::count, pageBeforeTuner = ui::PageId::amp, pageBeforeToneMatch = ui::PageId::amp;
     ui::BlockId selectedBlock = ui::BlockId::amp;
     std::unique_ptr<StatusLine> statusLine;
     std::unique_ptr<juce::TooltipWindow> tooltips;

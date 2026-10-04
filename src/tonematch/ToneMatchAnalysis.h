@@ -141,7 +141,7 @@ double toneError (const std::vector<double>& r, const std::array<double, 5>& the
 std::pair<std::array<double, 5>, double> fitTone (const std::vector<double>& r, const std::vector<double>& w, bool polish);
 
 /// The match EQ: the post EQ's five parametric bands (low shelf, three peaks, high shelf) fitted to the
-/// (smoothed) residual, capped at +-12 dB. Returns the bands and the capped curve they were fitted to.
+/// (smoothed) residual, scaled toward 0 dB by each band's confidence and capped at +-12 dB. Returns the bands and the capped curve they were fitted to.
 std::pair<std::array<Equalizer::Band, Equalizer::numParametricBands>, std::vector<double>> fitMatchEq (const std::vector<double>& residual,
                                                                                                          const std::vector<double>& w);
 

@@ -838,7 +838,11 @@ def fit_match_eq(residual, w):
     +-12 dB.
     Nelder-Mead on log2 frequency, gain, and log2 Q (the shelves keep Q 0.7071), weighted like the
     spectral error. Returns (bands, smoothed target curve)."""
-    sm = np.clip(residual - weighted_mean(residual, w), -EQ_CAP_DB, EQ_CAP_DB)
+    # Where the target had next to nothing (low confidence; band_weights), there's no evidence for a
+    # correction, so the curve to fit is scaled toward 0 dB by the band's confidence: the EQ stays flat
+    # there instead of cutting 10 dB where the reference simply played notes the target didn't.
+    confidence = w / WEIGHTS
+    sm = np.clip((residual - weighted_mean(residual, w)) * confidence, -EQ_CAP_DB, EQ_CAP_DB)
 
     starts = [100.0, 400.0, 1000.0, 3000.0, 8000.0]
 

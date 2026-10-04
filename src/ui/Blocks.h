@@ -74,6 +74,7 @@ enum class PageId
     postFx,
     output,
     tuner,
+    toneMatch, // opened from the brand menu (docs/TONE_MATCH.md)
     count
 };
 

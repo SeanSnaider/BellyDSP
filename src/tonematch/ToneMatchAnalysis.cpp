@@ -761,7 +761,9 @@ std::pair<std::array<Equalizer::Band, Equalizer::numParametricBands>, std::vecto
     const auto m = weightedMean (residual, w);
     std::vector<double> target (residual.size());
     for (size_t b = 0; b < residual.size(); ++b)
-        target[b] = std::clamp (residual[b] - m, -eqCapDb, eqCapDb);
+        // No evidence where the target had next to nothing (low confidence; bandWeights): the curve is
+        // scaled toward 0 dB by the band's confidence, so the EQ stays flat there.
+        target[b] = std::clamp ((residual[b] - m) * (w[b] / bands().weight[b]), -eqCapDb, eqCapDb);
 
     // Parameters, per band: log2 frequency, gain, and (peaks only) log2 Q: 2 + 3 + 3 + 3 + 2 = 13.
     struct Slot

@@ -94,6 +94,7 @@ AmpSimProcessor::AmpSimProcessor()
     // The analyzer's ring and scratch are allocated once, here, never while audio runs.
     analyzerRing.prepare (analyzerRingSize);
     analyzerScratch.assign (2048, 0.0f);
+    diRecorder.prepare(); // tone match's DI recorder: its minute of ring, allocated once, here
 
     // Frees models and IRs the audio thread has handed back, syncs footswitch slot changes, re-reads an
     // IR whose channel choice changed, and re-morphs moving mics. 50 Hz, so a mic being dragged is
@@ -653,7 +654,13 @@ void AmpSimProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     const auto maxChunk = (size_t) preparedBlockSize;
 
     for (size_t start = 0; start < (size_t) numSamples; start += maxChunk)
-        chain.process (io.getSubBlock (start, juce::jmin (maxChunk, (size_t) numSamples - start)));
+    {
+        const auto len = juce::jmin (maxChunk, (size_t) numSamples - start);
+        chain.process (io.getSubBlock (start, len));
+
+        // Tone match's recorder takes the chain's own DI snapshot (wait-free; a no-op unless recording).
+        diRecorder.push (chain.lastDISnapshot().data(), (int) len);
+    }
 
     samplesProcessed += numSamples;
 

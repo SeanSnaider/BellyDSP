@@ -53,6 +53,7 @@ ChainIcon chainIcon (PageId page)
             path ("M4 12h11M11 8l4 4-4 4");
             break;
         case PageId::tuner:
+        case PageId::toneMatch:
         case PageId::count:
             break;
     }

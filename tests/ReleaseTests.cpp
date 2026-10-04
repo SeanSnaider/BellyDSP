@@ -67,17 +67,19 @@ public:
             std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
             const auto entries = entriesOf (ed.brandMenu());
-            expectEquals ((int) entries.size(), 5);
+            expectEquals ((int) entries.size(), 6);
             expectEquals (entries[0].text, "BellyDSP " + version);
             expect (! entries[0].enabled); // a label, not a command
             expectEquals (entries[1].text, juce::String ("Free software under the GNU AGPL v3 or later"));
             expect (! entries[1].enabled);
-            expectEquals (entries[2].text, juce::String ("Check for updates..."));
-            expect (! entries[2].enabled); // the tests' processor isn't the standalone app: no updater runs
-            expectEquals (entries[3].text, juce::String ("Source code for this version"));
-            expect (entries[3].enabled);
-            expectEquals (entries[4].text, juce::String ("About / licenses"));
+            expectEquals (entries[2].text, juce::String ("Match tone...")); // the tone match page (docs/TONE_MATCH.md)
+            expect (entries[2].enabled);
+            expectEquals (entries[3].text, juce::String ("Check for updates..."));
+            expect (! entries[3].enabled); // the tests' processor isn't the standalone app: no updater runs
+            expectEquals (entries[4].text, juce::String ("Source code for this version"));
             expect (entries[4].enabled);
+            expectEquals (entries[5].text, juce::String ("About / licenses"));
+            expect (entries[5].enabled);
             expect (! platform::updater::isRunning());
 
             // Where "Source code for this version" goes: the public repo at this version's tag.

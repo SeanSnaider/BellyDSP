@@ -115,6 +115,7 @@ public:
                 p.takePeaks();
                 for (int n; (n = p.getAnalyzerRing().read (analyzerSink.data(), (int) analyzerSink.size())) > 0;)
                     analyzed += n;
+                p.getDiRecorder().drain(); // tone match's page drains its DI recording the same way
             };
 
             for (size_t start = 0; start + blockSize <= input.size(); start += blockSize, ++blocks)
@@ -253,6 +254,9 @@ public:
                     case 2000: p.loadModel (0, a1); break;                                  // switch the capture back
                     case 1150: p.useBuiltInCapture (1); break;                              // the menu's "Use the built-in capture": Ember back in slot 2
                     case 3700: p.clearModel (2); break;                                     // Monolith cleared from slot 3
+                    // Tone match: the DI recorder records from block 400 to block 2609 (the page's Record and Stop).
+                    case 400:  p.getDiRecorder().start(); break;
+                    case 2610: p.getDiRecorder().stop(); break;
                     default: break;
                 }
 
@@ -324,6 +328,14 @@ public:
             expectGreaterThan (analyzed, (juce::int64) 300000, "the GUI must have read the analyzer's ring during the measurement");
             expectGreaterThan (analyzerDropped, (juce::int64) 0, "the ring must have filled while the GUI stopped reading, and dropped");
             expectGreaterThan (p.getCpuLoad(), 0.0f, "the CPU meter must have measured the callbacks");
+            // The recording is exactly the DI the chain took in blocks 400 to 2609, with nothing dropped.
+            const auto& recording = p.getDiRecorder().getRecording();
+            const auto recordedFrom = (size_t) 400 * blockSize;
+            const auto recordingExact = recording.size() == (size_t) 2210 * blockSize
+                                        && std::equal (recording.begin(), recording.end(), input.begin() + (std::ptrdiff_t) recordedFrom);
+            expect (recordingExact, "the DI recording must be the input of blocks 400 to 2609, sample for sample (got "
+                                        + juce::String ((int) recording.size()) + " samples)");
+            expectEquals ((juce::int64) p.getDiRecorder().takeDroppedCount(), (juce::int64) 0);
             expectEquals (total.allocations, 0L);
             expectEquals (total.frees, 0L);
             expectEquals (total.blockingLocks, 0L);
@@ -339,7 +351,9 @@ public:
                         "a band type change, a cut slope change, and both FX sections reordered, "
                         "the delay switched on, retimed by three footswitch taps, re-moded and re-laid-out with 105% feedback, then bypassed into spillover and back, "
                         "the chorus on with mode, shape, and sync changes, and the reverb on, re-engined twice, frozen and thawed from the footswitch, resized, "
-                        "and bypassed into spillover; the amp bypassed and back (its captures running underneath), and both effect sections switched off and on");
+                        "and bypassed into spillover; the amp bypassed and back (its captures running underneath), and both effect sections switched off and on; "
+                        "tone match's DI recorder started and stopped mid-run (" + juce::String (p.getDiRecorder().recordedSeconds(), 2)
+                        + " s recorded, sample-exact, nothing dropped)");
             logMessage ("  -> the GUI hooks: input and output meters and the CPU meter every buffer, the analyzer tapping the post section, the pre section, "
                         "and the post section again; the GUI read " + juce::String (analyzed) + " samples from the ring and stopped for 400 buffers, "
                         "so the ring filled and the audio thread dropped " + juce::String (analyzerDropped) + " samples instead of waiting; CPU meter "

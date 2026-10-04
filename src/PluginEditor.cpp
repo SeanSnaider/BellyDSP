@@ -147,6 +147,8 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p) : AudioProcessorEditor (&p), amp
     cabView->onMicMenu = [this] (int mic, juce::Component& near) { showMicMenu (mic, near); };
 
     tunerPage = std::make_unique<ui::TunerPage> (p);
+    toneMatchPage = std::make_unique<ui::ToneMatchPage> (p);
+    toneMatchPage->onClose = [this] { showPage (pageBeforeToneMatch); };
 
     using P = ui::PageId;
     pageComponents[(size_t) P::input] = inputPage.get();
@@ -157,6 +159,7 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p) : AudioProcessorEditor (&p), amp
     pageComponents[(size_t) P::postFx] = postPage.get();
     pageComponents[(size_t) P::output] = outputPage.get();
     pageComponents[(size_t) P::tuner] = tunerPage.get();
+    pageComponents[(size_t) P::toneMatch] = toneMatchPage.get();
     for (auto* page : pageComponents)
         canvas->addChildComponent (page);
 
@@ -185,7 +188,7 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p) : AudioProcessorEditor (&p), amp
     const auto& state = ampSim.parameters.state;
     auto first = P::amp;
     for (int i = 0; i < ui::numPages; ++i)
-        if ((P) i != P::tuner && state.getProperty (uiPageKey).toString() == ui::pageName ((P) i))
+        if ((P) i != P::tuner && (P) i != P::toneMatch && state.getProperty (uiPageKey).toString() == ui::pageName ((P) i))
             first = (P) i;
     showPage (first);
 
@@ -284,6 +287,9 @@ void AmpSimEditor::showPage (ui::PageId page)
             tunerOn->setValueNotifyingHost (1.0f);
     }
 
+    if (page == ui::PageId::toneMatch && shownPage != ui::PageId::count)
+        pageBeforeToneMatch = shownPage == ui::PageId::tuner ? pageBeforeTuner : shownPage;
+
     if (shownPage != ui::PageId::count)
     {
         pageComponents[(size_t) shownPage]->setVisible (false);
@@ -298,7 +304,7 @@ void AmpSimEditor::showPage (ui::PageId page)
         hooks->refresh();
     }
     chainNav.setActive (page);
-    if (page != ui::PageId::tuner)
+    if (page != ui::PageId::tuner && page != ui::PageId::toneMatch)
         ampSim.parameters.state.setProperty (uiPageKey, ui::pageName (page), nullptr);
     refreshState();
 }
@@ -541,6 +547,8 @@ juce::PopupMenu AmpSimEditor::brandMenu()
     // Legal Notices" and its offer of the Corresponding Source (sections 5 and 13), one click away.
     menu.addItem (juce::String (platform::productName) + " " + platform::appVersion(), false, false, nullptr);
     menu.addItem ("Free software under the GNU AGPL v3 or later", false, false, nullptr);
+    menu.addSeparator();
+    menu.addItem ("Match tone...", [safe] { if (safe != nullptr) safe->showPage (ui::PageId::toneMatch); });
     menu.addSeparator();
     menu.addItem ("Check for updates...", platform::updater::isRunning(), false, [] { platform::updater::checkNow(); });
     menu.addItem ("Source code for this version", [] { juce::URL (platform::sourceUrlForThisVersion()).launchInDefaultBrowser(); });

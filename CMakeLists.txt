@@ -204,7 +204,8 @@ set(AMPSIM_UI_SOURCES
     src/ui/Pages.cpp
     src/ui/CabView.cpp
     src/ui/EqPage.cpp
-    src/ui/FxPages.cpp)
+    src/ui/FxPages.cpp
+    src/ui/ToneMatchPage.cpp)
 
 set(AMPSIM_JUCE_DEFINITIONS
     # Text antialiased without macOS's font smoothing (which thickens glyphs), as the UI handoff's
@@ -293,6 +294,7 @@ target_sources(BellyDSP PRIVATE
     src/Presets.cpp
     src/MidiMap.cpp
     src/Scenes.cpp
+    src/ToneMatchSession.cpp
     ${AMPSIM_TONEMATCH_SOURCES}
     ${AMPSIM_DSP_SOURCES})
 # The factory presets (BUILD_PLAN "Presets and scenes": the five style presets), embedded as BinaryData.
@@ -484,6 +486,7 @@ target_sources(ampsim_tests PRIVATE
     tests/MigrationTests.cpp
     tests/CaptureTests.cpp
     tests/ToneMatchTests.cpp
+    tests/ToneMatchAppTests.cpp
     tools/capture/CaptureEngine.cpp
     src/PluginProcessor.cpp
     src/PluginEditor.cpp
@@ -494,6 +497,7 @@ target_sources(ampsim_tests PRIVATE
     src/Presets.cpp
     src/MidiMap.cpp
     src/Scenes.cpp
+    src/ToneMatchSession.cpp
     ${AMPSIM_TONEMATCH_SOURCES}
     ${AMPSIM_DSP_SOURCES})
 target_include_directories(ampsim_tests PRIVATE src tests tools/capture)

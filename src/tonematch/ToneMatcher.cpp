@@ -450,6 +450,7 @@ MatchResult ToneMatcher::match (const std::vector<float>& targetSignal, const st
     result.distortion = best.distortion;
     result.closeness = 100.0 * std::exp (-(result.spectralErrorAfterEqDb + lambda * best.distortion) / scoreScaleDb);
     result.targetFeatures = target.features;
+    result.weights = target.weights;
     result.resultFeatures = best.analysis.features;
     result.renders = (int) renders.size();
     result.candidates = (int) candidates.size();

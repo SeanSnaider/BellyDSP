@@ -11,6 +11,7 @@
 #include "dsp/SpscRing.h"
 #include "dsp/Tempo.h"
 #include "dsp/TunerThread.h"
+#include "tonematch/DiRecorder.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
@@ -259,6 +260,15 @@ public:
     /// presets (BUILD_PLAN "Presets and scenes": window size and UI scale are global settings).
     static inline const juce::Identifier uiScaleKey { "uiScale" }, uiWidthKey { "uiWidth" }, uiHeightKey { "uiHeight" };
 
+    /// Tone match's DI recorder (docs/TONE_MATCH.md): the audio thread copies the chain's DI snapshot into
+    /// it while it records; the tone match page (message thread) starts, stops, and drains it.
+    ampsim::tonematch::DiRecorder& getDiRecorder() noexcept { return diRecorder; }
+
+    /// What tone match needs from the processor: each slot's capture file (empty if the slot is empty) and
+    /// the input calibration the captures were loaded with. Message thread.
+    juce::File getSlotCapture (int slot) const { return requestedModel[(size_t) slot].file; }
+    ampsim::NamAmp::Calibration getCaptureCalibration() const { return currentCalibration(); }
+
     /// For tests: the DSP chain. Only touch it from the thread that calls processBlock().
     ampsim::Chain& getChain() noexcept { return chain; }
 
@@ -470,6 +480,7 @@ private:
     double cpuSampleRate = 48000.0; // set in prepareToPlay, read by the audio thread
     std::atomic<int> analyzerTap { 0 };
     ampsim::SpscRing<float> analyzerRing;
+    ampsim::tonematch::DiRecorder diRecorder;
     std::vector<float> analyzerScratch; // audio thread: the output's mono sum, allocated in the constructor
 
     std::atomic<bool> sampleRateOk { true };
