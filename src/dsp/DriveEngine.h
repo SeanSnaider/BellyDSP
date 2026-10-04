@@ -66,6 +66,12 @@ public:
         float levelDb = 0.0f;        // -60 to +24
         int oversampling = 4;        // 1, 2, 4, 8
         double voltsAtFullScale = drive::defaultVoltsAtFullScale;
+
+        /// A fixed gain on each circuit's output (dB), inside the mode crossfade, so a mode switch fades from
+        /// one trimmed circuit to the other. The app sets each mode's unity trim (Overdrive::unityTrimDb,
+        /// Boost::screamerUnityTrimDb); 0 (the default, and what the circuit tests use) is the bare circuit.
+        /// Constants, not knobs: they are never smoothed.
+        std::array<float, maxCircuits> circuitTrimDb {};
     };
 
     /// Construction time only (allocates).
@@ -101,6 +107,7 @@ private:
     int numCircuits = 0;
 
     std::array<double, maxCircuits> position {}, target {};
+    std::array<double, maxCircuits> circuitGain { 1.0, 1.0, 1.0, 1.0 };
     std::array<bool, maxCircuits> running {};
     double positionStep = 0.0; // per oversampled sample
     int warming = -1;          // a circuit running unheard before its fade-in

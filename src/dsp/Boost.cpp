@@ -47,6 +47,8 @@ void Boost::setSettings (const Settings& s)
     e.tone = (float) screamerTone;
     e.oversampling = s.oversampling;
     e.voltsAtFullScale = s.voltsAtFullScale;
+    if (s.unityTrim)
+        e.circuitTrimDb[0] = screamerUnityTrimDb;
     screamer.setSettings (e);
 
     // Switching modes works as in DriveEngine: a silent mode starts from rest and runs unheard for

@@ -289,6 +289,7 @@ void Phaser::process (juce::dsp::AudioBlock<float> block, const BlockContext&)
     for (int n = 0; n < numSamples; ++n)
     {
         const auto amount = mix.getNextValue() * sCurve (onGain.getNextValue());
+        const auto hold = settings.holdLevel ? mixLevelHold (amount) : 1.0; // the mix's lost power back (Fade.h)
         const Sweep sweep { depth.getNextValue(), low.getNextValue(), high.getNextValue(), modernFeedback.getNextValue(),
                             classicFeedback.getNextValue() };
         const auto spread = offset.getNextValue();
@@ -314,7 +315,7 @@ void Phaser::process (juce::dsp::AudioBlock<float> block, const BlockContext&)
                 if (active[b])
                     wet += gains[b] * runBank (banks[b], ch, ph, x, fbs[b], sweep) * compensation[b];
 
-            channels[ch][n] = (float) ((1.0 - amount) * x + amount * wet);
+            channels[ch][n] = (float) (hold * ((1.0 - amount) * x + amount * wet));
         }
 
         phase += increment;

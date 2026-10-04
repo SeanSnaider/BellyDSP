@@ -20,6 +20,8 @@ AmpSimProcessor::AmpSimProcessor()
 
     inputGainDb = raw ("input_gain");
     outputGainDb = raw ("output_gain");
+    limiterOn = raw ("output_limit_on");
+    limiterCeiling = raw ("output_limit_ceiling");
     cabBypass = raw ("cab_bypass");
     ampSlot = raw (slotParamId);
     ampBypass = raw ("amp_bypass");
@@ -133,6 +135,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout AmpSimProcessor::createParam
     layout.add (std::make_unique<Float> (juce::ParameterID { "input_gain", 1 }, "Input Gain", levelRange, 0.0f, dB));
     layout.add (std::make_unique<Float> (juce::ParameterID { "output_gain", 1 }, "Output Level", levelRange, 0.0f, dB));
     layout.add (std::make_unique<Bool> (juce::ParameterID { "cab_bypass", 1 }, "Cab Bypass", false));
+
+    // The output safety limiter (OutputLimiter.h): global settings, never part of a preset or a scene, so no
+    // preset can switch the protection off. On by default, ceiling -1 dBFS.
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "output_limit_on", 1 }, "Output Limiter", true));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "output_limit_ceiling", 1 }, "Output Limiter Ceiling",
+                                         juce::NormalisableRange<float> (ampsim::OutputLimiter::minCeilingDb, ampsim::OutputLimiter::maxCeilingDb, 0.1f),
+                                         ampsim::OutputLimiter::defaultCeilingDb, dB));
     layout.add (std::make_unique<Choice> (juce::ParameterID { slotParamId, 1 }, "Amp Slot", juce::StringArray { "Amp 1", "Amp 2", "Amp 3" }, 0));
 
     // The signal chain's bypass dots (the UI handoff's bottom chain): the whole amp, and each effect
@@ -255,6 +264,8 @@ void AmpSimProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     chain.amp.selectSlot (lastSlotParameter);
     applyCabParameters();
     applyEffectParameters();
+    chain.setBypassed (ampsim::Chain::Slot::limiter, limiterOn->load() < 0.5f);
+    chain.limiter.setCeilingDb (limiterCeiling->load());
 
     chain.prepare (sampleRate, preparedBlockSize);
     setLatencySamples (chain.latencySamples());
@@ -380,7 +391,13 @@ void AmpSimProcessor::applyEffectParameters()
     chain.setBypassed (Slot::overdrive, pre (overdriveParams.isOn()));
     chain.overdrive.setSettings (overdriveParams.read (oversampling, volts));
     chain.setBypassed (Slot::preCompressor, pre (preCompParams.isOn()));
-    chain.preCompressor.setSettings (preCompParams.read());
+    {
+        // The pre instance compresses the DI, whose level sits far below its peaks: its auto makeup restores
+        // the level there (Compressor.h, the gain staging audit).
+        auto preSettings = preCompParams.read();
+        preSettings.autoMakeupReferenceDb = (float) ampsim::Compressor::preAmpMakeupReferenceDb;
+        chain.preCompressor.setSettings (preSettings);
+    }
     chain.setBypassed (Slot::preEq, pre (preEqParams.isOn()));
     chain.preEq.setSettings (preEqParams.read());
     chain.setBypassed (Slot::postEq, post (postEqParams.isOn()));
@@ -616,6 +633,8 @@ void AmpSimProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
 
     chain.inputGain.setGainDecibels (inputGainDb->load (std::memory_order_relaxed));
     chain.outputGain.setGainDecibels (outputGainDb->load (std::memory_order_relaxed));
+    chain.setBypassed (ampsim::Chain::Slot::limiter, limiterOn->load (std::memory_order_relaxed) < 0.5f);
+    chain.limiter.setCeilingDb (limiterCeiling->load (std::memory_order_relaxed));
     chain.setBypassed (ampsim::Chain::Slot::cab, cabBypass->load (std::memory_order_relaxed) >= 0.5f);
 
     // The amp's bypass crossfades the amp section out to its own input with the chain's 10 ms bypass
@@ -663,6 +682,10 @@ void AmpSimProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     }
 
     samplesProcessed += numSamples;
+
+    // The Out meter's limit light: the limiter's largest gain reduction in this buffer (0 while it's off).
+    if (! chain.isFullyBypassed (ampsim::Chain::Slot::limiter))
+        raisePeak (limiterReduction, chain.limiter.getReductionDb());
 
     // The strip's gate light: whether Gate A is letting the guitar through. Its gain is the gate's (0 dB
     // while it's off or its section is), and the light is on while that gain is above -6 dB (the gate's
@@ -714,7 +737,7 @@ void AmpSimProcessor::raisePeak (std::atomic<float>& peak, float value) noexcept
 AmpSimProcessor::Peaks AmpSimProcessor::takePeaks() noexcept
 {
     return { inputPeak.exchange (0.0f, std::memory_order_relaxed), outputPeakLeft.exchange (0.0f, std::memory_order_relaxed),
-             outputPeakRight.exchange (0.0f, std::memory_order_relaxed) };
+             outputPeakRight.exchange (0.0f, std::memory_order_relaxed), limiterReduction.exchange (0.0f, std::memory_order_relaxed) };
 }
 
 void AmpSimProcessor::measureCpu (juce::int64 startTicks, int numSamples) noexcept

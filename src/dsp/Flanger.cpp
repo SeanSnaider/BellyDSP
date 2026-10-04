@@ -244,6 +244,7 @@ void Flanger::process (juce::dsp::AudioBlock<float> block, const BlockContext&)
     for (int n = 0; n < numSamples; ++n)
     {
         const auto amount = mix.getNextValue() * sCurve (onGain.getNextValue());
+        const auto hold = settings.holdLevel ? mixLevelHold (amount) : 1.0; // the mix's lost power back (Fade.h)
         const auto sign = polarity.getNextValue();
 
         bool active[2];
@@ -278,7 +279,7 @@ void Flanger::process (juce::dsp::AudioBlock<float> block, const BlockContext&)
                 wet += gains[b] * tap * feedbackCompensation (engine.getFeedback());
             }
 
-            outputs[ch] = (float) ((1.0 - amount) * dry + amount * sign * wet);
+            outputs[ch] = (float) (hold * ((1.0 - amount) * dry + amount * sign * wet));
         }
 
         for (int ch = 0; ch < numChannels; ++ch)

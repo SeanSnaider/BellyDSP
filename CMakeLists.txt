@@ -195,7 +195,8 @@ set(AMPSIM_DSP_SOURCES
     src/dsp/Bloom.cpp
     src/dsp/PitchShifter.cpp
     src/dsp/Psola.cpp
-    src/dsp/Multivoicer.cpp)
+    src/dsp/Multivoicer.cpp
+    src/dsp/OutputLimiter.cpp)
 
 # Tone match (docs/TONE_MATCH.md): the analysis, the search, and reading audio files. Offline, on worker
 # threads; never on the audio thread.
@@ -520,6 +521,10 @@ target_sources(ampsim_tests PRIVATE
     tests/ChainTests.cpp
     tests/ProcessorTests.cpp
     tests/BuiltInCaptureTests.cpp
+    tests/GainStagingTests.cpp
+    tests/OutputLimiterTests.cpp
+    tests/GateInAppTests.cpp
+    tests/PlayTestUiTests.cpp
     tests/RealtimeSafetyTests.cpp
     tests/HandoffEngineTests.cpp
     tests/EditorTests.cpp

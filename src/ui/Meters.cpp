@@ -21,7 +21,8 @@ float toDb (float linear)
 
 LevelMeter::LevelMeter (juce::String title, int numChannels) : label (std::move (title)), channels ((size_t) juce::jmax (1, numChannels))
 {
-    setTooltip ("Peak level, -60 to 0 dBFS. A bright cap at the end means a clip; click to clear it.");
+    setTooltip ("Peak level, -60 to 0 dBFS. A bright cap at the end means a clip; click to clear it. On the Out meter, a bright cap with "
+                "\"limit\" under it means the output limiter is holding the level under its ceiling (-1 dBFS unless changed on the Output page).");
     setMouseCursor (juce::MouseCursor::PointingHandCursor);
 }
 
@@ -57,6 +58,16 @@ void LevelMeter::push (const float* peaks, double seconds)
     if (changed)
     {
         drawn = channels;
+        repaint();
+    }
+}
+
+void LevelMeter::pushLimiter (float reductionDb, double seconds)
+{
+    limitingFor = reductionDb >= limiterShownFromDb ? 0.0 : limitingFor + seconds;
+    if (isLimiting() != limitDrawn)
+    {
+        limitDrawn = isLimiting();
         repaint();
     }
 }
@@ -113,10 +124,17 @@ void LevelMeter::paint (juce::Graphics& g)
         g.setColour (inkDim);
         g.fillRect (juce::Rectangle<float> (bar.getX() + bar.getWidth() * fraction (held) - 1.0f, bar.getY(), 1.0f, bar.getHeight()));
     }
-    if (isClipped())
+    if (isClipped() || isLimiting())
     {
         g.setColour (ink);
         g.fillRect (bar.withLeft (bar.getRight() - 3.0f));
+    }
+    if (isLimiting())
+    {
+        // "limit", 9 px ink-dim, right-aligned under the bar's end.
+        g.setFont (geist (Weight::regular, 9.0f));
+        g.setColour (inkDim);
+        g.drawText ("limit", juce::Rectangle<float> (bar.getRight() - 40.0f, bar.getBottom() + 2.0f, 40.0f, 10.0f), juce::Justification::topRight, false);
     }
 }
 

@@ -88,6 +88,7 @@ public:
         float stereoPhase = 0.25f;                // the right LFO's lead in cycles, 0 to 0.5
         float mix = 0.5f;                         // 0 dry to 1 wet; 0.5 gives the deepest notches
         bool throughZero = false;                 // applied by setThroughZero(), reset(), or prepare()
+        bool holdLevel = false;                   // scale the mix by mixLevelHold (Fade.h): the app's setting
     };
 
     /// One channel's engine settings: a single voice at Manual, swung by depth, the right one leading by the

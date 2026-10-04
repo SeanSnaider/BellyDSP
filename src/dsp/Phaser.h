@@ -113,6 +113,7 @@ public:
         bool classicFeedback = false;         // Classic: the later (block logo) version's feedback
         float stereoOffset = 0.25f;           // the right LFO's lead in cycles, 0 to 0.5 (0 to 180 degrees)
         float mix = 0.5f;                     // 0 dry to 1 wet; 0.5 gives the deepest notches
+        bool holdLevel = false;               // scale the mix by mixLevelHold (Fade.h): the app's setting
     };
 
     /// What one bank of stages runs: a change of any of these crossfades to the other bank.

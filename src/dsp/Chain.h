@@ -17,6 +17,7 @@
 #include "Harmonizer.h"
 #include "Multivoicer.h"
 #include "LinkedGates.h"
+#include "OutputLimiter.h"
 #include "Overdrive.h"
 
 #include <array>
@@ -32,7 +33,7 @@ namespace ampsim
 /// design", decisions 2 to 6).
 ///
 ///   input gain ─► PRE FX (mono, reorderable) ─► amp ─► Gate B ─► cab (mono to stereo) ─► POST FX
-///   (stereo, reorderable) ─► output level
+///   (stereo, reorderable) ─► output level ─► output safety limiter
 ///
 /// Blocks are typed members (decision 6), so the processor can call block-specific setters. The
 /// generic logic reaches them through blockFor(). A section's order is an array of slots, changed by
@@ -62,6 +63,7 @@ public:
     Delay delay;
     Reverb reverb;
     Gain outputGain { true };
+    OutputLimiter limiter; // the last block: nothing leaves above its ceiling (OutputLimiter.h)
 
     enum class Slot : size_t
     {
@@ -83,6 +85,7 @@ public:
         delay,
         reverb,
         outputGain,
+        limiter,
         count
     };
 
@@ -110,7 +113,7 @@ public:
     void process (juce::dsp::AudioBlock<float> io);
 
     /// Audio thread, once per buffer before process(). Bypass crossfades over 10 ms (decision 4).
-    /// Effects (the pre and post FX) start bypassed; the amp, cab, and gains start on.
+    /// Effects (the pre and post FX) and the output limiter start bypassed; the amp, cab, and gains start on.
     void setBypassed (Slot slot, bool shouldBeBypassed);
 
     /// Audio thread, for tests: whether the slot is fully bypassed and being skipped.

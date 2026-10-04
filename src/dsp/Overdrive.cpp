@@ -26,6 +26,9 @@ void Overdrive::setSettings (const Settings& s)
     e.levelDb = s.levelDb;
     e.oversampling = s.oversampling;
     e.voltsAtFullScale = s.voltsAtFullScale;
+    if (s.unityTrim)
+        for (size_t m = 0; m < unityTrimDb.size(); ++m)
+            e.circuitTrimDb[m] = unityTrimDb[m];
     engine.setSettings (e);
 }
 
