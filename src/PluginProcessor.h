@@ -225,10 +225,12 @@ public:
     // through atomics and a ring buffer; the audio thread never waits for the GUI) ----------------------
 
     /// GUI thread: the highest input (DI) sample and the highest output samples, left and right, as linear
-    /// magnitudes, since the last call. Each call starts the next measurement.
+    /// magnitudes, and the output limiter's largest gain reduction, since the last call. Each call starts the
+    /// next measurement.
     struct Peaks
     {
         float input = 0.0f, left = 0.0f, right = 0.0f;
+        float limiterDb = 0.0f; // the output limiter's largest gain reduction (dB) since the last call
     };
     Peaks takePeaks() noexcept;
 
@@ -344,6 +346,8 @@ private:
 
     std::atomic<float>* inputGainDb = nullptr;
     std::atomic<float>* outputGainDb = nullptr;
+    std::atomic<float>* limiterOn = nullptr;
+    std::atomic<float>* limiterCeiling = nullptr;
     std::atomic<float>* cabBypass = nullptr;
     std::atomic<float>* ampSlot = nullptr;
     std::atomic<float>* ampBypass = nullptr;
@@ -474,7 +478,7 @@ private:
     static void raisePeak (std::atomic<float>& peak, float value) noexcept;
     void measureCpu (juce::int64 startTicks, int numSamples) noexcept;
     void tapOutput (const juce::AudioBuffer<float>& buffer, int numSamples) noexcept;
-    std::atomic<float> inputPeak { 0.0f }, outputPeakLeft { 0.0f }, outputPeakRight { 0.0f };
+    std::atomic<float> inputPeak { 0.0f }, outputPeakLeft { 0.0f }, outputPeakRight { 0.0f }, limiterReduction { 0.0f };
     std::atomic<float> cpuLoad { 0.0f };
     float cpuSmoothed = 0.0f;       // audio thread
     double cpuSampleRate = 48000.0; // set in prepareToPlay, read by the audio thread

@@ -35,6 +35,10 @@ Chain::Chain()
     }
     setBypassed (Slot::gateB, true);
 
+    // The output limiter too, so a bare chain (the renderer, the block tests) is exactly gain, amp, cab, and
+    // level; the processor switches it on from output_limit_on, which is on by default.
+    setBypassed (Slot::limiter, true);
+
     // The amp too: bypassed, its captures keep their history current, so switching it back on is
     // seamless (the processor's amp_bypass).
     for (auto slot : { Slot::gateA, Slot::boost, Slot::overdrive, Slot::amp })
@@ -128,6 +132,7 @@ const Block& Chain::blockFor (Slot slot) const
         case Slot::delay:          return delay;
         case Slot::reverb:         return reverb;
         case Slot::outputGain:     return outputGain;
+        case Slot::limiter:        return limiter;
         case Slot::count:          break;
     }
     jassertfalse;
@@ -334,6 +339,7 @@ void Chain::process (juce::dsp::AudioBlock<float> io)
 
     runSection (Section::post, io, context, stereoCopied);
     runBlock (Slot::outputGain, io, context, stereoCopied);
+    runBlock (Slot::limiter, io, context, stereoCopied);
 }
 
 void Chain::setBypassed (Slot slot, bool shouldBeBypassed)

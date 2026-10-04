@@ -178,11 +178,51 @@ void HarmonizerPage::refresh()
 
 // ---- MultivoicerPage -------------------------------------------------------------------------------------
 
+namespace
+{
+/// The interval picker beside a voice's semitones: a small chevron in ink-faint (ink on hover), no box, so the
+/// table stays quiet. A click opens the named intervals.
+class ChevronButton final : public juce::Button
+{
+public:
+    ChevronButton() : juce::Button ("Interval") { setMouseCursor (juce::MouseCursor::PointingHandCursor); }
+
+    void paintButton (juce::Graphics& g, bool over, bool down) override
+    {
+        const auto c = getLocalBounds().toFloat().getCentre();
+        juce::Path chevron;
+        chevron.startNewSubPath (c.x - 3.5f, c.y - 1.5f);
+        chevron.lineTo (c.x, c.y + 2.0f);
+        chevron.lineTo (c.x + 3.5f, c.y - 1.5f);
+        g.setColour (over || down ? theme::ink : theme::inkFaint);
+        g.strokePath (chevron, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
+};
+} // namespace
+
 MultivoicerPage::MultivoicerPage (AmpSimProcessor& p)
     : BlockPage (p, BlockId::multivoicer, "Multivoicer", "Up to eight shifted, delayed, panned copies")
 {
     engine = &addCombo ("mv_engine", { "Poly (chords)", "Mono (single notes)" });
+    mixMode = &addCombo ("mv_mix_mode", { "Blend", "Add" });
+    mixMode->setTooltip ("Blend: Mix trades the dry for the voices (equal power). Add: the dry stays whole and Mix sets the voices' level on top");
     highPass = &addSwitch ("mv_hp", "Wet high-pass");
+
+    using Shape = params::MultivoicerParameters::Shape;
+    const std::array<std::pair<Shape, const char*>, 4> shapeList { { { Shape::octaveUp, "One voice an octave up, added on top of the dry" },
+                                                                     { Shape::octaveDown, "One voice an octave down, added on top of the dry" },
+                                                                     { Shape::powerFifth, "A fifth (+7) and an octave (+12), added on top of the dry" },
+                                                                     { Shape::octaveStack, "An octave down and an octave up, added on top of the dry" } } };
+    for (size_t i = 0; i < shapes.size(); ++i)
+    {
+        const auto shape = shapeList[i].first;
+        shapes[i] = &addButton (params::MultivoicerParameters::shapeName (shape), [this, shape]
+        {
+            beginUndoStep (state);
+            params::MultivoicerParameters::applyShape (state, shape);
+        });
+        shapes[i]->setTooltip (juce::String (shapeList[i].second) + " (sets the voices, their delays to 0, and the mix to Add; one undo step)");
+    }
     voices = &addKnob ("mv_voices", "Voices", "");
     mix = &addKnob ("mv_mix", "Mix", " %");
     spread = &addKnob ("mv_spread", "Spread", " %");
@@ -213,16 +253,43 @@ MultivoicerPage::MultivoicerPage (AmpSimProcessor& p)
         row.number->setJustificationType (juce::Justification::centred);
         for (size_t k = 0; k < row.fields.size(); ++k)
             row.fields[k] = &addField (params::MultivoicerParameters::voiceId (v, what[k]), suffix[k]);
+        row.picker = &adopt (std::make_unique<ChevronButton>());
+        row.picker->setTooltip ("Pick an interval for voice " + juce::String (v + 1));
+        row.picker->onClick = [this, v] { showMenu (intervalMenu (v), rows[(size_t) v].picker, &getLookAndFeel()); };
     }
     refresh();
+}
+
+juce::PopupMenu MultivoicerPage::intervalMenu (int voice)
+{
+    juce::PopupMenu menu;
+    const auto current = indexOf (state, params::MultivoicerParameters::voiceId (voice, "semitones"));
+    for (const auto& interval : params::MultivoicerParameters::namedIntervals())
+    {
+        const auto label = juce::String (interval.name) + "  (" + (interval.semitones > 0 ? "+" : "") + juce::String (interval.semitones) + ")";
+        menu.addItem (label, true, current == interval.semitones, [this, voice, st = interval.semitones]
+        {
+            beginUndoStep (state);
+            params::MultivoicerParameters::applyInterval (state, voice, st);
+        });
+    }
+    return menu;
 }
 
 void MultivoicerPage::layoutContent (juce::Rectangle<int> area)
 {
     auto toolbar = area.removeFromTop (controlHeight);
-    place (engine, toolbar, 200, controlHeight, space::l);
+    place (engine, toolbar, 200, controlHeight, space::s);
+    place (mixMode, toolbar, 96, controlHeight, space::l);
     place (highPass, toolbar);
     startingPoints->setBounds (toolbar.removeFromRight (170));
+    toolbar.removeFromRight (space::l);
+    for (auto it = shapes.rbegin(); it != shapes.rend(); ++it)
+    {
+        const auto width = (int) std::ceil (textWidth (font (Text::body), (*it)->getButtonText())) + 24;
+        (*it)->setBounds (toolbar.removeFromRight (width));
+        toolbar.removeFromRight (space::s);
+    }
     area.removeFromTop (space::m);
 
     // The ensemble's knobs, two by two, in a card on the left; the voices' table in a card on the right.
@@ -244,7 +311,12 @@ void MultivoicerPage::layoutContent (juce::Rectangle<int> area)
         r.number->setBounds (line.removeFromLeft (32));
         const auto width = line.getWidth() / (int) r.fields.size();
         for (auto* field : r.fields)
-            field->setBounds (line.removeFromLeft (width).reduced (3, 0));
+        {
+            auto cell = line.removeFromLeft (width).reduced (3, 0);
+            if (field == r.fields[0])
+                r.picker->setBounds (cell.removeFromRight (18)); // the chevron, inside the Interval column
+            field->setBounds (cell);
+        }
     }
 }
 
@@ -265,6 +337,7 @@ void MultivoicerPage::refresh()
         rows[(size_t) v].number->setAlpha (alpha);
         for (auto* field : rows[(size_t) v].fields)
             field->setAlpha (alpha);
+        rows[(size_t) v].picker->setAlpha (alpha);
     }
 }
 

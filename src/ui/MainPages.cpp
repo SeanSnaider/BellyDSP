@@ -286,6 +286,12 @@ void InputPage::resized()
 OutputPage::OutputPage (AmpSimProcessor& p) : ControlGroup (p)
 {
     output = &addKnob ("output_gain", "Output");
+    limiter = &addSwitch ("output_limit_on", "Limiter");
+    limiter->setTooltip ("The output safety limiter: nothing leaves above the ceiling, with no added latency. Untouched while the level stays "
+                         "2 dB under the ceiling. A global setting: presets and scenes never change it");
+    ceiling = &addField ("output_limit_ceiling", " dBFS");
+    ceiling->setTooltip ("The limiter's ceiling: the highest level the output can reach");
+    ceiling->setShowsBar (false);
     abA = &addButton ("A", [this] { if (onAbSelect) onAbSelect (false); });
     abB = &addButton ("B", [this] { if (onAbSelect) onAbSelect (true); });
     abA->setConnectedEdges (juce::Button::ConnectedOnRight);
@@ -348,8 +354,15 @@ void OutputPage::resized()
 
     // Row one: the level, A/B, the tempo, the CPU.
     auto row = area.removeFromTop (cardHeight (Knob::preferredHeight (Knob::Size::normal)));
-    auto level = card (row.removeFromLeft (2 * cardPadding + 160), "Level");
-    output->setBounds (level.withSizeKeepingCentre (Knob::preferredWidth (Knob::Size::normal), Knob::preferredHeight (Knob::Size::normal)));
+    auto level = card (row.removeFromLeft (2 * cardPadding + 300), "Level");
+    output->setBounds (level.removeFromLeft (140).withSizeKeepingCentre (Knob::preferredWidth (Knob::Size::normal), Knob::preferredHeight (Knob::Size::normal)));
+    {
+        // The limiter beside it: its switch, and the ceiling under it.
+        auto column = level.withSizeKeepingCentre (level.getWidth(), 2 * controlHeight + space::s);
+        limiter->setBounds (column.removeFromTop (controlHeight));
+        column.removeFromTop (space::s);
+        ceiling->setBounds (column.removeFromTop (controlHeight).withWidth (120));
+    }
     row.removeFromLeft (gap);
 
     auto compare = card (row.removeFromLeft (220), "Compare");

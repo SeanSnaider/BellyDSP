@@ -23,6 +23,14 @@ public:
     /// GUI thread: the highest sample (linear) on each channel since the last call, `seconds` ago.
     void push (const float* peaks, double seconds);
 
+    /// GUI thread, the Out meter: the output limiter's largest gain reduction (dB) since the last call. While
+    /// it has worked in the last 1.5 s (0.5 dB or more: less doesn't change what you hear), the bar's cap is
+    /// ink, like a clip, and "limit" sits under the bar's end (no warning colours, UH5). It isn't latched:
+    /// the limiter working is the protection doing its job, not an error to acknowledge.
+    void pushLimiter (float reductionDb, double seconds);
+    bool isLimiting() const noexcept { return limitingFor < theme::peakHoldSeconds; }
+    static constexpr float limiterShownFromDb = 0.5f;
+
     /// What each bar shows and holds, in dBFS (for tests and the readout).
     float getShownDb (int channel) const { return channels[(size_t) channel].shownDb; }
     float getHeldDb (int channel) const { return channels[(size_t) channel].heldDb; }
@@ -49,6 +57,8 @@ public:
 
 private:
     juce::String label;
+    double limitingFor = 1.0e9; // seconds since the limiter last worked
+    bool limitDrawn = false;
     std::vector<Channel> channels;
     std::vector<Channel> drawn; // what was painted last, to repaint only on change
 };

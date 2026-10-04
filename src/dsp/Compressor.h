@@ -40,8 +40,14 @@ namespace ampsim
 /// barely charges the slow one, so the gain recovers in about 60 ms; seconds of heavy compression
 /// charge it, so recovery slows down instead of pumping.
 ///
-/// Auto makeup: the static curve's gain reduction for a signal peaking at -12 dBFS, about where a guitar
-/// DI and the post-cab signal sit, so turning threshold or ratio keeps the level roughly steady.
+/// Auto makeup: the static curve's gain reduction at a reference level, so turning threshold or ratio keeps
+/// the level roughly steady. The reference is where the signal's level typically sits, which depends on where
+/// the compressor is: -12 dBFS after the cab (Settings' default, the post instance), and lower for the pre
+/// instance, which compresses the DI itself (preAmpMakeupReferenceDb). The reference first was -12 dBFS for
+/// both, taken from the DI's peaks; but between its peaks the DI sits far lower (a guitar DI peaking at -6
+/// dBFS measures about -21 LUFS), and the detector follows that body, so the makeup of the reduction at
+/// -12 dBFS lifted everything under the peaks: the pre instance at its defaults raised the DI's loudness by
+/// 4.6 to 6.4 dB (the gain staging audit, 2026-10-04), which pushed every amp after it harder.
 ///
 /// No lookahead: zero latency (foundation rules). Threshold, ratio, knee, makeup, and mix are smoothed
 /// per sample.
@@ -72,6 +78,7 @@ public:
         bool autoRelease = true;
         float makeupDb = 0.0f;
         bool autoMakeup = true;
+        float autoMakeupReferenceDb = -12.0f; // where auto makeup restores the level (see above)
         float mix = 0.7f; // 0 dry, 1 fully compressed
         bool sidechainHighPass = true;
         float sidechainHz = 100.0f;
@@ -82,7 +89,8 @@ public:
     static constexpr double autoFastReleaseMs = 60.0;
     static constexpr double autoSlowAttackMs = 400.0;
     static constexpr double autoSlowReleaseMs = 1500.0;
-    static constexpr double autoMakeupReferenceDb = -12.0;
+    static constexpr double autoMakeupReferenceDb = -12.0;   // the default (post-cab levels)
+    static constexpr double preAmpMakeupReferenceDb = -21.0; // the pre instance: on the DI (the gain staging audit)
     static constexpr double smoothingSeconds = 0.020;
 
     explicit Compressor (bool isStereoBlock) : stereo (isStereoBlock) {}
@@ -93,8 +101,8 @@ public:
     /// The feedback gain computer: gain reduction (dB, >= 0) for detected output level y (dB).
     static double feedbackReductionDb (double y, double thresholdDb, double ratio, double kneeDb);
 
-    /// The makeup gain auto makeup applies (dB).
-    static double autoMakeupDb (double thresholdDb, double ratio, double kneeDb);
+    /// The makeup gain auto makeup applies (dB): the static curve's reduction at the reference level.
+    static double autoMakeupDb (double thresholdDb, double ratio, double kneeDb, double referenceDb = autoMakeupReferenceDb);
 
     /// Audio thread, once per buffer.
     void setSettings (const Settings& settings);

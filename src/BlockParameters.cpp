@@ -121,6 +121,7 @@ ampsim::Boost::Settings BoostParameters::read (int oversampling, double volts) c
     s.midDb = mid.get();
     s.oversampling = oversampling;
     s.voltsAtFullScale = volts;
+    s.unityTrim = true; // Level 0 dB is as loud as bypassed (Boost.h, the gain staging audit)
     return s;
 }
 
@@ -172,6 +173,7 @@ ampsim::Overdrive::Settings OverdriveParameters::read (int oversampling, double 
     s.tightHz = tightOn.on() ? tightHz.get() : ampsim::DriveEngine::tightOffHz;
     s.oversampling = oversampling;
     s.voltsAtFullScale = volts;
+    s.unityTrim = true; // Level 0 dB is as loud as bypassed in every mode (Overdrive.h, the gain staging audit)
     return s;
 }
 
@@ -583,6 +585,8 @@ void MultivoicerParameters::addTo (Layout& layout)
                                          (float) d.mix * 100.0f, percent()));
     layout.add (std::make_unique<Float> (juce::ParameterID { "mv_spread", 1 }, "Multivoicer Spread", juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f),
                                          (float) d.spread * 100.0f, percent()));
+    // Added 2026-10-04 (Blend is what the multivoicer always did, so older presets sound the same).
+    layout.add (std::make_unique<Choice> (juce::ParameterID { "mv_mix_mode", 1 }, "Multivoicer Mix Mode", juce::StringArray { "Blend", "Add" }, 0));
     layout.add (std::make_unique<Bool> (juce::ParameterID { "mv_hp", 1 }, "Multivoicer Wet High-Pass", d.wetHighPass));
     layout.add (std::make_unique<Float> (juce::ParameterID { "mv_hp_freq", 1 }, "Multivoicer High-Pass Frequency",
                                          skewedRange ((float) MV::minHighPassHz, (float) MV::maxHighPassHz, 150.0f, 1.0f), (float) d.wetHighPassHz, hertz()));
@@ -612,6 +616,7 @@ void MultivoicerParameters::bind (State& s)
     engine.bind (s, "mv_engine");
     voiceCount.bind (s, "mv_voices");
     mix.bind (s, "mv_mix");
+    mixMode.bind (s, "mv_mix_mode");
     spread.bind (s, "mv_spread");
     highPass.bind (s, "mv_hp");
     highPassHz.bind (s, "mv_hp_freq");
@@ -633,6 +638,7 @@ ampsim::Multivoicer::Settings MultivoicerParameters::read() const noexcept
     s.engine = engine.index() == 1 ? ampsim::Multivoicer::Engine::mono : ampsim::Multivoicer::Engine::poly;
     s.voiceCount = juce::jlimit (1, ampsim::Multivoicer::maxVoices, voiceCount.index());
     s.mix = mix.get() / 100.0;
+    s.mixMode = mixMode.index() == 1 ? ampsim::Multivoicer::MixMode::add : ampsim::Multivoicer::MixMode::blend;
     s.spread = spread.get() / 100.0;
     s.wetHighPass = highPass.on();
     s.wetHighPassHz = highPassHz.get();
@@ -669,6 +675,65 @@ void MultivoicerParameters::applyStartingPoint (State& state, ampsim::Multivoice
         set (voiceId (v, "level"), voice.levelDb);
         set (voiceId (v, "drift"), voice.drift * 100.0);
     }
+}
+
+void MultivoicerParameters::applyShape (State& state, Shape shape)
+{
+    const auto set = [&state] (const juce::String& id, double plain)
+    {
+        if (auto* parameter = state.getParameter (id))
+            parameter->setValueNotifyingHost (parameter->convertTo0to1 ((float) plain));
+    };
+    struct V
+    {
+        int semitones;
+        double pan;
+    };
+    std::vector<V> voices;
+    switch (shape)
+    {
+        case Shape::octaveUp:    voices = { { 12, 0.0 } }; break;
+        case Shape::octaveDown:  voices = { { -12, 0.0 } }; break;
+        case Shape::powerFifth:  voices = { { 7, -30.0 }, { 12, 30.0 } }; break;
+        case Shape::octaveStack: voices = { { -12, -30.0 }, { 12, 30.0 } }; break;
+    }
+    set ("mv_voices", (double) voices.size());
+    for (size_t v = 0; v < voices.size(); ++v)
+    {
+        set (voiceId ((int) v, "semitones"), voices[v].semitones);
+        set (voiceId ((int) v, "cents"), 0.0);
+        set (voiceId ((int) v, "delay"), 0.0);
+        set (voiceId ((int) v, "pan"), voices[v].pan);
+        set (voiceId ((int) v, "level"), 0.0);
+        set (voiceId ((int) v, "drift"), 0.0);
+    }
+    set ("mv_mix_mode", 1.0); // Add
+}
+
+juce::String MultivoicerParameters::shapeName (Shape shape)
+{
+    switch (shape)
+    {
+        case Shape::octaveUp:    return "Octave up";
+        case Shape::octaveDown:  return "Octave down";
+        case Shape::powerFifth:  return "Power fifth";
+        case Shape::octaveStack: return "Octave stack";
+    }
+    return {};
+}
+
+const std::array<MultivoicerParameters::NamedInterval, 7>& MultivoicerParameters::namedIntervals()
+{
+    static const std::array<NamedInterval, 7> intervals { { { -12, "Octave down" }, { 0, "Unison" }, { 3, "Minor third" }, { 4, "Major third" },
+                                                            { 5, "Fourth" }, { 7, "Fifth" }, { 12, "Octave up" } } };
+    return intervals;
+}
+
+void MultivoicerParameters::applyInterval (State& state, int voice, int semitones)
+{
+    for (const auto& [what, value] : { std::pair<const char*, float> { "semitones", (float) semitones }, { "cents", 0.0f } })
+        if (auto* parameter = state.getParameter (voiceId (voice, what)))
+            parameter->setValueNotifyingHost (parameter->convertTo0to1 (value));
 }
 
 // ---- Bloom ------------------------------------------------------------------------------------
@@ -803,6 +868,7 @@ ampsim::Bloom::Settings BloomParameters::read (double bpm, const ampsim::Bloom::
     p.classicFeedback = phaserClassicFeedback.on();
     p.stereoOffset = phaserStereo.get() / 360.0f;
     p.mix = phaserMix.get() / 100.0f;
+    p.holdLevel = true; // the gain staging audit: without it, switching the phaser on at its defaults lost 4 dB
 
     static constexpr ampsim::Lfo::Shape flangerShapes[] = { ampsim::Lfo::Shape::triangle, ampsim::Lfo::Shape::sine, ampsim::Lfo::Shape::random };
     auto& f = s.flanger;
@@ -816,6 +882,7 @@ ampsim::Bloom::Settings BloomParameters::read (double bpm, const ampsim::Bloom::
     f.stereoPhase = flangerStereo.get() / 360.0f;
     f.mix = flangerMix.get() / 100.0f;
     f.throughZero = flangerThroughZero.on();
+    f.holdLevel = true; // the gain staging audit: without it, switching the flanger on at its defaults lost 3 dB
     return s;
 }
 

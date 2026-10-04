@@ -87,6 +87,7 @@ public:
     Knob& getKnob (int slot, int index) { return *knobs[(size_t) slot][(size_t) index]; }
     juce::Component& getGrille() noexcept;
     bool isGateLightOn() const noexcept { return gateOpen; }
+    Switch& getGateSwitch() noexcept { return *gateOn; }
 
     /// What the info row shows, for tests.
     juce::String getVoiceText() const;
@@ -130,6 +131,7 @@ private:
     std::array<std::array<Knob*, numKnobs>, AmpSimProcessor::numAmpSlots> knobs {};
     SpectrumView spectrum;
     Knob *input = nullptr, *threshold = nullptr, *release = nullptr, *output = nullptr;
+    Switch* gateOn = nullptr; // the strip's Gate group: Gate A's own switch (gate_a_on), under the group's name
     std::unique_ptr<GateLight> gateLight;
     juce::Rectangle<int> stageArea, curveArea, stripArea;
     std::array<int, 3> dividers {};

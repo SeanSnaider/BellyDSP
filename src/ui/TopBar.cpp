@@ -208,6 +208,7 @@ void TopBar::updateMeters (const AmpSimProcessor::Peaks& peaks, double seconds)
     inputMeter.push (&peaks.input, seconds);
     const float out[] { peaks.left, peaks.right };
     outputMeter.push (out, seconds);
+    outputMeter.pushLimiter (peaks.limiterDb, seconds);
 }
 
 void TopBar::paint (juce::Graphics& g)
@@ -226,7 +227,7 @@ void TopBar::resized()
 
     // Right: the tuner button (56 high), 22, In, 22, Out.
     const auto outWidth = outputMeter.getPreferredWidth(), inWidth = inputMeter.getPreferredWidth();
-    outputMeter.setBounds (area.removeFromRight (outWidth).withSizeKeepingCentre (outWidth, 14));
+    outputMeter.setBounds (area.removeFromRight (outWidth).withSizeKeepingCentre (outWidth, 30)); // room under the bar for "limit"
     area.removeFromRight (22);
     inputMeter.setBounds (area.removeFromRight (inWidth).withSizeKeepingCentre (inWidth, 14));
     area.removeFromRight (22);

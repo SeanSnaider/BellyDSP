@@ -195,6 +195,7 @@ public:
                     case 3351: setParam (p, "harm_root", 4.0f); setParam (p, "harm_scale", 1.0f); setParam (p, "harm_floor", 1.0f); break;
                     case 3371: setParam (p, "harm_v2_mode", 1.0f); setParam (p, "harm_out_of_key", 1.0f); break;
                     case 3391: setParam (p, "harm_on", 0.0f); break;
+                    case 3325: setParam (p, "mv_mix_mode", 1.0f); break;                    // the multivoicer's Add mode
                     case 3340: setParam (p, "mv_engine", 1.0f); setParam (p, "mv_voices", 8.0f); break;
                     case 3360: setParam (p, "mv_engine", 0.0f); setParam (p, "reverb_freeze", 1.0f); break;
                     case 3380: setParam (p, "reverb_freeze", 0.0f); setParam (p, "mv_on", 0.0f); break;
@@ -250,6 +251,10 @@ public:
                     case 3650: setParam (p, "pre_fx_on", 1.0f); break;
                     case 3670: setParam (p, "post_fx_on", 1.0f); break;
                     case 1500: setParam (p, "input_gain", 6.0f); break;
+                    case 1510: setParam (p, "output_gain", 18.0f); break;                   // the output limiter at work
+                    case 1580: setParam (p, "output_limit_ceiling", -6.0f); break;
+                    case 1590: setParam (p, "output_limit_on", 0.0f); break;                 // off and back on: its bypass fade
+                    case 1595: setParam (p, "output_limit_on", 1.0f); break;
                     case 1600: setParam (p, "output_gain", -6.0f); break;
                     case 2000: p.loadModel (0, a1); break;                                  // switch the capture back
                     case 1150: p.useBuiltInCapture (1); break;                              // the menu's "Use the built-in capture": Ember back in slot 2
