@@ -4,6 +4,7 @@
 #include "PluginEditor.h"
 #include "BlockParameters.h"
 #include "platform/AppInfo.h"
+#include "platform/SampleRateGuard.h"
 #include "platform/Updater.h"
 
 using namespace ui::theme;
@@ -204,13 +205,18 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p) : AudioProcessorEditor (&p), amp
 
     // Automatic updates, in the standalone app only (a plugin's updates belong to whoever installed it, and
     // the tests' processors are never "Standalone"). Message thread; the updater never touches audio.
+    // Also in the standalone app only: keep the audio device at 48 kHz (src/platform/SampleRateGuard.h).
     if (ampSim.wrapperType == juce::AudioProcessor::wrapperType_Standalone)
+    {
         platform::updater::start();
+        platform::samplerate::start();
+    }
 }
 
 AmpSimEditor::~AmpSimEditor()
 {
     stopTimer();
+    platform::samplerate::stop();
     if (auto* hooks = hooksFor (shownPage))
         hooks->pageHidden();
     ampSim.setAnalyzerTap (AmpSimProcessor::AnalyzerTap::off); // nobody reads the ring any more

@@ -310,6 +310,7 @@ target_sources(BellyDSP PRIVATE
     src/PluginEditor.cpp
     ${AMPSIM_PLATFORM_SOURCES}
     ${AMPSIM_UPDATER_SOURCE}
+    src/platform/SampleRateGuard_standalone.cpp
     ${AMPSIM_UI_SOURCES}
     src/BlockParameters.cpp
     src/Presets.cpp
@@ -533,6 +534,7 @@ target_sources(ampsim_tests PRIVATE
     src/PluginEditor.cpp
     ${AMPSIM_PLATFORM_SOURCES}
     src/platform/Updater_none.cpp
+    src/platform/SampleRateGuard_none.cpp
     ${AMPSIM_UI_SOURCES}
     src/BlockParameters.cpp
     src/Presets.cpp
