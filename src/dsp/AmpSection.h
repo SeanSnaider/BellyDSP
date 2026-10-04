@@ -17,7 +17,8 @@ namespace ampsim
 /// switching"). Because every model keeps processing, its history (the receptive field) is always
 /// current, so switching never restarts a model: the output simply crossfades from one slot to
 /// another over 20 ms. The price is three models' worth of CPU (measured: 12.6-15.6% of the deadline
-/// for three A1 standard models).
+/// for three A1 standard models). With gain sets a slot runs one model on a step, two between steps, and
+/// up to three while its Gain moves (NamAmp), so three to nine in all (BUILD_PLAN "Amp gain").
 ///
 /// Each slot: the capture (with its Gain knob) -> tone controls -> output trim.
 ///
