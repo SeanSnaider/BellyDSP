@@ -171,7 +171,7 @@ public:
             expectLessThan (sweeping.mean, 0.7 * deadlineMicros);
         }
 
-        for (const auto* t : { &bare, &everything, &heaviest, &between, &sweeping })
+        for (const auto* t : std::initializer_list<const Timing*> { &bare, &everything, &heaviest, &between, &sweeping })
         {
             expectEquals (t->counts.allocations, 0L);
             expectEquals (t->counts.frees, 0L);

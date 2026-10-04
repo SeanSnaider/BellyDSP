@@ -1,0 +1,34 @@
+{
+  "format": "bellydsp-gain-set",
+  "version": 1,
+  "name": "Ember",
+  "description": "Light crunch to heavy crunch",
+  "tone_type": "crunch",
+  "steps": [
+    {
+      "gain": 0.0,
+      "file": "Ember, gain 0.nam",
+      "hash": "fnv1a64:d64edef8346ccd00"
+    },
+    {
+      "gain": 2.5,
+      "file": "Ember, gain 2.5.nam",
+      "hash": "fnv1a64:0eedb0eeb6dae129"
+    },
+    {
+      "gain": 5.0,
+      "file": "Ember, gain 5.nam",
+      "hash": "fnv1a64:7c13b331a33532b2"
+    },
+    {
+      "gain": 7.5,
+      "file": "Ember, gain 7.5.nam",
+      "hash": "fnv1a64:86546c99ca725950"
+    },
+    {
+      "gain": 10.0,
+      "file": "Ember, gain 10.nam",
+      "hash": "fnv1a64:cbb874dd7bc35e0f"
+    }
+  ]
+}

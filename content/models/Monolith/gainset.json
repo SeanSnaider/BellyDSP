@@ -1,0 +1,34 @@
+{
+  "format": "bellydsp-gain-set",
+  "version": 1,
+  "name": "Monolith",
+  "description": "Tight high gain to a saturated lead",
+  "tone_type": "hi_gain",
+  "steps": [
+    {
+      "gain": 0.0,
+      "file": "Monolith, gain 0.nam",
+      "hash": "fnv1a64:279cb64e5d255116"
+    },
+    {
+      "gain": 2.5,
+      "file": "Monolith, gain 2.5.nam",
+      "hash": "fnv1a64:ba135cf921e82746"
+    },
+    {
+      "gain": 5.0,
+      "file": "Monolith, gain 5.nam",
+      "hash": "fnv1a64:fadc18316a114cdd"
+    },
+    {
+      "gain": 7.5,
+      "file": "Monolith, gain 7.5.nam",
+      "hash": "fnv1a64:1c15f297148bfcfe"
+    },
+    {
+      "gain": 10.0,
+      "file": "Monolith, gain 10.nam",
+      "hash": "fnv1a64:aa2dd720a00662d5"
+    }
+  ]
+}

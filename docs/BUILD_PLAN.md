@@ -153,6 +153,20 @@ The original round 2 plan was a hand-written Rust engine: channel-major, time-co
 
 **Ownership.** Claude writes the integration. Sean's hand-written WaveNet is an optional side track (see CLAUDE.md).
 
+#### Amp gain (2026-10-04)
+
+Sean's play test: "the gain generally just makes things louder", "the clipping is really high". Measured: Gain was the slot's input trim into one capture, so on Glass it was mostly a volume knob (-32 to -9 dBFS RMS from trim -12 to +24 dB), and Ember and Monolith were already saturated at -12 dB (crest factor 2.6 to 3.2 dB throughout), with nothing left for Gain to do. A capture is a snapshot of one amp at one gain setting; driving it past the input range it was trained on is extrapolation (ASSUMPTIONS AG1).
+
+**Gain sets.** Each built-in amp is now several captures across its own gain knob: five steps at 0, 2.5, 5, 7.5, and 10, trained from the gray-box source at those positions of the channel's gain knob, with each channel's taper re-voiced so the steps are evenly spread in distortion (AG2, AG3): Glass clean to the edge of breakup, Ember light to heavy crunch, Monolith tight high gain to a saturated lead. A set is a folder with a `gainset.json` (`src/dsp/GainSet.h`) that the app, the presets, and the state refer to.
+
+**The Gain knob with a set.** The same parameter, `amp*_input_trim` (stored in dB, -24 to +24, shown 0 to 10 as before; AG4), chooses a position across the steps. On a step, that step's model plays alone; between steps i and i + 1 the two blend: y = c(a) ((1 - a) m_i(x) + a m_{i+1}(x)), a linear crossfade because neighbouring steps are highly correlated, with c(a) = 1 / sqrt((1 - a)^2 + a^2 + 2a(1 - a) rho) restoring the power a linear fade of two signals with correlation rho loses mid-blend (rho measured per pair at load; AG5). Every step is loudness-normalized, so Gain changes the saturation and Master stays the volume.
+
+**Scheduling.** A slot runs only what its blend needs: one model on a step, two between steps. A step the knob is heading for starts running hidden and joins the blend only after it has run on live input for its receptive field (the model's prewarm length, 85 ms for a standard WaveNet): NAM's WaveNet has finite memory, so from then on its output is exactly what it would have been running all along, and nothing clicks. The position moves toward the knob at 25 positions per second at most (0 to 10 in 0.4 s), which gives the next step time to warm while the current segment is crossed, and waits at the last warm step if not. At most three models run per slot (AG6, AG7).
+
+**A single capture** (a plain .nam): Gain stays its input trim, -24 to +24 dB, but loudness-compensated: at load, on the loader thread, the capture's loudness is measured at every 3 dB of trim on the reference DI, and the output is turned by the inverse, interpolated and following the same smoothed position as the trim, so Gain changes the drive and not the volume. A single capture still can't clean up or gain up beyond what it was trained on (AG8).
+
+**Factory presets** set every amp knob of every slot they play, and scenes hold an amp's Gain (and Middle) where two scenes share an amp (AG12).
+
 ### Pre FX
 
 | Block | Controls | Notes |

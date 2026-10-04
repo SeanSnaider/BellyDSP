@@ -50,19 +50,19 @@
   },
   "amps": [
     {
-      "path": "factory:models/Glass.nam",
-      "hash": "fnv1a64:7b491dabe79fb5ff",
-      "size": 298414
+      "path": "factory:models/Glass/gainset.json",
+      "hash": "fnv1a64:bbe02950b2ea5fec",
+      "size": 707
     },
     {
-      "path": "factory:models/Ember.nam",
-      "hash": "fnv1a64:3ed633e1059221a7",
-      "size": 297888
+      "path": "factory:models/Ember/gainset.json",
+      "hash": "fnv1a64:8ab3c14a7c2fe381",
+      "size": 708
     },
     {
-      "path": "factory:models/Monolith.nam",
-      "hash": "fnv1a64:5eab4a3764459b96",
-      "size": 297266
+      "path": "factory:models/Monolith/gainset.json",
+      "hash": "fnv1a64:36695bf2e42fdffa",
+      "size": 734
     }
   ],
   "cab": {
