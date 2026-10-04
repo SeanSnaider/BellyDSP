@@ -10,8 +10,11 @@
 #      BellyDSP-X.Y.Z-windows and unzip it (it holds BellyDSP-X.Y.Z-windows-setup.exe).
 #   2. tools/release/add_windows.sh X.Y.Z ~/Downloads/BellyDSP-X.Y.Z-windows
 #
-# It signs the installer with the same key as the Mac update (from the login keychain, or
-# AMPSIM_ED_KEY_FILE), writes appcast-windows.xml, and uploads both to the vX.Y.Z release.
+# It copies the installer to BellyDSP-X.Y.Z-windows-update.exe (the same bytes under the name only
+# WinSparkle downloads, so GitHub's counts tell first installs from updates; docs/WEBSITE.md), signs that
+# copy with the same key as the Mac update (from the login keychain, or AMPSIM_ED_KEY_FILE), writes
+# appcast-windows.xml pointing at it, and uploads the installer, the update copy, and the appcast to the
+# vX.Y.Z release.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
@@ -26,15 +29,18 @@ mkdir -p "$OUT"
 cp "$SETUP" "$OUT/"
 SETUP="$OUT/$(basename "$SETUP")"
 
+UPDATE="$(windows_update_file "$SETUP")"
+ok "$(basename "$UPDATE"): the installer's bytes under the name only the updater downloads"
+
 if [ -n "${AMPSIM_ED_KEY_FILE:-}" ]; then sign_args=(--ed-key-file "$AMPSIM_ED_KEY_FILE"); else sign_args=(--account "${AMPSIM_ED_KEY_ACCOUNT:-ed25519}"); fi
-step "Signing $(basename "$SETUP")" "WinSparkle checks this Ed25519 signature before running the installer."
-sig="$("$SPARKLE_BIN/sign_update" "${sign_args[@]}" -p "$SETUP")"
-python_run "$REPO_ROOT/tools/release/ed25519.py" verify "$ED_PUBLIC_KEY" "$SETUP" "$sig" >/dev/null || die "the signature doesn't verify against ED_PUBLIC_KEY"
+step "Signing $(basename "$UPDATE")" "WinSparkle checks this Ed25519 signature before running the installer."
+sig="$("$SPARKLE_BIN/sign_update" "${sign_args[@]}" -p "$UPDATE")"
+python_run "$REPO_ROOT/tools/release/ed25519.py" verify "$ED_PUBLIC_KEY" "$UPDATE" "$sig" >/dev/null || die "the signature doesn't verify against ED_PUBLIC_KEY"
 ok "signed and verified"
 
 notes=(); [ -f "$REPO_ROOT/release-notes/$VERSION.md" ] && notes=(--notes "$REPO_ROOT/release-notes/$VERSION.md")
-python_run "$REPO_ROOT/tools/release/make_appcast.py" --platform windows --version "$VERSION" --file "$SETUP" \
-    --url "${AMPSIM_DOWNLOAD_BASE:-https://github.com/$RELEASES_REPO/releases/download/v$VERSION}/$(basename "$SETUP")" \
+python_run "$REPO_ROOT/tools/release/make_appcast.py" --platform windows --version "$VERSION" --file "$UPDATE" \
+    --url "${AMPSIM_DOWNLOAD_BASE:-https://github.com/$RELEASES_REPO/releases/download/v$VERSION}/$(basename "$UPDATE")" \
     --signature "$sig" --repo "$RELEASES_REPO" --out "$OUT/appcast-windows.xml" ${notes[@]+"${notes[@]}"}
 
-"$REPO_ROOT/tools/release/github_release.sh" "v$VERSION" - "$SETUP" "$OUT/appcast-windows.xml"
+"$REPO_ROOT/tools/release/github_release.sh" "v$VERSION" - "$SETUP" "$UPDATE" "$OUT/appcast-windows.xml"

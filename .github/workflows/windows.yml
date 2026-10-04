@@ -2,7 +2,7 @@
 # Copyright (C) 2026 Sean Snaider
 
 # The Windows build: compiles BellyDSP with MSVC, runs the test suite, builds the Inno Setup installer,
-# signs it for WinSparkle, and (for a release tag) adds it to the GitHub release on this same public repo.
+# signs its update copy for WinSparkle, and (for a release tag) adds it to the GitHub release on this same public repo.
 # docs/RELEASING.md explains the setup.
 #
 # UNTESTED: it can't run until the repo is pushed to GitHub, and nothing here has been compiled on
@@ -119,8 +119,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
           Get-ChildItem dist
 
-      - name: Sign the installer for WinSparkle and write appcast-windows.xml
+      - name: Make the update copy, sign it for WinSparkle, and write appcast-windows.xml
         # Release tags and manual runs only: the private key isn't exposed to ordinary push and PR builds.
+        # Updates download BellyDSP-<v>-windows-update.exe, the installer's bytes under a name nothing else
+        # links to, so GitHub's download counts tell first installs (the setup) from updates (the copy).
+        # The same as tools/release/lib.sh windows_update_file; docs/WEBSITE.md.
         if: ${{ env.HAS_ED_KEY == 'true' && steps.conf.outputs.updater == 'ON' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') }}
         env:
           ED_PRIVATE_KEY: ${{ secrets.AMPSIM_ED_PRIVATE_KEY }}
@@ -128,11 +131,14 @@ jobs:
         run: |
           v="${{ steps.conf.outputs.version }}"
           setup="dist/BellyDSP-$v-windows-setup.exe"
-          sig="$(printf '%s' "$ED_PRIVATE_KEY" | python tools/release/ed25519.py sign - "$setup")"
-          python tools/release/ed25519.py verify "${{ steps.conf.outputs.ed_public_key }}" "$setup" "$sig"
+          update="dist/BellyDSP-$v-windows-update.exe"
+          cp "$setup" "$update"
+          cmp "$setup" "$update"
+          sig="$(printf '%s' "$ED_PRIVATE_KEY" | python tools/release/ed25519.py sign - "$update")"
+          python tools/release/ed25519.py verify "${{ steps.conf.outputs.ed_public_key }}" "$update" "$sig"
           notes=(); [ -f "release-notes/$v.md" ] && notes=(--notes "release-notes/$v.md")
-          python tools/release/make_appcast.py --platform windows --version "$v" --file "$setup" \
-            --url "https://github.com/${{ steps.conf.outputs.releases_repo }}/releases/download/v$v/$(basename "$setup")" \
+          python tools/release/make_appcast.py --platform windows --version "$v" --file "$update" \
+            --url "https://github.com/${{ steps.conf.outputs.releases_repo }}/releases/download/v$v/$(basename "$update")" \
             --signature "$sig" --repo "${{ steps.conf.outputs.releases_repo }}" --out dist/appcast-windows.xml "${notes[@]}"
 
       - name: Keep the installer as a build artifact
@@ -141,6 +147,7 @@ jobs:
           name: BellyDSP-${{ steps.conf.outputs.version }}-windows
           path: |
             dist/BellyDSP-*-windows-setup.exe
+            dist/BellyDSP-*-windows-update.exe
             dist/appcast-windows.xml
           if-no-files-found: error
 
@@ -164,4 +171,5 @@ jobs:
         run: |
           if [ ! -f windows/appcast-windows.xml ]; then echo "::warning::The installer wasn't signed (no AMPSIM_ED_PRIVATE_KEY): run tools/release/add_windows.sh on the Mac"; exit 0; fi
           ls -la windows
-          tools/release/github_release.sh "$GITHUB_REF_NAME" - windows/BellyDSP-*-windows-setup.exe windows/appcast-windows.xml
+          tools/release/github_release.sh "$GITHUB_REF_NAME" - windows/BellyDSP-*-windows-setup.exe \
+            windows/BellyDSP-*-windows-update.exe windows/appcast-windows.xml

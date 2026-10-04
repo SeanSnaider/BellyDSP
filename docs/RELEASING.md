@@ -41,7 +41,7 @@ The flow, every time: work on branches in the private repo; merge to `main`; pus
 
 **Windows, first install.** They download `BellyDSP-x.y.z-windows-setup.exe`. SmartScreen says "Windows protected your PC" (it isn't signed with a paid certificate): **More info > Run anyway**. The installer needs no admin rights: it installs for the current user into `%LOCALAPPDATA%\Programs\BellyDSP`, with a Start menu entry and an uninstaller (Settings > Apps).
 
-**Windows, updates.** Once a day WinSparkle checks `appcast-windows.xml`. If there's a newer version it shows a dialog ("A new version of BellyDSP is available", with the release notes): **Install update** downloads the installer, checks its Ed25519 signature, closes BellyDSP, runs the installer silently (a small progress window, no UAC prompt because it's per-user), and reopens BellyDSP. They can also pick Remind me later or Skip this version. It's not silent like the Mac, and can't be: WinSparkle has no install-on-quit mode, and its only "no question" mode (`win_sparkle_check_update_with_ui_and_install`) shows a progress window and quits the app immediately, which is worse in the middle of playing. See "Open questions" below.
+**Windows, updates.** Once a day WinSparkle checks `appcast-windows.xml`. If there's a newer version it shows a dialog ("A new version of BellyDSP is available", with the release notes): **Install update** downloads the installer (its own copy, `BellyDSP-x.y.z-windows-update.exe`, so the download counts tell updates from first installs; docs/WEBSITE.md), checks its Ed25519 signature, closes BellyDSP, runs the installer silently (a small progress window, no UAC prompt because it's per-user), and reopens BellyDSP. They can also pick Remind me later or Skip this version. It's not silent like the Mac, and can't be: WinSparkle has no install-on-quit mode, and its only "no question" mode (`win_sparkle_check_update_with_ui_and_install`) shows a progress window and quits the app immediately, which is worse in the middle of playing. See "Open questions" below.
 
 ## One-time setup, in order
 
@@ -116,7 +116,7 @@ Decided on 2026-10-03: BellyDSP is AGPL-3.0-or-later and JUCE is used under the 
 
 The same two workflows live in both repos. On the public repo they run on every push and pull request (Actions minutes on standard runners are free for public repos): the macOS test suite, and the Windows build, tests, and installer. On the private repo they only run by hand (Actions > the workflow > Run workflow), because there the minutes count against the free allowance (Windows double, macOS ten times). Each job checks `github.event.repository.private` to tell which repo it's in.
 
-For a release tag, the Windows workflow also adds its installer and `appcast-windows.xml` to the release, using the workflow's own token (the release is on the same repo, so no token secret is needed). It can only do that if the installer is signed, which needs one optional secret on the public repo (Settings > Secrets and variables > Actions):
+For a release tag, the Windows workflow also adds its installer, the installer's update copy (`-windows-update.exe`, what WinSparkle downloads), and `appcast-windows.xml` to the release, using the workflow's own token (the release is on the same repo, so no token secret is needed). It can only do that if the installer is signed, which needs one optional secret on the public repo (Settings > Secrets and variables > Actions):
 
 | Secret | What | Needed for |
 |---|---|---|
@@ -137,7 +137,7 @@ For a release tag, the Windows workflow also adds its installer and `appcast-win
    - `--preflight-only` runs every check for real and stops before building: a quick way to see whether a release would be refused.
    - If anything fails, fix it and run the same command again: the build starts clean, a tag already made at this commit is reused, and the upload replaces files already there.
 4. **Keep the private repo in step**: `git push origin v0.1.1` (the script prints it).
-5. **Windows**: the tag push started the Windows build on the public repo. If you added the `AMPSIM_ED_PRIVATE_KEY` secret, it attaches `BellyDSP-0.1.1-windows-setup.exe` and `appcast-windows.xml` to the release by itself. Otherwise, when the run is green: download its artifact (Actions > the run > Artifacts), unzip it, and run `tools/release/add_windows.sh 0.1.1 <that folder>`.
+5. **Windows**: the tag push started the Windows build on the public repo. If you added the `AMPSIM_ED_PRIVATE_KEY` secret, it attaches `BellyDSP-0.1.1-windows-setup.exe`, `BellyDSP-0.1.1-windows-update.exe`, and `appcast-windows.xml` to the release by itself. Otherwise, when the run is green: download its artifact (Actions > the run > Artifacts), unzip it, and run `tools/release/add_windows.sh 0.1.1 <that folder>`.
 
 Within a day, every installed Mac has it (on its next quit); on Windows, when they click Install.
 
