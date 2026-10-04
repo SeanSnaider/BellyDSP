@@ -69,7 +69,7 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 RENDER = REPO / "build/ampsim_render_artefacts/Release/ampsim_render"
 SR = 48000
 AMPS = ["Glass", "Ember", "Monolith"]
-MODEL_FILES = [REPO / "content/models" / (a + ".nam") for a in AMPS]
+MODEL_FILES = [REPO / "tests/fixtures/tone_match/captures" / (a + ".nam") for a in AMPS]  # the old single built-ins (the app has gain sets since 2026-10-04)
 CAB_FILES = sorted((REPO / "content/irs").glob("*/*.wav"))
 CACHE = pathlib.Path(os.environ.get("TONE_MATCH_CACHE", tempfile.gettempdir())) / "bellydsp_tone_match_cache"
 

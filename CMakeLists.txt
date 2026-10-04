@@ -167,6 +167,7 @@ set(AMPSIM_DSP_SOURCES
     src/dsp/ReferenceSignals.cpp
     src/dsp/Chain.cpp
     src/dsp/NamAmp.cpp
+    src/dsp/GainSet.cpp
     src/dsp/CabIR.cpp
     src/dsp/CutFilter.cpp
     src/dsp/Equalizer.cpp
@@ -516,6 +517,7 @@ target_sources(ampsim_tests PRIVATE
     tests/MultivoicerTests.cpp
     tests/Plot.cpp
     tests/NamAmpTests.cpp
+    tests/AmpGainTests.cpp
     tests/ChainTests.cpp
     tests/ProcessorTests.cpp
     tests/BuiltInCaptureTests.cpp

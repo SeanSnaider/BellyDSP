@@ -322,6 +322,8 @@ def update_manifest(results):
     entries = []
     for slot, (name, spec) in enumerate(AMPS.items()):
         for gain in STEPS:
+            if not step_file(name, gain).exists():
+                continue  # not trained yet (the build refuses unlisted content, and listed content that's missing)
             r = results.get(name, {}).get(f"{gain:g}", {})
             esr = r.get("training", {}).get("validation_esr")
             epochs = r.get("training", {}).get("epochs", spec["epochs"])
@@ -451,8 +453,8 @@ def main():
     for name in AMPS:
         if all(step_file(name, g).exists() for g in STEPS):
             write_gainset(name, AMPS[name])
+    update_manifest(load_results())
     if all((MODELS / name / "gainset.json").exists() for name in AMPS):
-        update_manifest(load_results())
         update_factory_presets()
 
 

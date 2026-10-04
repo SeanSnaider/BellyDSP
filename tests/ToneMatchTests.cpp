@@ -54,7 +54,8 @@ std::vector<double> vec (const std::array<double, N>& a) { return std::vector<do
 juce::File model (int slot)
 {
     static const char* names[] = { "Glass", "Ember", "Monolith" };
-    return platform::factoryContentFolder().getChildFile ("models").getChildFile (juce::String (names[slot]) + ".nam");
+    // The single captures the fixtures were made with (the built-ins until they became gain sets, 2026-10-04).
+    return juce::File (AMPSIM_SOURCE_DIR).getChildFile ("tests/fixtures/tone_match/captures").getChildFile (juce::String (names[slot]) + ".nam");
 }
 
 std::vector<juce::File> builtInCabs()

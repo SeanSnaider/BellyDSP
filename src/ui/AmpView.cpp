@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Sean Snaider
 
 #include "AmpView.h"
+#include "dsp/GainSet.h"
 
 namespace ui
 {
@@ -342,6 +343,72 @@ private:
     bool lit = false;
 };
 
+/// The Gain knob's step dots (ASSUMPTIONS AG9): with a gain set, a 3 px dot 5 px outside the knob's arc at each
+/// step's position, the one it plays (on a step) or the two it blends (between steps) in emerald, the others in
+/// the panel's label colour at 45%. Drawn over the knob, never taking its clicks.
+class AmpView::GainSteps final : public juce::Component
+{
+public:
+    static constexpr int pad = 6; // around the knob's bounds, room for the dots
+
+    GainSteps() { setInterceptsMouseClicks (false, false); }
+
+    void set (const std::vector<float>& newSteps, float newPosition, juce::Colour newColour)
+    {
+        if (newSteps == steps && juce::exactlyEqual (newPosition, position) && newColour == colour)
+            return;
+        steps = newSteps;
+        position = newPosition;
+        colour = newColour;
+        repaint();
+    }
+
+    const std::vector<float>& getSteps() const noexcept { return steps; }
+
+    /// Which steps the position plays: itself on a step, both neighbours between two.
+    std::vector<bool> lit() const
+    {
+        std::vector<bool> on (steps.size(), false);
+        for (size_t k = 0; k < steps.size(); ++k)
+        {
+            if (std::abs (steps[k] - position) < 0.01f)
+            {
+                on[k] = true;
+                return on;
+            }
+            if (k + 1 < steps.size() && steps[k] < position && position < steps[k + 1] && std::abs (steps[k + 1] - position) >= 0.01f)
+            {
+                on[k] = on[k + 1] = true;
+                return on;
+            }
+        }
+        if (! steps.empty())
+            on[position < steps.front() ? 0 : steps.size() - 1] = true; // outside the set's range: its end
+        return on;
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        // The knob's geometry (Knob::paint): its 64 px hit area at the top of its box, the arc at radius 32
+        // from -135 to +135 degrees, clockwise from 12 o'clock.
+        const auto cx = (float) getWidth() * 0.5f, cy = (float) (pad + Knob::margin + 32);
+        const auto r = 37.0f;
+        const auto on = lit();
+        for (size_t k = 0; k < steps.size(); ++k)
+        {
+            const auto angle = juce::MathConstants<float>::pi * (-0.75f + 1.5f * steps[k] / ampsim::NamAmp::gainMax);
+            const juce::Point<float> p { cx + r * std::sin (angle), cy - r * std::cos (angle) };
+            g.setColour (on[k] ? accent : colour.withAlpha (0.45f));
+            g.fillEllipse (juce::Rectangle<float> (3.0f, 3.0f).withCentre (p));
+        }
+    }
+
+private:
+    std::vector<float> steps;
+    float position = 5.0f;
+    juce::Colour colour;
+};
+
 // ---- AmpView -------------------------------------------------------------------------------------
 
 AmpView::AmpView (AmpSimProcessor& p) : ControlGroup (p), tabs (p), spectrum (p)
@@ -371,12 +438,16 @@ AmpView::AmpView (AmpSimProcessor& p) : ControlGroup (p), tabs (p), spectrum (p)
             knob.setSkin (skinFor (materialFor (s)));
             const auto range = spec.rangeDb;
             knob.setFormatter ([range] (float db) { return juce::String ((db + range) / (2.0f * range) * 10.0f, 1); });
-            knob.setTooltip (juce::String (spec.caption) + (k == 0 ? ": the capture's input trim, 0 to 10 over -24 to +24 dB (5.0 is unity)"
+            knob.setTooltip (juce::String (spec.caption) + (k == 0 ? ": with a gain set, moves across its captures, blending the two nearest; with a "
+                                                                     "single capture, its input trim, -24 to +24 dB. Either way the level stays put"
                                                             : k == numKnobs - 1 ? ": the capture's output trim, 0 to 10 over -24 to +24 dB (5.0 is unity)"
                                                                                 : ": 0 to 10 over -12 to +12 dB (5.0 is flat)"));
             knob.setVisible (false);
             knobs[(size_t) s][(size_t) k] = &knob;
         }
+
+    gainStepDots = std::make_unique<GainSteps>();
+    addAndMakeVisible (*gainStepDots);
 
     info = std::make_unique<InfoRow> (*this);
     addAndMakeVisible (*info);
@@ -410,7 +481,7 @@ void AmpView::showSlot (int slot)
     shownSlot = slot;
     tabs.setSelected (slot);
     head.setMaterial (materialFor (slot));
-    grille->setTooltip ("Click to load a .nam capture into " + juce::String (materialName (materialFor (slot))) + " (amp slot " + juce::String (slot + 1)
+    grille->setTooltip ("Click to load a .nam capture or a gain set into " + juce::String (materialName (materialFor (slot))) + " (amp slot " + juce::String (slot + 1)
                         + "); right-click to reload or clear it");
     for (int s = 0; s < AmpSimProcessor::numAmpSlots; ++s)
         for (auto* knob : knobs[(size_t) s])
@@ -431,11 +502,49 @@ juce::String AmpView::getVoiceText() const { return info->voice; }
 juce::String AmpView::getModelText() const { return info->model; }
 juce::String AmpView::getRateText() const { return info->rate; }
 
+const AmpView::SetInfo& AmpView::setInfo (const juce::String& path)
+{
+    if (const auto it = gainSets.find (path); it != gainSets.end())
+        return it->second;
+
+    SetInfo found;
+    const auto file = juce::File::isAbsolutePath (path) ? juce::File (path) : juce::File();
+    ampsim::GainSet set;
+    juce::String why;
+    if (file != juce::File() && ampsim::GainSet::isGainSet (file) && ampsim::GainSet::read (file, set, why) && set.steps.size() > 1)
+    {
+        found.name = set.name;
+        for (const auto& step : set.steps)
+            found.steps.push_back ((float) step.gain);
+    }
+    return gainSets[path] = found;
+}
+
+const std::vector<float>& AmpView::gainSteps (int slot)
+{
+    return setInfo (state.state.getProperty (AmpSimProcessor::modelPathKey (juce::jlimit (0, AmpSimProcessor::numAmpSlots - 1, slot))).toString()).steps;
+}
+
+std::vector<float> AmpView::getShownGainSteps() const { return gainStepDots->getSteps(); }
+std::vector<bool> AmpView::getLitGainSteps() const { return gainStepDots->lit(); }
+
+void AmpView::updateGainSteps()
+{
+    if (shownSlot < 0)
+        return;
+    const auto& knob = *knobs[(size_t) shownSlot][0];
+    const auto loaded = ampSim.getStatus().model[(size_t) shownSlot] != "Empty";
+    gainStepDots->set (loaded ? gainSteps (shownSlot) : std::vector<float> {},
+                       ampsim::AmpSection::GainKnob::positionForDb (knob.getValue()), knobSkin (knob.getSkin()).label);
+}
+
 juce::String AmpView::toneTypeOf (const juce::File& namFile)
 {
-    // NAM's metadata names the kind of tone ("clean", "overdrive", "crunch", "hi_gain", "fuzz"). Only that
-    // is shown: the gear's make and model never reach the UI.
-    const auto type = juce::JSON::parse (namFile.loadFileAsString()).getProperty ("metadata", {}).getProperty ("tone_type", {}).toString().trim();
+    // NAM's metadata names the kind of tone ("clean", "overdrive", "crunch", "hi_gain", "fuzz"); a gain set
+    // says it at the top level. Only that is shown: the gear's make and model never reach the UI.
+    const auto json = juce::JSON::parse (namFile.loadFileAsString());
+    const auto type = (json.hasProperty ("tone_type") ? json.getProperty ("tone_type", {})
+                                                      : json.getProperty ("metadata", {}).getProperty ("tone_type", {})).toString().trim();
     if (type.isEmpty())
         return {};
     if (type == "hi_gain")
@@ -468,7 +577,11 @@ void AmpView::refresh()
     else
     {
         // A capture that ships with the app shows as "Glass (built in)"; any other, by its file name.
-        model = presets::isBundled (file) ? file.getFileNameWithoutExtension() + " (built in)" : file.getFileName();
+        // A gain set shows its name: "Glass (built in, gain set)".
+        if (const auto& set = setInfo (path); ! set.steps.empty())
+            model = set.name + (presets::isBundled (file) ? " (built in, gain set)" : " (gain set)");
+        else
+            model = presets::isBundled (file) ? file.getFileNameWithoutExtension() + " (built in)" : file.getFileName();
         if (failed)
             voice = line;
         else if (loading)
@@ -481,6 +594,7 @@ void AmpView::refresh()
         }
     }
     info->set (voice, model, info->rate.isEmpty() ? juce::String ("48 kHz") : info->rate);
+    updateGainSteps();
 }
 
 void AmpView::pageShown()
@@ -499,6 +613,7 @@ void AmpView::timerCallback()
 {
     gateOpen = ampSim.isGateOpen();
     gateLight->set (gateOpen);
+    updateGainSteps(); // the lit steps follow the knob, whoever turns it
 }
 
 void AmpView::paint (juce::Graphics& g)
@@ -554,6 +669,8 @@ void AmpView::resized()
         for (int k = 0; k < numKnobs; ++k)
             set[(size_t) k]->setCssPosition (juce::roundToInt (knobsLeft + (knobsWidth - (float) css.x) * (float) k / (float) (numKnobs - 1)),
                                              juce::roundToInt (panel.getCentreY() - (float) css.y * 0.5f));
+
+    gainStepDots->setBounds (knobs[0][0]->getBounds().expanded (GainSteps::pad));
 
     info->setBounds (0, infoTop, getWidth(), infoHeight);
     stripArea = { 0, getHeight() - stripHeight, getWidth(), stripHeight };

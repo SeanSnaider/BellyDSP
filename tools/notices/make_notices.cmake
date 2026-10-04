@@ -248,10 +248,12 @@ if(EXISTS "${manifest}")
     endif()
 endif()
 
-# Every file in content/ (except the README, the manifest, and the licence texts) must be listed.
+# Every file in content/ (except the README, the manifest, the licence texts, and a gain set's gainset.json, which
+# only lists its captures: each capture has its own entry) must be listed.
 file(GLOB_RECURSE content_files RELATIVE "${content_dir}" "${content_dir}/*")
 foreach(f IN LISTS content_files)
-    if(f STREQUAL "README.md" OR f STREQUAL "manifest.json" OR f MATCHES "^licenses/" OR f MATCHES "(^|/)\\.DS_Store$")
+    if(f STREQUAL "README.md" OR f STREQUAL "manifest.json" OR f MATCHES "^licenses/" OR f MATCHES "(^|/)\\.DS_Store$"
+       OR f MATCHES "(^|/)gainset\\.json$")
         continue()
     endif()
     list(FIND listed "${f}" found)

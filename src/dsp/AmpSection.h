@@ -19,7 +19,7 @@ namespace ampsim
 /// another over 20 ms. The price is three models' worth of CPU (measured: 12.6-15.6% of the deadline
 /// for three A1 standard models).
 ///
-/// Each slot: input trim -> NAM model -> tone controls -> output trim.
+/// Each slot: the capture (with its Gain knob) -> tone controls -> output trim.
 ///
 /// The switch is an equal-power crossfade built from independent linear ramps: each slot has a
 /// position p ramping toward 1 (selected) or 0 (not), and contributes sin(pi/2 p) of its output.
@@ -31,9 +31,31 @@ public:
     static constexpr int numSlots = 3;
     static constexpr double switchSeconds = 0.020;
 
+    /// A slot's Gain knob, as its parameter stores it: amp*_input_trim, in dB from -24 to +24, which the
+    /// head shows as 0 to 10 (position = 5 + dB / 4.8). The parameter ID (and this member's name) date
+    /// from when Gain was always an input trim; it's permanent, so the meaning moved instead (BUILD_PLAN
+    /// "Amp gain"): the slot's NamAmp turns the position into a place across a gain set's steps, or into a
+    /// loudness-compensated input trim for a single capture, and does the smoothing. Audio thread.
+    class GainKnob
+    {
+    public:
+        void setGainDecibels (float db) noexcept { position = positionForDb (db); }
+        void setPosition (float newPosition) noexcept { position = juce::jlimit (0.0f, NamAmp::gainMax, newPosition); }
+        float getPosition() const noexcept { return position; }
+
+        static float positionForDb (float db) noexcept
+        {
+            return juce::jlimit (0.0f, NamAmp::gainMax, NamAmp::gainDefault + db / (NamAmp::singleTrimRangeDb / NamAmp::gainDefault));
+        }
+        static float dbForPosition (float p) noexcept { return NamAmp::singleTrimDb (p); }
+
+    private:
+        float position = NamAmp::gainDefault;
+    };
+
     struct Slot
     {
-        Gain inputTrim { false };
+        GainKnob inputTrim; // the Gain knob (see GainKnob)
         NamAmp model;
         AmpTone tone;
         Gain outputTrim { false };

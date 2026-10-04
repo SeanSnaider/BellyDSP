@@ -57,9 +57,14 @@ private:
 /// spectrum, and the shared strip (Input,
 /// Gate with its open light, Output).
 ///
-/// Each slot's seven knobs are its own parameters (ASSUMPTIONS UH3): Gain is the slot's input trim, Master
+/// Each slot's seven knobs are its own parameters (ASSUMPTIONS UH3): Gain is amp*_input_trim, Master
 /// its output trim, the rest its tone bands; all show 0 to 10 with one decimal (5.0 is 0 dB). Switching
 /// slots (a tab, the footswitch, a scene) swaps the head's materials and its knobs.
+///
+/// Gain (BUILD_PLAN "Amp gain"; ASSUMPTIONS AG9) shows its position, 0 to 10 with one decimal, while dragged or
+/// hovered, like the other knobs. With a gain set loaded it moves across the set's captures, and small dots just
+/// outside its arc mark the steps, the one or two it's playing lit emerald. With a single capture it's the
+/// capture's loudness-compensated trim (no dots).
 class AmpView final : public ControlGroup, private juce::Timer
 {
 public:
@@ -88,9 +93,17 @@ public:
     juce::String getModelText() const;
     juce::String getRateText() const;
 
-    /// The capture's tone type from its NAM metadata ("Clean", "Crunch", "High gain"), or empty. Never the
-    /// gear's make or model (no product names in the UI).
+    /// The capture's tone type from its NAM metadata ("Clean", "Crunch", "High gain"), or a gain set's
+    /// "tone_type", or empty. Never the gear's make or model (no product names in the UI).
     static juce::String toneTypeOf (const juce::File& namFile);
+
+    /// The Gain positions of a slot's gain set's steps (empty for a single capture or an empty slot), read
+    /// from its gainset.json once per path.
+    const std::vector<float>& gainSteps (int slot);
+
+    /// For tests: the step dots as drawn now (the positions, and which are lit).
+    std::vector<float> getShownGainSteps() const;
+    std::vector<bool> getLitGainSteps() const;
 
     void refresh() override;
     void pageShown() override;
@@ -104,6 +117,8 @@ private:
     class InfoRow;
     class Grille;
     class GateLight;
+    class GainSteps;
+    void updateGainSteps();
     void timerCallback() override;
     void showSlot (int slot);
 
@@ -121,6 +136,14 @@ private:
     int shownSlot = -1;
     bool gateOpen = false;
     std::map<juce::String, juce::String> toneTypes; // capture path -> its tone type (read once)
+    struct SetInfo
+    {
+        juce::String name;
+        std::vector<float> steps;
+    };
+    std::map<juce::String, SetInfo> gainSets; // capture path -> its set's name and steps (empty: not a set)
+    const SetInfo& setInfo (const juce::String& path);
+    std::unique_ptr<GainSteps> gainStepDots;
 };
 
 } // namespace ui

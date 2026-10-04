@@ -102,7 +102,7 @@ public:
             juce::AudioBuffer<float> buffer (2, blockSize);
             juce::MidiBuffer midi;
             rtcheck::Counts total;
-            int blocks = 0, modelFadeBlocks = 0, slotSwitchBlocks = 0, morphsBefore = 0;
+            int blocks = 0, modelFadeBlocks = 0, slotSwitchBlocks = 0, morphsBefore = 0, gainMovingBlocks = 0, maxSetModels = 0;
             bool ampWasBypassed = false, sectionsWereBypassed = false;
             juce::StringArray events;
 
@@ -260,12 +260,28 @@ public:
                     default: break;
                 }
 
+                // The Gain knobs (BUILD_PLAN "Amp gain"): a drag across every step of slot 3's gain set (Monolith),
+                // a jump between steps as a scene makes, a drag down Ember's set, and a drag on slot 1's single
+                // capture (its loudness-compensated trim, per sample while it moves).
+                using GainKnob = ampsim::AmpSection::GainKnob;
+                if (blocks >= 2000 && blocks < 2400)
+                    setParam (p, AmpSimProcessor::ampParamId (2, "input_trim"), GainKnob::dbForPosition (10.0f * (float) (blocks - 2000) / 400.0f));
+                if (blocks == 2450)
+                    setParam (p, AmpSimProcessor::ampParamId (2, "input_trim"), GainKnob::dbForPosition (6.25f));
+                if (blocks >= 2500 && blocks < 2700)
+                    setParam (p, AmpSimProcessor::ampParamId (1, "input_trim"), GainKnob::dbForPosition (10.0f - 9.0f * (float) (blocks - 2500) / 200.0f));
+                if (blocks >= 3000 && blocks < 3200)
+                    setParam (p, AmpSimProcessor::ampParamId (0, "input_trim"), GainKnob::dbForPosition (5.0f + 4.0f * (float) (blocks - 3000) / 200.0f));
+
                 buffer.clear();
                 buffer.copyFrom (0, 0, input.data() + start, blockSize);
 
                 rtcheck::begin();
                 p.processBlock (buffer, midi); // the audio thread's side, measured
                 total += rtcheck::end();
+                gainMovingBlocks += p.getChain().amp.slot (2).model.isGainMoving() || p.getChain().amp.slot (1).model.isGainMoving()
+                                    || p.getChain().amp.slot (0).model.isGainMoving() ? 1 : 0;
+                maxSetModels = std::max (maxSetModels, p.getChain().amp.slot (2).model.getRunningSteps());
 
                 if (blocks == 1080)
                     ampWasBypassed = p.getChain().isFullyBypassed (ampsim::Chain::Slot::amp);
@@ -305,6 +321,8 @@ public:
             expect (sectionsWereBypassed, "the section switches must have reached the audio thread");
             expectGreaterThan (modelFadeBlocks, 16, "the model loads must have crossfaded during the measurement");
             expectGreaterThan (slotSwitchBlocks, 16, "the slot switches must have crossfaded during the measurement");
+            expectGreaterThan (gainMovingBlocks, 400, "the Gain drags must have moved the captures during the measurement");
+            expectEquals (maxSetModels, ampsim::NamAmp::maxRunningSteps, "the gain set's sweep must have run a model warming ahead");
             expectEquals (p.getChain().amp.getSelectedSlot(), 0);
             const auto ember = p.parameters.state.getProperty (AmpSimProcessor::modelPathKey (1)).toString() == presets::builtInCapture (1).getFullPathName();
             expect (ember, "slot 2 must be back on its built-in capture");

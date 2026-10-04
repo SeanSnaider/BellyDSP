@@ -158,7 +158,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout AmpSimProcessor::createParam
     for (int s = 0; s < numAmpSlots; ++s)
     {
         const auto prefix = "Amp " + juce::String (s + 1) + " ";
-        layout.add (std::make_unique<Float> (juce::ParameterID { ampParamId (s, "input_trim"), 1 }, prefix + "Input Trim", levelRange, 0.0f, dB));
+        // The head's Gain knob. Its ID says input trim, which is what Gain was until 2026-10-04, and what it
+        // still is for a single capture (loudness-compensated now); with a gain set it's the position across
+        // the steps (AmpSection::GainKnob, BUILD_PLAN "Amp gain"). The stored value stays in dB, -24 to +24, so
+        // every preset keeps its meaning; hosts see it as the head shows it, 0 to 10.
+        const auto gainAttributes = juce::AudioParameterFloatAttributes()
+            .withStringFromValueFunction ([] (float db, int) { return juce::String (ampsim::AmpSection::GainKnob::positionForDb (db), 1); })
+            .withValueFromStringFunction ([] (const juce::String& text) { return ampsim::AmpSection::GainKnob::dbForPosition (text.getFloatValue()); });
+        layout.add (std::make_unique<Float> (juce::ParameterID { ampParamId (s, "input_trim"), 1 }, prefix + "Gain", levelRange, 0.0f, gainAttributes));
         layout.add (std::make_unique<Float> (juce::ParameterID { ampParamId (s, "output_trim"), 1 }, prefix + "Output Trim", levelRange, 0.0f, dB));
 
         for (const auto& band : ampsim::AmpTone::bands)
@@ -813,6 +820,8 @@ void AmpSimProcessor::setStateInformation (const void* data, int sizeInBytes)
             loadModel (s, juce::File (path));
         else if (moved.existsAsFile())
             loadModel (s, moved); // a built-in capture saved by a copy of the app installed somewhere else
+        else if (const auto replaced = presets::replacementForRetiredCapture (path); replaced.existsAsFile())
+            loadModel (s, replaced); // a built-in from before the gain sets: the set that replaced it
         else if (juce::File::isAbsolutePath (path))
             unloadModel (s, "Saved model is missing: " + path, true); // the saved path stays in the state
         else if (requestedModel[(size_t) s].file != juce::File())

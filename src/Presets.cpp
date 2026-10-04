@@ -168,10 +168,18 @@ Resolved resolve (const FileRef& ref, const juce::String& kind)
         return r;
     }
 
+    // A built-in capture from before the gain sets: the set that replaced it, as if the preset named it.
+    if (const auto replaced = replacementForRetiredCapture (ref.path); replaced.existsAsFile())
+    {
+        r.file = replaced;
+        r.found = true;
+        return r;
+    }
+
     // Gone from its path: look through the library for the same size first (cheap), then the same hash.
     if (ref.hash.isEmpty())
         return r;
-    const auto wantFolder = ! ref.path.endsWithIgnoreCase (".nam") && ! ref.path.endsWithIgnoreCase (".wav")
+    const auto wantFolder = ! ref.path.endsWithIgnoreCase (".nam") && ! ref.path.endsWithIgnoreCase (".json") && ! ref.path.endsWithIgnoreCase (".wav")
                             && ! ref.path.endsWithIgnoreCase (".aif") && ! ref.path.endsWithIgnoreCase (".aiff");
     const auto extension = ref.path.fromLastOccurrenceOf (".", true, false);
     // The user's library first, then the app's bundled content (a factory file the user copied into the
@@ -436,7 +444,20 @@ juce::String builtInCaptureName (int slot)
 
 juce::String builtInCapturePath (int slot)
 {
-    return factoryPrefix + "models/" + builtInCaptureName (slot) + ".nam";
+    return factoryPrefix + "models/" + builtInCaptureName (slot) + "/gainset.json";
+}
+
+juce::File replacementForRetiredCapture (const juce::String& path)
+{
+    // "factory:models/Glass.nam", or a saved absolute path ending in .../content/models/Glass.nam.
+    const auto normalised = path.replaceCharacter ('\\', '/');
+    for (int slot = 0; slot < 3; ++slot)
+    {
+        const auto old = "models/" + builtInCaptureName (slot) + ".nam";
+        if (normalised == factoryPrefix + old || (juce::File::isAbsolutePath (path) && normalised.endsWith ("content/" + old)))
+            return builtInCapture (slot);
+    }
+    return {};
 }
 
 juce::File builtInCapture (int slot)
