@@ -1,0 +1,93 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+
+# The website, bellydsp.com, on GitHub Pages: writes site/data/releases.json and stats.json from GitHub's
+# release API and the stats branch (tools/site/build_site_data.py), then publishes site/. No build step
+# beyond that; the pages are plain HTML. docs/WEBSITE.md has the one-time settings (Settings > Pages >
+# Source: GitHub Actions, the custom domain, Enforce HTTPS) and the DNS records.
+#
+# UNTESTED on GitHub: it can't run until the public repo exists. The data script and the site are tested
+# locally (tools/site/test_site.py, tools/site/check_site.py).
+#
+# When it runs (automatic triggers only in the public repo, like the other workflows; by hand anywhere):
+#   - a push to main that changes the site, its scripts, or the release notes;
+#   - a release is published (release.sh publishes with Sean's token, so the event fires);
+#   - the daily "Download stats" run finishes (fresh counts);
+#   - a "Windows build" run for a version tag finishes (it adds the Windows files to the release with the
+#     workflow token, which doesn't fire release events, so this is how the site learns about them);
+#   - by hand (Actions > Website > Run workflow).
+# If the API can't be read, the build fails and the site keeps its last good version.
+
+name: Website
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'tools/site/**'
+      - 'release-notes/**'
+      - 'tools/release/make_appcast.py'
+      - 'tools/release/release.conf'
+      - '.github/workflows/pages.yml'
+  release:
+    types: [published]
+  workflow_run:
+    workflows: ["Download stats", "Windows build"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deploy at a time; a newer one waits rather than cancelling one that's halfway out.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    # By hand anywhere; automatically only in the public repo, and after another workflow only if it
+    # succeeded and was the stats run or a version tag's Windows build.
+    if: ${{ github.event_name == 'workflow_dispatch' || (!github.event.repository.private && (github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && (github.event.workflow_run.name == 'Download stats' || startsWith(github.event.workflow_run.head_branch, 'v'))))) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch the download history (the stats branch, if it exists yet)
+        run: |
+          if git ls-remote --exit-code --heads origin stats >/dev/null; then
+            git fetch --depth=1 origin stats
+            git show FETCH_HEAD:downloads.csv > "$RUNNER_TEMP/downloads.csv"
+            echo "$(wc -l < "$RUNNER_TEMP/downloads.csv") lines of history"
+          else
+            echo "No stats branch yet: the stats page shows totals only."
+          fi
+
+      - name: Write site/data from the release API
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 tools/site/build_site_data.py --stats-csv "$RUNNER_TEMP/downloads.csv" --out site/data
+
+      - name: Check the site (links, images, no outside requests)
+        run: python3 tools/site/check_site.py
+
+      - uses: actions/configure-pages@v6
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write             # to deploy to Pages
+      id-token: write          # to prove the deploy comes from this workflow
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

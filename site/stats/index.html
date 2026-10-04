@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en" data-root="../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BellyDSP stats</title>
+<meta name="description" content="How many times BellyDSP has been downloaded, and roughly how many copies check for updates each day, from GitHub's anonymous download counters.">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0c0c">
+<link rel="canonical" href="https://bellydsp.com/stats/">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="preload" href="../assets/fonts/Geist-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/css/site.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="../">BellyDSP</a>
+    <nav class="nav" aria-label="Site">
+      <a href="../">Overview</a>
+      <a href="../download/">Download</a>
+      <a href="./" aria-current="page">Stats</a>
+      <a href="https://github.com/SeanSnaider/BellyDSP">Source</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+    <div class="hero">
+      <h1>Stats</h1>
+      <p class="lead">Downloads, and roughly how many copies are in use, counted from GitHub's anonymous download counters. Nothing else is tracked.</p>
+      <p class="small dim" id="updated">The numbers are updated once a day.</p>
+      <p class="notice" data-fixture-notice hidden>Preview data: these are made-up test numbers, not real downloads.</p>
+      <p class="notice" id="no-data" hidden>No numbers yet: they appear after the first release.</p>
+    </div>
+
+    <section aria-labelledby="totals" id="totals-section">
+      <h2 id="totals">Downloads</h2>
+      <div class="tiles" id="tiles">
+        <div class="tile"><div class="label">Downloads, all versions</div><div class="value" data-stat="downloads_total">-</div><div class="sub">macOS and Windows installers</div></div>
+        <div class="tile"><div class="label">macOS</div><div class="value" data-stat="mac_install">-</div><div class="sub">.dmg downloads</div></div>
+        <div class="tile"><div class="label">Windows</div><div class="value" data-stat="windows_install">-</div><div class="sub">installer downloads</div></div>
+        <div class="tile"><div class="label">Updates delivered</div><div class="value" data-stat="updates">-</div><div class="sub" data-stat-sub="updates">by the apps' updaters</div></div>
+      </div>
+    </section>
+
+    <section aria-labelledby="active">
+      <h2 id="active">Copies in use, per day (estimate)</h2>
+      <p class="dim">How many installed copies checked for updates each day: the day-to-day growth of the update feed's download count. Read the caveats below before quoting these.</p>
+      <div class="charts" id="charts"></div>
+      <details>
+        <summary>Show as a table</summary>
+        <div class="table-scroll"><table class="data" id="active-table"><thead><tr><th scope="col">Day (UTC)</th><th scope="col">macOS</th><th scope="col">Windows</th></tr></thead><tbody></tbody></table></div>
+      </details>
+    </section>
+
+    <section aria-labelledby="per-release">
+      <h2 id="per-release">Per release</h2>
+      <div class="table-scroll">
+        <table class="data" id="release-table">
+          <thead><tr><th scope="col">Version</th><th scope="col">macOS downloads</th><th scope="col">Windows downloads</th><th scope="col">macOS updates</th><th scope="col">Windows updates</th><th scope="col">Update checks</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="small dim">"Updates" count the update files the apps download when they update themselves; "update checks" count fetches of that release's update feed.</p>
+    </section>
+
+    <section aria-labelledby="how">
+      <h2 id="how">How it's counted, and why it's approximate</h2>
+      <ul class="dim">
+        <li><strong>Downloads</strong> are GitHub's own count of each installer file (the macOS <code>.dmg</code> and the Windows <code>-windows-setup.exe</code>). Every click counts, including a second download by the same person, one that's never installed, and bots.</li>
+        <li><strong>Updates</strong> are counted separately: the Mac updates from its own <code>.zip</code> and Windows from a <code>-windows-update.exe</code> that only the updater uses (the same bytes as the installer), so updating copies don't inflate the downloads.</li>
+        <li><strong>Copies in use</strong>: about once a day, every running copy fetches its update feed (<code>appcast.xml</code> on the Mac, <code>appcast-windows.xml</code> on Windows) from the latest release, and GitHub counts each fetch. A snapshot of the counts is saved every day; the growth from one day to the next is the estimate.</li>
+        <li>It's rough. A copy that's opened and closed several times a day can check more than once, and one that isn't opened that day doesn't check at all, so it's closer to "copies opened that day" than "copies installed". Offline copies, copies blocked by a firewall, and copies with updates turned off never show up; scripts and bots that fetch the feed do.</li>
+        <li>On the day a release comes out, copies fetch the old release's feed until it's published and the new one's after. The estimate adds up the growth of every release's feed, so that day isn't split or lost.</li>
+        <li>If a daily snapshot is missed, the growth over the gap is spread evenly over its days (marked on the chart). The first snapshot has nothing to compare with, so it gives no estimate.</li>
+        <li>A file that's replaced on a release starts its count from zero again; fetches of the old copy since the last snapshot are lost.</li>
+      </ul>
+      <p class="dim">The raw daily counts are public, in <a href="https://github.com/SeanSnaider/BellyDSP/blob/stats/downloads.csv">downloads.csv on the repo's stats branch</a>, and anyone can query the same counters through GitHub's API.</p>
+    </section>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>&copy; 2026 Sean Snaider. AGPL-3.0-or-later.</span>
+    <span class="spacer"></span>
+    <a href="../download/#privacy">Privacy</a>
+    <a href="https://github.com/SeanSnaider/BellyDSP">Source</a>
+  </div>
+</footer>
+<script src="../assets/js/site.js" defer></script>
+<script src="../assets/js/stats.js" defer></script>
+</body>
+</html>

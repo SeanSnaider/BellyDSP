@@ -25,6 +25,20 @@ Each phase is built at full fidelity on its own branch (`phase-3`, `phase-4`, ..
 
 Since 2026-10-01 the build runs to completion without stopping for questions: phase branches stack on each other, tasks that need Sean are listed below and skipped, and every assumption made on his behalf goes in `docs/ASSUMPTIONS.md` for review at the end.
 
+## Website (bellydsp.com)
+
+Built on branch `website` (from `bellydsp`), 2026-10-04: the site in `site/` (Overview, Download, Stats), its data script and daily stats workflow, the Pages workflow, and a separate Windows update file in every release so updates and first installs are counted apart. `docs/WEBSITE.md` has how it all works; ASSUMPTIONS WEB1 to WEB19 the choices. Tested locally (`tools/site/test_site.py`, 15 tests; `tools/release/test_windows_update.py`, 7 tests; `tools/site/check_site.py`); the workflows, real counts, and the domain can't be checked until the public repo exists.
+
+| # | Task | Done when |
+|---|---|---|
+| W.1 | Sean buys bellydsp.com (with WHOIS privacy) | The registrar shows it as his |
+| W.2 | Sean verifies the domain with GitHub (account Settings > Pages > Add a domain; the TXT record) and adds the DNS records in WEBSITE.md, "One-time setup" (four A, four AAAA, the `www` CNAME) | GitHub says verified; `dig bellydsp.com` shows GitHub's four addresses |
+| W.3 | Once the public repo exists and `main` is pushed: Settings > Pages > Source: GitHub Actions; Actions > Website > Run workflow; then Custom domain `bellydsp.com`, and Enforce HTTPS when it's offered | https://bellydsp.com loads, and http and www redirect to it |
+| W.4 | Sean runs Actions > Download stats > Run workflow once | The `stats` branch exists with `downloads.csv`; the next day's run appends to it |
+| W.5 | Sean records the demos (a short video, audio clips per amp, the cab's mics, the harmonizer, a scene switch) and puts them where the two `TODO(Sean)` comments in `site/index.html` say | They play on the overview, self-hosted, a few MB each |
+| W.6 | Sean reviews the copy and the look: preview with the two commands in WEBSITE.md, "Previewing it locally", and reads ASSUMPTIONS WEB1 to WEB19 (especially WEB6: the built-in captures described as stand-ins, and the one CPU number) | Every sentence is one he'd say; the look is his |
+| W.7 | After the first release with Windows files: check the release has `-windows-setup.exe`, `-windows-update.exe`, and `appcast-windows.xml`, and that a Windows update downloads the `-windows-update.exe` (its count goes up, the setup's doesn't) | The stats page's Windows updates move when a PC updates |
+
 ## Next tasks
 
 | # | Task | Done when |

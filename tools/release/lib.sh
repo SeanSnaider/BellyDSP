@@ -99,6 +99,24 @@ python_run() {
     fi
 }
 
+# windows_update_file SETUP: copies BellyDSP-<v>-windows-setup.exe to BellyDSP-<v>-windows-update.exe next
+# to it and prints the copy's path. The copy is the file appcast-windows.xml points at, so WinSparkle
+# downloads it and first installs download the setup: GitHub counts each file's downloads, and the two
+# counts tell new installs from updates (docs/WEBSITE.md). Same bytes, so the same Ed25519 signature;
+# the caller still signs the copy itself, so the appcast's signature is always made from the exact file
+# it names. (The Windows workflow does the same in its own signing step.)
+windows_update_file() {
+    local setup="$1" update
+    case "$setup" in
+        *-windows-setup.exe) ;;
+        *) die "windows_update_file: expected a ...-windows-setup.exe, got $setup" ;;
+    esac
+    update="${setup%-windows-setup.exe}-windows-update.exe"
+    cp -p "$setup" "$update"
+    cmp -s "$setup" "$update" || die "the copy $update differs from $setup"
+    printf '%s\n' "$update"
+}
+
 # version_gt A B: true if version A is newer than B (numeric, dot-separated).
 version_gt() {
     [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1)" = "$1" ]

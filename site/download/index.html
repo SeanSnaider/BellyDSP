@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en" data-root="../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Download BellyDSP</title>
+<meta name="description" content="Download BellyDSP for macOS 12 or later (Apple silicon or Intel) or Windows 10 and 11 (64-bit). Free and open source; it keeps itself up to date.">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0c0c">
+<link rel="canonical" href="https://bellydsp.com/download/">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="preload" href="../assets/fonts/Geist-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/css/site.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="../">BellyDSP</a>
+    <nav class="nav" aria-label="Site">
+      <a href="../">Overview</a>
+      <a href="./" aria-current="page">Download</a>
+      <a href="../stats/">Stats</a>
+      <a href="https://github.com/SeanSnaider/BellyDSP">Source</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+    <div class="hero">
+      <h1>Download BellyDSP</h1>
+      <p class="lead">Free, for macOS and Windows. Install it once and it keeps itself up to date.</p>
+      <p class="version-line" data-version-line hidden></p>
+
+      <!-- Without JavaScript, or until site/data/releases.json loads, both buttons go to the latest
+           release on GitHub, where every file is listed. download.js points them at the files themselves. -->
+      <div class="dl-buttons">
+        <a class="btn" data-os-button="mac" href="https://github.com/SeanSnaider/BellyDSP/releases/latest">
+          <span>Download for macOS</span>
+          <span class="meta" data-meta>Latest release on GitHub</span>
+        </a>
+        <a class="btn" data-os-button="windows" href="https://github.com/SeanSnaider/BellyDSP/releases/latest">
+          <span>Download for Windows</span>
+          <span class="meta" data-meta>Latest release on GitHub</span>
+        </a>
+      </div>
+      <p class="os-note" id="os-note" aria-live="polite"></p>
+      <p class="small dim">All files, older versions, and checksums: <a href="https://github.com/SeanSnaider/BellyDSP/releases" data-releases-link>releases on GitHub</a>. Source for this version: <a href="https://github.com/SeanSnaider/BellyDSP" data-source-link>on GitHub</a>.</p>
+      <p class="notice" data-fixture-notice hidden>Preview data: this page is showing test data, not a real release.</p>
+    </div>
+
+    <section aria-labelledby="req">
+      <h2 id="req">What you need</h2>
+      <table class="req">
+        <tbody>
+          <tr><th scope="row">Mac</th><td>macOS 12 Monterey or later, on Apple silicon or Intel (one app for both)</td></tr>
+          <tr><th scope="row">Windows</th><td>Windows 10 or 11, 64-bit</td></tr>
+          <tr><th scope="row">Audio interface</th><td>Any interface with an instrument (Hi-Z) input, set to 48 kHz. BellyDSP runs only at 48 kHz, the rate NAM captures are trained at; at any other rate it stays silent and tells you why.</td></tr>
+          <tr><th scope="row">Something to listen on</th><td>Headphones or speakers plugged into the interface</td></tr>
+          <tr><th scope="row">Format</th><td>A standalone app. There's no plugin version yet.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section aria-labelledby="first">
+      <h2 id="first">The first launch</h2>
+      <p class="dim">BellyDSP is free software from an independent developer, not signed with a paid Apple or Microsoft certificate, so both systems ask once before opening it. That's expected.</p>
+      <div class="grid two spaced">
+        <div class="card">
+          <h3 id="mac">Mac</h3>
+          <ol class="steps">
+            <li>Open the <code>.dmg</code> and drag BellyDSP onto Applications. Run it from Applications, not from the disk image or Downloads, or it can't update itself.</li>
+            <li>Open it. macOS says it can't verify BellyDSP: click <strong>Done</strong> (not Move to Trash).</li>
+            <li>Open <strong>System Settings &gt; Privacy &amp; Security</strong>, scroll to the line about BellyDSP, click <strong>Open Anyway</strong>, and confirm with your password or Touch ID. Then open BellyDSP again and click <strong>Open</strong>.</li>
+            <li>Allow the microphone when it asks. That's how macOS names every audio input, your guitar included.</li>
+            <li>Set the interface to 48 kHz: in <strong>Audio MIDI Setup</strong> (Applications &gt; Utilities), click the interface and set Format to 48,000 Hz.</li>
+          </ol>
+          <p class="small dim">Comfortable with Terminal? This one line replaces steps 2 and 3:</p>
+          <pre><code>xattr -dr com.apple.quarantine "/Applications/BellyDSP.app"</code></pre>
+          <p class="small dim">You only do this once; updates don't ask again.</p>
+        </div>
+        <div class="card">
+          <h3 id="windows">Windows</h3>
+          <ol class="steps">
+            <li>Run the <code>-windows-setup.exe</code>.</li>
+            <li>If Windows says <strong>"Windows protected your PC"</strong>, click <strong>More info</strong>, then <strong>Run anyway</strong>.</li>
+            <li>Click through the installer. It installs just for you, so it doesn't need an administrator password.</li>
+            <li>Set the interface to 48 kHz in its own control panel, or in Settings &gt; Sound &gt; your device &gt; Properties &gt; Advanced.</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="input">
+      <h2 id="input">Choosing the input</h2>
+      <p class="dim">Click <strong>Options</strong> at the top of BellyDSP's window, then <strong>Audio/MIDI Settings</strong>:</p>
+      <ul class="dim">
+        <li><strong>Output</strong> and <strong>Input</strong>: your audio interface. <strong>Sample rate</strong>: 48000.</li>
+        <li><strong>Active input channels</strong>: only the one your guitar is plugged into (usually Input 1).</li>
+        <li><strong>Buffer size</strong>: 128 samples is a good start. Smaller feels more immediate; if you hear crackles, try 256.</li>
+        <li>Windows: pick the device type <strong>Windows Audio (Exclusive Mode)</strong> for the lowest delay.</li>
+        <li><strong>Untick "Mute audio input"</strong>. It starts ticked, as a guard against feedback, and you'll hear nothing until you untick it; a yellow bar says so.</li>
+      </ul>
+      <p class="dim">On the interface: switch the guitar input to instrument (INST or Hi-Z), set the gain so your hardest strum stays out of the red, and turn Direct Monitor off, or you'll hear your dry guitar on top.</p>
+    </section>
+
+    <section aria-labelledby="updates">
+      <h2 id="updates">Updates</h2>
+      <p class="dim">Once a day, while it's open, BellyDSP checks GitHub for a newer version. Every update is signed, and the app refuses one whose signature doesn't check out.</p>
+      <ul class="dim">
+        <li><strong>Mac</strong>: it downloads the update quietly and installs it the next time you quit. Nothing to click.</li>
+        <li><strong>Windows</strong>: it asks first. Click <strong>Install update</strong> and it closes, updates, and opens again. You can also skip a version or be reminded later.</li>
+      </ul>
+      <p class="dim">To see your version, or check right now, click <strong>BellyDSP</strong> at the top left of the window.</p>
+    </section>
+
+    <section aria-labelledby="changes">
+      <h2 id="changes">What's new</h2>
+      <div class="changelog" id="changelog">
+        <p class="dim">The release notes for every version are on <a href="https://github.com/SeanSnaider/BellyDSP/releases">GitHub's releases page</a>.</p>
+      </div>
+    </section>
+
+    <section aria-labelledby="privacy" id="privacy-section">
+      <h2 id="privacy">Privacy</h2>
+      <p class="dim">BellyDSP collects nothing about you, and neither does this site.</p>
+      <ul class="dim">
+        <li>The app checks GitHub for updates about once a day while it's open. The request carries no account, no ID, and none of your settings: like any download, GitHub sees your IP address and the app's name and version.</li>
+        <li>GitHub counts how many times each release file is downloaded, anonymously, and anyone can see those counts. The <a href="../stats/">stats page</a> is built from them.</li>
+        <li>This site sets no cookies and runs no analytics or third-party scripts. Fonts and images are served from here.</li>
+        <li>Downloads and update checks go through GitHub, which runs its own servers and logs under <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement">its privacy statement</a>.</li>
+      </ul>
+    </section>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>&copy; 2026 Sean Snaider. AGPL-3.0-or-later.</span>
+    <span class="spacer"></span>
+    <a href="#privacy">Privacy</a>
+    <a href="../stats/">Stats</a>
+    <a href="https://github.com/SeanSnaider/BellyDSP">Source</a>
+  </div>
+</footer>
+<script src="../assets/js/site.js" defer></script>
+<script src="../assets/js/download.js" defer></script>
+</body>
+</html>

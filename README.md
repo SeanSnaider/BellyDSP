@@ -59,7 +59,8 @@ Releases are published on the public repo, https://github.com/SeanSnaider/BellyD
 | `installer/` | The DMG's read-me and the Windows installer script (Inno Setup) |
 | `content/` | Captures and IRs bundled with the app (so far two CC0 cab IR packs, 21 IRs), each with its licence in `manifest.json` |
 | `release-notes/` | One Markdown file per released version |
-| `.github/workflows/` | The Windows build and installer, and an on-demand macOS test run |
+| `.github/workflows/` | The Windows build and installer, the macOS tests, the website's deploy, and the daily download stats |
+| `site/`, `tools/site/` | The website, bellydsp.com: plain HTML and CSS, the script that writes its download data, and its checks (`docs/WEBSITE.md`) |
 | `tests/` | The test suite (`ampsim_tests`), including real-time safety and NAM differential tests |
 | `third_party/` | JUCE 8.0.15 and NeuralAmpModelerCore v0.6.0, as pinned git submodules |
 | `prototypes/` | Python lab bench. Algorithms get prototyped and listened to here before being ported |
@@ -70,6 +71,7 @@ Releases are published on the public repo, https://github.com/SeanSnaider/BellyD
 | `docs/ASSUMPTIONS.md` | Every decision made on Sean's behalf during the unattended build, to review |
 | `docs/NAM_UPSTREAM.md` | NAM core findings worth taking upstream |
 | `docs/RELEASING.md`, `docs/INSTALL.md` | How releases and updates work (for Sean), and how to install (for players) |
+| `docs/WEBSITE.md` | How the website is built, deployed, and counted, and the domain's one-time setup |
 | `CLAUDE.md` | Context and rules for AI assistants working in this repo |
 | `LICENSE` | The GNU AGPL v3, the licence of all the code |
 | `tools/spdx_headers.py` | Adds (or checks) the SPDX licence header on every source file |

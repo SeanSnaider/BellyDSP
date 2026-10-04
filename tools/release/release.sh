@@ -14,8 +14,10 @@
 #   --preflight-only       run every check (the public-repo ones for real) and stop before building (for
 #                          testing the checks; nothing is built, tagged, pushed, or published)
 #   --windows-dir DIR      include Windows files built by CI (BellyDSP-<version>-windows-setup.exe in DIR):
-#                          they're signed here and get their own appcast-windows.xml. Without it, the
-#                          Windows CI job adds them to the release itself after you push the tag.
+#                          the installer is copied to BellyDSP-<version>-windows-update.exe (what updates
+#                          download, so installs and updates are counted apart; docs/WEBSITE.md), which
+#                          is signed here and gets its own appcast-windows.xml. Without it, the Windows CI
+#                          job adds them to the release itself after you push the tag.
 #   --allow-branch         don't insist on being on main (for testing)
 #   --allow-dirty          don't insist on a clean working tree (for testing)
 #   --allow-undecided-licence   release even though JUCE_LICENCE in release.conf is still "undecided"
@@ -282,11 +284,14 @@ if [ -n "$WINDOWS_DIR" ]; then
     [ -f "$SETUP" ] || die "no $SETUP (download the CI run's artifact and unzip it there)"
     cp "$SETUP" "$DIST/"
     SETUP="$DIST/$(basename "$SETUP")"
-    win_sig="$("$SPARKLE_BIN/sign_update" "${sign_args[@]}" -p "$SETUP")"
-    python_run "$REPO_ROOT/tools/release/make_appcast.py" --platform windows --version "$VERSION" --file "$SETUP" \
-        --url "$DOWNLOAD_BASE/$(basename "$SETUP")" --signature "$win_sig" \
+    # Updates download their own copy of the installer (lib.sh windows_update_file; docs/WEBSITE.md).
+    WIN_UPDATE="$(windows_update_file "$SETUP")"
+    win_sig="$("$SPARKLE_BIN/sign_update" "${sign_args[@]}" -p "$WIN_UPDATE")"
+    python_run "$REPO_ROOT/tools/release/ed25519.py" verify "$ED_PUBLIC_KEY" "$WIN_UPDATE" "$win_sig" >/dev/null || die "the Windows update's signature doesn't verify"
+    python_run "$REPO_ROOT/tools/release/make_appcast.py" --platform windows --version "$VERSION" --file "$WIN_UPDATE" \
+        --url "$DOWNLOAD_BASE/$(basename "$WIN_UPDATE")" --signature "$win_sig" \
         --repo "$RELEASES_REPO" --out "$DIST/appcast-windows.xml" ${appcast_notes[@]+"${appcast_notes[@]}"}
-    assets+=("$SETUP" "$DIST/appcast-windows.xml")
+    assets+=("$SETUP" "$WIN_UPDATE" "$DIST/appcast-windows.xml")
 fi
 
 # ---------------------------------------------------------------------------------------------------

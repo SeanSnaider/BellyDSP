@@ -20,7 +20,10 @@ Fields that matter (Sparkle's appcast format, which WinSparkle shares):
                               was given (Windows); an update is offered only if it's higher
   sparkle:shortVersionString  what the user sees
   sparkle:minimumSystemVersion  older systems don't get offered it
-  enclosure url/length        the download (the .zip for Sparkle, the installer .exe for WinSparkle)
+  enclosure url/length        the download: the .zip for Sparkle; for WinSparkle the installer's bytes under
+                              their own name, BellyDSP-<v>-windows-update.exe, which nothing but the
+                              updater downloads (so GitHub's download counts tell first installs from
+                              updates; docs/WEBSITE.md). The URL must name the same file as --file.
   sparkle:edSignature         Ed25519 signature of the download; the app refuses anything that doesn't verify
   sparkle:installerArguments  (Windows) how WinSparkle runs the installer: silently, then reopen the app
   description                 release notes (HTML), shown in Sparkle's and WinSparkle's update dialogs
@@ -31,6 +34,7 @@ import html
 import os
 import re
 import sys
+import urllib.parse
 from email.utils import formatdate
 
 WINDOWS_INSTALLER_ARGS = "/SILENT /SP- /NOCANCEL /SUPPRESSMSGBOXES /NORESTART /RELAUNCH=1"
@@ -113,6 +117,15 @@ def main(argv):
 
     if not re.fullmatch(r"\d+\.\d+\.\d+", args.version):
         sys.exit("make_appcast.py: the version must be major.minor.patch")
+    # The enclosure's length and signature were made from --file, so the URL has to name that same file.
+    url_name = urllib.parse.unquote(urllib.parse.urlparse(args.url).path.rsplit("/", 1)[-1])
+    if url_name != os.path.basename(args.file):
+        sys.exit(f"make_appcast.py: the URL names {url_name!r} but the file is {os.path.basename(args.file)!r}")
+    # Windows updates download their own copy of the installer, never the -windows-setup.exe that first
+    # installs download, or the stats couldn't tell the two apart (docs/WEBSITE.md).
+    if args.platform == "windows" and not url_name.endswith("-windows-update.exe"):
+        sys.exit(f"make_appcast.py: the Windows appcast must point at the BellyDSP-<version>-windows-update.exe "
+                 f"copy, not {url_name!r} (lib.sh windows_update_file makes it)")
     length = os.path.getsize(args.file)
     min_os = args.min_os or ("11.0" if args.platform == "mac" else "10.0")
     notes = notes_html(args.notes, args.version).replace("]]>", "]]&gt;")
