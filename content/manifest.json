@@ -212,6 +212,36 @@
       "license": "CC0 1.0",
       "license_file": "licenses/CC0-1.0.txt",
       "notes": "Original: handbook patch 4 (48 kHz folder). Renamed. Handbook p. 3: \"LICENSED 2022 UNDER: [CC0 Public Domain badge] CC0 (aka CC Zero) is a public dedication tool, which allows creators to give up their copyright and put their works into the worldwide public domain. CC0 allows reusers to distribute, remix, adapt, and build upon the material in any medium or format, with no conditions.\""
+    },
+    {
+      "path": "models/Glass.nam",
+      "title": "Glass (clean, amp only)",
+      "description": "Built-in clean capture for amp slot 1",
+      "author": "Sean Snaider",
+      "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
+      "license": "CC BY 4.0",
+      "license_file": "licenses/CC-BY-4.0.txt",
+      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, clean channel, gain 4, bass 5, mid 5, treble 6, master 5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0002; a stand-in until Sean's own captures"
+    },
+    {
+      "path": "models/Ember.nam",
+      "title": "Ember (crunch, amp only)",
+      "description": "Built-in crunch capture for amp slot 2",
+      "author": "Sean Snaider",
+      "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
+      "license": "CC BY 4.0",
+      "license_file": "licenses/CC-BY-4.0.txt",
+      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, crunch channel, gain 5, bass 5, mid 6, treble 5, master 5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0006; a stand-in until Sean's own captures"
+    },
+    {
+      "path": "models/Monolith.nam",
+      "title": "Monolith (high gain, amp only)",
+      "description": "Built-in high-gain capture for amp slot 3",
+      "author": "Sean Snaider",
+      "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
+      "license": "CC BY 4.0",
+      "license_file": "licenses/CC-BY-4.0.txt",
+      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, lead channel, gain 4, bass 4, mid 6, treble 6, master 5, after the app's Screamer boost at +6 dB; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 200 epochs, validation ESR 0.0033; a stand-in until Sean's own captures"
     }
   ]
 }

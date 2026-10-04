@@ -11,7 +11,7 @@ using namespace ui::theme;
 namespace
 {
 const juce::Identifier uiPageKey { "uiPage" };            // the page last shown (app state)
-const juce::Identifier presetSourceKey { "presetSource" }; // "factory" or "user": the top bar's tag
+const juce::Identifier presetSourceKey = AmpSimProcessor::presetSourceKey; // "factory" or "user": the top bar's tag
 
 /// The main area inside the canvas (handoff 2: between the top bar and the chain, padded 18 / 40 / 16).
 juce::Rectangle<int> mainArea()
@@ -600,6 +600,11 @@ void AmpSimEditor::loadCapture (int slot)
 
 void AmpSimEditor::showCaptureMenu (int slot, juce::Component& near)
 {
+    ui::showMenu (captureMenu (slot), &near, &lookAndFeel, true);
+}
+
+juce::PopupMenu AmpSimEditor::captureMenu (int slot)
+{
     // The old slot card's functions, on a right-click at the grille or the model's name (UH12).
     juce::PopupMenu menu;
     const auto safe = juce::Component::SafePointer<AmpSimEditor> (this);
@@ -612,12 +617,18 @@ void AmpSimEditor::showCaptureMenu (int slot, juce::Component& near)
         if (safe != nullptr)
             safe->ampSim.loadModel (slot, file);
     });
+    const auto builtIn = presets::builtInCapture (slot);
+    menu.addItem ("Use the built-in capture (" + presets::builtInCaptureName (slot) + ")", builtIn.existsAsFile() && file != builtIn, false, [safe, slot]
+    {
+        if (safe != nullptr)
+            safe->ampSim.useBuiltInCapture (slot);
+    });
     menu.addItem ("Clear the slot (the DI passes through)", file != juce::File(), false, [safe, slot]
     {
         if (safe != nullptr)
             safe->ampSim.clearModel (slot);
     });
-    ui::showMenu (menu, &near, &lookAndFeel, true);
+    return menu;
 }
 
 void AmpSimEditor::showMicMenu (int mic, juce::Component& near)

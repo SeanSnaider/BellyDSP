@@ -1,13 +1,13 @@
 {
   "format_version": 2,
   "name": "Tech Death",
-  "notes": "Slot 1: a tight high-gain capture (amp only). Slot 2: a high-gain lead. Slot 3: a clean. Press Learn on Gate A with the strings muted first. Close mic 1 starts on a built-in modern 4x12 IR (pick another on the Cab page). Load your own captures; these settings are starting points to tune by ear.",
+  "notes": "Slots 1 to 3 start on the built-in captures, Glass (clean), Ember (crunch), and Monolith (high gain, with a Screamer boost built in): stand-ins until your own. Scenes: Rhythm and Lead on Monolith, Clean on Glass. The Boost block is off because Monolith has its boost built in: switch it on (Screamer, +6 dB) for an amp-only capture of your own. Press Learn on Gate A with the strings muted first. Close mic 1 starts on a built-in modern 4x12 IR (pick another on the Cab page). Swap in your own captures; these settings are starting points to tune by ear.",
   "parameters": {
-    "amp_slot": 0,
+    "amp_slot": 2,
     "gate_a_on": 1,
     "gate_b_on": 1,
     "gate_link": 1,
-    "boost_on": 1,
+    "boost_on": 0,
     "boost_mode": 2,
     "boost_level": 6.0,
     "cab_lowcut_on": 1,
@@ -21,19 +21,19 @@
   },
   "amps": [
     {
-      "path": "",
-      "hash": "",
-      "size": 0
+      "path": "factory:models/Glass.nam",
+      "hash": "fnv1a64:7b491dabe79fb5ff",
+      "size": 298414
     },
     {
-      "path": "",
-      "hash": "",
-      "size": 0
+      "path": "factory:models/Ember.nam",
+      "hash": "fnv1a64:3ed633e1059221a7",
+      "size": 297888
     },
     {
-      "path": "",
-      "hash": "",
-      "size": 0
+      "path": "factory:models/Monolith.nam",
+      "hash": "fnv1a64:5eab4a3764459b96",
+      "size": 297266
     }
   ],
   "cab": {
@@ -84,10 +84,10 @@
       {
         "name": "Rhythm",
         "values": {
-          "amp_slot": 0,
+          "amp_slot": 2,
           "gate_a_on": 1,
           "gate_b_on": 1,
-          "boost_on": 1,
+          "boost_on": 0,
           "delay_on": 0,
           "chorus_on": 0
         }
@@ -95,10 +95,10 @@
       {
         "name": "Lead",
         "values": {
-          "amp_slot": 1,
+          "amp_slot": 2,
           "gate_a_on": 1,
           "gate_b_on": 1,
-          "boost_on": 1,
+          "boost_on": 0,
           "delay_on": 1,
           "chorus_on": 0
         }
@@ -106,7 +106,7 @@
       {
         "name": "Clean",
         "values": {
-          "amp_slot": 2,
+          "amp_slot": 0,
           "gate_a_on": 0,
           "gate_b_on": 0,
           "boost_on": 0,

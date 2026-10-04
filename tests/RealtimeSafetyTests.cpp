@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Sean Snaider
 
 #include "AllocationTracking.h"
+#include "BuiltInCaptures.h"
 #include "MidiMap.h"
 #include "PluginProcessor.h"
 #include "TestHelpers.h"
@@ -85,6 +86,9 @@ public:
             const auto lstm = exampleModel ("lstm.nam");
             const auto small = exampleModel ("wavenet.nam");
 
+            // As in the app: the processor starts on the built-in captures (Glass, Ember, Monolith), and slot 1
+            // gets an example capture on top before playing starts.
+            WithBuiltInCaptures builtIns;
             AmpSimProcessor p;
             p.getMidiMap().set ({ 82, MidiMapping::Action::toggle, "chorus_on" }); // a footswitch mapped to an effect
             p.getMidiMap().set ({ 11, MidiMapping::Action::continuous, "delay_mix", 0.0f, 100.0f }); // an expression pedal
@@ -247,6 +251,8 @@ public:
                     case 1500: setParam (p, "input_gain", 6.0f); break;
                     case 1600: setParam (p, "output_gain", -6.0f); break;
                     case 2000: p.loadModel (0, a1); break;                                  // switch the capture back
+                    case 1150: p.useBuiltInCapture (1); break;                              // the menu's "Use the built-in capture": Ember back in slot 2
+                    case 3700: p.clearModel (2); break;                                     // Monolith cleared from slot 3
                     default: break;
                 }
 
@@ -296,6 +302,8 @@ public:
             expectGreaterThan (modelFadeBlocks, 16, "the model loads must have crossfaded during the measurement");
             expectGreaterThan (slotSwitchBlocks, 16, "the slot switches must have crossfaded during the measurement");
             expectEquals (p.getChain().amp.getSelectedSlot(), 0);
+            const auto ember = p.parameters.state.getProperty (AmpSimProcessor::modelPathKey (1)).toString() == presets::builtInCapture (1).getFullPathName();
+            expect (ember, "slot 2 must be back on its built-in capture");
             expect (p.getStatus().cab[0].contains ("Modern 4x12, dynamic, 75 W, var. 3"), p.getStatus().cab[0]); // the built-in IR replaced rt_ir_b
             expectEquals (p.getCalibrationReloadCount(), 1, "the calibration change must have reloaded the captures during the measurement");
             expectEquals (p.getChain().gateA.getLearnCount(), 1, "the gate Learn must have finished during the measurement");
@@ -321,7 +329,8 @@ public:
             expectEquals (total.blockingLocks, 0L);
 
             logMessage ("  -> " + juce::String (blocks) + " blocks (" + juce::String (blocks * blockSize / fs, 1)
-                        + " s of audio): 3 capture loads (" + juce::String (modelFadeBlocks) + " blocks mid-crossfade), "
+                        + " s of audio), starting on the built-in captures: 4 capture loads, one of them Ember put back by \"Use the built-in capture\", and Monolith cleared ("
+                        + juce::String (modelFadeBlocks) + " blocks mid-crossfade), "
                         "3 slot switches from the GUI and the footswitch (" + juce::String (slotSwitchBlocks)
                         + " blocks mid-crossfade), 3 IR loads into the three cab mics plus an IR swap and a built-in 1 s IR from the app's content folder, auto alignment, 6 cab mic changes, cuts on, off, re-sloped and swept, "
                         "a cab pack loaded into close mic 2 and dragged around (" + juce::String (morphs) + " re-morphs), cab bypass off and on, 5 knob ramps, "

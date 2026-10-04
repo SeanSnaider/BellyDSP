@@ -199,12 +199,44 @@ the real test; the ESR below is a guide.
    Your own captures are CC BY 4.0 with the attribution "Sean Snaider" (decided 2026-10-03, replacing the
    DS32 placeholder; `content/licenses/CC-BY-4.0.txt` is the official legal code). Anyone may share and
    adapt them, commercially too, as long as they credit you. The app's code stays AGPL-3.0-or-later.
-3. Put it in a factory preset: open the app, load the preset, load the bundled capture into a slot from
+3. Put it in a factory preset (to replace a built-in instead, see "Replacing a built-in capture" below):
+   open the app, load the preset, load the bundled capture into a slot from
    the app's own copy (`build/BellyDSP_artefacts/Release/Standalone/BellyDSP.app/Contents/Resources/content/models`,
    after a build), Save the preset, and copy its `"amps"` entry (which now reads
    `"factory:models/Crunch, amp only.nam"` with a hash) into `presets/factory/<preset>.json`.
 4. `cmake --build build -j && ctest --test-dir build --output-on-failure`: the tests check every factory
    preset loads its files with no warnings.
+
+## Replacing a built-in capture
+
+BellyDSP ships three built-in captures, one per amp slot and named after its head: **Glass** (slot 1,
+clean), **Ember** (slot 2, crunch), and **Monolith** (slot 3, high gain). A fresh start loads them, the
+factory presets use them, and an amp's right-click menu has "Use the built-in capture" to put one back.
+For now they're stand-ins: trained from the project's own gray-box Python amp (`prototypes/amp_sim.py`)
+by `tools/content/make_default_captures.py`, not from real gear (ASSUMPTIONS DS44 to DS49). Your own
+captures replace them:
+
+1. Capture and train as above (steps 1 to 7), with the same tone types: a clean for Glass, a crunch for
+   Ember, a tight high gain for Monolith (`--tone-type clean`, `crunch`, `hi_gain`). Monolith's stand-in has
+   a Screamer boost built in (the Tech Death preset's Boost is off because of it); if yours doesn't, switch
+   the preset's Boost back on (Screamer, +6 dB).
+2. Copy it over the built-in, keeping the name: `cp "trained/Crunch, amp only.nam" content/models/Ember.nam`.
+   The name is what the app and the presets look for (`factory:models/Ember.nam`).
+3. Update its entry in `content/manifest.json`: title, description, notes ("Amp through a load box;
+   trained with neural-amp-modeler 0.12.3, standard, ESR 0.0xx"), source; the author and CC BY 4.0 stay.
+4. Update the factory presets' content hashes (they'd warn "has changed since the preset was saved"):
+   `uv run --with numpy --with scipy --with soundfile python tools/content/make_default_captures.py --presets-only`
+   rewrites the `"amps"` entries of every `presets/factory/*.json` with the current files' hashes and sizes.
+5. `cmake --build build -j && ctest --test-dir build --output-on-failure`. The built-in capture tests check
+   the metadata (name, `modeled_by` "BellyDSP", tone type, `input_level_dbu` 12): change those expectations
+   in `tests/BuiltInCaptureTests.cpp` to your capture's (your name as `modeled_by`, your measured input
+   level or none). Don't run `make_default_captures.py` without `--presets-only` after that: it would train
+   the stand-ins again and copy them over yours.
+
+Without `--input-level-dbu`, the app plays your capture exactly as recorded, whatever the interface level
+setting; with it, the capture hears your guitar at the level the gear did (see "Input level metadata").
+The stand-ins carry `input_level_dbu` 12, the app's default interface level, so at the default setting
+they get no extra gain (DS47).
 
 ## Judging a capture
 

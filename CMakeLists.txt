@@ -289,8 +289,8 @@ target_sources(BellyDSP PRIVATE
     ${AMPSIM_DSP_SOURCES})
 # The factory presets (BUILD_PLAN "Presets and scenes": the five style presets), embedded as BinaryData.
 juce_add_binary_data(AmpSimFactoryPresets SOURCES
-    presets/factory/Polyphia.json
-    presets/factory/CHON.json
+    presets/factory/ModernProg.json
+    presets/factory/MathRock.json
     presets/factory/TechDeath.json
     presets/factory/Metal.json
     presets/factory/MidwestEmo.json)
@@ -468,6 +468,7 @@ target_sources(ampsim_tests PRIVATE
     tests/NamAmpTests.cpp
     tests/ChainTests.cpp
     tests/ProcessorTests.cpp
+    tests/BuiltInCaptureTests.cpp
     tests/RealtimeSafetyTests.cpp
     tests/HandoffEngineTests.cpp
     tests/EditorTests.cpp

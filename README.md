@@ -8,7 +8,7 @@ Current target: a standalone macOS app that plays live through a Focusrite Scarl
 
 Everything in the plan is built (see `docs/PROGRESS.md` for the measurements behind each item, and `docs/ASSUMPTIONS.md` for the choices waiting on Sean's review):
 
-- **Amps.** Three always-running NAM slots (any `.nam` capture), switched seamlessly from the panel or a MIDI footswitch (program change 1/2/3). Each is loudness-normalized, calibrated to the capture's recorded input level, and has trims plus five tone bands.
+- **Amps.** Three always-running NAM slots (any `.nam` capture), switched seamlessly from the panel or a MIDI footswitch (program change 1/2/3). Each is loudness-normalized, calibrated to the capture's recorded input level, and has trims plus five tone bands. Each slot comes with a built-in capture, so there's something to play at once: Glass (clean), Ember (crunch), and Monolith (high gain), stand-ins trained from the project's own gray-box amp until real captures replace them.
 - **Cab.** Two close mics and a stereo room mic, each an IR, with level, pan, polarity, delay, and mute; auto phase alignment; low and high cuts. A close mic loaded with a cab pack moves on a position pad, morphing between captures.
 - **Gates.** Gate A before the amp and Gate B after it, linked by default (one decision applied at both points), detecting from the clean DI, with adaptive release, hysteresis, hold, and Learn.
 - **Drive.** A boost (Clean, Tight, Screamer) and an overdrive (Mid Drive, Distortion, Transparent, Fuzz), modelled from the schematics and validated against circuit simulations, oversampled 4x or 8x with no added latency.
@@ -16,7 +16,7 @@ Everything in the plan is built (see `docs/PROGRESS.md` for the measurements beh
 - **Post FX** (reorderable): EQ, compressor, a key-aware 4-voice harmonizer, an 8-voice multivoicer (Poly or Mono), Bloom (bitcrush, phaser with Classic, Modern, and Vibe, flanger with through-zero), chorus (Classic, Dimension, Tri), delay (digital, analog, tape; stereo, ping-pong, dual; ducking), and reverb (Room, Hall, Plate; freeze; shimmer). Delay and reverb tails spill over when bypassed.
 - **Tuner.** A needle on a +-50 cent scale, in tune within 3 cents, the six strings of four tunings, A4 from 430 to 450 Hz, muting while engaged.
 - **Tempo.** A global tempo, tapped from the panel or a footswitch; the delay, chorus, phaser, flanger, and reverb pre-delay can sync to it.
-- **Presets and scenes.** JSON presets with library-relative files found again by content hash when moved, eight scenes per preset switched from a footswitch, undo/redo, A/B, and five factory style presets (Polyphia, CHON, Tech Death, Metal, Midwest Emo).
+- **Presets and scenes.** JSON presets with library-relative files found again by content hash when moved, eight scenes per preset switched from a footswitch, undo/redo, A/B, and five factory style presets (Modern Prog, Math Rock, Tech Death, Metal, Midwest Emo) on the built-in captures and cabs.
 - **MIDI.** Right-click any control to MIDI-learn a footswitch (toggle or momentary) or an expression pedal; mappings are saved with presets.
 - **Real time.** Zero added latency (only the opt-in through-zero flanger reports 5 ms), no allocation, freeing, or locking on the audio thread (tested on every feature), and the whole rig with every block on at about 18% of a 128-sample buffer's time.
 

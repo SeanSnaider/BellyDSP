@@ -98,6 +98,9 @@ public:
     /// A cab mic's load menu (0, 1, or the room): Load an IR file, Built-in IRs (a submenu per bundled
     /// cab, as on the cab page), Load a cab pack folder (close mics), Clear.
     juce::PopupMenu micMenu (int mic);
+    /// An amp slot's capture menu (a right-click at the grille or the model's name): Load capture..., Reload,
+    /// Use the built-in capture (the slot's own, Glass, Ember, or Monolith), Clear the slot.
+    juce::PopupMenu captureMenu (int slot);
 
     /// What "About / licenses" shows: the name, version, licence, source link, update status, and THIRD_PARTY_NOTICES.txt.
     static juce::String aboutText();

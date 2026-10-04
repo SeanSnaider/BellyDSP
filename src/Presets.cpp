@@ -410,13 +410,60 @@ ApplyResult apply (AmpSimProcessor& processor, const juce::var& saved)
 juce::Array<juce::var> factoryPresets()
 {
     juce::Array<juce::var> list;
-    for (const auto* file : { "Polyphia_json", "CHON_json", "TechDeath_json", "Metal_json", "MidwestEmo_json" })
+    for (const auto* file : { "ModernProg_json", "MathRock_json", "TechDeath_json", "Metal_json", "MidwestEmo_json" })
     {
         int size = 0;
         if (const auto* data = BinaryData::getNamedResource (file, size))
             list.add (juce::JSON::parse (juce::String::fromUTF8 (data, size)));
     }
     return list;
+}
+
+juce::String currentFactoryPresetName (const juce::String& name)
+{
+    if (name == "Polyphia")
+        return "Modern Prog";
+    if (name == "CHON")
+        return "Math Rock";
+    return name;
+}
+
+juce::String builtInCaptureName (int slot)
+{
+    static const char* names[] = { "Glass", "Ember", "Monolith" };
+    return names[juce::jlimit (0, 2, slot)];
+}
+
+juce::String builtInCapturePath (int slot)
+{
+    return factoryPrefix + "models/" + builtInCaptureName (slot) + ".nam";
+}
+
+juce::File builtInCapture (int slot)
+{
+    return resolvePath (builtInCapturePath (slot));
+}
+
+bool isBundled (const juce::File& file)
+{
+    return file.isAChildOf (libraryRoot ("factory"));
+}
+
+juce::File bundledElsewhere (const juce::File& savedPath)
+{
+    // The part after the last "content" folder on the saved path, under this copy's content folder.
+    const auto factory = libraryRoot ("factory");
+    juce::StringArray parts;
+    for (auto f = savedPath; f.getParentDirectory() != f; f = f.getParentDirectory())
+    {
+        if (f.getFileName() == factory.getFileName() && ! parts.isEmpty())
+        {
+            const auto candidate = factory.getChildFile (parts.joinIntoString ("/"));
+            return candidate != savedPath && candidate.exists() ? candidate : juce::File();
+        }
+        parts.insert (0, f.getFileName());
+    }
+    return {};
 }
 
 juce::File defaultFolder()

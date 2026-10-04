@@ -6,7 +6,8 @@
 /build-deps
 /dist
 
-# User-supplied captures and IRs (never committed; see README)
+# User-supplied captures and IRs (never committed; see README). The bundled ones under content/models and
+# content/irs are committed (content/README.md): these two rules only match the repo root's folders.
 /models
 /irs
 

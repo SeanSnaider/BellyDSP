@@ -1,7 +1,7 @@
 {
   "format_version": 2,
-  "name": "CHON",
-  "notes": "Slot 1: a bright modern clean capture. Slot 2: edge-of-breakup. Slot 3: a crunch. Close mic 1 starts on a built-in vintage 4x12 IR (pick another on the Cab page). Load your own captures; these settings are starting points to tune by ear.",
+  "name": "Math Rock",
+  "notes": "Slots 1 to 3 start on the built-in captures, Glass (clean), Ember (crunch), and Monolith (high gain, with a Screamer boost built in): stand-ins until your own. Scenes: Clean on Glass, Breakup on Ember, Crunch on Monolith (more gain than this style wants: turn its Gain down or load a crunch). Close mic 1 starts on a built-in vintage 4x12 IR (pick another on the Cab page). Swap in your own captures; these settings are starting points to tune by ear.",
   "parameters": {
     "amp_slot": 0,
     "comp_pre_on": 1,
@@ -28,19 +28,19 @@
   },
   "amps": [
     {
-      "path": "",
-      "hash": "",
-      "size": 0
+      "path": "factory:models/Glass.nam",
+      "hash": "fnv1a64:7b491dabe79fb5ff",
+      "size": 298414
     },
     {
-      "path": "",
-      "hash": "",
-      "size": 0
+      "path": "factory:models/Ember.nam",
+      "hash": "fnv1a64:3ed633e1059221a7",
+      "size": 297888
     },
     {
-      "path": "",
-      "hash": "",
-      "size": 0
+      "path": "factory:models/Monolith.nam",
+      "hash": "fnv1a64:5eab4a3764459b96",
+      "size": 297266
     }
   ],
   "cab": {

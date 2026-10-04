@@ -1,7 +1,7 @@
 {
   "format_version": 2,
   "name": "Midwest Emo",
-  "notes": "Slot 1: a vintage American clean (warm, chimey). Slot 2: a crunch. Slot 3: edge-of-breakup. Give the room mic a room IR. Close mic 1 starts on a built-in vintage 4x12 IR (pick another on the Cab page). Load your own captures; these settings are starting points to tune by ear.",
+  "notes": "Slots 1 to 3 start on the built-in captures, Glass (clean), Ember (crunch), and Monolith (high gain, with a Screamer boost built in): stand-ins until your own. Scenes: Clean on Glass, Breakup on Ember, Crunch on Monolith. Give the room mic a room IR. Close mic 1 starts on a built-in vintage 4x12 IR (pick another on the Cab page). Swap in your own captures; these settings are starting points to tune by ear.",
   "parameters": {
     "amp_slot": 0,
     "comp_pre_on": 1,
@@ -24,19 +24,19 @@
   },
   "amps": [
     {
-      "path": "",
-      "hash": "",
-      "size": 0
+      "path": "factory:models/Glass.nam",
+      "hash": "fnv1a64:7b491dabe79fb5ff",
+      "size": 298414
     },
     {
-      "path": "",
-      "hash": "",
-      "size": 0
+      "path": "factory:models/Ember.nam",
+      "hash": "fnv1a64:3ed633e1059221a7",
+      "size": 297888
     },
     {
-      "path": "",
-      "hash": "",
-      "size": 0
+      "path": "factory:models/Monolith.nam",
+      "hash": "fnv1a64:5eab4a3764459b96",
+      "size": 297266
     }
   ],
   "cab": {
@@ -95,7 +95,7 @@
       {
         "name": "Crunch",
         "values": {
-          "amp_slot": 1,
+          "amp_slot": 2,
           "delay_on": 0,
           "reverb_on": 1
         }
@@ -103,7 +103,7 @@
       {
         "name": "Breakup",
         "values": {
-          "amp_slot": 2,
+          "amp_slot": 1,
           "delay_on": 1,
           "reverb_on": 1
         }

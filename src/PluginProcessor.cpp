@@ -88,6 +88,9 @@ AmpSimProcessor::AmpSimProcessor()
 
     markCabFollowed();
 
+    // A fresh start: the amp slots start on their built-in captures, loaded on the loader thread.
+    fillFreshSlots();
+
     // The analyzer's ring and scratch are allocated once, here, never while audio runs.
     analyzerRing.prepare (analyzerRingSize);
     analyzerScratch.assign (2048, 0.0f);
@@ -793,16 +796,30 @@ void AmpSimProcessor::setStateInformation (const void* data, int sizeInBytes)
     // Reload the captures and IRs this state was saved with.
     for (int s = 0; s < numAmpSlots; ++s)
     {
+        if (! state.hasProperty (modelPathKey (s)))
+            continue; // no entry: fillFreshSlots() below
+
         const auto path = state.getProperty (modelPathKey (s)).toString();
+        const auto moved = juce::File::isAbsolutePath (path) ? presets::bundledElsewhere (juce::File (path)) : juce::File();
 
-        if (! juce::File::isAbsolutePath (path))
-            continue;
-
-        if (juce::File (path).existsAsFile())
+        if (juce::File::isAbsolutePath (path) && juce::File (path).existsAsFile())
             loadModel (s, juce::File (path));
-        else
-            setModelStatus (s, "Saved model is missing: " + path, true);
+        else if (moved.existsAsFile())
+            loadModel (s, moved); // a built-in capture saved by a copy of the app installed somewhere else
+        else if (juce::File::isAbsolutePath (path))
+            unloadModel (s, "Saved model is missing: " + path, true); // the saved path stays in the state
+        else if (requestedModel[(size_t) s].file != juce::File())
+            unloadModel (s, "Empty", false); // cleared on purpose: stop the built-in a fresh start began loading
     }
+
+    // Slots this state has no entry for (it was saved before the built-in captures existed) start on
+    // their built-ins, as on a fresh start. An empty entry is a slot cleared on purpose, and stays empty.
+    fillFreshSlots();
+
+    // The top bar remembers the last factory preset by name: a factory preset that was renamed (no band
+    // names, 2026-10-03) is shown, and stepped from, under its new name.
+    if (state.getProperty (presetSourceKey).toString() == "factory")
+        state.setProperty ("presetName", presets::currentFactoryPresetName (state.getProperty ("presetName").toString()), nullptr);
 
     for (int m = 0; m < numCabMics; ++m)
     {
@@ -813,6 +830,8 @@ void AmpSimProcessor::setStateInformation (const void* data, int sizeInBytes)
 
         if (juce::File (path).existsAsFile() || juce::File (path).isDirectory())
             loadCabIR (m, juce::File (path));
+        else if (const auto moved = presets::bundledElsewhere (juce::File (path)); moved.exists())
+            loadCabIR (m, moved); // a built-in IR saved by a copy of the app installed somewhere else
         else
             setCabStatus (m, "Saved IR is missing: " + path, true);
     }
@@ -825,6 +844,7 @@ void AmpSimProcessor::loadModel (int slot, const juce::File& file)
     setModelStatus (slot, "Loading " + file.getFileName() + "...", false);
 
     const auto calibration = currentCalibration();
+    requestedModel[(size_t) slot] = { file, calibration };
 
     ++loadsInFlight;
     loader.addJob ([this, slot, file, calibration]
@@ -946,14 +966,54 @@ presets::ApplyResult AmpSimProcessor::loadPreset (const juce::var& preset)
 void AmpSimProcessor::clearModel (int slot)
 {
     slot = juce::jlimit (0, numAmpSlots - 1, slot);
-    parameters.state.removeProperty (modelPathKey (slot), nullptr);
+    parameters.state.setProperty (modelPathKey (slot), juce::String(), nullptr); // empty, not absent: cleared on purpose
+    unloadModel (slot, "Empty", false);
+}
+
+void AmpSimProcessor::unloadModel (int slot, const juce::String& statusAfter, bool isError)
+{
+    requestedModel[(size_t) slot] = {};
     ++loadsInFlight;
-    loader.addJob ([this, slot]
+    loader.addJob ([this, slot, statusAfter, isError]
     {
         chain.amp.slot (slot).model.clearModel();
-        setModelStatus (slot, "Empty", false);
+        setModelStatus (slot, statusAfter, isError);
         --loadsInFlight;
     });
+}
+
+void AmpSimProcessor::useBuiltInCapture (int slot)
+{
+    slot = juce::jlimit (0, numAmpSlots - 1, slot);
+    if (const auto file = presets::builtInCapture (slot); file.existsAsFile())
+        loadModel (slot, file);
+    else
+        setModelStatus (slot, "The built-in capture is missing: " + file.getFullPathName(), true);
+}
+
+void AmpSimProcessor::fillFreshSlots()
+{
+    if (! builtInCapturesForFreshSlots)
+        return;
+
+    for (int s = 0; s < numAmpSlots; ++s)
+    {
+        if (parameters.state.hasProperty (modelPathKey (s)))
+            continue; // a capture of its own, or cleared on purpose (an empty path)
+
+        // A copy of the app without its content folder (a bare build) just starts empty, without a warning.
+        const auto file = presets::builtInCapture (s);
+        if (! file.existsAsFile())
+            continue;
+
+        const auto& requested = requestedModel[(size_t) s];
+        const auto calibration = currentCalibration();
+        if (requested.file == file && requested.calibration.enabled == calibration.enabled
+            && std::abs (requested.calibration.interfaceInputDbu - calibration.interfaceInputDbu) < 1.0e-4)
+            parameters.state.setProperty (modelPathKey (s), file.getFullPathName(), nullptr); // already on its way
+        else
+            loadModel (s, file);
+    }
 }
 
 void AmpSimProcessor::clearCabIR (int mic)

@@ -115,13 +115,13 @@ Each slot loads any `.nam` file, so the three slots are defaults, not hardcoded 
 
 | Preset | Slot 1 | Slot 2 | Slot 3 | Character notes |
 |---|---|---|---|---|
-| Polyphia | Bright modern clean | Crunch | High gain | Heavy pre compression, chorused delay, ducking |
-| CHON | Bright modern clean | Edge-of-breakup | Crunch | Compressed sparkle, dotted-eighth and dual delays, chorus |
+| Modern Prog | Bright modern clean | Crunch | High gain | Heavy pre compression, chorused delay, ducking |
+| Math Rock | Bright modern clean | Edge-of-breakup | Crunch | Compressed sparkle, dotted-eighth and dual delays, chorus |
 | Tech Death | Tight high gain | High gain lead | Clean | Boost into the amp, linked gates with adaptive release |
 | Metal | High gain | Crunch | Clean | Boost, gates, less extreme than Tech Death |
 | Midwest Emo | Vintage American clean (warmer, chimey) | Crunch | Edge-of-breakup | Light compression, more room mic, analog or tape delay |
 
-Specific captures are chosen by Sean by ear; the table defines roles, not models.
+Specific captures are chosen by Sean by ear; the table defines roles, not models. (Modern Prog and Math Rock were named after bands until 2026-10-03.) Since the built-in captures (2026-10-03) the slots are fixed by the heads, so each preset's scenes pick the slot whose role fits: slot 1 Glass (clean), slot 2 Ember (crunch), slot 3 Monolith (high gain). Tech Death and Metal start on slot 3 (ASSUMPTIONS DS50).
 
 Use amp-only captures (amp into a load box, no cab or mic), not full-rig captures. Full-rig captures bake in a cab, which would double up with our cab section.
 
@@ -703,7 +703,7 @@ The compiler is Apple clang from the command line tools (`xcode-select --install
 2026-10-01: Compressor review settled: one block type placeable in pre and post, Studio (feed-forward) and Pedal (feedback) modes, defaults aimed at CHON/Polyphia-style cleans.
 2026-10-01: Build order changed to match Sean's main playing (CHON/Polyphia): after amps and cab come compressor and EQ, then delay/reverb/chorus, then gates/boost/overdrive.
 2026-10-01: EQ review settled: pre and post instances, each Graphic or Parametric; TPT SVF filters; accurate graphic EQ via band interaction compensation; visual EQ with spectrum analyzer in the GUI phase. Removed the redundant amp-to-cab EQ slot (linear filters commute) and updated the signal-chain diagram to current decisions.
-2026-10-01: Amps stay at three always-running slots; Sean's five styles (Polyphia, CHON, Tech Death, Metal, Midwest Emo) become five style presets that load captures into the slots.
+2026-10-01: Amps stay at three always-running slots; Sean's five styles (Polyphia, CHON, Tech Death, Metal, Midwest Emo) become five style presets that load captures into the slots (the presets are now Modern Prog, Math Rock, Tech Death, Metal, Midwest Emo: see 2026-10-03).
 2026-10-01: Delay review settled: digital, analog (BBD), and tape modes; tempo sync with MIDI tap tempo; stereo, ping-pong, and dual modes; ducking on by default.
 2026-10-01: Reverb review settled: FDN Room/Hall plus Dattorro plate; shimmer added in Phase 9 once the pitch shifter exists; footswitchable freeze; convolution reverb deferred.
 2026-10-01: Chorus review settled: one shared modulated-delay engine for chorus, flanger, multivoicer, and vibrato; Classic, Dimension, and Tri modes; wet high-pass on by default; subtle analog character on by default.
@@ -769,3 +769,5 @@ The compiler is Apple clang from the command line tools (`xcode-select --install
 2026-10-03: Licensing (Sean's decision): BellyDSP is free, open source software under AGPL-3.0-or-later (required in practice because JUCE is used under the AGPLv3; JUCE_LICENCE=AGPLv3), "Copyright (C) 2026 Sean Snaider", with SPDX headers on every source file we own. Sean's own NAM captures are CC BY 4.0, attribution "Sean Snaider" (replacing the DS32 placeholder). Third-party content keeps its own licence (the bundled IRs are CC0).
 2026-10-03: Two repos (Sean's decision): this private repo stays the dev and test environment (remote origin); the public SeanSnaider/BellyDSP is "prod" (remote public) and only gets main and version tags. Releases (binaries and appcasts) are published on the public repo itself; the separate amp-sim-releases repo is dropped. The rule, enforced by release.sh: every binary given to anyone is built from a commit that is on public/main and tagged there, and the tag is pushed to public before any file is uploaded (the AGPL's Corresponding Source). CI runs on push and pull requests only on the public repo (ASSUMPTIONS DS40).
 2026-10-03: Bundle ID com.seansnaider.bellydsp (was com.seansnaider.ampsim; free to change because no release had shipped), with a new Inno Setup AppId and plugin code Bdsp for the same reason. From the first release on, none of the three may change.
+2026-10-03: Factory presets renamed (Sean's decision, no band names in the app): "Polyphia" is "Modern Prog" (ModernProg.json) and "CHON" is "Math Rock" (MathRock.json). A saved state whose top bar remembers a factory preset by an old name restores it under the new one; a user's own preset of that name is left alone (ASSUMPTIONS DS51).
+2026-10-03: Built-in default captures (Sean's request): each amp slot comes with a capture, so nobody has to load one. Slot 1 Glass (clean), slot 2 Ember (crunch), slot 3 Monolith (high gain), in content/models, CC BY 4.0 with the attribution "Sean Snaider". They're stand-ins trained with NAM's trainer (standard WaveNet) from the project's own gray-box amp (prototypes/amp_sim.py, amp only; Monolith through the app's Screamer boost first) by tools/content/make_default_captures.py, and Sean's real captures replace them under the same names (docs/CAPTURING.md). A fresh start (and a restored state with no entry for a slot) loads them on the loader thread; a slot cleared on purpose stays empty; the factory presets use them; the capture menu has "Use the built-in capture"; the info row shows "Model Glass (built in)" (ASSUMPTIONS DS44 to DS53).

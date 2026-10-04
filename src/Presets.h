@@ -112,10 +112,32 @@ ApplyResult validate (const juce::var& preset);
 /// ~/Library/Application Support/BellyDSP/presets (%APPDATA%\BellyDSP\presets on Windows)
 juce::File defaultFolder();
 
-/// The factory presets (the five style presets), in the plan's order. They set the sound and its scenes
-/// and put a bundled cab IR ("factory:irs/...", content/irs) in close mic 1, but no captures yet: each
-/// has "notes" saying what to load where.
+/// The factory presets (the five style presets), in the plan's order. They set the sound and its scenes,
+/// put the built-in captures in their slots (Glass, Ember, Monolith) and a bundled cab IR
+/// ("factory:irs/...", content/irs) in close mic 1, and say in their "notes" what to swap in.
 juce::Array<juce::var> factoryPresets();
+
+/// A factory preset's current name for a name it once had: "Polyphia" is "Modern Prog" and "CHON" is "Math
+/// Rock" since 2026-10-03 (no band names in the app). Any other name comes back unchanged. A saved state
+/// remembers the last factory preset by name (the top bar's name and "Factory" tag), so restoring one goes
+/// through this.
+juce::String currentFactoryPresetName (const juce::String& name);
+
+/// The built-in captures (content/models, BUILD_PLAN decision log 2026-10-03): one per amp slot, named after
+/// the head it plays in: slot 1 Glass (clean), slot 2 Ember (crunch), slot 3 Monolith (high gain). Stand-ins
+/// trained from the project's own gray-box amp (prototypes/amp_sim.py, tools/content/make_default_captures.py)
+/// until Sean's own captures replace them. A fresh slot starts on its built-in (AmpSimProcessor).
+juce::String builtInCaptureName (int slot);
+juce::String builtInCapturePath (int slot); ///< "factory:models/Glass.nam", as a preset refers to it
+juce::File builtInCapture (int slot);       ///< that file in the app's content folder
+
+/// Whether a file ships with the app (it's inside the app's content folder, libraryRoot ("factory")).
+bool isBundled (const juce::File& file);
+
+/// For a saved absolute path into some copy of the app's content folder (a dev build's, or an install that
+/// has since moved): the same file in this copy's content folder, or nothing. A saved state stores absolute
+/// paths, so a built-in capture saved by build/BellyDSP_artefacts/... is still found by /Applications/BellyDSP.app.
+juce::File bundledElsewhere (const juce::File& savedPath);
 
 bool save (const juce::var& preset, const juce::File& file);
 juce::var load (const juce::File& file, juce::String& error);

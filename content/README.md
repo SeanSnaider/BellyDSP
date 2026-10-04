@@ -7,16 +7,21 @@ the app opens.
   Bastian Karschewski (Jester Dyne Productions), which he released under CC0 (public domain). Renamed
   without brand names and the modern ones cut to 1 s by `tools/content/import_jester_irs.py`; each file's
   manifest entry cites its original by the pack handbook's patch number. The cab page lists them under "Built in", one entry per IR.
-- `models/`: none yet. The bundled captures will be Sean's own (`docs/CAPTURING.md`), licensed under
-  **CC BY 4.0** (Creative Commons Attribution 4.0 International, `licenses/CC-BY-4.0.txt`, the official
-  legal code from creativecommons.org) with the attribution "Sean Snaider": anyone may share and adapt
-  them, including commercially, as long as they credit him.
+- `models/`: the three built-in captures, one per amp slot and named after its head: `Glass.nam` (clean),
+  `Ember.nam` (crunch), `Monolith.nam` (high gain). A fresh start loads them, the factory presets use
+  them, and an amp's right-click menu puts one back. For now they're stand-ins, trained by
+  `tools/content/make_default_captures.py` from the project's own gray-box amp (`prototypes/amp_sim.py`,
+  amp only; settings in each manifest entry), until Sean's own captures replace them under the same
+  names (`docs/CAPTURING.md`, "Replacing a built-in capture"). Licensed under **CC BY 4.0** (Creative
+  Commons Attribution 4.0 International, `licenses/CC-BY-4.0.txt`, the official legal code from
+  creativecommons.org) with the attribution "Sean Snaider": anyone may share and adapt them, including
+  commercially, as long as they credit him.
 
 ## Licences
 
 The app's code is AGPL-3.0-or-later (`LICENSE` at the repo root). The files in this folder are not code
 and each carries its own licence, listed per file in `manifest.json`: CC0 1.0 for the Jester Dyne IRs
-(`licenses/CC0-1.0.txt`) and CC BY 4.0 for Sean's own captures (`licenses/CC-BY-4.0.txt`).
+(`licenses/CC0-1.0.txt`) and CC BY 4.0 for the captures (`licenses/CC-BY-4.0.txt`).
 
 ## How it works
 

@@ -58,9 +58,22 @@ public:
     void loadModel (int slot, const juce::File& file);
     void loadCabIR (int mic, const juce::File& file); // mic 0, 1: close mics; 2: room. A folder is a cab pack.
 
-    /// Message thread: empty an amp slot or a cab mic (queued behind any load already running).
+    /// Message thread: empty an amp slot or a cab mic (queued behind any load already running). A cleared
+    /// slot is saved as an empty path, so it stays empty (it doesn't go back to its built-in capture).
     void clearModel (int slot);
     void clearCabIR (int mic);
+
+    /// Message thread: put a slot's built-in capture back (presets::builtInCapture: Glass, Ember, Monolith).
+    void useBuiltInCapture (int slot);
+
+    /// Whether slots nobody has filled or cleared start on their built-in captures (BUILD_PLAN decision log
+    /// 2026-10-03; ASSUMPTIONS DS48): a fresh processor loads Glass, Ember, and Monolith on the loader
+    /// thread, and a restored state that has no entry for a slot (saved before the built-ins existed)
+    /// gets that slot's built-in. A slot cleared on purpose (Clear, or a preset with an empty slot) is
+    /// saved as an empty path and stays empty; a slot with its own capture keeps it. On in the app. The
+    /// test suite turns it off (TestMain), because its tests were written against empty slots, and turns
+    /// it back on where the built-ins are what's being tested.
+    static inline bool builtInCapturesForFreshSlots = true;
 
     /// Message thread: "Follow amp choice" (the cab page). Each amp slot can have a cab assigned to it: the
     /// IR file or cab pack last picked for close mic 1 while that slot was playing. While following,
@@ -121,6 +134,9 @@ public:
     bool isChangingPreset() const { return presetStage != PresetStage::idle; }
     juce::StringArray getPresetWarnings() const { return presetWarnings; }
     juce::String getPresetName() const { return parameters.state.getProperty ("presetName").toString(); }
+
+    /// The top bar's tag for the preset name: "factory" or "user" (saved in the state).
+    static inline const juce::Identifier presetSourceKey { "presetSource" };
 
     /// Message thread: the MIDI mappings (footswitch toggles, expression pedals), and MIDI learn: the
     /// next controller that moves maps to the parameter.
@@ -288,6 +304,8 @@ private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     void timerCallback() override;
     void setModelStatus (int slot, const juce::String& text, bool isError);
+    void fillFreshSlots();
+    void unloadModel (int slot, const juce::String& statusAfter, bool isError); // empties the slot, leaves the state alone
     void setCabStatus (int mic, const juce::String& text, bool isError);
     void handleMidi (const juce::MidiBuffer& midi);
     void applyCabParameters();
@@ -353,6 +371,15 @@ private:
     // setting waiting to settle.
     ampsim::NamAmp::Calibration currentCalibration() const;
     ampsim::NamAmp::Calibration appliedCalibration, pendingCalibration;
+
+    // Message thread: the file each slot's latest load asked for, and with which calibration (empty after
+    // a clear), so a restored state doesn't load a built-in the constructor has already started.
+    struct RequestedModel
+    {
+        juce::File file;
+        ampsim::NamAmp::Calibration calibration;
+    };
+    std::array<RequestedModel, numAmpSlots> requestedModel;
     double pendingSinceMs = 0.0;
     int calibrationReloads = 0;
     std::atomic<float>* calibrateInput = nullptr;

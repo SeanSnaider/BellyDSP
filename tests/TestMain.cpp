@@ -8,6 +8,7 @@
 // Measurements are logged on lines starting with "->". They're collected into <proof-dir>/summary.txt
 // along with the rendered WAVs and editor snapshots the tests write there.
 
+#include "PluginProcessor.h"
 #include "TestHelpers.h"
 
 #include <juce_events/juce_events.h>
@@ -54,6 +55,10 @@ int main (int argc, char* argv[])
     }
 
     testing::proofDir().createDirectory();
+
+    // The tests were written against processors that start with empty amp slots; the ones about the
+    // built-in captures turn them back on (testing::WithBuiltInCaptures).
+    AmpSimProcessor::builtInCapturesForFreshSlots = false;
 
     juce::Array<juce::UnitTest*> tests;
     for (auto* test : juce::UnitTest::getAllTests())

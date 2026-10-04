@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Sean Snaider
 
 #include "AllocationTracking.h"
+#include "BuiltInCaptures.h"
 #include "PluginProcessor.h"
 #include "TestHelpers.h"
 
@@ -80,22 +81,44 @@ public:
     void runTest() override
     {
         beginTest ("the whole rig at once: three captures, three mics, every block on, 128-sample buffers: CPU against the deadline, and nothing allocated on the audio thread");
+        rig (false);
 
+        beginTest ("the same on the built-in captures (Glass, Ember, Monolith: three standard WaveNets), as the app starts");
+        rig (true);
+    }
+
+    /// Defaults, everything on, and the heaviest settings, timed. builtIns: the three slots run the built-in
+    /// captures the app starts with; otherwise NAM's example models (A1 standard, A2, LSTM).
+    void rig (bool builtIns)
+    {
         const auto irA = tempDir().getChildFile ("rig_ir_a.wav"), irB = tempDir().getChildFile ("rig_ir_b.wav"), room = tempDir().getChildFile ("rig_room.wav");
         writeWav (irA, toBuffer (syntheticCabIR (4096)));
         writeWav (irB, toBuffer (syntheticCabIR (2048, 8.0, 7000.0)));
         writeWav (room, toBuffer (syntheticCabIR (24000, 0.0, 4000.0)));
 
-        AmpSimProcessor p;
-        p.loadModel (0, exampleModel ("wavenet_a1_standard.nam"));
-        p.loadModel (1, exampleModel ("A2.nam"));
-        p.loadModel (2, exampleModel ("lstm.nam"));
+        std::unique_ptr<AmpSimProcessor> owner;
+        {
+            std::unique_ptr<WithBuiltInCaptures> on;
+            if (builtIns)
+                on = std::make_unique<WithBuiltInCaptures>();
+            owner = std::make_unique<AmpSimProcessor>();
+        }
+        auto& p = *owner;
+        if (! builtIns)
+        {
+            p.loadModel (0, exampleModel ("wavenet_a1_standard.nam"));
+            p.loadModel (1, exampleModel ("A2.nam"));
+            p.loadModel (2, exampleModel ("lstm.nam"));
+        }
         p.loadCabIR (0, irA);
         p.loadCabIR (1, irB);
         p.loadCabIR (AmpSimProcessor::roomMic, room);
         waitForLoads (p);
         p.prepareToPlay (fs, blockSize);
         const auto input = guitarDI ((int) (10.0 * fs));
+        if (builtIns)
+            for (int s = 0; s < 3; ++s)
+                expect (p.parameters.state.getProperty (AmpSimProcessor::modelPathKey (s)).toString() == presets::builtInCapture (s).getFullPathName());
 
         // Defaults: three captures running, the cab, the EQs (flat), everything else off.
         const auto bare = play (p, input);
@@ -125,10 +148,11 @@ public:
         }
         expectLessThan (everything.mean, 0.6 * deadlineMicros);
 
-        logMessage ("  -> three captures (A1 standard, A2, LSTM) and three mics, everything else at its defaults: " + bare.describe());
-        logMessage ("  -> every block on (both gates, both compressors, Screamer boost, Distortion at 4x, harmonizer with 2 voices, multivoicer 4 voices, "
+        const juce::String captures = builtIns ? "the built-in Glass, Ember, Monolith" : "A1 standard, A2, LSTM";
+        logMessage ("  -> three captures (" + captures + ") and three mics, everything else at its defaults: " + bare.describe());
+        logMessage ("  -> " + captures + ", every block on (both gates, both compressors, Screamer boost, Distortion at 4x, harmonizer with 2 voices, multivoicer 4 voices, "
                     "Bloom with all three, Tri chorus, tape delay, Hall with 50% shimmer): " + everything.describe());
-        logMessage ("  -> the heaviest settings (8x drive with the Fuzz, multivoicer Mono with 8 voices, 4 harmonies): " + heaviest.describe());
+        logMessage ("  -> " + captures + ", the heaviest settings (8x drive with the Fuzz, multivoicer Mono with 8 voices, 4 harmonies): " + heaviest.describe());
         logMessage ("  -> all three runs: 0 allocations, 0 frees, 0 blocking locks on the audio thread (" + juce::String (bare.counts.allocations + everything.counts.allocations
                     + heaviest.counts.allocations) + " counted). Timed on a normal-priority test thread, with other builds running on the machine: the "
                     "real audio thread runs at real-time priority, so the worst cases here overstate it");

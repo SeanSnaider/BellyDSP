@@ -467,7 +467,8 @@ void AmpView::refresh()
     }
     else
     {
-        model = file.getFileName();
+        // A capture that ships with the app shows as "Glass (built in)"; any other, by its file name.
+        model = presets::isBundled (file) ? file.getFileNameWithoutExtension() + " (built in)" : file.getFileName();
         if (failed)
             voice = line;
         else if (loading)

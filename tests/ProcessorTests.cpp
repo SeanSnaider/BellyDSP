@@ -665,7 +665,7 @@ public:
                         "its own delay mix (40 and 70) and chorus switch, copying B to A makes them equal; loading a preset clears the history and starts on A");
         }
 
-        beginTest ("factory presets: all five load cleanly, set their sound, bring their scenes, and say what to load");
+        beginTest ("factory presets: all five load cleanly, set their sound, bring their scenes, and say what to swap in");
         {
             const auto factory = presets::factoryPresets();
             expectEquals (factory.size(), 5);
@@ -677,7 +677,7 @@ public:
                 expect (result.ok, result.error);
                 expect (p.getPresetWarnings().isEmpty(), preset["name"].toString() + ": " + p.getPresetWarnings().joinIntoString ("; "));
                 expect (p.getScenes().get (0).stored && p.getScenes().get (2).stored);
-                expect (preset["notes"].toString().contains ("Load your own captures"));
+                expect (preset["notes"].toString().contains ("Swap in your own captures"));
                 // Close mic 1 starts on a bundled IR, found in the app's content folder (the tests' copy of it).
                 waitForLoads (p);
                 const auto mic1 = juce::File (p.parameters.state.getProperty (AmpSimProcessor::cabPathKey (0)).toString());

@@ -53,7 +53,8 @@ private:
 
 /// The Amp page (handoff 4.5): the amp tabs (30 x 20 minis, names, PC numbers), the 290 px stage with its
 /// faint emerald glow and the 960 x 262 head of the playing slot, the info row (the capture's voice from
-/// its metadata, its file, and 48 kHz or a message), the output spectrum, and the shared strip (Input,
+/// its metadata, its file or "Glass (built in)" for a bundled one, and 48 kHz or a message), the output
+/// spectrum, and the shared strip (Input,
 /// Gate with its open light, Output).
 ///
 /// Each slot's seven knobs are its own parameters (ASSUMPTIONS UH3): Gain is the slot's input trim, Master
