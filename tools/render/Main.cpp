@@ -29,7 +29,48 @@ struct Options
     bool normalize = true;
     juce::String boost; // "", or the boost block's mode in front of the amp: clean, tight, screamer
     float boostLevelDb = 0.0f;
+
+    // Tone match (docs/TONE_MATCH.md) renders candidates with these. Defaults leave the chain as before.
+    float trimDb = 0.0f;                                            // slot 1's input trim: the amp page's Gain
+    std::array<float, ampsim::AmpTone::numBands> tone {};          // slot 1's Depth, Bass, Mid, Treble, Presence (dB)
+    bool postEqOn = false;                                         // the post EQ, parametric mode
+    ampsim::Equalizer::Settings postEq;
 };
+
+// "--post-eq ls:100:3:0.71,pk:400:-2:1,pk:1000:0:1,pk:3000:1.5:2,hs:8000:-4:0.71": up to five parametric
+// bands in order, each type:frequency:gain:q, type one of pk, ls, hs, notch. Bands not given stay flat.
+bool parsePostEq (const juce::String& text, ampsim::Equalizer::Settings& eq)
+{
+    eq.mode = ampsim::Equalizer::Mode::parametric;
+    const auto bands = juce::StringArray::fromTokens (text, ",", "");
+
+    if (bands.size() > ampsim::Equalizer::numParametricBands)
+        return false;
+
+    for (int b = 0; b < bands.size(); ++b)
+    {
+        const auto fields = juce::StringArray::fromTokens (bands[b], ":", "");
+        if (fields.size() != 4)
+            return false;
+
+        auto& band = eq.bands[(size_t) b];
+        const auto& t = fields[0];
+        if (t == "pk")         band.type = ampsim::Equalizer::BandType::peak;
+        else if (t == "ls")    band.type = ampsim::Equalizer::BandType::lowShelf;
+        else if (t == "hs")    band.type = ampsim::Equalizer::BandType::highShelf;
+        else if (t == "notch") band.type = ampsim::Equalizer::BandType::notch;
+        else                   return false;
+
+        band.frequency = fields[1].getFloatValue();
+        band.gainDb = fields[2].getFloatValue();
+        band.q = fields[3].getFloatValue();
+
+        if (band.frequency <= 0.0f || band.q <= 0.0f)
+            return false;
+    }
+
+    return true;
+}
 
 void printUsage()
 {
@@ -46,7 +87,12 @@ void printUsage()
                  "  --boost <mode>         switch the Boost block on in front of the amp: clean, tight, or screamer\n"
                  "                         (the TS808 circuit at minimum drive, tone at noon; 0 dBFS = +12 dBu)\n"
                  "  --boost-level <dB>     the boost's Level (default 0)\n"
-                 "  --compare <ref.wav>    report the difference between the output and a reference\n";
+                 "  --compare <ref.wav>    report the difference between the output and a reference\n"
+                 "  --trim <dB>            slot 1's input trim, the amp page's Gain (default 0)\n"
+                 "  --tone <d,b,m,t,p>     slot 1's Depth, Bass, Mid, Treble, Presence in dB (default all 0)\n"
+                 "  --post-eq <bands>      switch the post EQ on in parametric mode: up to five comma-separated\n"
+                 "                         bands type:freq:gain:q, type pk, ls, hs, or notch\n"
+                 "                         (e.g. ls:100:3:0.71,pk:1000:-2:1,hs:8000:-4:0.71)\n";
 }
 
 juce::File fileArg (const char* arg)
@@ -75,6 +121,21 @@ bool parse (int argc, char* argv[], Options& o)
         else if (a == "--no-normalize")              o.normalize = false;
         else if (a == "--boost" && hasValue)         o.boost = argv[++i];
         else if (a == "--boost-level" && hasValue)   o.boostLevelDb = juce::String (argv[++i]).getFloatValue();
+        else if (a == "--trim" && hasValue)          o.trimDb = juce::String (argv[++i]).getFloatValue();
+        else if (a == "--tone" && hasValue)
+        {
+            const auto values = juce::StringArray::fromTokens (argv[++i], ",", "");
+            if (values.size() != ampsim::AmpTone::numBands)
+                return false;
+            for (int b = 0; b < values.size(); ++b)
+                o.tone[(size_t) b] = values[b].getFloatValue();
+        }
+        else if (a == "--post-eq" && hasValue)
+        {
+            if (! parsePostEq (argv[++i], o.postEq))
+                return false;
+            o.postEqOn = true;
+        }
         else if (a.startsWith ("--"))                return false;
         else                                         positional.push_back (fileArg (argv[i]));
     }
@@ -229,6 +290,17 @@ int main (int argc, char* argv[])
         chain.boost.setSettings (b);
         chain.setBypassed (ampsim::Chain::Slot::boost, false);
         std::cout << "Boost: " << o.boost << ", level " << juce::String (o.boostLevelDb, 1) << " dB\n";
+    }
+
+    // Slot 1's Gain and tone, and the post EQ, also before prepare(), which snaps their smoothers.
+    chain.amp.slot (0).inputTrim.setGainDecibels (o.trimDb);
+    for (int b = 0; b < ampsim::AmpTone::numBands; ++b)
+        chain.amp.slot (0).tone.setGainDb ((ampsim::AmpTone::Band) b, o.tone[(size_t) b]);
+
+    if (o.postEqOn)
+    {
+        chain.postEq.setSettings (o.postEq);
+        chain.setBypassed (ampsim::Chain::Slot::postEq, false);
     }
 
     // Set the gains before prepare(), which snaps them, so the render doesn't start with a ramp.
