@@ -18,14 +18,14 @@ What it can't do, as measured below: pin the Gain down within a few dB (a cranke
 ## How to use it
 
 1. Open it from the brand menu (top left, "BellyDSP"): **Match tone...**
-2. **Target.** Choose a file (WAV, AIFF, FLAC, MP3, M4A/AAC, and anything else macOS decodes; on Windows, what Media Foundation decodes) or drop one on the page. Drag in the waveform to choose 3 to 60 s where the lead guitar dominates (drag the edges or the middle to adjust; a click places 30 s). If it's a whole song, switch on **Separate the guitar first**; the first time, it downloads the separation model (55 MB) into the BellyDSP data folder.
+2. **Target.** Choose a file (WAV, AIFF, FLAC, MP3, M4A/AAC, and anything else macOS decodes; on Windows, what Media Foundation decodes) or drop one on the page. Drag in the waveform to choose 3 to 60 s where the lead guitar dominates (drag the edges or the middle to adjust; a click places 30 s). If it's a whole song, switch on **Separate the guitar first**; the first time, it downloads the separation model (55 MB) into the BellyDSP data folder. If anything in the download or the separation fails, the Match card says what (the HTTP status, no response, a damaged download, out of memory) and `~/Library/Application Support/BellyDSP/separation-log.txt` has the details.
 3. **Your DI.** Press **Record** and play (up to a minute; the app records your clean DI as it comes in), then **Stop**. Or choose a DI file. Then the mode:
    - **Same part**: you played the same part as the target (learn the lick, play it). The two are lined up in time and compared moment by moment. The more precise mode, on a dry or isolated target.
    - **Anything**: you played anything. Play the same kind of part (a lead for a lead, in a similar register), because the long-term spectrum depends on which notes are played. Use this one on a separated stem.
 4. **Match.** It takes a few seconds (plus about a minute per minute of audio when separating). Cancel stops it.
-5. **Result.** The amp, Gain, tone, cab, match EQ, the curve the EQ was fitted to, and the score. **Apply** sets them as normal settings in one undo step (Cmd-Z puts everything back, the cab included), so a preset saves them. **Discard** throws the result away.
+5. **Result.** The amp, Gain, tone, cab, match EQ (bands low to high), the curve the EQ was fitted to, and the score. **Apply** sets them as normal settings in one undo step (Cmd-Z puts everything back, the cab and the pre effects included), so a preset saves them. **Discard** throws the result away.
 
-What Apply changes (ASSUMPTIONS TM8): the amp slot, its Gain and tone, the cab (close mic 1, with mic 2 and the room muted, cuts off), and the post EQ (on, parametric, the five bands, cuts off). It leaves the pre effects alone, though they change the sound: switch them off to hear the match as it was made.
+What Apply changes (ASSUMPTIONS TM8, TM19): the amp slot, its Gain and tone, the cab (close mic 1, with mic 2 and the room muted, cuts off), the post EQ (on, parametric, the five bands, cuts off), and it switches off the pre effects that color the tone before the amp, the pre compressor, boost, overdrive, and pre EQ, so the match is heard as it was made. The noise gate stays as it is. The page says this above Apply, with which of them are on right now.
 
 From the command line: `prototypes/tone_match.py match TARGET DI --mode same|anything` (the prototype, through `ampsim_render`), and `ampsim_separate song.wav guitar.wav` (the separation, with its timing and memory).
 
@@ -93,7 +93,26 @@ computed row by row with a running min-plus scan, once per slot against its rend
 
 Demucs v4, the hybrid transformer with six sources (htdemucs_6s: drums, bass, other, vocals, guitar, piano; Rouard, Massa, and Defossez 2023), run by demucs.cpp (sevagh/demucs.cpp, MIT) on Eigen. The target is resampled to 44.1 kHz stereo, normalized as Demucs does, split into 10 s parts with 0.75 s of context on each side (demucs.cpp's time grows faster than the length: one 60 s part took 532 s), run by up to four workers, crossfaded back with triangular weights, and the guitar source kept.
 
-Measured on this Mac (M5 Pro, 24 GB) for a 60 s mix: **40 s per minute of audio with four workers (8.9 GB peak memory); 86 s per minute with one worker (3.3 GB)**. The workers are chosen from the machine's memory (each holds about 3 GB; 6 GB is left free). Downloading and converting the model took 1.6 s here.
+A part that is digital silence isn't run: Demucs normalizes each input by its standard deviation over time, `(x - mean) / std`, and silence has none, so the division made every output NaN. The crossfade carried that into the next part and the resampler's IIR filter to the end of the stem: before the fix, 30 s of a song with a 12.5 s silent intro came back as 1,439,998 NaN samples out of 1,440,000, and the matcher then said the target had too little playing in it. Now the silent part's stem is silence, and any non-finite output sample is zeroed and logged.
+
+#### Memory: how many workers
+
+Each worker holds a part's activations while it runs. Peak memory of `ampsim_separate` on a 60 s, 44.1 kHz MP3 section on this Mac (M5 Pro, 24 GB, 15 cores), macOS's peak memory footprint (another build was running at the same time, so the times are slower than an idle machine's):
+
+| Workers | Peak memory | Time per minute of audio |
+|---|---|---|
+| 1 | 1.82 GB | 152 s |
+| 2 | 3.34 GB | 68 s |
+| 3 | 4.92 GB | 53 s |
+| 4 | 5.66 GB | 50 s |
+
+About 1.5 GB per worker on top of the model, measured. The earlier measurement of four workers peaked at 8.9 GB (its resident size, on a different run), and one short part has measured 3.0 GB resident, so the rule budgets **2.2 GB per worker**: workers = floor(min(40% of physical memory, memory available now - 1.5 GB) / 2.2 GB), at least 1, at most 4 and half the cores ("available" is free plus inactive, purgeable, and file-cache pages, from the kernel's VM statistics). That gives 4 on a 24 GB Mac with most of it free, 2 on 16 GB, 1 on 8 GB, and fewer when other apps hold the memory. If a worker still runs out of memory, the separation is tried again with one, and if that fails too, the page says "not enough memory to separate" instead of a generic error. The progress text says how many parts there are and how many run at a time.
+
+#### Installing the model
+
+The download goes through JUCE's URL stream (NSURLSession on macOS), which follows Hugging Face's 302 to its CDN (a different host, with a signed query string of about 1 KB) untouched. Each try checks the HTTP status (a 404 or 503 page is never saved as the model), allows 60 s without a byte (it was 20 s, which also counted the time to the first byte), and a dropped connection resumes where it stopped with a Range request; up to 5 tries, 2, 4, 8, and 16 s apart. Then the size, the SHA-256, the conversion, and the move into place, each with its own message. A model file that doesn't load is deleted so the next try downloads it again. Every step is logged with its details (HTTP status, bytes, times, worker count, peak memory) to `separation-log.txt` in the BellyDSP data folder, capped at 256 KB with one older file kept.
+
+End to end on this Mac, through the page's own code path from an empty model folder (the network test below), a 30 s section (37.3 to 67.3 s) of a synthetic 44.1 kHz stereo MP3 song: download 1.6 s (HTTP 200 after 0.5 s), installed in 2.2 s, separated in 43.7 s with 3 workers (3 parts), the whole match done in 60.4 s, the process's peak memory 4.3 GB.
 
 The weights are downloaded on first use from the Demucs author's Hugging Face repository at a pinned commit, checked against a SHA-256, and converted to demucs.cpp's format (the same f16 tensors, squeezed, in its container). They aren't re-hosted (docs/RELEASING.md, "Tone match's separation model").
 
@@ -179,7 +198,9 @@ Reproduce: `uv run --python 3.11 --with demucs --with numpy --with scipy python 
 
 `src/tonematch/` is a line-by-line port of the prototype, golden-tested against it on the same files (`tests/fixtures/tone_match`, written by the prototype's `golden` command, all synthetic): the bands, the weights, and Nelder-Mead on Rosenbrock's function are identical; the fixtures' long-term spectra and features agree within 0.00001 dB; DTW finds the same path (same length and checksum); a candidate's features, residual, tone fits, and match EQ curve agree within 0.001 dB; and the whole search finds the prototype's amp, Gain, and cab with the same score.
 
-Other tests (`tests/ToneMatchTests.cpp`, `ToneMatchAppTests.cpp`, `ToneMatchSeparationTests.cpp`): the search on synthetic cases with known settings in C++ (every match better than the defaults); cancel; decoding WAV, AIFF, FLAC, M4A, and MP3; the DI recorder (sample-exact, and inside the real-time safety test, which stays at 0 allocations, 0 frees, 0 blocking locks); Apply as one undo step, with redo and Discard; the page, with snapshots in `build/proof/tone_match/`; the separation installer's size and SHA-256 checks and cancel; and the C++ separation against Python's Demucs on the same 10 s clip (20.8 dB SDR; Python against its own reruns, which draw a different random shift, 19.0 to 31.3 dB).
+Other tests (`tests/ToneMatchTests.cpp`, `ToneMatchAppTests.cpp`, `ToneMatchSeparationTests.cpp`): the search on synthetic cases with known settings in C++ (every match better than the defaults); cancel; decoding WAV, AIFF, FLAC, M4A, and MP3; the DI recorder (sample-exact, and inside the real-time safety test, which stays at 0 allocations, 0 frees, 0 blocking locks); Apply as one undo step, with redo and Discard; the page, with snapshots in `build/proof/tone_match/`; the separation installer's size and SHA-256 checks and cancel; the C++ separation against Python's Demucs on the same 10 s clip (20.8 dB SDR; Python against its own reruns, which draw a different random shift, 19.0 to 31.3 dB); a silent stretch (finite, silent stem); simulated out of memory (retried with one worker, then reported); the worker rule; the log's cap; Apply switching the pre effects off and undo restoring each switch; and the result lines breaking only between items.
+
+Two groups need a flag, so the default suite stays offline. `AMPSIM_HTTP_TESTS=1` runs the installer against `tests/model_server.py` (through uv), which redirects like Hugging Face, to another host name with a long percent-escaped query it refuses to accept changed, and misbehaves on purpose: a connection dropped at 20 MB, two 503s, a 25 s wait for the first byte, a 404, a flipped byte. Then the page's whole flow from an empty model folder on `tests/fixtures/tone_match/song_44k.mp3` (20 s of the synthetic song, 44.1 kHz stereo, LAME through lameenc), from 7.3 s. `AMPSIM_NETWORK_TESTS=1` runs the page's whole flow against the real URL (any song with `AMPSIM_SONG`, `AMPSIM_SONG_DI`, `AMPSIM_SONG_START`, `AMPSIM_SONG_SECONDS`).
 
 ## Not verified (only Sean can)
 

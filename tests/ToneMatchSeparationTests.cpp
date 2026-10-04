@@ -526,9 +526,11 @@ public:
                         const auto secs = (juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0;
                         expect (g.isInstalled() == shouldInstall, mode + ": " + e);
                         expect (e.contains (messagePart), mode + ": " + e);
-                        int triesLogged = 0;
+                        juce::StringArray triesSeen; // "try 2 of 5" appears once per try, or twice when it also failed mid-way
                         for (const auto& line : juce::StringArray::fromLines (g.logFile().loadFileAsString()))
-                            triesLogged += line.contains ("  try ") ? 1 : 0;
+                            if (line.contains ("  try "))
+                                triesSeen.addIfNotAlreadyThere (line.fromFirstOccurrenceOf ("  try ", false, false).upToFirstOccurrenceOf (" of", false, false));
+                        const auto triesLogged = triesSeen.size();
                         report.add (mode + ": " + (shouldInstall ? "installed" : "\"" + e.upToFirstOccurrenceOf (" (details", false, false) + "\"") + " in "
                                     + juce::String (secs, 1) + " s, " + juce::String (triesLogged) + (triesLogged == 1 ? " try" : " tries"));
                         return e;

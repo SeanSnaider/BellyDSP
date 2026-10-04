@@ -214,7 +214,7 @@ bool ToneMatchSession::startMatch()
     error.clear();
     {
         const std::lock_guard<std::mutex> l (lock);
-        stage = separate ? "Separating the guitar" : "Starting";
+        stage = separate ? "Starting the separation" : "Starting";
     }
 
     worker = std::thread ([this, settings, targetCopy = targetSelection(), referenceCopy = reference, doSeparate = separate, sep = separator] {
