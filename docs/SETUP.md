@@ -6,7 +6,7 @@
 
 **CMake.** It's installed at `~/.local/opt/cmake-4.4.3-macos-universal`, with `cmake` and `ctest` linked into `~/.local/bin`, which is already on your PATH. CMake doesn't compile anything itself: it reads `CMakeLists.txt` (a description of what to build, a bit like Maven's pom.xml) and generates the real build instructions, which `cmake --build` then runs. To remove it, delete that folder and the two links.
 
-**Submodules.** JUCE and NeuralAmpModelerCore live in `third_party/` as git submodules: separate git repos pinned at exact versions inside this one. After cloning this repo, run `git submodule update --init --recursive` once to download them. `--recursive` matters, because NAM core has its own submodules (Eigen, the linear algebra library).
+**Submodules.** JUCE and NeuralAmpModelerCore live in `third_party/` as git submodules: separate git repos pinned at exact versions inside this one. After cloning this repo, run `git submodule update --init --recursive` once to download them. `--recursive` matters, because NAM core has its own submodules (Eigen, the linear algebra library). A third submodule, demucs.cpp (tone match's guitar separation; docs/TONE_MATCH.md), comes down with them; its own vendored submodules are fetched too but never built.
 
 **Python.** `uv` is installed in `~/.local/bin` with a Python 3.10. Use it for the prototypes (`uv run --with numpy --with scipy python prototypes/amp_sim.py`) rather than Apple's Python 3.9.
 

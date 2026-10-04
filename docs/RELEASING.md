@@ -216,3 +216,16 @@ tools/release/update_e2e.sh 0.1.0 0.1.1 --wrong-key some-other.key   # make one 
 | A Mac asks for the microphone after an update | The update was signed with a different certificate (see the key box at the top). |
 | "Check for updates..." is greyed out | A dev build (`AMPSIM_UPDATER` off): only release builds update themselves. |
 | Windows build fails in CI | Expected the first time: none of it has been compiled with MSVC yet. The log says where. |
+
+## Tone match's separation model
+
+Tone match can separate the guitar out of a song with Demucs (docs/TONE_MATCH.md, Stage C). The model's weights (htdemucs_6s, 54,885,744 bytes) are **not** in the app, in content/, or in any release: the app downloads them the first time someone switches separation on, from the Demucs author's Hugging Face repository at a pinned commit, checks the size and SHA-256 (`GuitarSeparator::weightsUrl`, `weightsSha256`, `weightsBytes` in `src/tonematch/GuitarSeparator.h`), converts them to demucs.cpp's format in `~/Library/Application Support/BellyDSP/Separation` (`%APPDATA%\BellyDSP\Separation`), and deletes the download.
+
+Why not a release asset on SeanSnaider/BellyDSP: the Demucs code is MIT, but nothing states a licence for the weights, and their training data includes MUSDB18, whose tracks are for academic use only. Re-hosting them would be redistributing something nobody has licensed to us (ASSUMPTIONS TM14). The upstream URL is pinned to a commit, so it can't change under us; if it ever disappears, separation reports that it couldn't download and everything else keeps working.
+
+If Sean decides to host them after all (for example after getting the author's permission):
+1. Upload the same file (`5c90dfd2.safetensors`, same SHA-256) as an asset of a release on the public repo, for example a release tagged `models-1`.
+2. Change `weightsUrl` to `https://github.com/SeanSnaider/BellyDSP/releases/download/models-1/5c90dfd2.safetensors`. The SHA-256 and size stay the same, so nothing else changes.
+3. Add the weights' licence to the notices (tools/notices/make_notices.cmake) next to Demucs's.
+
+Nothing in `release.sh` touches the weights. `ampsim_separate` (tools/separate) runs the same download and separation from the command line, and prints the time per minute of audio and the peak memory.
