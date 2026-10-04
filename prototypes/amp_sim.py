@@ -9,7 +9,7 @@ Signal chain:
   -> OVERSAMPLED asymmetric tanh (tube-ish clipping) -> DC blocker
   -> tone stack (Yeh & Smith 2006 circuit model, knobs interact like a real amp)
   -> power amp (softer symmetric clipping)
-  -> cab sim (real IR if you give one, crude filter fallback otherwise)
+  -> cab sim (real IR if you give one, crude filter fallback otherwise; --no-cab skips it)
 
 Usage:
   python amp_sim.py                         # no input: synthesizes a test riff
@@ -18,6 +18,7 @@ Usage:
   python amp_sim.py my_di.wav --oversample 1   # turn off oversampling, hear aliasing
   python amp_sim.py my_di.wav --channel clean --bass 4 --mid 6 --treble 7
   python amp_sim.py my_di.wav --all-channels   # render every channel for A/B
+  python amp_sim.py my_di.wav --no-cab         # amp only (what the built-in captures were trained on)
 
 Knobs are 0-10 like a real amp.
 """
@@ -232,7 +233,7 @@ CHANNELS = {
 # ---------------------------------------------------------------- the amp
 
 def amp(x, fs, channel="crunch", gain=5.0, bass=5.0, mid=5.0, treble=5.0,
-        master=5.0, oversample=4, ir=None):
+        master=5.0, oversample=4, ir=None, cab=True):
     ch = CHANNELS[channel]
 
     # 1. Input: get rid of sub-bass rumble that would make distortion muddy
@@ -259,7 +260,9 @@ def amp(x, fs, channel="crunch", gain=5.0, bass=5.0, mid=5.0, treble=5.0,
     master_mult = 10 ** ((master - 5) / 10)
     x = oversampled(lambda s: np.tanh(master_mult * s), x, oversample)
 
-    # 6. Cabinet
+    # 6. Cabinet (cab=False stops at the power amp: an "amp only" output, like a load box's line out)
+    if not cab:
+        return x
     if ir is not None:
         x = fftconvolve(x, ir)[: len(x)]
     else:
@@ -287,6 +290,7 @@ def main():
     for knob in ["gain", "bass", "mid", "treble", "master"]:
         p.add_argument(f"--{knob}", type=float, default=5.0, help="0-10")
     p.add_argument("--oversample", type=int, default=4)
+    p.add_argument("--no-cab", action="store_true", help="skip the cab sim: amp only")
     args = p.parse_args()
 
     if args.input:
@@ -307,7 +311,7 @@ def main():
     channels = list(CHANNELS) if args.all_channels else [args.channel]
     for ch in channels:
         y = amp(x, fs, ch, args.gain, args.bass, args.mid, args.treble,
-                args.master, args.oversample, ir)
+                args.master, args.oversample, ir, cab=not args.no_cab)
         out = args.out.replace(".wav", f"_{ch}.wav") if args.all_channels else args.out
         save_wav(out, fs, y)
         print(f"Wrote {out}")

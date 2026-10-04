@@ -27,6 +27,8 @@ struct Options
     int blockSize = 128;
     int slots = 1;
     bool normalize = true;
+    juce::String boost; // "", or the boost block's mode in front of the amp: clean, tight, screamer
+    float boostLevelDb = 0.0f;
 };
 
 void printUsage()
@@ -41,6 +43,9 @@ void printUsage()
                  "  --block <samples>      block size (default 128)\n"
                  "  --slots <n>            load the model into n of the 3 always-running slots (default 1)\n"
                  "  --no-normalize         skip loudness normalization of the model\n"
+                 "  --boost <mode>         switch the Boost block on in front of the amp: clean, tight, or screamer\n"
+                 "                         (the TS808 circuit at minimum drive, tone at noon; 0 dBFS = +12 dBu)\n"
+                 "  --boost-level <dB>     the boost's Level (default 0)\n"
                  "  --compare <ref.wav>    report the difference between the output and a reference\n";
 }
 
@@ -68,11 +73,16 @@ bool parse (int argc, char* argv[], Options& o)
         else if (a == "--block" && hasValue)         o.blockSize = juce::String (argv[++i]).getIntValue();
         else if (a == "--slots" && hasValue)         o.slots = juce::String (argv[++i]).getIntValue();
         else if (a == "--no-normalize")              o.normalize = false;
+        else if (a == "--boost" && hasValue)         o.boost = argv[++i];
+        else if (a == "--boost-level" && hasValue)   o.boostLevelDb = juce::String (argv[++i]).getFloatValue();
         else if (a.startsWith ("--"))                return false;
         else                                         positional.push_back (fileArg (argv[i]));
     }
 
     if (positional.size() != 2 || o.blockSize < 1 || o.slots < 1)
+        return false;
+
+    if (o.boost.isNotEmpty() && ! juce::StringArray { "clean", "tight", "screamer" }.contains (o.boost))
         return false;
 
     o.input = positional[0];
@@ -205,6 +215,20 @@ int main (int argc, char* argv[])
         const auto a = chain.cab.getAlignment();
         std::cout << "Close mics aligned: mic 1 +" << a.delayMic1 << ", mic 2 +" << a.delayMic2 << " samples"
                   << (a.invertMic2 ? ", mic 2 inverted" : "") << "\n";
+    }
+
+    // The boost, if asked for (tools/content/make_default_captures.py renders Monolith's boost with it).
+    // Settings and bypass before prepare(), which snaps both, so it's fully on from the first sample.
+    if (o.boost.isNotEmpty())
+    {
+        ampsim::Boost::Settings b;
+        b.mode = o.boost == "screamer" ? ampsim::Boost::Mode::screamer
+               : o.boost == "tight"    ? ampsim::Boost::Mode::tight
+                                       : ampsim::Boost::Mode::clean;
+        b.levelDb = o.boostLevelDb;
+        chain.boost.setSettings (b);
+        chain.setBypassed (ampsim::Chain::Slot::boost, false);
+        std::cout << "Boost: " << o.boost << ", level " << juce::String (o.boostLevelDb, 1) << " dB\n";
     }
 
     // Set the gains before prepare(), which snaps them, so the render doesn't start with a ramp.
