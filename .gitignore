@@ -28,3 +28,6 @@ __pycache__/
 # Captures and training runs (docs/CAPTURING.md): recordings and trained models stay local until bundled
 /captures
 /trained
+
+# The website's data, generated at deploy time by tools/site/build_site_data.py (docs/WEBSITE.md)
+/site/data/

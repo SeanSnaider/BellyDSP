@@ -1,0 +1,74 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+
+# Download stats: once a day, saves every release asset's download_count (GitHub's own anonymous
+# counter) as dated rows in downloads.csv on the `stats` branch, which holds nothing else, so main's
+# history stays clean. The Pages workflow runs after this one and turns the history into the stats page
+# (docs/WEBSITE.md, "How counting works").
+#
+# UNTESTED on GitHub: it can't run until the public repo exists. The scripts it runs are tested locally
+# (tools/site/test_site.py).
+#
+# This file lives in both repos (docs/RELEASING.md). It runs on its schedule only in the public
+# SeanSnaider/BellyDSP (a schedule event carries no repository object to test for "private", so the
+# check is the repo's name), and by hand anywhere (Actions > Download stats > Run workflow). It counts
+# the releases of RELEASES_REPO in tools/release/release.conf either way, and writes the stats branch of
+# the repo it runs in.
+
+name: Download stats
+
+on:
+  schedule:
+    - cron: '17 6 * * *'     # 06:17 UTC daily (off the hour, when GitHub's scheduler is busiest)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: download-stats
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.repository == 'SeanSnaider/BellyDSP' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write          # to push the stats branch, with this run's own GITHUB_TOKEN
+    steps:
+      - name: Check out (for the scripts)
+        uses: actions/checkout@v4
+
+      - name: Check out the stats branch (or start it)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin stats >/dev/null; then
+            git fetch --depth=1 origin stats
+            git worktree add -B stats stats-branch FETCH_HEAD
+          else
+            echo "No stats branch yet: starting one with no history (git worktree add --orphan)."
+            git worktree add --orphan -b stats stats-branch
+            cat > stats-branch/README.md <<'EOF'
+          # BellyDSP download stats
+
+          `downloads.csv` has one row per release asset per day: GitHub's download_count for that file
+          on that date (UTC). Written once a day by `.github/workflows/stats.yml` on `main`; read by the
+          website's stats page (`docs/WEBSITE.md` on `main` explains the columns and the estimates).
+          Nothing here is personal: these are GitHub's public, anonymous per-file counters.
+          EOF
+          fi
+
+      - name: Append today's counts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 tools/site/stats_snapshot.py --csv stats-branch/downloads.csv
+
+      - name: Commit and push the stats branch
+        run: |
+          cd stats-branch
+          git add -A
+          if git diff --cached --quiet; then echo "No change."; exit 0; fi
+          git commit -q -m "Download counts for $(date -u +%Y-%m-%d)"
+          git push origin stats

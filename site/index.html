@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en" data-root="./">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BellyDSP</title>
+<meta name="description" content="BellyDSP is a free, open-source guitar amp sim and multi-effects app for macOS and Windows: neural amp captures, a three-mic cab, pedals, effects, a tuner, presets, scenes, and MIDI, with zero added latency.">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0c0c">
+<link rel="canonical" href="https://bellydsp.com/">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preload" href="assets/fonts/Geist-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/css/site.css">
+<meta property="og:title" content="BellyDSP">
+<meta property="og:description" content="A free, open-source guitar amp sim and multi-effects app for macOS and Windows.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://bellydsp.com/">
+<meta property="og:image" content="https://bellydsp.com/assets/img/amp-glass-1280.webp">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="./">BellyDSP</a>
+    <nav class="nav" aria-label="Site">
+      <a href="./" aria-current="page">Overview</a>
+      <a href="download/">Download</a>
+      <a href="stats/">Stats</a>
+      <a href="https://github.com/SeanSnaider/BellyDSP">Source</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+    <div class="hero">
+      <p class="eyebrow">Free and open source. macOS and Windows.</p>
+      <h1>A guitar amp sim and <span class="nowrap">multi-effects</span> app.</h1>
+      <p class="lead">Plug your guitar into an audio interface and play through neural amp captures, a three-mic cab, drives, and a full set of effects, with a tuner, presets, scenes, and MIDI footswitch control. Every block runs with zero added latency.</p>
+      <div class="actions">
+        <a class="btn primary" href="download/">Download</a>
+        <a class="btn" href="https://github.com/SeanSnaider/BellyDSP">View the source</a>
+      </div>
+      <p class="version-line" data-version-line hidden></p>
+      <figure class="shot">
+        <img src="assets/img/amp-glass-1280.webp"
+             srcset="assets/img/amp-glass-1280.webp 1280w, assets/img/amp-glass-1920.webp 1920w"
+             sizes="(min-width: 1184px) 1120px, calc(100vw - 32px)"
+             width="1280" height="760" fetchpriority="high"
+             alt="The BellyDSP window on the Amp page: the Glass amp head with its seven knobs, the output spectrum below it, the input, gate, and output controls, and the signal chain along the bottom.">
+      </figure>
+    </div>
+
+    <!-- TODO(Sean): demo video. When it's recorded, add a section here: a <video controls preload="none"
+         poster="assets/img/amp-glass-1280.webp"> with the file in assets/media/ (H.264 MP4, a few MB at most;
+         keep it self-hosted, no embeds, so the site makes no third-party requests), plus a caption saying
+         what's played and on which settings. Don't claim how it sounds; let it play. -->
+
+    <section aria-labelledby="what">
+      <div class="section-head">
+        <h2 id="what">What it does</h2>
+        <p class="dim">One signal chain, in this order. Click a block in the app to open its page, or its dot to bypass it.</p>
+      </div>
+      <div class="chain" aria-label="Signal chain">
+        <span>Input</span><i></i><span>Pre FX</span><i></i><span>Amp</span><i></i><span>EQ</span><i></i><span>Cab</span><i></i><span>Post FX</span><i></i><span>Output</span>
+      </div>
+      <div class="grid two">
+        <div class="card">
+          <h3>Three amp slots, always running</h3>
+          <p>Each slot plays a NAM capture (any amp-only <code>.nam</code> file) and stays running in the background, so switching between them is instant and click-free, from the panel or a MIDI footswitch (program change 1, 2, 3). Each slot is loudness-matched, calibrated to its capture's recorded input level, and has its own trims and tone controls.</p>
+          <p>Every slot comes with a built-in capture, clean, crunch, and high gain, so there's something to play the moment it opens. For now they're trained from BellyDSP's own amp model; captures of real amps will replace them.</p>
+        </div>
+        <div class="card">
+          <h3>A cab with mics you can move</h3>
+          <p>Two close mics and a stereo room mic, each an impulse response with level, pan, polarity, delay, and mute, with automatic phase alignment and low and high cuts. Load a cab pack and drag a close mic across the speaker to morph between positions.</p>
+          <p>21 public-domain (CC0) cab IRs are built in, from a vintage and a modern 4x12. Load your own <code>.wav</code> IRs too.</p>
+        </div>
+        <div class="card">
+          <h3>Pre FX</h3>
+          <ul>
+            <li>Gate before the amp and after it, linked, listening to the clean guitar signal, with adaptive release and a Learn button</li>
+            <li>Compressor, in a studio and a pedal style</li>
+            <li>Boost and overdrive, modelled from circuit schematics and oversampled, with several modes each</li>
+            <li>EQ: a 9-band graphic or a 5-band parametric</li>
+          </ul>
+          <p>Drag the blocks to reorder them.</p>
+        </div>
+        <div class="card">
+          <h3>Post FX</h3>
+          <ul>
+            <li>EQ and compressor</li>
+            <li>Harmonizer: up to four voices in key, reading the pitch from the clean guitar signal</li>
+            <li>Multivoicer: up to eight voices for stacks and doubles</li>
+            <li>Bloom: bitcrusher, phaser, and flanger in one block, in any order</li>
+            <li>Chorus, delay (digital, analog, tape; stereo, ping-pong, dual; ducking), and reverb (room, hall, plate; freeze; shimmer)</li>
+          </ul>
+          <p>Delay and reverb tails ring on when you switch them off. Drag to reorder.</p>
+        </div>
+        <div class="card">
+          <h3>Tuner, tempo, presets, scenes, MIDI</h3>
+          <ul>
+            <li>A tuner with a needle on a &plusmn;50 cent scale, four tunings, A4 from 430 to 450 Hz, and a mute</li>
+            <li>One tempo, tapped from the panel or a footswitch; delay, chorus, phaser, flanger, and reverb pre-delay can sync to it</li>
+            <li>Presets with eight scenes each, undo and redo, A/B compare, and five factory presets</li>
+            <li>Right-click any control to MIDI-learn a footswitch or an expression pedal; mappings save with the preset</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>A real-time audio engine</h3>
+          <p>Zero added latency. The one exception is opt-in: the flanger's through-zero setting delays the signal by 5 ms while it's switched on, and says so. The audio thread never allocates memory, frees it, or waits on a lock, and an automated test checks that for every feature. With every block on, it uses about a quarter of the time a 128-sample buffer allows on the developer's Apple silicon Mac.</p>
+          <p>It runs at 48 kHz, the rate NAM captures are trained at.</p>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="look">
+      <div class="section-head">
+        <h2 id="look">A look around</h2>
+        <p class="dim">Snapshots of the app, rendered by its own test suite.</p>
+      </div>
+      <!-- TODO(Sean): audio demos. Add short clips (Opus in .webm or AAC in .m4a, self-hosted in assets/media/)
+           next to the matching screenshot: each built-in amp, the cab's mic positions, the harmonizer, a scene
+           switch. Use <audio controls preload="none"> with a caption saying what's playing. No embeds. -->
+      <div class="gallery">
+        <figure>
+          <a href="assets/img/amp-ember-1280.webp"><img src="assets/img/amp-ember-640.webp" srcset="assets/img/amp-ember-640.webp 640w, assets/img/amp-ember-1280.webp 1280w" sizes="(min-width: 720px) 50vw, 100vw" width="640" height="380" loading="lazy" decoding="async" alt="The Amp page with the Ember head selected: a red amp with a gold script badge and seven knobs."></a>
+          <figcaption>Ember, the crunch slot. Each slot has its own head.</figcaption>
+        </figure>
+        <figure>
+          <a href="assets/img/amp-monolith-1280.webp"><img src="assets/img/amp-monolith-640.webp" srcset="assets/img/amp-monolith-640.webp 640w, assets/img/amp-monolith-1280.webp 1280w" sizes="(min-width: 720px) 50vw, 100vw" width="640" height="380" loading="lazy" decoding="async" alt="The Amp page with the Monolith head selected: a black amp with a grille and an emerald-lit badge."></a>
+          <figcaption>Monolith, the high-gain slot, with the live output spectrum.</figcaption>
+        </figure>
+        <figure>
+          <a href="assets/img/cab-1280.webp"><img src="assets/img/cab-640.webp" srcset="assets/img/cab-640.webp 640w, assets/img/cab-1280.webp 1280w" sizes="(min-width: 720px) 50vw, 100vw" width="640" height="380" loading="lazy" decoding="async" alt="The Cab page: the built-in cab list on the left, a speaker with mic markers in the middle, and the controls for mics A and B on the right."></a>
+          <figcaption>The cab: built-in IRs, the speaker, and two close mics.</figcaption>
+        </figure>
+        <figure>
+          <a href="assets/img/harmonizer-1280.webp"><img src="assets/img/harmonizer-640.webp" srcset="assets/img/harmonizer-640.webp 640w, assets/img/harmonizer-1280.webp 1280w" sizes="(min-width: 720px) 50vw, 100vw" width="640" height="380" loading="lazy" decoding="async" alt="The Harmonizer tab: key and scale menus, a custom scale row, glide and level knobs, and four voice rows with steps, octave, level, and pan."></a>
+          <figcaption>The harmonizer: a key, a scale, and four voices.</figcaption>
+        </figure>
+        <figure>
+          <a href="assets/img/bloom-1280.webp"><img src="assets/img/bloom-640.webp" srcset="assets/img/bloom-640.webp 640w, assets/img/bloom-1280.webp 1280w" sizes="(min-width: 720px) 50vw, 100vw" width="640" height="380" loading="lazy" decoding="async" alt="The Bloom tab: bitcrush, phaser, and flanger panels side by side, with their order shown at the top."></a>
+          <figcaption>Bloom: bitcrush, phaser, and flanger in any order.</figcaption>
+        </figure>
+        <figure>
+          <a href="assets/img/delay-1280.webp"><img src="assets/img/delay-640.webp" srcset="assets/img/delay-640.webp 640w, assets/img/delay-1280.webp 1280w" sizes="(min-width: 720px) 50vw, 100vw" width="640" height="380" loading="lazy" decoding="async" alt="The Delay tab: digital dual mode synced to tempo, with time, feedback, mix, tone, modulation, and ducking controls, and a tap tempo button."></a>
+          <figcaption>The delay, synced to the shared tempo.</figcaption>
+        </figure>
+        <figure>
+          <a href="assets/img/reverb-1280.webp"><img src="assets/img/reverb-640.webp" srcset="assets/img/reverb-640.webp 640w, assets/img/reverb-1280.webp 1280w" sizes="(min-width: 720px) 50vw, 100vw" width="640" height="380" loading="lazy" decoding="async" alt="The Reverb tab: plate mode with freeze and pre-delay sync switches, and knobs for space, tone, motion, and shimmer."></a>
+          <figcaption>The reverb: room, hall, or plate, with freeze and shimmer.</figcaption>
+        </figure>
+        <figure>
+          <a href="assets/img/tuner-1280.webp"><img src="assets/img/tuner-640.webp" srcset="assets/img/tuner-640.webp 640w, assets/img/tuner-1280.webp 1280w" sizes="(min-width: 720px) 50vw, 100vw" width="640" height="380" loading="lazy" decoding="async" alt="The tuner page reading E2 at 82.41 Hz, plus 0 cents, in tune, with the six strings of standard tuning below."></a>
+          <figcaption>The tuner, in tune on the low E.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section aria-labelledby="open">
+      <div class="grid two">
+        <div>
+          <h2 id="open">Free and open source</h2>
+          <p class="dim">BellyDSP is free software under the GNU Affero General Public License, version 3 or later (AGPL-3.0-or-later). You can use it, study it, change it, and share it. It comes with no warranty.</p>
+          <p class="dim">Every release is built from a commit that's public and tagged first, so the exact source of every download is on GitHub. In the app, BellyDSP (top left) &gt; Source code for this version opens it.</p>
+          <div class="actions">
+            <a class="btn" href="https://github.com/SeanSnaider/BellyDSP">Source on GitHub</a>
+            <a class="btn" href="https://github.com/SeanSnaider/BellyDSP/blob/main/LICENSE">The licence</a>
+          </div>
+        </div>
+        <div>
+          <h2>Bring your own tones</h2>
+          <p class="dim">The amps are NAM captures: load any amp-only <code>.nam</code> file into a slot, or make your own with NAM's open trainer. The cab takes any impulse response as a <code>.wav</code> file. Presets remember which files they use and find them again if you move them.</p>
+          <p class="dim">The built-in IRs are public domain (CC0). The built-in captures are Sean's, under CC BY 4.0.</p>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="credits">
+      <div class="section-head">
+        <h2 id="credits">Credits</h2>
+        <p class="dim">BellyDSP is made by Sean Snaider and stands on these open projects. Their licences ship with the app (BellyDSP &gt; About / licenses).</p>
+      </div>
+      <dl class="credits">
+        <dt><a href="https://github.com/sdatkinson/NeuralAmpModelerCore">NeuralAmpModelerCore</a></dt>
+        <dd>The official engine of NAM (Neural Amp Modeler), by Steven Atkinson. It runs every amp capture. MIT licence.</dd>
+        <dt><a href="https://github.com/juce-framework/JUCE">JUCE</a></dt>
+        <dd>The framework for audio, the app window, and the interface, used under the AGPLv3.</dd>
+        <dt>Eigen</dt>
+        <dd>The linear algebra library NAM runs on. MPL 2.0.</dd>
+        <dt><a href="https://github.com/nlohmann/json">nlohmann/json</a></dt>
+        <dd>Reads NAM's capture files. MIT licence.</dd>
+        <dt><a href="https://github.com/sparkle-project/Sparkle">Sparkle</a> and <a href="https://github.com/vslavik/winsparkle">WinSparkle</a></dt>
+        <dd>The updaters on macOS and Windows. MIT licence.</dd>
+        <dt><a href="https://github.com/vercel/geist-font">Geist</a> and <a href="https://github.com/undercasetype/Fraunces">Fraunces</a></dt>
+        <dd>The typefaces in the app (Geist on this site too, served from here). SIL Open Font License.</dd>
+        <dt>Jester Dyne Productions</dt>
+        <dd>The built-in cab IRs, by Bastian Karschewski, released into the public domain (CC0). Thank you.</dd>
+        <dt>Claude Code</dt>
+        <dd>Sean designed and directed BellyDSP, decided how it should work and look, and plays it; Anthropic's Claude Code wrote much of the code, the tests, and this site under his direction.</dd>
+      </dl>
+    </section>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>&copy; 2026 Sean Snaider. AGPL-3.0-or-later.</span>
+    <span class="spacer"></span>
+    <a href="download/#privacy">Privacy</a>
+    <a href="stats/">Stats</a>
+    <a href="https://github.com/SeanSnaider/BellyDSP">Source</a>
+  </div>
+</footer>
+<script src="assets/js/site.js" defer></script>
+</body>
+</html>
