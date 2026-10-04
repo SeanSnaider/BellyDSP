@@ -79,6 +79,9 @@ step "1. Preflight checks" "Refuse early, before a 10-minute build, if anything 
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "the version must be major.minor.patch, like 0.1.1 (got $VERSION)"
 
 branch="$(git rev-parse --abbrev-ref HEAD)"
+# The commit this release is: checked against public/main here, built, and tagged in step 7. If HEAD
+# moves while the build runs (a commit made meanwhile), step 7 refuses rather than tag something else.
+RELEASE_COMMIT="$(git rev-parse HEAD)"
 if [ "$branch" != main ]; then
     [ $ALLOW_BRANCH = 1 ] || die "releases come from main (you're on $branch). Merge first, or --allow-branch for a test."
     warn "on branch $branch, not main (--allow-branch)"
@@ -297,16 +300,17 @@ fi
 
 step "7. Tag $TAG and push the tag to $PUBLIC_REMOTE" "Before any binary goes out, so the exact source of every download is public at
     $SOURCE_URL/tree/$TAG (the AGPL's Corresponding Source). The tag also starts the Windows build there."
+[ "$(git rev-parse HEAD)" = "$RELEASE_COMMIT" ] || die "HEAD moved during the build (was ${RELEASE_COMMIT:0:7}, now $(git rev-parse --short HEAD)): not tagging. Check out ${RELEASE_COMMIT:0:7} and run again."
 if [ $REUSE_TAG = 1 ]; then
-    ok "reusing tag $TAG at $(git rev-parse --short HEAD)"
+    ok "reusing tag $TAG at ${RELEASE_COMMIT:0:7}"
 else
-    run git tag -a "$TAG" -m "BellyDSP $VERSION"
-    ok "tagged $TAG at $(git rev-parse --short HEAD)"
+    run git tag -a "$TAG" -m "BellyDSP $VERSION" "$RELEASE_COMMIT"
+    ok "tagged $TAG at ${RELEASE_COMMIT:0:7}"
 fi
 run git push "$PUBLIC_REMOTE" "refs/tags/$TAG"
 pushed="$(git ls-remote --tags "$PUBLIC_REMOTE" "refs/tags/$TAG^{}" | cut -f1)"
-[ "$pushed" = "$(git rev-parse HEAD)" ] || die "$PUBLIC_REMOTE doesn't show $TAG at this commit after the push (got '${pushed:-nothing}'): not uploading"
-ok "$PUBLIC_REMOTE has $TAG at $(git rev-parse --short HEAD)"
+[ "$pushed" = "$RELEASE_COMMIT" ] || die "$PUBLIC_REMOTE doesn't show $TAG at ${RELEASE_COMMIT:0:7} after the push (got '${pushed:-nothing}'): not uploading"
+ok "$PUBLIC_REMOTE has $TAG at ${RELEASE_COMMIT:0:7}"
 
 step "8. Publish" "A GitHub release $TAG in $RELEASES_REPO, marked latest, with the files. From now on every installed copy finds it."
 "$REPO_ROOT/tools/release/github_release.sh" "$TAG" "${NOTES:--}" "${assets[@]}"
