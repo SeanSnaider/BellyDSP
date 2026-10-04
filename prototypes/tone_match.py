@@ -41,7 +41,7 @@ Usage (Python through uv, see docs/TONE_MATCH.md):
   uv run --with numpy --with scipy python prototypes/tone_match.py match TARGET.wav DI.wav [--mode same|anything]
   uv run --with numpy --with scipy python prototypes/tone_match.py study [--quick]
   uv run --with numpy --with scipy python prototypes/tone_match.py features
-  uv run --with numpy --with scipy python prototypes/tone_match.py golden tests/fixtures/tone_match
+  uv run --with numpy --with scipy --with lameenc python prototypes/tone_match.py golden tests/fixtures/tone_match
   uv run --python 3.11 --with demucs --with numpy --with scipy python prototypes/tone_match.py study --separation
 
 The renders need the Release build of ampsim_render (cmake --build build -j). They're cached by content
@@ -648,6 +648,7 @@ def synth_reverb(x, seed, rt60=1.4, wet_db=-12.0):
 # =====================================================================================================
 
 CHROMA_LO, CHROMA_HI = 60.0, 2100.0
+CHROMA_SILENCE = 1e-5        # -100 dB re. the loudest chroma value: a silent frame
 _CHROMA_BINS = np.nonzero((FREQS >= CHROMA_LO) & (FREQS < CHROMA_HI))[0]
 _CHROMA_CLASS = (np.round(12.0 * np.log2(FREQS[_CHROMA_BINS] / 440.0)).astype(int) + 69) % 12
 
@@ -657,15 +658,19 @@ def chroma(power):
     ch. 3): each bin from 60 Hz to 2.1 kHz adds its magnitude to its nearest pitch class, the 12 sums
     are log-compressed (log(1 + 100 c), which keeps quiet notes from vanishing next to loud ones) and
     scaled to unit length. Distortion and cabs change a note's timbre far more than its pitch classes,
-    which is why the alignment uses these and not spectra. A silent frame gets an all-equal vector."""
+    which is why the alignment uses these and not spectra. A silent frame (its loudest class 100 dB below
+    the loudest anywhere) gets the all-equal vector."""
     mag = np.sqrt(power[:, _CHROMA_BINS])
     c = np.zeros((power.shape[0], 12))
     for pc in range(12):
         c[:, pc] = mag[:, _CHROMA_CLASS == pc].sum(axis=1)
     c = c / (np.max(c) + TINY)
+    # A frame whose loudest pitch class is 100 dB below the loudest anywhere is silence: its "chroma" would
+    # be rounding noise (and differ between float and double FFTs), so it gets the all-equal vector.
+    quiet = (c.max(axis=1) < CHROMA_SILENCE)[:, None]
     c = np.log1p(100.0 * c)
     norm = np.linalg.norm(c, axis=1, keepdims=True)
-    c = np.where(norm > 1e-9, c / np.maximum(norm, 1e-9), 1.0 / math.sqrt(12.0))
+    c = np.where((norm > 1e-9) & ~quiet, c / np.maximum(norm, 1e-9), 1.0 / math.sqrt(12.0))
     return c
 
 
@@ -1219,6 +1224,92 @@ def feature_study(args):
         print(f"{name:45s} ratio {means.std() / within:5.2f}   per-setting means {np.round(means, 2)}   spread across playing {within:.2f}")
 
 
+GOLDEN_CASES = {
+    "anything": (["lead_d"], 62, 1.0, 0.0, (1, 5.0, (1, -1, 2, 1, 0), "Modern 4x12, dynamic, 75 W, var. 2", None)),
+    "same": (["lead_a"], 63, 0.97, 6.0, (2, -3.0, (2, 0, -3, 1, 1), "Vintage 4x12, dynamic, lower", None)),
+}
+
+
+def golden(args):
+    """Writes tests/fixtures/tone_match: a reference DI and two targets (16-bit WAVs, synthetic), and
+    expected.json, what this prototype computes from exactly those files, for tests/ToneMatchTests.cpp."""
+    out = pathlib.Path(args.dir)
+    out.mkdir(parents=True, exist_ok=True)
+
+    def save16(name, x):
+        q = np.clip(np.round(np.asarray(x) * 32768.0), -32768, 32767).astype(np.int16)
+        wavfile.write(out / name, SR, q)
+        return read_wav(out / name)[1]
+
+    reference = save16("reference_di.wav", synth_di(["lead_a"], 61))
+
+    # An MP3 of the reference's first 2 s (44.1 kHz stereo, 128 kbps), so the C++ test can decode one:
+    # macOS can decode MP3 but has no encoder. Needs `--with lameenc` (LAME, LGPL; a test tool only).
+    try:
+        import lameenc
+        x441 = sps.resample_poly(reference[: 2 * SR], 147, 160)
+        pcm = np.clip(np.round(x441 * 32767.0), -32768, 32767).astype(np.int16)
+        enc = lameenc.Encoder()
+        enc.set_bit_rate(128)
+        enc.set_in_sample_rate(44100)
+        enc.set_channels(2)
+        enc.set_quality(2)
+        (out / "excerpt.mp3").write_bytes(enc.encode(np.repeat(pcm, 2).tobytes()) + enc.flush())
+    except ImportError:
+        print("lameenc not available: excerpt.mp3 not written")
+    expected = {"constants": {"n_fft": N_FFT, "hop": HOP, "bands": COARSE_CENTRES.tolist(), "weights": WEIGHTS.tolist()}}
+
+    # The optimizer on a known function: Rosenbrock from (-1.2, 1).
+    rosen = lambda v: (1.0 - v[0]) ** 2 + 100.0 * (v[1] - v[0] ** 2) ** 2
+    x, f = nelder_mead(rosen, np.array([-1.2, 1.0]), np.array([0.5, 0.5]), np.array([-5.0, -5.0]), np.array([5.0, 5.0]), iters=400, tol=1e-12)
+    expected["nelder_mead"] = {"x": list(map(float, x)), "f": float(f)}
+
+    ra = Analysis(reference)
+    expected["reference_analysis"] = {"frames": int(len(ra.active)), "active": int(ra.active.sum()), "ltas": ra.ltas.tolist(),
+                                      "features": ra.features().tolist(), "weights": ra.weights.tolist()}
+
+    for mode, (parts, seed, tempo, jitter, case) in GOLDEN_CASES.items():
+        slot, gain, tone, cab, eq = case
+        tdi = save16(f"target_di_{mode}.wav", synth_di(parts, seed, tempo=tempo, jitter_ms=jitter))
+        target = save16(f"target_{mode}.wav", render(tdi, slot, gain, tone=tone, cab=cab_named(cab), eq=eq))
+        ta = Analysis(target)
+        e = {"true": {"slot": slot, "gain": gain, "tone": list(tone), "cab": cab},
+             "target_analysis": {"frames": int(len(ta.active)), "active": int(ta.active.sum()), "ltas": ta.ltas.tolist(),
+                                 "weights": ta.weights.tolist(), "features": ta.features().tolist(),
+                                 "level_first": ta.level[:40].tolist(), "chroma_row_10": chroma(ta.power)[10].tolist()}}
+
+        # One candidate, scored as the search scores it: the true slot at a different Gain, a different cab.
+        cslot, cgain, ccab = (slot, gain + 3.0, "Modern 4x12, dynamic, 75 W, var. 4") if mode == "anything" else (slot, 0.0, "Vintage 4x12, dynamic, upper, var. 1")
+        y = render(reference, cslot, cgain)
+        path = None
+        if mode == "same":
+            path, cost = align(ta.power, stft_power(render(reference, cslot, 0.0)))
+            e["alignment"] = {"length": int(len(path)), "mean_cost": cost, "start": path[:5].tolist(), "end": path[-5:].tolist(),
+                              "checksum": int(np.sum(path[:, 0] * 3 + path[:, 1] * 7))}
+        cand = Candidate(cslot, cgain, cab_named(ccab), y, Target(target), mode, path)
+        polished, perr = fit_tone(cand.residual, ta.weights, polish=True)
+        residual = cand.residual - tone_db(polished, COARSE_CENTRES)
+        eq_bands, eq_target = fit_match_eq(residual, ta.weights)
+        e["candidate"] = {"slot": cslot, "gain": cgain, "cab": ccab, "features": cand.analysis.features().tolist(),
+                          "ltas": cand.analysis.ltas.tolist(), "residual": cand.residual.tolist(), "tone_linear": list(map(float, cand.tone)),
+                          "spectral": cand.spectral, "distortion": cand.nl, "tone_polished": list(map(float, polished)),
+                          "tone_polished_error": perr,
+                          "eq_input": residual.tolist(), "eq": [[k, f, g, q] for k, f, g, q in eq_bands],
+                          "eq_curve": eq_db(eq_bands, COARSE_CENTRES).tolist(),
+                          "eq_error": weighted_rms_centred(residual - eq_db(eq_bands, COARSE_CENTRES), ta.weights)}
+
+        r = match(target, reference, mode, log=lambda *a: None)
+        e["match"] = {k: r[k] for k in ("slot", "amp", "gain_db", "tone_db", "cab", "eq", "spectral_error_db", "spectral_error_after_eq_db",
+                                         "distortion_distance", "closeness", "renders", "candidates")}
+        e["match"]["combined"] = r["spectral_error_after_eq_db"] + LAMBDA * r["distortion_distance"]
+        expected[mode] = e
+        print(f"{mode}: true {AMPS[slot]} {gain:+.1f} {cab}; matched {r['amp']} {r['gain_db']:+.1f} {r['cab']}, "
+              f"spectral {r['spectral_error_after_eq_db']:.2f} dB, distortion {r['distortion_distance']:.2f}")
+
+    (out / "expected.json").write_text(json.dumps(expected, indent=1))
+    print(f"wrote {out}")
+
+
 def match_files(args):
     target = to_mono_48k(args.target)
     di = to_mono_48k(args.di)
@@ -1245,9 +1336,13 @@ def main():
     st.add_argument("--json", help="write the rows here")
     st.add_argument("--separation", action="store_true", help="also the Demucs cases (needs uv run --with demucs)")
     sub.add_parser("features", help="the distortion feature study")
+    gd = sub.add_parser("golden", help="write the C++ golden fixtures")
+    gd.add_argument("dir")
     args = ap.parse_args()
     if args.cmd == "features":
         feature_study(args)
+    elif args.cmd == "golden":
+        golden(args)
     elif args.cmd == "match":
         match_files(args)
     elif args.cmd == "study":

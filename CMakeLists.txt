@@ -177,6 +177,13 @@ set(AMPSIM_DSP_SOURCES
     src/dsp/Psola.cpp
     src/dsp/Multivoicer.cpp)
 
+# Tone match (docs/TONE_MATCH.md): the analysis, the search, and reading audio files. Offline, on worker
+# threads; never on the audio thread.
+set(AMPSIM_TONEMATCH_SOURCES
+    src/tonematch/ToneMatchAnalysis.cpp
+    src/tonematch/ToneMatcher.cpp
+    src/tonematch/AudioFileInput.cpp)
+
 # The GUI (Phase 11; the design is docs/ui/amp-ui-handoff/): the tokens and fonts, the LookAndFeel, the
 # components, and the pages.
 set(AMPSIM_UI_SOURCES
@@ -286,6 +293,7 @@ target_sources(BellyDSP PRIVATE
     src/Presets.cpp
     src/MidiMap.cpp
     src/Scenes.cpp
+    ${AMPSIM_TONEMATCH_SOURCES}
     ${AMPSIM_DSP_SOURCES})
 # The factory presets (BUILD_PLAN "Presets and scenes": the five style presets), embedded as BinaryData.
 juce_add_binary_data(AmpSimFactoryPresets SOURCES
@@ -475,6 +483,7 @@ target_sources(ampsim_tests PRIVATE
     tests/ReleaseTests.cpp
     tests/MigrationTests.cpp
     tests/CaptureTests.cpp
+    tests/ToneMatchTests.cpp
     tools/capture/CaptureEngine.cpp
     src/PluginProcessor.cpp
     src/PluginEditor.cpp
@@ -485,6 +494,7 @@ target_sources(ampsim_tests PRIVATE
     src/Presets.cpp
     src/MidiMap.cpp
     src/Scenes.cpp
+    ${AMPSIM_TONEMATCH_SOURCES}
     ${AMPSIM_DSP_SOURCES})
 target_include_directories(ampsim_tests PRIVATE src tests tools/capture)
 target_compile_definitions(ampsim_tests PRIVATE
