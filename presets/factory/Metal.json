@@ -1,7 +1,7 @@
 {
   "format_version": 2,
   "name": "Metal",
-  "notes": "Slots 1 to 3 start on the built-in captures, Glass (clean), Ember (crunch), and Monolith (high gain, with a Screamer boost built in): stand-ins until your own. Scenes: Rhythm on Monolith, Crunch on Ember, Clean on Glass. Close mic 1 starts on a built-in modern 4x12 IR (pick another on the Cab page). Swap in your own captures; these settings are starting points to tune by ear.",
+  "notes": "Slots 1 to 3 start on the built-in gain sets, Glass (clean to the edge of breakup), Ember (light to heavy crunch), and Monolith (tight high gain to a saturated lead, with a Screamer boost built in): stand-ins until your own. Scenes: Rhythm on Monolith at Gain 2.5 behind the Tight boost (a high-pass, at 0 dB of level), less gain than Tech Death; Crunch on Ember at 7.5; Clean on Glass at 5. Close mic 1 starts on a built-in modern 4x12 IR (pick another on the Cab page). Swap in your own captures; these settings are starting points to tune by ear.",
   "parameters": {
     "amp_slot": 2,
     "gate_a_on": 1,
@@ -11,7 +11,7 @@
     "gate_a_release": 120.0,
     "boost_on": 1,
     "boost_mode": 1,
-    "boost_level": 3.0,
+    "boost_level": 0.0,
     "boost_tight_freq": 120.0,
     "boost_mid": 4.0,
     "cab_lowcut_on": 1,
@@ -19,7 +19,28 @@
     "reverb_on": 1,
     "reverb_engine": 1,
     "reverb_mix": 12.0,
-    "reverb_decay": 1.5
+    "reverb_decay": 1.5,
+    "amp1_input_trim": 0.0,
+    "amp1_bass": 1.2,
+    "amp1_mid": 0.0,
+    "amp1_treble": 1.2,
+    "amp1_presence": 0.0,
+    "amp1_depth": 0.0,
+    "amp1_output_trim": 0.0,
+    "amp2_input_trim": 12.0,
+    "amp2_bass": 0.0,
+    "amp2_mid": 0.0,
+    "amp2_treble": 1.2,
+    "amp2_presence": 1.2,
+    "amp2_depth": 0.0,
+    "amp2_output_trim": 0.0,
+    "amp3_input_trim": -12.0,
+    "amp3_bass": 1.2,
+    "amp3_mid": -1.2,
+    "amp3_treble": 2.4,
+    "amp3_presence": 1.2,
+    "amp3_depth": 1.2,
+    "amp3_output_trim": 0.0
   },
   "amps": [
     {

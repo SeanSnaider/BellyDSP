@@ -42,7 +42,7 @@ struct Timing
 
 /// The processor on `input` in 128-sample buffers, timing each callback and counting the audio thread's
 /// allocations, frees, and locks.
-Timing play (AmpSimProcessor& p, const std::vector<float>& input)
+Timing play (AmpSimProcessor& p, const std::vector<float>& input, const std::function<void (size_t block)>& beforeBlock = {})
 {
     juce::AudioBuffer<float> buffer (2, blockSize);
     juce::MidiBuffer midi;
@@ -51,6 +51,8 @@ Timing play (AmpSimProcessor& p, const std::vector<float>& input)
     Timing t;
     for (size_t start = 0; start + blockSize <= input.size(); start += blockSize)
     {
+        if (beforeBlock)
+            beforeBlock (start / blockSize); // the message thread's side, outside the timing
         buffer.clear();
         buffer.copyFrom (0, 0, input.data() + start, blockSize);
         rtcheck::begin();
@@ -140,7 +142,36 @@ public:
         p.runHousekeeping();
         const auto heaviest = play (p, input);
 
-        for (const auto* t : { &bare, &everything, &heaviest })
+        // Gain sets (BUILD_PLAN "Amp gain"): the built-ins run one step model per slot on a step (the three runs
+        // above, at the default Gain 5). Between steps each slot runs two, and while a Gain moves it can run a third,
+        // warming ahead. The heaviest settings again with every slot between two steps, then with all three Gains
+        // sweeping 0 to 10 and back at once (more than a scene change does).
+        Timing between, sweeping;
+        if (builtIns)
+        {
+            using GainKnob = ampsim::AmpSection::GainKnob;
+            for (int s = 0; s < 3; ++s)
+                setParam (p, AmpSimProcessor::ampParamId (s, "input_trim"), GainKnob::dbForPosition (6.25f));
+            p.runHousekeeping();
+            play (p, std::vector<float> (blockSize * 40, 0.0f)); // reach the positions
+            between = play (p, input);
+            int maxModels = 0;
+            sweeping = play (p, input, [&] (size_t block)
+            {
+                const auto phase = std::fmod ((double) block * blockSize / fs, 1.6) / 1.6; // 0 -> 10 -> 0 every 1.6 s
+                const auto position = (float) (10.0 * (phase < 0.5 ? 2.0 * phase : 2.0 - 2.0 * phase));
+                for (int s = 0; s < 3; ++s)
+                {
+                    setParam (p, AmpSimProcessor::ampParamId (s, "input_trim"), GainKnob::dbForPosition (s == 1 ? 10.0f - position : position));
+                    maxModels = std::max (maxModels, p.getChain().amp.slot (s).model.getRunningSteps());
+                }
+            });
+            expectEquals (maxModels, ampsim::NamAmp::maxRunningSteps);
+            expectLessThan (between.mean, 0.6 * deadlineMicros);
+            expectLessThan (sweeping.mean, 0.7 * deadlineMicros);
+        }
+
+        for (const auto* t : { &bare, &everything, &heaviest, &between, &sweeping })
         {
             expectEquals (t->counts.allocations, 0L);
             expectEquals (t->counts.frees, 0L);
@@ -153,7 +184,12 @@ public:
         logMessage ("  -> " + captures + ", every block on (both gates, both compressors, Screamer boost, Distortion at 4x, harmonizer with 2 voices, multivoicer 4 voices, "
                     "Bloom with all three, Tri chorus, tape delay, Hall with 50% shimmer): " + everything.describe());
         logMessage ("  -> " + captures + ", the heaviest settings (8x drive with the Fuzz, multivoicer Mono with 8 voices, 4 harmonies): " + heaviest.describe());
-        logMessage ("  -> all three runs: 0 allocations, 0 frees, 0 blocking locks on the audio thread (" + juce::String (bare.counts.allocations + everything.counts.allocations
+        if (builtIns)
+        {
+            logMessage ("  -> the heaviest settings with every Gain between two steps (two models per slot, six in all): " + between.describe());
+            logMessage ("  -> the heaviest settings with all three Gains sweeping 0 to 10 and back every 1.6 s (up to three models per slot): " + sweeping.describe());
+        }
+        logMessage ("  -> all the runs: 0 allocations, 0 frees, 0 blocking locks on the audio thread (" + juce::String (bare.counts.allocations + everything.counts.allocations
                     + heaviest.counts.allocations) + " counted). Timed on a normal-priority test thread, with other builds running on the machine: the "
                     "real audio thread runs at real-time priority, so the worst cases here overstate it");
     }

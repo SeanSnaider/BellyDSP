@@ -360,14 +360,14 @@ def update_factory_presets():
 
 # ---- Measuring the sets in the app's engine --------------------------------------------------------------
 
-def measure(work, legacy_dir=None):
+def measure(work, names, legacy_dir=None):
     """Each set (or, with legacy_dir, the old single captures at the matching input trims) rendered by
     ampsim_render with the app's loudness normalization: loudness, crest factor, NL, and THD per position."""
     di = read_mono(VOICING_DI)
     tone = work / "sine_110_-12.wav"
     sf.write(str(tone), sine(), 48000, subtype="FLOAT")
     table = {}
-    for name in AMPS:
+    for name in names:
         rows = []
         for gain in [0.0, 1.25, 2.5, 3.75, 5.0, 6.25, 7.5, 8.75, 10.0]:
             if legacy_dir:
@@ -401,6 +401,7 @@ def main():
     p.add_argument("--package-only", action="store_true", help="gainset.json, the manifest, and the presets' refs")
     p.add_argument("--measure", action="store_true", help="the sets in the app's engine, per Gain position")
     p.add_argument("--measure-legacy", metavar="DIR", help="the same for old single captures <DIR>/<Amp>.nam, Gain = trim")
+    p.add_argument("--render", metavar="PATH", help="another ampsim_render for --measure / --measure-legacy (e.g. an older build's)")
     args = p.parse_args()
     work_root = pathlib.Path(args.work_dir)
     work_root.mkdir(parents=True, exist_ok=True)
@@ -410,8 +411,11 @@ def main():
         for name in names:
             voice(name, AMPS[name], work_root)
         return
+    if args.render:
+        global RENDER
+        RENDER = pathlib.Path(args.render)
     if args.measure or args.measure_legacy:
-        measure(work_root, args.measure_legacy)
+        measure(work_root, names, args.measure_legacy)
         return
 
     def load_results():

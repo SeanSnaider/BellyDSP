@@ -646,6 +646,7 @@ public:
                     if (! p.getScenes().get (i).stored)
                         continue;
                     const auto sceneName = p.getScenes().get (i).name;
+                    setParam (p, "output_limit_on", 0.0f); // the safety limiter (a global setting) off: the raw level
                     expect (p.recallScene (i));
                     p.prepareToPlay (fs, blockSize);
                     play (p, std::vector<float> ((size_t) fs, 0.0f)); // the preset's fade in, the knobs' smoothing
