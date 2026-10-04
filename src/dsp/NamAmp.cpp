@@ -591,7 +591,7 @@ void NamAmp::renderSet (Model& model, const float* input, float* output, int num
     // 5. The blend. Between steps i and i + 1, at a = (p - s_i) / (s_{i+1} - s_i):
     //        y = c(a) ((1 - a) m_i(x) + a m_{i+1}(x)),
     //    a linear crossfade of the two normalized outputs, because neighbouring steps of one amp are highly
-    //    correlated (measured on the built-ins: rho = 0.88 to 0.99), with c(a) the level correction for
+    //    correlated (measured on the built-ins: rho = 0.975 to 1.000), with c(a) the level correction for
     //    their measured correlation (blendCorrection), so the level holds mid-blend too. On a step, a is 0
     //    and only that step is read.
     int segment = juce::jmin (lo, count - 2);
