@@ -28,7 +28,7 @@ rm -f "$ZIP"
 run ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
 info "$(du -h "$ZIP" | cut -f1) $ZIP"
 
-step "Disk image: $(basename "$DMG")" "What friends download first. Compressed (UDZO), read-only."
+step "Disk image: $(basename "$DMG")" "What people download first. Compressed (UDZO), read-only."
 stage="$(mktemp -d)/BellyDSP $VERSION"
 mkdir -p "$stage"
 run ditto "$APP" "$stage/BellyDSP.app"
@@ -44,7 +44,7 @@ run hdiutil create -quiet -volname "BellyDSP $VERSION" -srcfolder "$stage" -fs H
 rm -rf "$(dirname "$stage")"
 info "$(du -h "$DMG" | cut -f1) $DMG"
 
-step "Checking the disk image" "Mount it read-only, list what a friend will see, and verify the app's signature inside it."
+step "Checking the disk image" "Mount it read-only, list what a player will see, and verify the app's signature inside it."
 mnt="$(mktemp -d)"
 run hdiutil attach -quiet -nobrowse -readonly -mountpoint "$mnt" "$DMG"
 ls -la "$mnt" | sed 's/^/      /'

@@ -16,7 +16,7 @@
 # The app is then signed with the hardened runtime (sign_app.sh) and Gatekeeper opens it with no
 # "Open Anyway" step. Note that switching from the self-signed identity to a Developer ID changes the
 # app's designated requirement: Sparkle still installs that update (its Ed25519 signature is valid and
-# the key hasn't changed), but macOS asks friends for the microphone permission once more.
+# the key hasn't changed), but macOS asks everyone for the microphone permission once more.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 

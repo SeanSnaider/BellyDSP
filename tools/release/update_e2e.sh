@@ -96,7 +96,7 @@ running_any="$(osascript -l JavaScript -e "ObjC.import('AppKit'); \$.NSRunningAp
 [ "$running_any" = 0 ] || die "BellyDSP is running; quit it first (the test quits every copy)"
 rm -rf "$SPARKLE_CACHE"
 
-step "1. Install $OLD into a scratch folder" "Unzipped from its update zip, the way a friend's copy would look."
+step "1. Install $OLD into a scratch folder" "Unzipped from its update zip, the way an installed copy would look."
 mkdir -p "$WORK/install"
 run ditto -x -k "$OLD_ZIP" "$WORK/install"
 codesign --verify --deep --strict "$INSTALLED" && ok "installed $(plist_version "$INSTALLED") at $INSTALLED"

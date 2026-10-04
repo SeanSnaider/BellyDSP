@@ -8,7 +8,7 @@
 # signature. An unsigned or ad-hoc signed app gets a new identity every build, so every update would
 # lose the mic permission and Sparkle couldn't tell the new version is from the same developer. A
 # self-signed certificate is free and gives every build the same identity. (It doesn't satisfy
-# Gatekeeper the way a paid Developer ID does: friends still approve the app once on first launch.)
+# Gatekeeper the way a paid Developer ID does: players still approve the app once on first launch.)
 #
 # What it does:
 #   1. makes an RSA key and a certificate (20 years) marked for code signing, with openssl;
@@ -18,7 +18,7 @@
 #      signing never pops a dialog;
 #   4. writes a backup .p12 to ~/.ampsim-release/ and prints the certificate's fingerprint.
 #
-# BACK UP THE .p12 AND ITS PASSWORD (a password manager is good). A new certificate means every friend's
+# BACK UP THE .p12 AND ITS PASSWORD (a password manager is good). A new certificate means every player's
 # app sees a different developer: the next update still installs (the Ed25519 key vouches for it) but
 # macOS asks for the microphone again. Losing it isn't fatal; losing the Ed25519 key is (RELEASING.md).
 #
