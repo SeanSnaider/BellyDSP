@@ -17,6 +17,7 @@
 #include <NAM/get_dsp.h>
 
 #include <filesystem>
+#include <map>
 #include <set>
 
 namespace
@@ -343,8 +344,8 @@ public:
             expectGreaterThan (before, 1.0e-3 * peak);
             expectLessThan (after, 1.0e-6 * peak);
             logMessage ("  -> " + set.steps[0].file.getFileName() + ": receptive field " + juce::String (receptiveField) + " samples (" + juce::String (1000.0 * receptiveField / fs, 1)
-                        + " ms); restarted after 0.3 s off, its output differs from an always-running copy by up to " + dB (before / peak) + " of the peak within the receptive field, and "
-                        + (after == 0.0 ? juce::String ("not at all (bit-identical)") : "at most " + dB (after / peak)) + " after it");
+                        + " ms); restarted after 0.3 s off, its output differs from an always-running copy by up to " + dB (toDb (before / peak)) + " of the peak within the receptive field, and "
+                        + (after == 0.0 ? juce::String ("not at all (bit-identical)") : "at most " + dB (toDb (after / peak))) + " after it");
         }
 
         beginTest ("sweeping Gain live across every step: the scheduled models give exactly the blend of always-running ones (no click), at most three at once");
@@ -431,7 +432,7 @@ public:
                 juce::AudioBuffer<float> wav (1, (int) out.size());
                 wav.copyFrom (0, 0, out.data(), (int) out.size());
                 expect (writeWav (proof.getChildFile (juce::String (names[(size_t) s]).toLowerCase() + "_gain_sweep_amp_only.wav"), wav));
-                logMessage ("  -> " + juce::String (names[(size_t) s]) + ": live sweep vs the always-running blend: max difference " + dB (difference / peak)
+                logMessage ("  -> " + juce::String (names[(size_t) s]) + ": live sweep vs the always-running blend: max difference " + dB (toDb (difference / peak))
                             + " of the peak; buffers with 1/2/3 models running: " + juce::String (runningBlocks[1]) + "/" + juce::String (runningBlocks[2]) + "/"
                             + juce::String (runningBlocks[3]) + " (max " + juce::String (maxRunning) + "); largest sample step " + juce::String (sweepStep, 4) + " vs "
                             + juce::String (staticStep, 4) + " for the steps alone (" + juce::String (sweepStep / staticStep, 3) + "x); longest wait for a warm-up "
@@ -695,4 +696,281 @@ public:
 };
 
 static AmpGainTests ampGainTests;
+
+/// Gain sets across the three always-running slots: only the selected slot blends (BUILD_PLAN "Amp gain",
+/// ASSUMPTIONS AG15 to AG18).
+class AmpGainSlotTests final : public juce::UnitTest
+{
+public:
+    AmpGainSlotTests() : juce::UnitTest ("Amp gain (slot switching)", "ampsim") {}
+
+    void runTest() override
+    {
+        const std::array<const char*, 3> names { "Glass", "Ember", "Monolith" };
+        const auto proof = proofDir().getChildFile ("amp_gain");
+        proof.createDirectory();
+        std::array<juce::File, 3> sets;
+        for (int s = 0; s < 3; ++s)
+            sets[(size_t) s] = presets::builtInCapture (s);
+
+        beginTest ("only the selected slot blends: the others play their nearest step alone, and a switch reaches the exact blend after a warm-up, bit-identical, with no click");
+        {
+            // The three built-in sets in the three slots, every Gain between two steps, and slot switches: slow
+            // ones, a run of switches every 13 to 32 ms (inside the 85 ms warm-up), Gain changes on two slots that
+            // aren't heard (as a scene or a preset makes: one two steps up, one two steps down), and switches to them.
+            const auto input = guitarDI ((int) (9.0 * fs));
+            const auto numBlocks = input.size() / (size_t) blockSize;
+            const auto blockAt = [] (double seconds) { return (size_t) (seconds * fs / blockSize); };
+            const std::array<float, 3> startGain { 6.0f, 3.5f, 8.25f }; // nearest steps 5, 2.5, 7.5
+            const auto knob = [&] (int s, size_t block) -> float
+            {
+                if (block >= blockAt (5.5) && s == 0) return 9.0f; // nearest 10
+                if (block >= blockAt (5.5) && s == 2) return 3.0f; // nearest 2.5
+                return startGain[(size_t) s];
+            };
+            std::map<size_t, int> switches { { blockAt (1.0), 1 }, { blockAt (2.0), 2 }, { blockAt (3.0), 0 }, { blockAt (4.5), 1 },
+                                             { blockAt (6.5), 0 }, { blockAt (7.5), 2 } };
+            const auto rapid = blockAt (3.6);
+            for (const auto& [offset, slot] : std::initializer_list<std::pair<size_t, int>> { { 0, 1 }, { 10, 2 }, { 15, 1 }, { 27, 0 }, { 35, 2 }, { 47, 0 }, { 52, 1 }, { 64, 2 } })
+                switches[rapid + offset] = slot;
+
+            ampsim::AmpSection section;
+            std::array<NamAmp, 3> exact; // per slot: a lone NamAmp blending exactly the whole time, on the same knob
+            std::array<NamAmp::LoadResult, 3> info;
+            for (int s = 0; s < 3; ++s)
+            {
+                info[(size_t) s] = section.slot (s).model.loadModel (sets[(size_t) s], true);
+                section.slot (s).inputTrim.setPosition (startGain[(size_t) s]);
+                exact[(size_t) s].loadModel (sets[(size_t) s], true);
+                exact[(size_t) s].setGain (startGain[(size_t) s]);
+                exact[(size_t) s].prepare (fs, blockSize);
+            }
+            section.prepare (fs, blockSize);
+
+            // Every step of every set rendered alone the whole time (always running, never cold).
+            std::array<std::vector<std::vector<float>>, 3> stepOut;
+            for (int s = 0; s < 3; ++s)
+                for (const auto g : info[(size_t) s].stepGains)
+                    stepOut[(size_t) s].push_back (renderAt (sets[(size_t) s], (float) g, input));
+            const auto nearestOf = [&] (int s, float p)
+            {
+                size_t k = 0;
+                for (size_t i = 1; i < info[(size_t) s].stepGains.size(); ++i)
+                    if (std::abs (info[(size_t) s].stepGains[i] - p) < std::abs (info[(size_t) s].stepGains[k] - p))
+                        k = i;
+                return k;
+            };
+
+            std::vector<float> out (numBlocks * (size_t) blockSize);
+            std::array<std::vector<float>, 3> exactOut;
+            for (auto& e : exactOut)
+                e.resize (out.size());
+            std::vector<bool> switching (numBlocks);
+            std::vector<int> selectedAt (numBlocks);
+            std::array<int, 16> histogram {};
+            std::array<int, 3> slotMax {};
+            int globalMax = 0, switchingMax = 0, unheardMax = 0, nearestBuffers = 0, nearestWrong = 0, holdBuffers = 0, holdWrong = 0;
+
+            // Per stretch between switches, for the selected slot: from which buffer on its output was bit-identical
+            // to the exact reference's to the end of the stretch.
+            struct Stretch { size_t from = 0, to = 0; int slot = 0; size_t identicalFrom = SIZE_MAX; float distance = 0.0f; };
+            std::vector<Stretch> stretches { { 0, 0, 0 } };
+            std::array<bool, 3> endedExact {}; // the slot's last stretch selected ended on its exact blend
+            std::array<bool, 3> wasMoving { true, true, true }; // after the last buffer: moving, or not in nearest mode
+            juce::AudioBuffer<float> buffer (1, blockSize);
+            const ampsim::BlockContext context;
+
+            for (size_t b = 0; b < numBlocks; ++b)
+            {
+                if (const auto it = switches.find (b); it != switches.end())
+                {
+                    auto& last = stretches.back();
+                    last.to = b;
+                    endedExact[(size_t) last.slot] = last.identicalFrom < b;
+                    section.selectSlot (it->second);
+                    const auto p = knob (it->second, b);
+                    stretches.push_back ({ b, 0, it->second, SIZE_MAX, (float) std::abs (p - (float) info[(size_t) it->second].stepGains[nearestOf (it->second, p)]) });
+                }
+                const auto start = b * (size_t) blockSize;
+                for (int s = 0; s < 3; ++s)
+                {
+                    section.slot (s).inputTrim.setPosition (knob (s, b));
+                    exact[(size_t) s].setGain (knob (s, b));
+                    buffer.copyFrom (0, 0, input.data() + start, blockSize);
+                    exact[(size_t) s].process (juce::dsp::AudioBlock<float> (buffer), context);
+                    std::copy (buffer.getReadPointer (0), buffer.getReadPointer (0) + blockSize, exactOut[(size_t) s].begin() + (std::ptrdiff_t) start);
+                }
+                buffer.copyFrom (0, 0, input.data() + start, blockSize);
+                section.process (juce::dsp::AudioBlock<float> (buffer), context);
+                std::copy (buffer.getReadPointer (0), buffer.getReadPointer (0) + blockSize, out.begin() + (std::ptrdiff_t) start);
+                switching[b] = section.isSwitching();
+                selectedAt[b] = section.getSelectedSlot();
+
+                int total = 0;
+                const auto selected = section.getSelectedSlot();
+                for (int s = 0; s < 3; ++s)
+                {
+                    const auto& model = section.slot (s).model;
+                    const auto running = model.getRunningSteps();
+                    total += running;
+                    slotMax[(size_t) s] = std::max (slotMax[(size_t) s], running);
+                    const auto* y = section.getSlotOutput (s);
+                    const auto sameAs = [&] (const std::vector<float>& ref) { return std::equal (y, y + blockSize, ref.begin() + (std::ptrdiff_t) start); };
+
+                    if (s != selected)
+                        unheardMax = std::max (unheardMax, running);
+                    if (s == selected)
+                    {
+                        auto& now = stretches.back();
+                        if (! sameAs (exactOut[(size_t) s]))
+                            now.identicalFrom = SIZE_MAX;
+                        else if (now.identicalFrom == SIZE_MAX)
+                            now.identicalFrom = b;
+                    }
+                    else if (model.getBlend() == NamAmp::Blend::hold)
+                    {
+                        // Fading out after a switch away: it must keep playing exactly what it played (its blend).
+                        if (endedExact[(size_t) s])
+                        {
+                            ++holdBuffers;
+                            holdWrong += sameAs (exactOut[(size_t) s]) ? 0 : 1;
+                        }
+                    }
+                    else if (! model.isGainMoving() && ! wasMoving[(size_t) s])
+                    {
+                        // Not heard and settled (since before this buffer: the buffer the position lands on a step
+                        // still ran its neighbour): one model, the nearest step, exactly that step alone.
+                        const auto k = nearestOf (s, knob (s, b));
+                        ++nearestBuffers;
+                        nearestWrong += (running == 1 && model.isStepRunning ((int) k) && sameAs (stepOut[(size_t) s][k])) ? 0 : 1;
+                    }
+                }
+                for (int s = 0; s < 3; ++s)
+                    wasMoving[(size_t) s] = section.slot (s).model.isGainMoving() || section.slot (s).model.getBlend() != NamAmp::Blend::nearest;
+                ++histogram[(size_t) juce::jlimit (0, 15, total)];
+                globalMax = std::max (globalMax, total);
+                if (b < blockAt (5.5) || b >= blockAt (6.5))
+                    switchingMax = std::max (switchingMax, total); // outside the second after the Gain changes
+            }
+            stretches.back().to = numBlocks;
+
+            // How long the warm-up is: the steps' receptive field, rounded up to whole buffers, and the cross from
+            // the nearest step to the blend at the Gain's slew rate.
+            nam::DspLoadOptions options;
+            options.prewarm = false;
+            ampsim::GainSet monolith;
+            juce::String error;
+            expect (ampsim::GainSet::read (sets[2], monolith, error), error);
+            const auto receptiveField = nam::get_dsp (std::filesystem::path (monolith.steps[0].file.getFullPathName().toStdString()), options)->GetPrewarmSamples();
+            const auto warmBlocks = (size_t) ((receptiveField + blockSize - 1) / blockSize);
+
+            juce::StringArray reached;
+            int longStretches = 0;
+            double longestDelayMs = 0.0;
+            for (const auto& st : stretches)
+            {
+                if (st.from == 0)
+                {
+                    expectEquals ((int) st.identicalFrom, 0, "the slot selected from the start blends exactly from its first buffer");
+                    continue;
+                }
+                const auto crossBlocks = (size_t) std::ceil (st.distance / NamAmp::gainSlewPerSecond * fs / blockSize);
+                const auto bound = warmBlocks + crossBlocks + 1;
+                if (st.to - st.from <= bound + 2)
+                    continue; // a rapid switch: left before it could get there
+                ++longStretches;
+                expect (st.identicalFrom != SIZE_MAX && st.identicalFrom - st.from <= bound,
+                        "slot " + juce::String (st.slot + 1) + " selected at buffer " + juce::String ((int) st.from) + " never reached its exact blend in time");
+                const auto delayMs = st.identicalFrom == SIZE_MAX ? -1.0 : 1000.0 * (double) (st.identicalFrom - st.from) * blockSize / fs;
+                longestDelayMs = std::max (longestDelayMs, delayMs);
+                reached.add (juce::String (names[(size_t) st.slot]) + " " + juce::String (delayMs, 1) + " ms (bound " + juce::String (1000.0 * (double) bound * blockSize / fs, 1) + ")");
+            }
+            expectEquals (longStretches, 7);
+            expectEquals (nearestWrong, 0, "a slot that isn't heard must run its nearest step alone");
+            expectGreaterThan (nearestBuffers, (int) numBlocks); // most buffers have two such slots
+            expectEquals (holdWrong, 0, "a slot fading out must keep playing its blend");
+            expectGreaterThan (holdBuffers, 30);
+            for (int s = 0; s < 3; ++s)
+                expectLessOrEqual (slotMax[(size_t) s], NamAmp::maxRunningSteps);
+            expectLessOrEqual (unheardMax, NamAmp::maxRunningStepsUnheard);
+
+            // The exact references themselves against the steps rendered alone and blended by hand (the sweep test's
+            // brute force), over the first second (every slot at its starting Gain).
+            double bruteForce = 0.0;
+            for (int s = 0; s < 3; ++s)
+            {
+                const auto& g = info[(size_t) s].stepGains;
+                const auto p = startGain[(size_t) s];
+                size_t k = 0;
+                while (k + 2 < g.size() && p >= (float) g[k + 1])
+                    ++k;
+                const auto a = (p - (float) g[k]) / (float) (g[k + 1] - g[k]);
+                const auto rho = (float) juce::jlimit (0.0, 1.0, info[(size_t) s].stepCorrelation[k]);
+                const auto c = 1.0f / std::sqrt ((1.0f - a) * (1.0f - a) + a * a + 2.0f * a * (1.0f - a) * rho);
+                double peak = 0.0, worst = 0.0;
+                for (size_t n = 0; n < (size_t) fs; ++n)
+                {
+                    const auto brute = c * ((1.0f - a) * stepOut[(size_t) s][k][n] + a * stepOut[(size_t) s][k + 1][n]);
+                    worst = std::max (worst, (double) std::abs (exactOut[(size_t) s][n] - brute));
+                    peak = std::max (peak, (double) std::abs (brute));
+                }
+                bruteForce = std::max (bruteForce, worst / std::max (1.0e-9, peak));
+            }
+            expectLessThan (bruteForce, 1.0e-5);
+
+            // Clicks: the largest sample-to-sample step during the slot fades and outside them (where the newly
+            // selected slot crosses from its nearest step to the blend, and the Gain changes land), against the
+            // largest of any step played alone; the tolerances are the slot-switch redirect test's (1.6x) and the
+            // Gain sweep's (1.1x).
+            // Outside the fades only the selected slot is heard, so its steps are compared with its own amp's.
+            std::array<double, 3> ampStep {};
+            for (int s = 0; s < 3; ++s)
+                for (const auto& o : stepOut[(size_t) s])
+                    ampStep[(size_t) s] = std::max (ampStep[(size_t) s], maxStep (o));
+            const auto staticStep = *std::max_element (ampStep.begin(), ampStep.end());
+            double duringFades = 0.0, outsideRatio = 0.0;
+            for (size_t n = 1; n < out.size(); ++n)
+            {
+                const auto d = (double) std::abs (out[n] - out[n - 1]);
+                const auto b = n / (size_t) blockSize;
+                if (switching[b] || switching[(n - 1) / (size_t) blockSize])
+                    duringFades = std::max (duringFades, d);
+                else
+                    outsideRatio = std::max (outsideRatio, d / ampStep[(size_t) selectedAt[b]]);
+            }
+            expectLessThan (duringFades, 1.6 * staticStep);
+            expectLessThan (outsideRatio, 1.1);
+
+            juce::StringArray hist;
+            for (int m = 0; m < 16; ++m)
+                if (histogram[(size_t) m] > 0)
+                    hist.add (juce::String (m) + ": " + juce::String (histogram[(size_t) m]));
+            // Bounds: the selected slot 2 (its blend, or its nearest step and the next warming), the one fading out or
+            // dropping to its nearest step 2, the third 1; and with the Gains of both slots that aren't heard changing
+            // at once, 2 each.
+            expectLessOrEqual (switchingMax, 5);
+            expectLessOrEqual (globalMax, 6);
+
+            juce::AudioBuffer<float> wav (1, (int) out.size());
+            wav.copyFrom (0, 0, out.data(), (int) out.size());
+            expect (writeWav (proof.getChildFile ("slot_switching_gain_sets.wav"), wav));
+            logMessage ("  -> " + juce::String ((int) switches.size()) + " switches across Glass 6, Ember 3.5, Monolith 8.25 (then Glass 9, Monolith 3 while not heard), "
+                        "8 of them 13 to 32 ms apart: after each switch it stayed on, the new slot was bit-identical to a slot that had blended the whole time after "
+                        + reached.joinIntoString (", ") + " (warm-up " + juce::String (receptiveField) + " samples, " + juce::String ((int) warmBlocks) + " buffers, plus the cross at "
+                        + juce::String (NamAmp::gainSlewPerSecond, 0) + " positions/s)");
+            logMessage ("  -> slots not heard: " + juce::String (nearestBuffers) + " settled slot-buffers, every one a single model at its nearest step, bit-identical to that step alone; "
+                        "fading out after a switch: " + juce::String (holdBuffers) + " slot-buffers bit-identical to the blend it had; the references vs the steps blended by hand "
+                        + dB (toDb (bruteForce)) + " of the peak");
+            logMessage ("  -> models running per buffer, all three slots (count: buffers): " + hist.joinIntoString (", ") + "; max " + juce::String (switchingMax) + " while switching, "
+                        + juce::String (globalMax) + " while both unheard slots' Gains changed"
+                        + " (per slot " + juce::String (slotMax[0]) + "/" + juce::String (slotMax[1]) + "/" + juce::String (slotMax[2]) + "; a slot not selected at most " + juce::String (unheardMax) + ")");
+            logMessage ("  -> largest sample step during the slot fades " + juce::String (duringFades, 4) + ", " + juce::String (duringFades / staticStep, 3)
+                        + "x the largest of any step alone (" + juce::String (staticStep, 4) + "); outside them, against the playing amp's steps alone (Glass "
+                        + juce::String (ampStep[0], 4) + ", Ember " + juce::String (ampStep[1], 4) + ", Monolith " + juce::String (ampStep[2], 4) + "), at most "
+                        + juce::String (outsideRatio, 3) + "x; amp_gain/slot_switching_gain_sets.wav");
+        }
+    }
+};
+
+static AmpGainSlotTests ampGainSlotTests;
 } // namespace

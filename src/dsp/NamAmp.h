@@ -23,7 +23,8 @@ namespace ampsim
 ///
 ///   A gain set: Gain chooses a position across the steps. On a step, that step's model plays alone; between
 ///   two steps, both run and their outputs blend (render(), the blend law). Every step is loudness-normalized,
-///   so Gain changes the saturation, not the volume.
+///   so Gain changes the saturation, not the volume. A slot that isn't being heard plays only the step
+///   nearest its Gain (setBlend()), so it costs one model.
 ///
 ///   A single capture: Gain is the model's input trim, 0 to 10 over -24 to +24 dB (5 is unity), and it's
 ///   loudness-compensated: on load, the capture's output loudness is measured at every 3 dB of trim, and
@@ -79,6 +80,33 @@ public:
     /// next one or two in the direction the knob is moving, warming up hidden.
     static constexpr int maxRunningSteps = 3;
 
+    /// How a gain set plays its Gain (BUILD_PLAN "Amp gain", ASSUMPTIONS AG15 to AG18). The amp section sets
+    /// it for each slot before every process(): only the slot being heard blends, because the other two
+    /// always-running slots would otherwise cost a second model each for output nobody hears (six models
+    /// with every slot between steps measured 113% of the deadline on GitHub's Windows runner).
+    enum class Blend
+    {
+        /// The exact blend at the knob's position: the selected slot, and a lone NamAmp (tone match, the
+        /// offline renderer, tests). The default.
+        exact,
+        /// Stay where it is (the knob is ignored): the slot is fading out after a slot switch, so nothing
+        /// audible may change, and nothing new starts. A model still warming toward a blend stops.
+        hold,
+        /// The step nearest the knob, alone: one model. When the nearest step changes (a scene, a preset,
+        /// automation), the new one starts hidden and warms, and the position then crosses to it under the
+        /// Gain's own slew, exactly as a knob move does; then the old one stops.
+        nearest
+    };
+
+    /// Blend::nearest (and hold) runs at most this many: the step it plays and, while the nearest step
+    /// changes, the neighbour it's crossing to. A change of more than one step goes one step at a time
+    /// rather than warming two ahead: nobody hears the slot, so it can take longer (an extra 85 ms per step).
+    static constexpr int maxRunningStepsUnheard = 2;
+
+    /// Blend::nearest: the step only changes once the knob is this far past the midpoint between two steps,
+    /// so automation wobbling around a midpoint doesn't restart models back and forth (a tenth of a step).
+    static constexpr float nearestHysteresis = 0.25f;
+
     /// Input calibration (BUILD_PLAN "Input level"). A capture's metadata can say what analog level
     /// reached 0 dBFS on the rig it was trained with (`input_level_dbu`). If our interface's 0 dBFS is
     /// a different analog level, the same guitar arrives at a different digital level than the model
@@ -128,6 +156,11 @@ public:
     /// Audio thread, once per buffer before process(): the Gain knob's position, 0 to 10.
     void setGain (float position) noexcept { gainTarget = juce::jlimit (0.0f, gainMax, position); }
 
+    /// Audio thread, once per buffer before process() (and before prepare()): how a gain set plays its
+    /// Gain (Blend). A single capture ignores it.
+    void setBlend (Blend newBlend) noexcept { blend = newBlend; }
+    Blend getBlend() const noexcept { return blend; }
+
     void prepare (double sampleRate, int maxBlockSize) override;
     void process (juce::dsp::AudioBlock<float> block, const BlockContext& context) override;
 
@@ -148,6 +181,9 @@ public:
     float getGainPosition() const noexcept { return current != nullptr ? current->position : -1.0f; }
     bool isGainMoving() const noexcept;
     int getRunningSteps() const noexcept;
+
+    /// Audio thread, for tests: whether the current capture's step model `step` ran in the last buffer.
+    bool isStepRunning (int step) const noexcept;
 
     /// For tests: the effective Gain position at each sample of the last buffer that rendered the current
     /// capture's Gain moving (a set writes it every buffer; a single capture only while it moves).
@@ -171,6 +207,8 @@ private:
         std::array<float, compensationPoints> compensationDb {}; // a single capture, at trims -24 .. +24 dB
         int warmupSamples = 1;           // a set: how long a step must run before it can be heard
         float position = -1.0f;          // audio thread: the effective Gain position (-1: not run yet)
+        float heading = -1.0f;           // audio thread: where the position was heading in the last buffer
+        int nearest = -1;                // audio thread, Blend::nearest: the step it plays (-1: none chosen)
     };
 
     static constexpr int maxWarmed = 1 << 30;
@@ -181,6 +219,7 @@ private:
     void renderSingle (Model& model, const float* input, float* output, int numSamples);
     void renderSet (Model& model, const float* input, float* output, int numSamples);
     void startModel (Model& model) noexcept;
+    int nearestStep (const Model& model, float target) const noexcept;
     float slewTarget (float position, float target) const noexcept;
 
     Handoff<Model> handoff;
@@ -193,6 +232,7 @@ private:
     int fadePosition = 0;
     int fadeLength = 960;
     float gainTarget = gainDefault;
+    Blend blend = Blend::exact;
     float slewPerSample = gainSlewPerSecond / (float) requiredSampleRate;
 
     std::vector<float> inputCopy, outgoing, scaledInput, positions;

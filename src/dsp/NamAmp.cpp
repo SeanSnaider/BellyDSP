@@ -390,10 +390,20 @@ bool NamAmp::isGainMoving() const noexcept
 {
     if (current == nullptr || current->steps.empty() || current->position < 0.0f)
         return false;
-    const auto target = current->steps.size() > 1
+    if (current->steps.size() == 1)
+        return ! juce::exactlyEqual (current->position, gainTarget);
+    // A set heads for the knob only when it blends exactly; otherwise for its nearest step, or nowhere (hold).
+    const auto target = blend == Blend::exact || current->heading < 0.0f
                           ? juce::jlimit (current->steps.front().position, current->steps.back().position, gainTarget)
-                          : gainTarget;
+                          : current->heading;
     return ! juce::exactlyEqual (current->position, target);
+}
+
+bool NamAmp::isStepRunning (int step) const noexcept
+{
+    if (current == nullptr || step < 0 || step >= (int) current->steps.size())
+        return false;
+    return current->steps.size() == 1 || current->steps[(size_t) step].running;
 }
 
 int NamAmp::getRunningSteps() const noexcept
@@ -464,6 +474,15 @@ void NamAmp::startModel (Model& model) noexcept
     }
 
     model.position = juce::jlimit (steps.front().position, steps.back().position, gainTarget);
+    model.nearest = -1;
+    if (blend != Blend::exact)
+    {
+        // A slot that isn't heard starts on the step nearest the knob, alone (a hold has nothing to hold yet).
+        model.nearest = nearestStep (model, model.position);
+        model.position = steps[(size_t) model.nearest].position;
+    }
+    model.heading = model.position;
+
     for (auto& step : steps)
     {
         const auto needed = std::abs (step.position - model.position) < 1.0e-6f; // on a step
@@ -478,6 +497,28 @@ void NamAmp::startModel (Model& model) noexcept
             steps[k].running = steps[k + 1].running = true;
             steps[k].warmed = steps[k + 1].warmed = maxWarmed;
         }
+}
+
+int NamAmp::nearestStep (const Model& model, float target) const noexcept
+{
+    // The nearest step (ties to the lower one). With hysteresis: the step already playing stays until the
+    // knob is nearestHysteresis past the midpoint toward its neighbour, so a wobble around a midpoint doesn't
+    // start a model, cross to it, and stop it again, over and over.
+    const auto& steps = model.steps;
+    const int count = (int) steps.size();
+    int k = 0;
+    for (int i = 1; i < count; ++i)
+        if (std::abs (steps[(size_t) i].position - target) < std::abs (steps[(size_t) k].position - target))
+            k = i;
+
+    const int held = model.nearest;
+    if (held >= 0 && held < count && std::abs (k - held) == 1)
+    {
+        const auto midpoint = 0.5f * (steps[(size_t) held].position + steps[(size_t) k].position);
+        if (std::abs (target - midpoint) < nearestHysteresis)
+            return held;
+    }
+    return k;
 }
 
 void NamAmp::render (Model* model, const float* input, float* output, int numSamples)
@@ -532,8 +573,27 @@ void NamAmp::renderSet (Model& model, const float* input, float* output, int num
 {
     auto& steps = model.steps;
     const int count = (int) steps.size();
-    const auto target = juce::jlimit (steps.front().position, steps.back().position, gainTarget);
     auto position = model.position;
+
+    // 0. Where the position heads (setBlend()). Selected (exact): the knob. Not heard (nearest): the step
+    //    nearest the knob, so once there only that one model runs, and a change of nearest step is just a
+    //    knob move between two neighbouring steps: the new one warms hidden (step 2), the position crosses at
+    //    the slew rate under the blend law (steps 3 and 5), and the old one stops. Fading out after a switch
+    //    (hold): where it is, so nothing it plays changes while it can still be heard, and a model warming
+    //    for a blend it hasn't reached yet stops right away.
+    auto target = juce::jlimit (steps.front().position, steps.back().position, gainTarget);
+    if (blend == Blend::nearest)
+    {
+        model.nearest = nearestStep (model, target);
+        target = steps[(size_t) model.nearest].position;
+    }
+    else
+    {
+        model.nearest = -1;
+        if (blend == Blend::hold)
+            target = position;
+    }
+    model.heading = target;
 
     // 1. The bracket: the step at or below the position (lo) and, between steps, the one above (hi). Both
     //    are running and warm: the position only ever moves where they are (step 3).
@@ -547,12 +607,14 @@ void NamAmp::renderSet (Model& model, const float* input, float* output, int num
     //    starts cold (warmed = 0) if it's needed again: NAM's WaveNet is a finite-memory network, so a model
     //    that has run on live input for its receptive field (warmupSamples) has exactly the output it would
     //    have had running all along, and until then it's heard nowhere.
+    //    A slot that isn't heard looks only one step ahead (maxRunningStepsUnheard).
+    const int maxRunning = blend == Blend::exact ? maxRunningSteps : maxRunningStepsUnheard;
     int runLo = lo, runHi = hi;
     if (target > position)
-        while (runHi + 1 < count && runHi - runLo + 1 < maxRunningSteps && target > steps[(size_t) runHi].position)
+        while (runHi + 1 < count && runHi - runLo + 1 < maxRunning && target > steps[(size_t) runHi].position)
             ++runHi;
     else if (target < position)
-        while (runLo > 0 && runHi - runLo + 1 < maxRunningSteps && target < steps[(size_t) runLo].position)
+        while (runLo > 0 && runHi - runLo + 1 < maxRunning && target < steps[(size_t) runLo].position)
             --runLo;
 
     for (int k = 0; k < count; ++k)

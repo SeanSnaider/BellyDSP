@@ -17,8 +17,10 @@ namespace ampsim
 /// switching"). Because every model keeps processing, its history (the receptive field) is always
 /// current, so switching never restarts a model: the output simply crossfades from one slot to
 /// another over 20 ms. The price is three models' worth of CPU (measured: 12.6-15.6% of the deadline
-/// for three A1 standard models). With gain sets a slot runs one model on a step, two between steps, and
-/// up to three while its Gain moves (NamAmp), so three to nine in all (BUILD_PLAN "Amp gain").
+/// for three A1 standard models). With gain sets only the selected slot blends: it runs one model on a
+/// step, two between steps, and up to three while its Gain moves or right after it's selected (its second
+/// step warming); every other slot plays its nearest step, one model (NamAmp::Blend). So three to four
+/// models at rest, with one or two more while a switch or a Gain move settles (BUILD_PLAN "Amp gain").
 ///
 /// Each slot: the capture (with its Gain knob) -> tone controls -> output trim.
 ///
@@ -74,6 +76,10 @@ public:
 
     /// Audio thread, for tests: true while any slot is fading in a newly loaded model.
     bool isLoadingModel() const noexcept;
+
+    /// Audio thread, for tests: a slot's own output in the last buffer (after its tone and trim, before the
+    /// slot switch's fade), getNumSamples() of the last process() long.
+    const float* getSlotOutput (int index) const noexcept { return slotOutputs.getReadPointer (index); }
 
     void prepare (double sampleRate, int maxBlockSize) override;
     void process (juce::dsp::AudioBlock<float> block, const BlockContext& context) override;

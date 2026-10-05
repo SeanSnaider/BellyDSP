@@ -103,6 +103,7 @@ public:
             juce::MidiBuffer midi;
             rtcheck::Counts total;
             int blocks = 0, modelFadeBlocks = 0, slotSwitchBlocks = 0, morphsBefore = 0, gainMovingBlocks = 0, maxSetModels = 0;
+            int setSlotSwitches = 0, heldBlendBlocks = 0, maxTotalModels = 0;
             bool ampWasBypassed = false, sectionsWereBypassed = false;
             juce::StringArray events;
 
@@ -306,6 +307,19 @@ public:
                 if (blocks >= 3000 && blocks < 3200)
                     setParam (p, AmpSimProcessor::ampParamId (0, "input_trim"), GainKnob::dbForPosition (5.0f + 4.0f * (float) (blocks - 3000) / 200.0f));
 
+                // Only the selected slot blends a gain set (NamAmp::Blend): slot 3 is selected from the footswitch for
+                // its drag and its jump between steps; then the footswitch flips between slots 2 and 3 (both between
+                // steps, Ember while it's dragged) every 8 to 40 buffers, mostly inside a newly selected slot's 85 ms
+                // warm-up, so blends are held, dropped to the nearest step, and warmed again; and back to slot 1.
+                for (const auto& [at, slot] : std::initializer_list<std::pair<int, int>> {
+                         { 1985, 2 }, { 2460, 1 }, { 2470, 2 }, { 2478, 1 }, { 2490, 2 }, { 2530, 1 }, { 2545, 2 }, { 2560, 1 }, { 2600, 2 }, { 2612, 1 },
+                         { 2620, 2 }, { 2660, 1 }, { 2690, 0 } })
+                    if (blocks == at)
+                    {
+                        midi.addEvent (juce::MidiMessage::programChange (1, slot), 11);
+                        ++setSlotSwitches;
+                    }
+
                 buffer.clear();
                 buffer.copyFrom (0, 0, input.data() + start, blockSize);
 
@@ -315,6 +329,16 @@ public:
                 gainMovingBlocks += p.getChain().amp.slot (2).model.isGainMoving() || p.getChain().amp.slot (1).model.isGainMoving()
                                     || p.getChain().amp.slot (0).model.isGainMoving() ? 1 : 0;
                 maxSetModels = std::max (maxSetModels, p.getChain().amp.slot (2).model.getRunningSteps());
+                {
+                    int models = 0;
+                    for (int s = 0; s < 3; ++s)
+                    {
+                        const auto& m = p.getChain().amp.slot (s).model;
+                        models += m.getRunningSteps();
+                        heldBlendBlocks += m.getBlend() == ampsim::NamAmp::Blend::hold && m.getRunningSteps() == 2 ? 1 : 0;
+                    }
+                    maxTotalModels = std::max (maxTotalModels, models);
+                }
                 previewBlocks += preview.isActive() ? 1 : 0;
 
                 if (blocks == 1080)
@@ -359,6 +383,9 @@ public:
             expectGreaterThan (previewBlocks, 395, "the A/B player must have played during the measurement");
             expect (! preview.isActive(), "the A/B player must have stopped and gone idle");
             expectEquals (maxSetModels, ampsim::NamAmp::maxRunningSteps, "the gain set's sweep must have run a model warming ahead");
+            expectEquals (setSlotSwitches, 13);
+            expectGreaterThan (heldBlendBlocks, 10, "slots fading out must have held their blends during the measurement");
+            expectLessOrEqual (maxTotalModels, 6);
             expectEquals (p.getChain().amp.getSelectedSlot(), 0);
             const auto ember = p.parameters.state.getProperty (AmpSimProcessor::modelPathKey (1)).toString() == presets::builtInCapture (1).getFullPathName();
             expect (ember, "slot 2 must be back on its built-in capture");
@@ -413,6 +440,9 @@ public:
                         "and the post section again; the GUI read " + juce::String (analyzed) + " samples from the ring and stopped for 400 buffers, "
                         "so the ring filled and the audio thread dropped " + juce::String (analyzerDropped) + " samples instead of waiting; CPU meter "
                         + juce::String (p.getCpuLoad(), 1) + "%");
+            logMessage ("  -> gain sets across the slots: " + juce::String (setSlotSwitches) + " footswitch switches with the Gains between steps, " + juce::String (heldBlendBlocks)
+                        + " slot-buffers holding a blend while fading out, at most " + juce::String (maxTotalModels)
+                        + " step models running in one buffer across the three slots");
             logMessage ("  -> audio thread: " + describe (total));
         }
     }

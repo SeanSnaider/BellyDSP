@@ -45,6 +45,7 @@ void AmpSection::prepare (double sampleRate, int maxBlockSize)
     {
         auto& slot = slots[(size_t) s];
         slot.model.setGain (slot.inputTrim.getPosition());
+        slot.model.setBlend (s == selected ? NamAmp::Blend::exact : NamAmp::Blend::nearest); // the fades snap below
         slot.model.prepare (sampleRate, maxBlockSize);
         slot.tone.prepare (sampleRate);
         slot.outputTrim.prepare (sampleRate, maxBlockSize);
@@ -60,13 +61,19 @@ void AmpSection::process (juce::dsp::AudioBlock<float> block, const BlockContext
     const auto* input = block.getChannelPointer (0);
     auto outputs = juce::dsp::AudioBlock<float> (slotOutputs).getSubBlock (0, numSamples);
 
-    // Every slot runs every buffer, selected or not, so its model's history stays current.
+    // Every slot runs every buffer, selected or not, so its model's history stays current. Only the selected
+    // slot blends a gain set's steps exactly; one fading out after a switch holds what it plays until it's
+    // silent, and then (and every slot that isn't heard) plays only its nearest step: one model. Its fade
+    // position is read at the start of the buffer, so a slot is "silent" only once its fade has reached 0
+    // and stays there for the whole buffer (BUILD_PLAN "Amp gain", ASSUMPTIONS AG15 to AG18).
     for (size_t s = 0; s < (size_t) numSlots; ++s)
     {
         auto& slot = slots[s];
         auto channel = outputs.getSingleChannelBlock (s);
         std::copy (input, input + numSamples, channel.getChannelPointer (0));
 
+        const auto heard = position[s].getCurrentValue() > 0.0f; // not selected, so its fade heads for 0
+        slot.model.setBlend ((int) s == selected ? NamAmp::Blend::exact : heard ? NamAmp::Blend::hold : NamAmp::Blend::nearest);
         slot.model.setGain (slot.inputTrim.getPosition());
         slot.model.process (channel, context);
         slot.tone.process (channel.getChannelPointer (0), (int) numSamples);
