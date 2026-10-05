@@ -105,6 +105,8 @@ std::vector<float> ToneMatcher::renderTone (const ToneSettings& settings, const 
     };
 
     // The amp: a private AmpSection, settings in before prepare(), which snaps every smoother (as renderAmp).
+    if (cancel.load())
+        return {};
     if (settings.ampOn && settings.model != juce::File())
     {
         auto section = std::make_unique<AmpSection>();

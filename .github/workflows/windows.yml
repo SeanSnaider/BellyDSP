@@ -35,10 +35,6 @@ on:
         description: "Version to stamp on the build (default: the VERSION file)"
         type: string
         default: ""
-      asio:
-        description: "Build with ASIO support (read the licensing note in docs/RELEASING.md first)"
-        type: boolean
-        default: false
 
 # A newer push cancels this workflow's older run on the same branch, so two builds never compete.
 concurrency:
@@ -125,7 +121,7 @@ jobs:
             -DAMPSIM_VERSION="${{ steps.conf.outputs.version }}" \
             -DAMPSIM_UPDATER=${{ steps.conf.outputs.updater }} \
             -DAMPSIM_ED_PUBLIC_KEY="${{ steps.conf.outputs.ed_public_key }}" \
-            -DAMPSIM_WITH_ASIO=${{ inputs.asio && 'ON' || 'OFF' }} \
+            -DAMPSIM_WITH_ASIO=ON \
             -DAMPSIM_JUCE_LICENCE="${{ steps.conf.outputs.juce_licence }}" \
             -DAMPSIM_SOURCE_URL="${{ steps.conf.outputs.source_url }}"
 

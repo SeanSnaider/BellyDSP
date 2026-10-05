@@ -449,18 +449,24 @@ juce::String builtInCapturePath (int slot)
 
 juce::File replacementForRetiredCapture (const juce::String& path)
 {
-    // "factory:models/Glass.nam", or a saved path ending in .../content/models/Glass.nam. Matched on that
-    // ending, with either separator, rather than with juce::File::isAbsolutePath: a state saved on one OS
-    // can be loaded on another, and a macOS path ("/Applications/BellyDSP.app/...") isn't absolute to
-    // Windows (found by the first Windows CI run).
+    // "factory:models/Glass.nam", or a saved absolute path from either OS (isSavedAbsolutePath: a state saved
+    // on one OS can be loaded on the other, and "/Applications/BellyDSP.app/..." isn't absolute to Windows,
+    // found by the first Windows CI run) ending in .../content/models/Glass.nam, with either separator.
     const auto normalised = path.replaceCharacter ('\\', '/');
     for (int slot = 0; slot < 3; ++slot)
     {
         const auto old = "models/" + builtInCaptureName (slot) + ".nam";
-        if (normalised == factoryPrefix + old || normalised.endsWith ("/content/" + old))
+        if (normalised == factoryPrefix + old || (isSavedAbsolutePath (path) && normalised.endsWith ("/content/" + old)))
             return builtInCapture (slot);
     }
     return {};
+}
+
+bool isSavedAbsolutePath (const juce::String& path)
+{
+    const auto posix = path.startsWithChar ('/');
+    const auto windows = path.startsWith ("\\\\") || (juce::CharacterFunctions::isLetter (path[0]) && path[1] == ':');
+    return juce::File::isAbsolutePath (path) || posix || windows;
 }
 
 juce::File builtInCapture (int slot)

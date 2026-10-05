@@ -30,7 +30,7 @@ Downloads: **https://github.com/SeanSnaider/BellyDSP/releases/latest**
 2. Windows may show **"Windows protected your PC"** (the installer isn't signed with a paid certificate). Click **More info**, then **Run anyway**.
 3. Click through the installer. It installs just for you, so it doesn't need an administrator password.
 4. **Set your interface to 48 kHz** in its own control panel (or Settings > Sound > your device > Properties > Advanced). BellyDSP only runs at 48 kHz.
-5. **Choose the input** (below). For the lowest delay, pick the device type **Windows Audio (Exclusive Mode)**.
+5. **Choose the input** (below). For the lowest delay, pick the device type **ASIO** and your interface's own ASIO driver (for a Focusrite Scarlett on USB: **Focusrite USB ASIO**; install the interface maker's driver if it isn't listed). Without an ASIO driver, use **Windows Audio (Exclusive Mode)** and the smallest buffer size that plays without crackles (often 256 or more; it may not offer 128).
 
 ## Audio settings (both)
 
@@ -41,7 +41,9 @@ Click **Options** at the top of BellyDSP's window, then **Audio/MIDI Settings**:
 - **Buffer size**: 128 samples is a good start. Smaller feels tighter; if you hear crackles, go up to 256.
 - **Untick "Mute audio input"**. It starts ticked (a safety against feedback), and until you untick it you'll hear nothing. A yellow bar at the top says so.
 
-On the interface itself: turn the instrument (INST or Hi-Z) switch on for the guitar input, set the gain so your hardest strum stays out of the red, and turn **Direct Monitor off** (otherwise you hear your dry guitar on top of the amp).
+On the interface itself: turn the instrument (INST or Hi-Z) switch on for the guitar input, turn that input's **gain knob all the way down**, and turn **Direct Monitor off** (otherwise you hear your dry guitar on top of the amp).
+
+Why minimum gain: BellyDSP calibrates its amps to your interface's level at minimum gain, so your guitar hits each amp the way it would hit the real thing. Turning the interface gain up is like putting a boost pedal in front of every amp: more distortion, harsher, and clipping on hard strums. Get distortion from the amp's **Gain** knob instead, and volume from **Master** or the Output knob. If your interface isn't a Scarlett Solo 4th Gen, open the **Input** page and set **Interface level at 0 dBFS** to the most your instrument input takes at minimum gain, in dBu (it's on the interface's spec sheet; +12 dBu is the Solo's). If you can't find it, leave it at 12.
 
 ## Captures and cab IRs
 

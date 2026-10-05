@@ -43,7 +43,7 @@ project(BellyDSP VERSION ${AMPSIM_VERSION} LANGUAGES C CXX)
 # Release options. A plain `cmake -B build` (Sean's dev build) leaves them all off: native arch, no
 # updater, so a dev build never replaces itself with a release.
 option(AMPSIM_UPDATER "Embed the auto-updater (Sparkle on macOS, WinSparkle on Windows): release builds" OFF)
-option(AMPSIM_WITH_ASIO "Windows: build with ASIO driver support (licensing: docs/RELEASING.md)" OFF)
+option(AMPSIM_WITH_ASIO "Windows: build with ASIO driver support (GPLv3 option of the SDK: docs/RELEASING.md)" ON)
 set(AMPSIM_X86_SIMD "AVX" CACHE STRING "x86_64 baseline instruction set for the Intel slice and Windows: AVX or SSE2")
 
 # Values from tools/release/release.conf and tools/deps.conf (KEY=VALUE lines), unless given with -D.
@@ -554,6 +554,7 @@ target_sources(ampsim_tests PRIVATE
     tests/ToneMatchAppTests.cpp
     tests/ToneMatchSeparationTests.cpp
     tests/ToneMatchCompareTests.cpp
+    tests/AudioDeviceTests.cpp
     tools/capture/CaptureEngine.cpp
     src/PluginProcessor.cpp
     src/PluginEditor.cpp
@@ -591,6 +592,15 @@ target_link_libraries(ampsim_tests
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
+if(MSVC)
+    # The tests run on the main thread, which Windows gives a 1 MB stack (macOS: 8 MB). Unlike clang, MSVC
+    # gives most locals in sibling { } scopes their own slot, so a runTest() with dozens of AmpSimProcessor
+    # locals asked for one huge frame: ProcessorTests' was 9.2 MB with the processor at 152 KB (cdb showed
+    # __chkstk overflowing, 0xC00000FD). The processor now keeps its chain on the heap (8 KB, ASSUMPTIONS DS55),
+    # so the frames are far smaller; the big stack stays as a margin. 64 MB is address space only; pages are
+    # committed as they're touched. The app itself keeps Windows' default stack.
+    target_link_options(ampsim_tests PRIVATE /STACK:67108864)
+endif()
 add_dependencies(ampsim_tests nam_render AmpSimNotices)
 # The notices and the bundled content sit next to the test binary too, so the tests read the same
 # generated file and the same content folder (platform::factoryContentFolder()) the app ships.
@@ -600,13 +610,6 @@ add_custom_command(TARGET ampsim_tests POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E rm -rf "$<TARGET_FILE_DIR:ampsim_tests>/content"
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/content "$<TARGET_FILE_DIR:ampsim_tests>/content"
     VERBATIM)
-
-# The tests' main thread gets 8 MB of stack on Windows, as it has on macOS (Windows' default is 1 MB). The test
-# functions hold many big objects as locals, and MSVC gives each its own slot in the frame: that overflowed 1 MB
-# on CI (ASSUMPTIONS DS55). The app itself keeps the default; its processor and chain are on the heap.
-if(MSVC)
-    target_link_options(ampsim_tests PRIVATE /STACK:8388608)
-endif()
 
 add_test(NAME ampsim_tests
          COMMAND ampsim_tests --proof-dir ${CMAKE_BINARY_DIR}/proof
