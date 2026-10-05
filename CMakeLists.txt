@@ -43,7 +43,7 @@ project(BellyDSP VERSION ${AMPSIM_VERSION} LANGUAGES C CXX)
 # Release options. A plain `cmake -B build` (Sean's dev build) leaves them all off: native arch, no
 # updater, so a dev build never replaces itself with a release.
 option(AMPSIM_UPDATER "Embed the auto-updater (Sparkle on macOS, WinSparkle on Windows): release builds" OFF)
-option(AMPSIM_WITH_ASIO "Windows: build with ASIO driver support (licensing: docs/RELEASING.md)" OFF)
+option(AMPSIM_WITH_ASIO "Windows: build with ASIO driver support (GPLv3 option of the SDK: docs/RELEASING.md)" ON)
 set(AMPSIM_X86_SIMD "AVX" CACHE STRING "x86_64 baseline instruction set for the Intel slice and Windows: AVX or SSE2")
 
 # Values from tools/release/release.conf and tools/deps.conf (KEY=VALUE lines), unless given with -D.
