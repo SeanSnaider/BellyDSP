@@ -340,7 +340,7 @@ juce::String GuitarSeparator::convert (const juce::File& safetensors, const juce
     if (headerLength <= 0 || headerLength > 10'000'000)
         return "Not a safetensors file";
     juce::MemoryBlock headerBytes;
-    in.readIntoMemoryBlock (headerBytes, (ssize_t) headerLength);
+    in.readIntoMemoryBlock (headerBytes, (juce::pointer_sized_int) headerLength);
     const auto header = juce::JSON::parse (headerBytes.toString());
     const auto* tensors = header.getDynamicObject();
     if (tensors == nullptr)
@@ -387,7 +387,7 @@ juce::String GuitarSeparator::convert (const juce::File& safetensors, const juce
 
         juce::MemoryBlock data;
         in.setPosition (dataStart + begin);
-        if (in.readIntoMemoryBlock (data, (ssize_t) (end - begin)) != (size_t) (end - begin))
+        if (in.readIntoMemoryBlock (data, (juce::pointer_sized_int) (end - begin)) != (size_t) (end - begin))
             return "The model file is truncated";
         o.write (data.getData(), data.getSize());
         ++written;

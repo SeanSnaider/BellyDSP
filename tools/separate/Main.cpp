@@ -9,7 +9,16 @@
 #include "tonematch/GuitarSeparator.h"
 
 #include <iostream>
-#include <sys/resource.h>
+
+#if JUCE_WINDOWS
+ #ifndef NOMINMAX
+  #define NOMINMAX
+ #endif
+ #include <windows.h>
+ #include <psapi.h> // GetProcessMemoryInfo (kernel32 as K32GetProcessMemoryInfo; no extra library)
+#else
+ #include <sys/resource.h>
+#endif
 
 namespace
 {
@@ -24,12 +33,21 @@ void usage()
 
 double peakMemoryMB()
 {
+   #if JUCE_WINDOWS
+    // The peak working set: the most physical memory the process has held at once.
+    PROCESS_MEMORY_COUNTERS counters {};
+    counters.cb = sizeof (counters);
+    if (GetProcessMemoryInfo (GetCurrentProcess(), &counters, sizeof (counters)))
+        return (double) counters.PeakWorkingSetSize / (1024.0 * 1024.0);
+    return 0.0;
+   #else
     rusage r {};
     getrusage (RUSAGE_SELF, &r);
    #if JUCE_MAC
     return (double) r.ru_maxrss / (1024.0 * 1024.0); // bytes on macOS
    #else
     return (double) r.ru_maxrss / 1024.0; // kilobytes on Linux
+   #endif
    #endif
 }
 } // namespace
