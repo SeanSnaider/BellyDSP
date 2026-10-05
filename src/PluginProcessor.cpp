@@ -894,7 +894,7 @@ void AmpSimProcessor::setStateInformation (const void* data, int sizeInBytes)
         else if (const auto moved = presets::bundledElsewhere (juce::File (path)); moved.exists())
             loadCabIR (m, moved); // a built-in IR saved by a copy of the app installed somewhere else
         else
-            setCabStatus (m, "Saved IR is missing: " + path, true);
+            startCabRequest (m, "Saved IR is missing: " + path, true);
     }
 }
 
@@ -902,17 +902,15 @@ void AmpSimProcessor::loadModel (int slot, const juce::File& file)
 {
     slot = juce::jlimit (0, numAmpSlots - 1, slot);
     parameters.state.setProperty (modelPathKey (slot), file.getFullPathName(), nullptr);
-    setModelStatus (slot, "Loading " + file.getFileName() + "...", false);
+    const auto request = startModelRequest (slot, "Loading " + file.getFileName() + "...", false);
 
     const auto calibration = currentCalibration();
     requestedModel[(size_t) slot] = { file, calibration };
 
-    ++loadsInFlight;
-    loader.addJob ([this, slot, file, calibration]
+    addLoaderJob ([this, slot, file, calibration, request]
     {
         const auto result = chain.amp.slot (slot).model.loadModel (file, true, calibration);
-        setModelStatus (slot, result.message, ! result.ok);
-        --loadsInFlight;
+        finishModelRequest (slot, request, result.message, ! result.ok);
     });
 }
 
@@ -920,7 +918,7 @@ void AmpSimProcessor::loadCabIR (int mic, const juce::File& file)
 {
     mic = juce::jlimit (0, numCabMics - 1, mic);
     parameters.state.setProperty (cabPathKey (mic), file.getFullPathName(), nullptr);
-    setCabStatus (mic, "Loading " + file.getFileName() + "...", false);
+    const auto request = startCabRequest (mic, "Loading " + file.getFileName() + "...", false);
 
     auto channel = ampsim::CabIR::Channel::left;
     if (mic != roomMic)
@@ -937,32 +935,28 @@ void AmpSimProcessor::loadCabIR (int mic, const juce::File& file)
     {
         if (mic == roomMic)
         {
-            setCabStatus (mic, "Cab packs are for the close mics; the room mic takes one IR file", true);
+            finishCabRequest (mic, request, "Cab packs are for the close mics; the room mic takes one IR file", true);
             return;
         }
 
         const juce::Point<float> position { micParameters[(size_t) mic].positionX->load(), micParameters[(size_t) mic].positionY->load() };
         morphedPosition[(size_t) mic] = position;
 
-        ++loadsInFlight;
-        loader.addJob ([this, mic, file, position]
+        addLoaderJob ([this, mic, file, position, request]
         {
             const auto result = chain.cab.loadCloseMicPack (mic, file, position.x, position.y);
-            setCabStatus (mic, result.message, ! result.ok);
+            finishCabRequest (mic, request, result.message, ! result.ok);
             packActive[(size_t) mic] = chain.cab.hasPack (mic); // a failed load keeps the previous pack
-            --loadsInFlight;
         });
         return;
     }
 
-    ++loadsInFlight;
-    loader.addJob ([this, mic, file, channel]
+    addLoaderJob ([this, mic, file, channel, request]
     {
         const auto result = mic == roomMic ? chain.cab.loadRoom (file) : chain.cab.loadCloseMic (mic, file, channel);
-        setCabStatus (mic, result.message, ! result.ok);
+        finishCabRequest (mic, request, result.message, ! result.ok);
         if (mic != roomMic)
             packActive[(size_t) mic] = chain.cab.hasPack (mic); // a file replaces the pack; a failed load keeps it
-        --loadsInFlight;
     });
 }
 
@@ -1034,13 +1028,9 @@ void AmpSimProcessor::clearModel (int slot)
 void AmpSimProcessor::unloadModel (int slot, const juce::String& statusAfter, bool isError)
 {
     requestedModel[(size_t) slot] = {};
-    ++loadsInFlight;
-    loader.addJob ([this, slot, statusAfter, isError]
-    {
-        chain.amp.slot (slot).model.clearModel();
-        setModelStatus (slot, statusAfter, isError);
-        --loadsInFlight;
-    });
+    // Emptying can't fail, so the status it ends on is shown now, before the loader gets to it.
+    startModelRequest (slot, statusAfter, isError);
+    addLoaderJob ([this, slot] { chain.amp.slot (slot).model.clearModel(); });
 }
 
 void AmpSimProcessor::useBuiltInCapture (int slot)
@@ -1049,7 +1039,7 @@ void AmpSimProcessor::useBuiltInCapture (int slot)
     if (const auto file = presets::builtInCapture (slot); file.existsAsFile())
         loadModel (slot, file);
     else
-        setModelStatus (slot, "The built-in capture is missing: " + file.getFullPathName(), true);
+        startModelRequest (slot, "The built-in capture is missing: " + file.getFullPathName(), true);
 }
 
 void AmpSimProcessor::fillFreshSlots()
@@ -1083,15 +1073,13 @@ void AmpSimProcessor::clearCabIR (int mic)
     parameters.state.removeProperty (cabPathKey (mic), nullptr);
     if (mic != roomMic)
         packActive[(size_t) mic] = false;
-    ++loadsInFlight;
-    loader.addJob ([this, mic]
+    startCabRequest (mic, "No IR", false); // clearing can't fail: its status is shown now
+    addLoaderJob ([this, mic]
     {
         if (mic == roomMic)
             chain.cab.clearRoom();
         else
             chain.cab.clearCloseMic (mic);
-        setCabStatus (mic, "No IR", false);
-        --loadsInFlight;
     });
 }
 
@@ -1117,18 +1105,56 @@ AmpSimProcessor::Status AmpSimProcessor::getStatus() const
     return copy;
 }
 
-void AmpSimProcessor::setModelStatus (int slot, const juce::String& text, bool isError)
+std::uint64_t AmpSimProcessor::startModelRequest (int slot, const juce::String& text, bool isError)
 {
     const std::scoped_lock lock (statusMutex);
     status.model[(size_t) slot] = text;
     status.modelError[(size_t) slot] = isError;
+    return ++modelRequest[(size_t) slot];
 }
 
-void AmpSimProcessor::setCabStatus (int mic, const juce::String& text, bool isError)
+void AmpSimProcessor::finishModelRequest (int slot, std::uint64_t request, const juce::String& text, bool isError)
+{
+    const std::scoped_lock lock (statusMutex);
+    if (request != modelRequest[(size_t) slot])
+        return; // a newer request has started since: its status stands
+    status.model[(size_t) slot] = text;
+    status.modelError[(size_t) slot] = isError;
+}
+
+std::uint64_t AmpSimProcessor::startCabRequest (int mic, const juce::String& text, bool isError)
 {
     const std::scoped_lock lock (statusMutex);
     status.cab[(size_t) mic] = text;
     status.cabError[(size_t) mic] = isError;
+    return ++cabRequest[(size_t) mic];
+}
+
+std::uint64_t AmpSimProcessor::currentCabRequest (int mic) const
+{
+    const std::scoped_lock lock (statusMutex);
+    return cabRequest[(size_t) mic];
+}
+
+void AmpSimProcessor::finishCabRequest (int mic, std::uint64_t request, const juce::String& text, bool isError)
+{
+    const std::scoped_lock lock (statusMutex);
+    if (request != cabRequest[(size_t) mic])
+        return; // a newer request has started since: its status stands
+    status.cab[(size_t) mic] = text;
+    status.cabError[(size_t) mic] = isError;
+}
+
+void AmpSimProcessor::addLoaderJob (std::function<void()> job)
+{
+    ++loadsInFlight;
+    loader.addJob ([this, task = std::move (job)]
+    {
+        if (const auto delayMs = loaderDelayMsForTests.load(); delayMs > 0)
+            juce::Thread::sleep (delayMs);
+        task();
+        --loadsInFlight;
+    });
 }
 
 void AmpSimProcessor::timerCallback()
@@ -1278,19 +1304,19 @@ void AmpSimProcessor::timerCallback()
             lastMorphStartMs[(size_t) m] = now;
             morphInFlight[(size_t) m] = true;
             ++morphCount;
-            ++loadsInFlight;
 
-            loader.addJob ([this, m, position]
+            // A morph continues the pack's own request (it doesn't start one), so a load asked for after
+            // it was queued keeps its status.
+            addLoaderJob ([this, m, position, request = currentCabRequest (m)]
             {
                 // A file loaded since this was queued has replaced the pack: nothing to move. (Only
                 // loader jobs change packs, and there's one loader thread, so this can't go stale.)
                 if (chain.cab.hasPack (m))
                 {
                     const auto result = chain.cab.moveCloseMic (m, position.x, position.y);
-                    setCabStatus (m, result.message, ! result.ok);
+                    finishCabRequest (m, request, result.message, ! result.ok);
                 }
                 morphInFlight[(size_t) m] = false;
-                --loadsInFlight;
             });
         }
     }

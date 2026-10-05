@@ -1071,7 +1071,94 @@ public:
             const auto status = p.getStatus();
             expect (status.modelError[0]);
             expect (status.model[0].contains ("missing"));
+            waitForLoads (p);
+            expect (p.getStatus().model[0].contains ("missing"));
             logMessage ("  -> status: \"" + status.model[0] + "\"");
+        }
+
+        beginTest ("status lines follow the newest request, however slow the loader is: an older load finishing late never overwrites a newer status");
+        {
+            // A loader that takes 150 ms over every job, standing in for a starved CI runner. Each case polls the
+            // status every millisecond while the jobs run and keeps every distinct line it saw, in order.
+            struct SlowLoader
+            {
+                SlowLoader() { AmpSimProcessor::loaderDelayMsForTests = 150; }
+                ~SlowLoader() { AmpSimProcessor::loaderDelayMsForTests = 0; }
+            } slow;
+            const auto watch = [] (AmpSimProcessor& proc, int slot)
+            {
+                juce::StringArray seen { proc.getStatus().model[(size_t) slot] };
+                const auto t0 = juce::Time::getMillisecondCounterHiRes();
+                while (proc.isLoading() && juce::Time::getMillisecondCounterHiRes() - t0 < 30000.0 * cpuBudgetScale())
+                {
+                    const auto line = proc.getStatus().model[(size_t) slot];
+                    if (line != seen[seen.size() - 1])
+                        seen.add (line);
+                    juce::Thread::sleep (1);
+                }
+                const auto line = proc.getStatus().model[(size_t) slot];
+                if (line != seen[seen.size() - 1])
+                    seen.add (line);
+                return seen;
+            };
+            const auto stateNaming = [] (AmpSimProcessor& proc, const juce::String& path)
+            {
+                auto tree = proc.parameters.copyState();
+                tree.setProperty (AmpSimProcessor::modelPathKey (0), path, nullptr);
+                juce::MemoryBlock block;
+                juce::AudioProcessor::copyXmlToBinary (*tree.createXml(), block);
+                return block;
+            };
+
+            // 1. A state naming a missing file, restored while a load is still queued: "missing" at once, and
+            //    still "missing" when the loader has finished the older load.
+            AmpSimProcessor a;
+            a.loadModel (0, exampleModel ("lstm.nam"));
+            const auto missingState = stateNaming (a, "/nonexistent/folder/gone.nam");
+            a.setStateInformation (missingState.getData(), (int) missingState.getSize());
+            const auto atOnce = a.getStatus().model[0];
+            const auto seenA = watch (a, 0);
+            expect (atOnce.startsWith ("Saved model is missing"), atOnce);
+            expect (seenA.size() == 1 && seenA[0].startsWith ("Saved model is missing"), seenA.joinIntoString (" | "));
+            expect (a.getStatus().modelError[0]);
+
+            // 2. Two loads back to back: the first one's result never shows, only the second's.
+            AmpSimProcessor b;
+            b.loadModel (0, exampleModel ("lstm.nam"));
+            b.loadModel (0, exampleModel ("wavenet.nam"));
+            const auto seenB = watch (b, 0);
+            bool firstResultShown = false;
+            for (const auto& line : seenB)
+                firstResultShown = firstResultShown || line.startsWith ("lstm");
+            expect (! firstResultShown, seenB.joinIntoString (" | "));
+            expect (seenB[seenB.size() - 1].startsWith ("wavenet"), seenB.joinIntoString (" | "));
+
+            // 3. A clear while a load is queued: "Empty" at once and at the end.
+            AmpSimProcessor c;
+            c.loadModel (0, exampleModel ("lstm.nam"));
+            c.clearModel (0);
+            const auto seenC = watch (c, 0);
+            expectEquals (seenC.joinIntoString (" | "), juce::String ("Empty"));
+
+            // 4. A missing saved IR restored while an IR load is queued: the "missing" line stands.
+            AmpSimProcessor d;
+            const auto ir = tempDir().getChildFile ("status_order_ir.wav");
+            writeWav (ir, toBuffer (syntheticCabIR (2048)));
+            d.loadCabIR (0, ir);
+            auto tree = d.parameters.copyState();
+            tree.setProperty (AmpSimProcessor::cabPathKey (0), "/nonexistent/folder/gone.wav", nullptr);
+            juce::MemoryBlock cabState;
+            juce::AudioProcessor::copyXmlToBinary (*tree.createXml(), cabState);
+            d.setStateInformation (cabState.getData(), (int) cabState.getSize());
+            const auto cabAtOnce = d.getStatus().cab[0];
+            waitForLoads (d);
+            const auto cabAfter = d.getStatus().cab[0];
+            expect (cabAtOnce.startsWith ("Saved IR is missing") && cabAfter == cabAtOnce, cabAtOnce + " -> " + cabAfter);
+
+            logMessage ("  -> with every loader job held 150 ms: missing model restored during a load: \"" + seenA.joinIntoString ("\" -> \"") + "\"");
+            logMessage ("  -> two loads back to back (lstm, then wavenet): \"" + seenB.joinIntoString ("\" -> \"") + "\"");
+            logMessage ("  -> a clear during a load: \"" + seenC.joinIntoString ("\" -> \"") + "\"");
+            logMessage ("  -> missing IR restored during an IR load: \"" + cabAtOnce + "\" at once, \"" + cabAfter + "\" after the loader finished");
         }
 
         beginTest ("effects: compressors start off, EQs start on and flat, and their knobs reach the blocks");
@@ -2264,9 +2351,17 @@ public:
             std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
 
-            // The app's message loop, for a moment: a dialog's button click and its result arrive as
-            // messages, as they do when Sean clicks.
-            const auto pump = [] { juce::MessageManager::getInstance()->runDispatchLoopUntil (150); };
+            // The app's message loop, until the dialog has gone: a dialog's button click and its result arrive
+            // as messages, as they do when Sean clicks. A slow CI runner can take longer than any fixed wait, so
+            // this runs the loop in 10 ms slices until the dialog is deleted (5 s, scaled on CI, at most).
+            double longestPumpMs = 0.0;
+            const auto pumpUntilGone = [&longestPumpMs] (juce::Component::SafePointer<juce::AlertWindow>& dialog)
+            {
+                const auto t0 = juce::Time::getMillisecondCounterHiRes();
+                while (dialog != nullptr && juce::Time::getMillisecondCounterHiRes() - t0 < 5000.0 * cpuBudgetScale())
+                    juce::MessageManager::getInstance()->runDispatchLoopUntil (10);
+                longestPumpMs = juce::jmax (longestPumpMs, juce::Time::getMillisecondCounterHiRes() - t0);
+            };
             const auto find = [] (const juce::PopupMenu& menu, const juce::String& text) -> const juce::PopupMenu::Item*
             {
                 for (juce::PopupMenu::MenuItemIterator it (menu); it.next();)
@@ -2295,7 +2390,7 @@ public:
                     dialog->getTextEditor ("name")->setText (name);
                     dialog->getButton (buttonName)->triggerClick();
                 }
-                pump();
+                pumpUntilGone (dialog);
             };
             const auto tileTooltip = [&ed] { return dynamic_cast<juce::Button&> (ed.getScenesBar().getTile (2)).getTooltip(); };
             const auto nameNow = [&p] { return p.getScenes().get (2).name; };
@@ -2348,14 +2443,15 @@ public:
             editor.reset();
             const auto detached = dialog != nullptr && &dialog->getLookAndFeel() == &juce::LookAndFeel::getDefaultLookAndFeel();
             const auto cancelled = dialog != nullptr && ! dialog->isCurrentlyModal();
-            pump();
+            pumpUntilGone (dialog);
             expect (wasOpen && detached && cancelled);
             expect (dialog == nullptr);
             expectEquals (nameNow(), nameBeforeClose);
             logMessage ("  -> tile 3's menu: Store, then Rename opened \"" + title + "\" holding \"" + prefilled + "\" in the GUI's look; \"Bridge\" renamed the scene "
                         "and its tile; Cancel and a blank name changed nothing; Clear emptied it; with the editor closed under an open dialog, the dialog "
                         + juce::String (detached ? "let go of the editor's LookAndFeel" : "kept the editor's LookAndFeel") + ", was "
-                        + (cancelled ? "cancelled" : "left open") + ", and was gone after the message loop ran");
+                        + (cancelled ? "cancelled" : "left open") + ", and was gone after the message loop ran (the longest wait for a dialog to go: "
+                        + juce::String (juce::roundToInt (longestPumpMs)) + " ms)");
         }
 
         beginTest ("listening renders: the synthetic guitar DI through the full chain");

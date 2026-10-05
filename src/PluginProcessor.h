@@ -17,6 +17,8 @@
 
 #include <array>
 #include <atomic>
+#include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 
@@ -76,6 +78,10 @@ public:
     /// test suite turns it off (TestMain), because its tests were written against empty slots, and turns
     /// it back on where the built-ins are what's being tested.
     static inline bool builtInCapturesForFreshSlots = true;
+
+    /// Tests only: every loader job (model and IR loads, clears, mic morphs) waits this long before it starts, to
+    /// stand in for a slow or starved machine. 0 in the app.
+    static inline std::atomic<int> loaderDelayMsForTests { 0 };
 
     /// Message thread: "Follow amp choice" (the cab page). Each amp slot can have a cab assigned to it: the
     /// IR file or cab pack last picked for close mic 1 while that slot was playing. While following,
@@ -345,10 +351,22 @@ public:
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     void timerCallback() override;
-    void setModelStatus (int slot, const juce::String& text, bool isError);
     void fillFreshSlots();
     void unloadModel (int slot, const juce::String& statusAfter, bool isError); // empties the slot, leaves the state alone
-    void setCabStatus (int mic, const juce::String& text, bool isError);
+
+    // Status lines are ordered by request (BUILD_PLAN decision log, 2026-10-05). Every load, clear, or status-only
+    // change of a slot or mic starts a new request on the message thread, which numbers it and shows its status
+    // at once ("Loading ...", "Saved model is missing: ..."). A loader job's result is shown only if its request
+    // is still the newest for that slot or mic, so an older request finishing late never overwrites a newer
+    // one's status, whatever the threads' timing. All under statusMutex.
+    std::uint64_t startModelRequest (int slot, const juce::String& text, bool isError);
+    void finishModelRequest (int slot, std::uint64_t request, const juce::String& text, bool isError);
+    std::uint64_t startCabRequest (int mic, const juce::String& text, bool isError);
+    std::uint64_t currentCabRequest (int mic) const;
+    void finishCabRequest (int mic, std::uint64_t request, const juce::String& text, bool isError);
+
+    /// Message thread: queues a job on the loader thread, counted in loadsInFlight while it's queued or running.
+    void addLoaderJob (std::function<void()> job);
     void handleMidi (const juce::MidiBuffer& midi);
     void applyCabParameters();
     std::atomic<float>* raw (const juce::String& id) const { return parameters.getRawParameterValue (id); }
@@ -534,6 +552,8 @@ private:
 
     mutable std::mutex statusMutex; // shared by the GUI and loader threads, never the audio thread
     Status status;
+    std::array<std::uint64_t, numAmpSlots> modelRequest {}; // the newest request per slot and mic (statusMutex)
+    std::array<std::uint64_t, numCabMics> cabRequest {};
     std::atomic<int> loadsInFlight { 0 };
 
     // Declared last so it's destroyed first: its jobs use the chain and the status above.
