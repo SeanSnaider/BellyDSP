@@ -5,7 +5,7 @@
 // path the standalone app uses, and reports what actually happens. It outputs silence.
 //
 //   ampsim_device_probe [--device "Scarlett Solo 4th Gen"] [--seconds 5] [--buffer 128]
-//                       [--type "Windows Audio (Exclusive Mode)"] [--input <name>] [--output <name>]
+//                       [--type "Windows Audio (Exclusive Mode)"] [--input <name>] [--output <name>] [--inputs <n>]
 //
 // Checks the problems that needed a patched nih-plug in the Rust version: a 4-input device, input
 // and output on the same device (the old deadlock), and callbacks arriving on time. It also prints
@@ -89,6 +89,7 @@ int main (int argc, char* argv[])
     juce::String inputName, outputName, typeName;
     double seconds = 5.0;
     int bufferSize = 128;
+    int inputCount = maxChannels; // --inputs 1 opens the device as the app does (a mono-in processor)
 
     // --input/--output (default: --device) are for Windows, where WASAPI lists a device's input and output as
     // separate endpoints with different names; --type picks a backend, e.g. "Windows Audio (Exclusive Mode)".
@@ -101,6 +102,7 @@ int main (int argc, char* argv[])
         else if (arg == "--type")    typeName = argv[++i];
         else if (arg == "--seconds") seconds = juce::String (argv[++i]).getDoubleValue();
         else if (arg == "--buffer")  bufferSize = juce::String (argv[++i]).getIntValue();
+        else if (arg == "--inputs")  inputCount = juce::jlimit (1, maxChannels, juce::String (argv[++i]).getIntValue());
     }
 
     if (inputName.isEmpty())
@@ -131,11 +133,11 @@ int main (int argc, char* argv[])
     setup.sampleRate = 48000.0;
     setup.bufferSize = bufferSize;
     setup.useDefaultInputChannels = false;
-    setup.inputChannels.setRange (0, maxChannels, true); // every input the device has
+    setup.inputChannels.setRange (0, inputCount, true); // every input the device has, unless --inputs
     setup.useDefaultOutputChannels = false;
     setup.outputChannels.setRange (0, 2, true);
 
-    const auto error = manager.initialise (maxChannels, 2, nullptr, false, {}, &setup);
+    const auto error = manager.initialise (inputCount, 2, nullptr, false, {}, &setup);
     auto* device = manager.getCurrentAudioDevice();
 
     if (error.isNotEmpty() || device == nullptr || device->getName() != outputName)
