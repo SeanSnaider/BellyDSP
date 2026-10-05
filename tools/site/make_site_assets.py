@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+
 # /// script
 # requires-python = ">=3.10"
 # dependencies = ["pillow>=10", "fonttools>=4.47", "brotli>=1.1"]
