@@ -575,6 +575,13 @@ target_link_libraries(ampsim_tests
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
+if(MSVC)
+    # The tests run on the main thread, which Windows gives a 1 MB stack (macOS: 8 MB). Unlike clang, MSVC
+    # gives most locals in sibling { } scopes their own slot, so a runTest() with dozens of AmpSimProcessor
+    # locals (152 KB each) asks for one huge frame: ProcessorTests' is 9.2 MB, and several others are near
+    # 1 MB, depending on inlining. 64 MB is address space only; pages are committed as they're touched.
+    target_link_options(ampsim_tests PRIVATE /STACK:67108864)
+endif()
 add_dependencies(ampsim_tests nam_render AmpSimNotices)
 # The notices and the bundled content sit next to the test binary too, so the tests read the same
 # generated file and the same content folder (platform::factoryContentFolder()) the app ships.
