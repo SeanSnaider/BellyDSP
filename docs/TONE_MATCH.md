@@ -25,9 +25,40 @@ What it can't do, as measured below: pin the Gain down within a few dB (a cranke
 4. **Match.** It takes a few seconds (plus about a minute per minute of audio when separating). Cancel stops it.
 5. **Result.** The amp, Gain, tone, cab, match EQ (bands low to high), the curve the EQ was fitted to, and the score. **Apply** sets them as normal settings in one undo step (Cmd-Z puts everything back, the cab and the pre effects included), so a preset saves them. **Discard** throws the result away.
 
+6. **Compare.** Once the result is in, the Match card plays three things, looped: **Target** (what was matched), **Match** (your DI through the result) and **Current** (your DI through what's set now). See "Comparing" below.
+
 What Apply changes (ASSUMPTIONS TM8, TM19): the amp slot, its Gain and tone, the cab (close mic 1, with mic 2 and the room muted, cuts off), the post EQ (on, parametric, the five bands, cuts off), and it switches off the pre effects that color the tone before the amp, the pre compressor, boost, overdrive, and pre EQ, so the match is heard as it was made. The noise gate stays as it is. The page says this above Apply, with which of them are on right now.
 
 From the command line: `prototypes/tone_match.py match TARGET DI --mode same|anything` (the prototype, through `ampsim_render`), and `ampsim_separate song.wav guitar.wav` (the separation, with its timing and memory).
+
+## Comparing (A/B)
+
+Sean's feedback on the first version: "hard to compare". So the page plays the song's guitar and your matched tone side by side, looped, without leaving it (ASSUMPTIONS TM24 to TM31).
+
+**The sources.**
+
+- **Target**: what was matched, the separated guitar stem when "Separate the guitar first" was on, otherwise the selected section of the file.
+- **Match**: the DI the match used, rendered through what Apply would set (the slot, its Gain and tone, the cab in close mic 1, the match EQ as the post EQ, the pre effects off). The values are the ones the parameters will hold, so the render equals what Apply produces bit for bit (tested: `renderTone` on the settings read back from the processor after Apply gives the identical 432,000 samples).
+- **Current**: the same DI through what's set now. It re-renders by itself when the slot, its knobs, its capture, close mic 1's IR, the amp or cab bypass, or the post EQ change and then stay still for 300 ms. After Apply it equals Match (tested).
+
+Both renders run on the session's worker through `ToneMatcher::renderTone`: the chain's own `AmpSection`, close mic 1's IR as the cab plays it (the cab's own loading and loudness match), FFT convolution, and the chain's own `Equalizer`. They take about 3.6 s for a 9 s DI on this Mac, while the page stays usable, and Cancel stops them (bounded by a capture's load, which can't be interrupted: 1.2 s measured with a gain set). Not in them: the pre effects (Apply switches the coloring ones off, and Current leaves them out too), close mic 2, the room, the other post effects, the cab mic's level and pan, and the output level.
+
+**Playing.** A preview player sits at the very end of the chain, after the output level and before the output limiter (so nothing it plays can clip the output). It's a chain block that's idle unless comparing, and idle it returns without touching the audio, so the live path is bit-identical to before (tested over 3 s of the riff, before a preview and from 50 ms after it). It adds no latency. The audio thread only reads buffers that were built and filled elsewhere and handed over with a `Handoff` (old ones handed back to be freed off the audio thread), and atomics for play, the source, the loops, and the levels. It's in the real-time safety test, which stays at 0 allocations, 0 frees, 0 blocking locks: material handed over, played for 408 buffers through its loop's wraps, switched three times, its loops moved, new material swapped in mid-play, stopped.
+
+- **Play/Stop** (Space), **Target / Match / Current** (1, 2, 3), from anywhere on the page. Leaving the page stops it.
+- **The loop** is the strip under the buttons: the matched section, the loop on it, and the playhead. Drag to set it, drag its edges or middle, double-click for the whole section (the default).
+- **Mute my guitar while comparing** (on): the live guitar fades out over 20 ms while previewing and back after Stop, so the comparison isn't polluted. Off, you can play along.
+- **Level match** (on): every source brought to the same BS.1770 loudness (that of the Current render, the level your rig plays at), so the comparison is about tone, not volume. Each source's own loudness is shown under its name. Measured through the processor, one loop of each: -19.29, -19.36, and -19.37 LUFS, a spread of 0.076 LU.
+- **Level**: the comparison's own volume, -30 to +6 dB.
+
+**Switching and looping.** A switch fades the old source out and the new one in over 20 ms with an equal-power crossfade: gains sin(theta) and cos(theta) of the same angle, whose squares sum to 1. That holds the level for two different, uncorrelated signals (measured: within 0.03 dB of the sines' level through a switch), where the chain's linear bypass fade, made for two versions of one signal, would dip 3 dB. The loop wraps the same way: 20 ms before its end the playing stream fades out, reaching the end as its gain reaches 0, while the same source fades in from the loop's start. Measured on two sines (220 and 331 Hz, -6 dBFS): the largest sample-to-sample step through a switch is 0.026 and through a wrap 0.014, under the 0.036 two such sines can make on their own; a hard switch would have jumped 0.014 here and a hard wrap 0.375.
+
+**Keeping the place.** Match and Current share the DI's clock, so a switch between them continues at the exact next sample (tested). Between the target and the DI:
+
+- *Same part*: the two are lined up through the DTW path the matcher already found (against the winning slot's render): each analysis frame's mean partner on the other clock, at the frames' centres, interpolated linearly. The DI's loop is the target's loop mapped the same way (measured on the fixtures: the target's 2.0 to 6.0 s is the DI's 1.957 to 5.829 s, and a switch 1.5 s in continued at 0.402 of the DI's loop against the target's 0.375 plus 0.1 s). The path has the 43 ms hop's resolution.
+- *Anything*: nothing corresponds, so the target loops the chosen range and the DI its whole take, each from its own start, and a switch keeps the offset into the loop. The page says so under the progress bar.
+
+**The spectra.** The result's curve also shows the target's and the match render's long-term spectra as thin lines (the target in ink, the match in emerald), third-octave smoothed, level-matched to each other with the fit's weights, on the EQ's own dB scale with the target's loudest counted band at +9 dB, so the gap between them reads against the EQ curve.
 
 ## How it works
 
@@ -198,6 +229,8 @@ Reproduce: `uv run --python 3.11 --with demucs --with numpy --with scipy python 
 
 `src/tonematch/` is a line-by-line port of the prototype, golden-tested against it on the same files (`tests/fixtures/tone_match`, written by the prototype's `golden` command, all synthetic): the bands, the weights, and Nelder-Mead on Rosenbrock's function are identical; the fixtures' long-term spectra and features agree within 0.00001 dB; DTW finds the same path (same length and checksum); a candidate's features, residual, tone fits, and match EQ curve agree within 0.001 dB; and the whole search finds the prototype's amp, Gain, and cab with the same score.
 
+The comparison's tests are `tests/ToneMatchCompareTests.cpp` (snapshots `build/proof/tone_match/10_compare_rendering.png` to `14_compare_same_part.png`) and the real-time safety test.
+
 Other tests (`tests/ToneMatchTests.cpp`, `ToneMatchAppTests.cpp`, `ToneMatchSeparationTests.cpp`): the search on synthetic cases with known settings in C++ (every match better than the defaults); cancel; decoding WAV, AIFF, FLAC, M4A, and MP3; the DI recorder (sample-exact, and inside the real-time safety test, which stays at 0 allocations, 0 frees, 0 blocking locks); Apply as one undo step, with redo and Discard; the page, with snapshots in `build/proof/tone_match/`; the separation installer's size and SHA-256 checks and cancel; the C++ separation against Python's Demucs on the same 10 s clip (20.8 dB SDR; Python against its own reruns, which draw a different random shift, 19.0 to 31.3 dB); a silent stretch (finite, silent stem); simulated out of memory (retried with one worker, then reported); the worker rule; the log's cap; Apply switching the pre effects off and undo restoring each switch; and the result lines breaking only between items.
 
 Two groups need a flag, so the default suite stays offline. `AMPSIM_HTTP_TESTS=1` runs the installer against `tests/model_server.py` (through uv), which redirects like Hugging Face, to another host name with a long percent-escaped query it refuses to accept changed, and misbehaves on purpose: a connection dropped at 20 MB, two 503s, a 25 s wait for the first byte, a 404, a flipped byte. Then the page's whole flow from an empty model folder on `tests/fixtures/tone_match/song_44k.mp3` (20 s of the synthetic song, 44.1 kHz stereo, LAME through lameenc), from 7.3 s. `AMPSIM_NETWORK_TESTS=1` runs the page's whole flow against the real URL (any song with `AMPSIM_SONG`, `AMPSIM_SONG_DI`, `AMPSIM_SONG_START`, `AMPSIM_SONG_SECONDS`).
@@ -205,6 +238,7 @@ Two groups need a flag, so the default suite stays offline. `AMPSIM_HTTP_TESTS=1
 ## Not verified (only Sean can)
 
 - How a match sounds, on anything. Every number here is a measurement on synthetic guitars.
+- How the comparison sounds and feels: whether the switches and the loop are click-free to his ears, whether equal loudness by BS.1770 sounds equally loud on his material, and whether same part's alignment keeps a switch on the same note (PROGRESS TM.6).
 - Real songs: Demucs on real mixes, real lead tones, real DIs (PROGRESS TM.1 to TM.3).
 
 ## Sources
