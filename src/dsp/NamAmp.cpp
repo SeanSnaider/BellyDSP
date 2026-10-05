@@ -131,8 +131,9 @@ NamAmp::LoadResult NamAmp::loadModel (const juce::File& file, bool normalize)
     return loadModel (file, normalize, Calibration {});
 }
 
-NamAmp::LoadResult NamAmp::loadModel (const juce::File& file, bool normalize, const Calibration& calibration)
+NamAmp::LoadResult NamAmp::loadModel (const juce::File& file, bool normalize, const Calibration& calibration, const std::atomic<bool>* cancel)
 {
+    const auto cancelled = [cancel] { return cancel != nullptr && cancel->load (std::memory_order_relaxed); };
     const auto maxBlock = loaderMaxBlockSize.load();
     const auto isSet = file.isDirectory() || file.hasFileExtension ("json");
     std::vector<juce::File> files;
@@ -158,6 +159,8 @@ NamAmp::LoadResult NamAmp::loadModel (const juce::File& file, bool normalize, co
 
     for (size_t i = 0; i < files.size(); ++i)
     {
+        if (cancelled())
+            return failed ("Cancelled");
         juce::String error;
         model->steps[i].dsp = openModel (files[i], maxBlock, error);
         if (model->steps[i].dsp == nullptr)
@@ -194,6 +197,8 @@ NamAmp::LoadResult NamAmp::loadModel (const juce::File& file, bool normalize, co
 
     for (auto& step : model->steps)
     {
+        if (cancelled())
+            return failed ("Cancelled");
         rendered.push_back (renderOffline (*step.dsp, referenceDI, model->inputGain)); // the input as process() scales it
         step.dsp->Reset (requiredSampleRate, maxBlock);
         const auto lufs = loudness::integratedMono (rendered.back().data(), (int) rendered.back().size(), requiredSampleRate);
@@ -265,6 +270,8 @@ NamAmp::LoadResult NamAmp::loadModel (const juce::File& file, bool normalize, co
 
             for (int j = 0; j < compensationPoints; ++j)
             {
+                if (cancelled())
+                    return failed ("Cancelled"); // nothing cached: the next load measures it again
                 const auto trimDb = -singleTrimRangeDb + compensationStepDb * (float) j;
                 // Measured after the normalization, as it's heard: BS.1770's absolute gate (-70 LUFS) would
                 // otherwise drop the quiet blocks of a quiet model at low trims and bias the curve (lstm.nam, whose

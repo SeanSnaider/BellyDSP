@@ -54,8 +54,14 @@ std::vector<float> ToneMatcher::renderAmp (const juce::File& model, const NamAmp
     // A private amp section, built here and dropped at the end: the chain's own amp block, the capture in
     // its first slot (selected), the other slots empty. Settings go in before prepare(), which snaps the
     // smoothers and installs the model with no fade, as ampsim_render does.
+    // Cancelled already: return before loading the capture, and let the load itself stop at the flag. A load
+    // measures the capture's loudness (a gain set's five steps: seconds of rendering), and before this every grid
+    // job queued or running at a cancel paid for a whole one; on a two-thread CI runner that kept a cancelled
+    // match going for over 5 s.
+    if (cancel.load (std::memory_order_relaxed))
+        return {};
     auto section = std::make_unique<AmpSection>();
-    if (! section->slot (0).model.loadModel (model, true, calibration).ok)
+    if (! section->slot (0).model.loadModel (model, true, calibration, &cancel).ok)
         return {};
 
     section->slot (0).inputTrim.setGainDecibels ((float) gainDb);
@@ -78,6 +84,8 @@ std::vector<float> ToneMatcher::renderAmp (const juce::File& model, const NamAmp
 
 std::vector<float> ToneMatcher::renderTone (const ToneSettings& settings, const std::vector<float>& di, const std::atomic<bool>& cancel)
 {
+    if (cancel.load (std::memory_order_relaxed))
+        return {}; // before the capture loads (as renderAmp)
     std::vector<float> out (di);
     juce::AudioBuffer<float> buffer (1, renderBlock);
 
@@ -101,7 +109,7 @@ std::vector<float> ToneMatcher::renderTone (const ToneSettings& settings, const 
     {
         auto section = std::make_unique<AmpSection>();
         auto& slot = section->slot (0);
-        if (! slot.model.loadModel (settings.model, true, settings.calibration).ok)
+        if (! slot.model.loadModel (settings.model, true, settings.calibration, &cancel).ok)
             return {};
         slot.inputTrim.setGainDecibels (settings.gainDb);
         // To the nearest 0.01 dB, exactly as the processor sets them, so a centred knob is exactly flat.
@@ -274,6 +282,8 @@ MatchResult ToneMatcher::match (const std::vector<float>& targetSignal, const st
 
     report (0.0, "Analysing the target");
     const auto target = Analysis::of (targetSignal);
+    if (cancelled())
+        return result;
     if (! target.ok)
     {
         result.error = "The target has too little playing in it to analyse.";
@@ -294,6 +304,8 @@ MatchResult ToneMatcher::match (const std::vector<float>& targetSignal, const st
     std::vector<std::vector<double>> cabBins;
     for (const auto& f : settings.cabs)
     {
+        if (cancelled())
+            return result; // a dozen IRs to read and transform: check between them
         irs.push_back (loadIR (f));
         cabBins.push_back (cabPowerOnBins (irs.back()));
     }
@@ -398,6 +410,8 @@ MatchResult ToneMatcher::match (const std::vector<float>& targetSignal, const st
         // run in parallel; the maps are only read while the workers run.
         std::vector<std::vector<int>> chosenCabs (jobs.size());
         parallelFor ((int) jobs.size(), threads, [&] (int i, int) {
+            if (cancel.load())
+                return; // the result is discarded anyway
             const auto& [s, g, cabs] = jobs[(size_t) i];
             chosenCabs[(size_t) i] = cabs.empty() ? screen (s, g) : cabs;
         });

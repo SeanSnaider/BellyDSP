@@ -70,7 +70,7 @@ public:
     /// d current / dv at 0: the pair's small-signal conductance at rest (both diodes with SPICE's gmin).
     double restConductance() const noexcept { return twoIs / vt + 2.0 * gmin; }
 
-    std::int64_t iterations = 0, solves = 0; // statistics for the tests (64-bit: Windows' long would overflow in about half an hour of playing)
+    std::int64_t iterations = 0, solves = 0; // statistics for the tests (64-bit: a 32-bit long, as on Windows, overflows within an hour of playing at 4x oversampling)
 
 private:
     double twoIs, vt;

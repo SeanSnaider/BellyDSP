@@ -276,14 +276,20 @@ public:
             page.getModeChoice().setSelected (0, juce::sendNotification); // Same part
             page.startMatch();
             juce::Thread::sleep (300);
+            const auto stageAtCancel = session.getStage();
+            const auto cancelledAt = juce::Time::getMillisecondCounterHiRes();
             session.cancel();
-            expect (session.waitForMatch (5000));
+            // A cancel lands within about a second on a dev Mac (ToneMatchTests' cancel test measures it); the wait
+            // is scaled for CI's slower runners.
+            expect (session.waitForMatch ((int) (5000.0 * testing::cpuBudgetScale())));
+            const auto stoppedMs = juce::Time::getMillisecondCounterHiRes() - cancelledAt;
             page.refresh();
             expect (! session.hasResult());
             expectEquals (session.getError(), juce::String ("Cancelled"));
             expectEquals (page.getStatusText(), juce::String ("Cancelled"));
             expect (page.getMatchButton().isEnabled());
-            logMessage ("  -> cancelled 300 ms into a same-part match: no result, the page says \"" + page.getStatusText() + "\", and Match is enabled again");
+            logMessage ("  -> cancelled 300 ms into a same-part match (at \"" + stageAtCancel + "\"): stopped " + juce::String (juce::roundToInt (stoppedMs)) + " ms after the cancel; no result, the page says \""
+                        + page.getStatusText() + "\", and Match is enabled again");
         }
 
         beginTest ("the result lines break only between items, so a value never parts from its unit");

@@ -143,8 +143,10 @@ public:
     /// compensation, or a five-step set). `file` is a .nam, or a gain set's JSON or its folder. Pass
     /// normalize = false to hear (or test) the raw model level: no loudness normalization and no
     /// compensation. The loudness measurement includes the calibration gain, so a calibrated slot still
-    /// lands at the target loudness.
-    LoadResult loadModel (const juce::File& file, bool normalize, const Calibration& calibration);
+    /// lands at the target loudness. `cancel`, if given, is checked between the files and between the
+    /// measurement renders: once it's set the load stops there and fails with "Cancelled", leaving the slot as
+    /// it was (tone match's renders use it, so a cancelled match doesn't wait out whole loads).
+    LoadResult loadModel (const juce::File& file, bool normalize, const Calibration& calibration, const std::atomic<bool>* cancel = nullptr);
     LoadResult loadModel (const juce::File& file, bool normalize = true); // without calibration
 
     /// Background thread: empties the slot (crossfades to passthrough like any model change).

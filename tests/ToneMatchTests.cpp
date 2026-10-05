@@ -447,27 +447,36 @@ public:
                         + juce::String (better) + "/" + juce::String (total));
         }
 
-        beginTest ("cancel: a match stops within a second of the flag (renders check it every 128 samples) and says so");
+        beginTest ("cancel: a match stops within a second of the flag (renders check it every 128 samples, and no capture loads after it) and says so");
         {
-            std::atomic<bool> cancel { false };
+            // With the default worker count, and with one worker (a starved runner, where the grid's queued
+            // renders would each have loaded their capture before seeing the flag).
+            juce::StringArray report;
             const auto target = readMono (fixtures().getChildFile ("target_anything.wav"));
-            double cancelledAt = 0.0;
-            const auto t0 = juce::Time::getMillisecondCounterHiRes();
-            std::thread canceller ([&] {
-                juce::Thread::sleep (300);
-                cancelledAt = juce::Time::getMillisecondCounterHiRes();
-                cancel = true;
-            });
-            const auto r = ToneMatcher::match (target, reference, settingsFor (Mode::anything), cancel);
-            const auto returnedAt = juce::Time::getMillisecondCounterHiRes();
-            canceller.join();
-            expect (! r.ok && r.cancelled);
-            const auto lag = returnedAt - cancelledAt;
-            // The renders check the flag every 128 samples; loading a capture (with its loudness measurement)
-            // and analysing a candidate can't be interrupted, so allow one of those.
-            expect (lag < 1000.0 * testing::cpuBudgetScale(), juce::String (lag)); // CPU-bound: scaled on CI
-            logMessage ("  -> cancelled 300 ms in; returned " + juce::String (lag, 1) + " ms after the flag (" + juce::String (returnedAt - t0, 0)
-                        + " ms in all), result: \"" + r.error + "\"");
+            for (const auto threads : { 0, 1 })
+            {
+                std::atomic<bool> cancel { false };
+                double cancelledAt = 0.0;
+                const auto t0 = juce::Time::getMillisecondCounterHiRes();
+                std::thread canceller ([&] {
+                    juce::Thread::sleep (300);
+                    cancelledAt = juce::Time::getMillisecondCounterHiRes();
+                    cancel = true;
+                });
+                auto settings = settingsFor (Mode::anything);
+                settings.threads = threads;
+                const auto r = ToneMatcher::match (target, reference, settings, cancel);
+                const auto returnedAt = juce::Time::getMillisecondCounterHiRes();
+                canceller.join();
+                expect (! r.ok && r.cancelled);
+                const auto lag = returnedAt - cancelledAt;
+                // The renders check the flag every 128 samples; loading a capture (with its loudness measurement)
+                // and analysing a candidate can't be interrupted, so allow one of those per worker.
+                expect (lag < 1000.0 * testing::cpuBudgetScale(), juce::String (lag)); // CPU-bound: scaled on CI
+                report.add (juce::String (threads == 0 ? "default workers" : "1 worker") + ": returned " + juce::String (lag, 1)
+                            + " ms after the flag (" + juce::String (juce::roundToInt (returnedAt - t0)) + " ms in all), \"" + r.error + "\"");
+            }
+            logMessage ("  -> cancelled 300 ms in; " + report.joinIntoString ("; "));
         }
 
         beginTest ("file input: every format this computer decodes reads back as 48 kHz mono");

@@ -5,6 +5,7 @@
 #include "dsp/Loudness.h"
 #include "dsp/NamAmp.h"
 #include "dsp/ReferenceSignals.h"
+#include "Presets.h"
 
 #include <NAM/get_dsp.h>
 
@@ -500,6 +501,40 @@ public:
             logMessage ("  -> normalized on the calibrated input: " + loudness.joinIntoString ("; "));
             logMessage ("  -> the hotter the interface's full scale, the harder the same guitar drives the capture: output crest factor "
                         + crest.joinIntoString (", ") + " at +0, +12, +24 dBu");
+        }
+
+        beginTest ("a load stops at its cancel flag: \"Cancelled\", nothing installed, and a gain set doesn't run to the end");
+        {
+            const auto set = presets::builtInCapture (1); // Ember: five steps, each measured on 4 s of DI
+            expect (set.exists(), set.getFullPathName());
+
+            const auto t0 = juce::Time::getMillisecondCounterHiRes();
+            ampsim::NamAmp whole;
+            expect (whole.loadModel (set, true, {}).ok);
+            const auto wholeMs = juce::Time::getMillisecondCounterHiRes() - t0;
+            whole.prepare (fs, blockSize); // installs a waiting model at once
+            expect (whole.hasModel());
+
+            std::atomic<bool> cancel { true };
+            ampsim::NamAmp before;
+            const auto early = before.loadModel (set, true, {}, &cancel);
+            expect (! early.ok && early.message == "Cancelled", early.message);
+            before.prepare (fs, blockSize);
+            expect (! before.hasModel());
+
+            cancel = false;
+            ampsim::NamAmp during;
+            std::thread canceller ([&] { juce::Thread::sleep (100); cancel = true; });
+            const auto t1 = juce::Time::getMillisecondCounterHiRes();
+            const auto stopped = during.loadModel (set, true, {}, &cancel);
+            const auto stoppedMs = juce::Time::getMillisecondCounterHiRes() - t1;
+            canceller.join();
+            expect (! stopped.ok && stopped.message == "Cancelled", stopped.message);
+            during.prepare (fs, blockSize);
+            expect (! during.hasModel());
+            expectLessThan (stoppedMs, 0.6 * wholeMs);
+            logMessage ("  -> Ember's gain set: a whole load " + juce::String (juce::roundToInt (wholeMs)) + " ms; cancelled before it starts: \""
+                        + early.message + "\" at once; cancelled 100 ms in: stopped after " + juce::String (juce::roundToInt (stoppedMs)) + " ms, nothing installed");
         }
     }
 };
