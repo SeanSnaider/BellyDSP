@@ -1,6 +1,7 @@
 # CMake build output (the dev build, and the release script's universal build)
 /build
 /build-release
+/build-asan
 
 # Downloaded pinned frameworks (tools/fetch_deps.sh) and release outputs (tools/release/release.sh)
 /build-deps

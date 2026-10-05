@@ -19,6 +19,45 @@ double cpuBudgetScale()
     return scale;
 }
 
+juce::String& currentTestTitle()
+{
+    static juce::String title;
+    return title;
+}
+
+juce::StringArray& skipPatterns()
+{
+    static juce::StringArray patterns;
+    return patterns;
+}
+
+juce::StringArray& skippedTitles()
+{
+    static juce::StringArray titles;
+    return titles;
+}
+
+juce::StringArray& usedSkipPatterns()
+{
+    static juce::StringArray patterns;
+    return patterns;
+}
+
+bool skipped (juce::UnitTest& test)
+{
+    for (const auto& pattern : skipPatterns())
+    {
+        if (currentTestTitle().containsIgnoreCase (pattern))
+        {
+            skippedTitles().addIfNotAlreadyThere (currentTestTitle());
+            usedSkipPatterns().addIfNotAlreadyThere (pattern);
+            test.logMessage ("  SKIPPED: on the skip list (\"" + pattern + "\", from --skip or AMPSIM_SKIP_TESTS)");
+            return true;
+        }
+    }
+    return false;
+}
+
 juce::File exampleModel (const juce::String& fileName) { return namDir().getChildFile ("example_models").getChildFile (fileName); }
 
 juce::File exampleInputFile() { return namDir().getChildFile ("example_audio/input.wav"); }

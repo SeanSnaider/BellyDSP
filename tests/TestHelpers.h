@@ -22,6 +22,20 @@ constexpr double deadlineMicros = 1.0e6 * blockSize / fs; // 2666.7 us per 128-s
 /// (Latency budgets, in ms of audio, don't depend on the machine and aren't scaled.)
 double cpuBudgetScale();
 
+// ---- Skipping timing-bound checks on CI ------------------------------------------------------
+/// The "<test> / <subtest>" title of the subtest running now (TestMain's runner keeps it current).
+juce::String& currentTestTitle();
+/// The skip list: substrings from --skip (repeatable) and AMPSIM_SKIP_TESTS (';'-separated), matched case-
+/// insensitively against "<test> / <subtest>". A whole test whose name matches is left out by TestMain; a subtest
+/// is skipped only where it asks, right after beginTest(), so only the checks that measure wall-clock pacing
+/// (which a starved shared runner can't hold) opt in: `if (! testing::skipped (*this)) { ... }`.
+juce::StringArray& skipPatterns();
+/// True (and a "SKIPPED" line in the log) when the current subtest is on the skip list.
+bool skipped (juce::UnitTest& test);
+/// The subtests skipped so far, and the patterns that matched something (for the runner's summary).
+juce::StringArray& skippedTitles();
+juce::StringArray& usedSkipPatterns();
+
 // ---- Files ----------------------------------------------------------------------------------
 juce::File namDir();
 juce::File exampleModel (const juce::String& fileName);

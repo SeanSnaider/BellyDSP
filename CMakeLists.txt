@@ -103,6 +103,22 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
+# A sanitizer build, in its own directory, for hunting memory and undefined-behaviour bugs:
+#   cmake -B build-asan -DCMAKE_BUILD_TYPE=RelWithDebInfo -DAMPSIM_SANITIZE=ON
+#   cmake --build build-asan --target ampsim_tests -j
+#   ASAN_OPTIONS=allow_user_segv_handler=0 UBSAN_OPTIONS=print_stacktrace=1 build-asan/ampsim_tests_artefacts/RelWithDebInfo/ampsim_tests
+# AddressSanitizer (out-of-bounds, use-after-free, stack-use-after-scope) and UndefinedBehaviorSanitizer (signed
+# overflow, misaligned access, bad shifts, ...) on everything, JUCE and the submodules included. -O1 keeps our
+# code's stack traces readable; NAM core and demucs.cpp keep their -O3 (target flags come later and win).
+option(AMPSIM_SANITIZE "Build with AddressSanitizer and UndefinedBehaviorSanitizer (clang or gcc)" OFF)
+if(AMPSIM_SANITIZE)
+    if(MSVC)
+        message(FATAL_ERROR "AMPSIM_SANITIZE is for clang and gcc builds")
+    endif()
+    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer -g -O1)
+    add_link_options(-fsanitize=address,undefined)
+endif()
+
 # JUCE: audio device I/O, the standalone app wrapper, GUI, and DSP helpers (convolution).
 add_subdirectory(third_party/JUCE)
 
@@ -584,6 +600,13 @@ add_custom_command(TARGET ampsim_tests POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E rm -rf "$<TARGET_FILE_DIR:ampsim_tests>/content"
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/content "$<TARGET_FILE_DIR:ampsim_tests>/content"
     VERBATIM)
+
+# The tests' main thread gets Windows' default stack, 1 MB, on macOS too (instead of macOS's 8 MB), so a test
+# whose locals would overflow it on Windows crashes here first. (A sanitizer build's frames are several times
+# larger, so it keeps the default.)
+if(APPLE AND NOT AMPSIM_SANITIZE)
+    target_link_options(ampsim_tests PRIVATE "LINKER:-stack_size,0x100000")
+endif()
 
 add_test(NAME ampsim_tests
          COMMAND ampsim_tests --proof-dir ${CMAKE_BINARY_DIR}/proof
