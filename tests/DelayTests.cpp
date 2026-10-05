@@ -459,7 +459,7 @@ public:
             expectEquals (total.frees, 0L);
             expectEquals (total.blockingLocks, 0L);
             const auto mean = std::accumulate (micros.begin(), micros.end(), 0.0) / (double) micros.size();
-            expectLessThan (mean, 0.05 * deadlineMicros);
+            expectLessThan (mean, 0.05 * deadlineMicros * cpuBudgetScale());
             logMessage ("  -> " + juce::String (blocks) + " blocks through every mode, layout, feedback up to 110%, bypass and back: "
                         + juce::String (total.allocations) + " allocations, " + juce::String (total.frees) + " frees, " + juce::String (total.blockingLocks)
                         + " locks; mean " + juce::String (mean, 1) + " us per stereo block (" + juce::String (100.0 * mean / deadlineMicros, 2) + "% of the deadline)");

@@ -1840,7 +1840,7 @@ private:
         time (all, "bypassed, all three on", {}, true);
         time (Bloom::Settings {}, "bypassed, all three off", {}, true);
 
-        expectLessThan (worstMean, 0.10 * deadlineMicros);
+        expectLessThan (worstMean, 0.10 * deadlineMicros * cpuBudgetScale());
         logMessage ("  -> 10 s of guitar DI, of the 2.67 ms deadline: " + results.joinIntoString ("; "));
     }
 

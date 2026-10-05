@@ -13,6 +13,12 @@ namespace testing
 
 juce::File namDir() { return juce::File (AMPSIM_NAM_DIR); }
 
+double cpuBudgetScale()
+{
+    static const double scale = juce::jmax (1.0, juce::SystemStats::getEnvironmentVariable ("AMPSIM_CPU_BUDGET_SCALE", "1").getDoubleValue());
+    return scale;
+}
+
 juce::File exampleModel (const juce::String& fileName) { return namDir().getChildFile ("example_models").getChildFile (fileName); }
 
 juce::File exampleInputFile() { return namDir().getChildFile ("example_audio/input.wav"); }

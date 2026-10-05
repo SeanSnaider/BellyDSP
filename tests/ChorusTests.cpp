@@ -1299,7 +1299,7 @@ private:
             }
         });
 
-        expectLessThan (worstMean, 0.05 * deadlineMicros);
+        expectLessThan (worstMean, 0.05 * deadlineMicros * cpuBudgetScale());
         logMessage ("  -> 10 s of guitar DI, analog on, of the 2.67 ms deadline: " + results.joinIntoString ("; "));
     }
 

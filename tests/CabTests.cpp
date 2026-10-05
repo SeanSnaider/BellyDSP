@@ -511,7 +511,7 @@ public:
             std::sort (micros.begin(), micros.end());
             const auto mean = std::accumulate (micros.begin(), micros.end(), 0.0) / (double) micros.size();
             const auto p99 = micros[(size_t) (0.99 * (double) (micros.size() - 1))];
-            expectLessThan (mean, 0.25 * deadlineMicros);
+            expectLessThan (mean, 0.25 * deadlineMicros * cpuBudgetScale());
             logMessage ("  -> mean " + juce::String (mean, 1) + " us (" + juce::String (100.0 * mean / deadlineMicros, 1)
                         + "% of the deadline), p99 " + juce::String (p99, 1) + " us, worst " + juce::String (micros.back(), 1) + " us");
         }
@@ -581,7 +581,7 @@ public:
                 expectEquals (r->counts.blockingLocks, 0L);
             }
             // The verdict for bundling: two 1 s close mics cost little next to the 2667 us deadline.
-            expectLessThan (longOne.mean, 0.05 * deadlineMicros);
+            expectLessThan (longOne.mean, 0.05 * deadlineMicros * cpuBudgetScale());
             const auto describe = [] (const Result& r)
             {
                 return "mean " + juce::String (r.mean, 1) + " us (" + juce::String (100.0 * r.mean / deadlineMicros, 2) + "% of the deadline), p99 "

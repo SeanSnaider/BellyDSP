@@ -16,6 +16,12 @@ constexpr double fs = 48000.0;
 constexpr int blockSize = 128;
 constexpr double deadlineMicros = 1.0e6 * blockSize / fs; // 2666.7 us per 128-sample block
 
+/// The CPU budgets the timing tests hold are multiplied by this. It is 1 on a dev machine. CI's shared runners are
+/// several times slower than a dev Mac and timeshared, so the workflows set AMPSIM_CPU_BUDGET_SCALE (4): the tests
+/// still measure and print the real numbers, and still catch a gross slowdown, without failing on a small VM.
+/// (Latency budgets, in ms of audio, don't depend on the machine and aren't scaled.)
+double cpuBudgetScale();
+
 // ---- Files ----------------------------------------------------------------------------------
 juce::File namDir();
 juce::File exampleModel (const juce::String& fileName);

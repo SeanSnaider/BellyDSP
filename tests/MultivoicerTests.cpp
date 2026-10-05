@@ -922,8 +922,8 @@ private:
         auto eightMono = eight;
         eightMono.engine = Multivoicer::Engine::mono;
         const auto mono = time (eightMono, "8 voices Mono (PSOLA plus the granular fallback, one analysis)");
-        expectLessThan (poly, 0.15 * deadlineMicros);
-        expectLessThan (mono, 0.25 * deadlineMicros);
+        expectLessThan (poly, 0.15 * deadlineMicros * cpuBudgetScale());
+        expectLessThan (mono, 0.25 * deadlineMicros * cpuBudgetScale());
         logMessage ("  -> 10 s of guitar DI, of the 2.67 ms deadline: " + rows.joinIntoString ("; "));
     }
 

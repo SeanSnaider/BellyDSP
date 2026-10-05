@@ -465,7 +465,7 @@ public:
             const auto lag = returnedAt - cancelledAt;
             // The renders check the flag every 128 samples; loading a capture (with its loudness measurement)
             // and analysing a candidate can't be interrupted, so allow one of those.
-            expect (lag < 1000.0, juce::String (lag));
+            expect (lag < 1000.0 * testing::cpuBudgetScale(), juce::String (lag)); // CPU-bound: scaled on CI
             logMessage ("  -> cancelled 300 ms in; returned " + juce::String (lag, 1) + " ms after the flag (" + juce::String (returnedAt - t0, 0)
                         + " ms in all), result: \"" + r.error + "\"");
         }

@@ -1467,7 +1467,7 @@ private:
             results.add (juce::String (name) + (mode == Boost::Mode::screamer ? " " + juce::String (factor) + "x" : juce::String()) + ": " + juce::String (mean, 1) + " us ("
                          + juce::String (100.0 * mean / deadlineMicros, 2) + "%)");
         }
-        expectLessThan (worstMean, 0.05 * deadlineMicros);
+        expectLessThan (worstMean, 0.05 * deadlineMicros * cpuBudgetScale());
         logMessage ("  -> mean per 128-sample block (% of the 2.67 ms deadline): " + results.joinIntoString ("; "));
     }
 };

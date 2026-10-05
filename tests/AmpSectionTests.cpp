@@ -291,7 +291,7 @@ public:
             const auto flushed = measure (true);
             const auto unflushed = measure (false);
 
-            expectLessThan (flushed[0], 0.5 * deadlineMicros);
+            expectLessThan (flushed[0], 0.5 * deadlineMicros * cpuBudgetScale());
             logMessage ("  -> as the app runs it (denormals flushed): mean " + juce::String (flushed[0], 1) + " us ("
                         + juce::String (100.0 * flushed[0] / deadlineMicros, 1) + "% of the 2.67 ms deadline), p99 "
                         + juce::String (flushed[1], 1) + " us, worst " + juce::String (flushed[2], 1) + " us");

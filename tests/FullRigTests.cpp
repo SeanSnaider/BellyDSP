@@ -167,8 +167,8 @@ public:
                 }
             });
             expectEquals (maxModels, ampsim::NamAmp::maxRunningSteps);
-            expectLessThan (between.mean, 0.6 * deadlineMicros);
-            expectLessThan (sweeping.mean, 0.7 * deadlineMicros);
+            expectLessThan (between.mean, 0.6 * deadlineMicros * cpuBudgetScale());
+            expectLessThan (sweeping.mean, 0.7 * deadlineMicros * cpuBudgetScale());
         }
 
         for (const auto* t : std::initializer_list<const Timing*> { &bare, &everything, &heaviest, &between, &sweeping })
@@ -177,7 +177,7 @@ public:
             expectEquals (t->counts.frees, 0L);
             expectEquals (t->counts.blockingLocks, 0L);
         }
-        expectLessThan (everything.mean, 0.6 * deadlineMicros);
+        expectLessThan (everything.mean, 0.6 * deadlineMicros * cpuBudgetScale());
 
         const juce::String captures = builtIns ? "the built-in Glass, Ember, Monolith" : "A1 standard, A2, LSTM";
         logMessage ("  -> three captures (" + captures + ") and three mics, everything else at its defaults: " + bare.describe());

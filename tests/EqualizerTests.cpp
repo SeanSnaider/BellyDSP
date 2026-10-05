@@ -389,7 +389,7 @@ public:
                 micros.push_back (std::chrono::duration<double, std::micro> (std::chrono::steady_clock::now() - t0).count());
             }
             const auto mean = std::accumulate (micros.begin(), micros.end(), 0.0) / (double) micros.size();
-            expectLessThan (mean, 0.05 * deadlineMicros);
+            expectLessThan (mean, 0.05 * deadlineMicros * cpuBudgetScale());
             logMessage ("  -> mean " + juce::String (mean, 1) + " us per buffer (" + juce::String (100.0 * mean / deadlineMicros, 2) + "% of the deadline)");
         }
     }

@@ -959,7 +959,7 @@ private:
                     times.push_back (std::chrono::duration<double, std::micro> (std::chrono::steady_clock::now() - t0).count());
                 }
                 const auto mean = std::accumulate (times.begin(), times.end(), 0.0) / (double) times.size();
-                expectLessThan (mean, 1000.0);
+                expectLessThan (mean, 1000.0 * cpuBudgetScale());
                 lines.add ("tuner analyse() on " + name + ": mean " + micros (mean) + ", p99 " + micros (percentile (times, 99.0)) + ", worst "
                            + micros (*std::max_element (times.begin(), times.end())) + "; at 62.5 updates a second that's "
                            + str (100.0 * mean * 62.5 / 1.0e6, 2) + "% of one core");
@@ -976,7 +976,7 @@ private:
                 times.push_back (std::chrono::duration<double, std::micro> (std::chrono::steady_clock::now() - t0).count());
             }
             const auto mean = std::accumulate (times.begin(), times.end(), 0.0) / (double) times.size();
-            expectLessThan (2.0 * mean, 0.02 * deadlineMicros);
+            expectLessThan (2.0 * mean, 0.02 * deadlineMicros * cpuBudgetScale());
             lines.add ("harmonizer preset, push (64) + detect() on the guitar DI: mean " + micros (mean) + ", p99 " + micros (percentile (times, 99.0))
                        + "; two per 128-sample buffer = " + str (100.0 * 2.0 * mean / deadlineMicros, 2) + "% of the 2.67 ms deadline");
             for (const auto& l : lines)

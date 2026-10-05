@@ -1192,7 +1192,7 @@ public:
             const auto mean = std::accumulate (micros.begin(), micros.end(), 0.0) / (double) micros.size();
             const auto p99 = sorted[(size_t) (0.99 * (double) (sorted.size() - 1))];
             const auto linkedMean = std::accumulate (linkedMicros.begin(), linkedMicros.end(), 0.0) / (double) linkedMicros.size();
-            expectLessThan (mean, 0.02 * deadlineMicros);
+            expectLessThan (mean, 0.02 * deadlineMicros * cpuBudgetScale());
             logMessage ("  -> " + juce::String (blocks) + " buffers changing every setting, " + juce::String (a.getLearnCount())
                         + " Learn runs, B linked / own / curve-only in turn: " + juce::String (total.allocations) + " allocations, " + juce::String (total.frees)
                         + " frees, " + juce::String (total.blockingLocks) + " locks");
