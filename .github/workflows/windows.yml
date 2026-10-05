@@ -53,10 +53,25 @@ jobs:
       # Whether the signing key secret exists (a step's `if` can't read secrets directly).
       HAS_ED_KEY: ${{ secrets.AMPSIM_ED_PRIVATE_KEY != '' }}
     steps:
-      - name: Check out (with JUCE and NeuralAmpModelerCore)
+      - name: Check out (submodules come next, cached and retried)
         uses: actions/checkout@v4
+
+      - name: Submodule cache key (the pinned commits)
+        id: subkey
+        shell: bash
+        run: echo "key=submodules-${{ runner.os }}-$(git ls-tree -r HEAD third_party | git hash-object --stdin)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the submodules from the cache
+        uses: actions/cache@v4
         with:
-          submodules: recursive
+          path: |
+            .git/modules
+            third_party
+          key: ${{ steps.subkey.outputs.key }}
+
+      - name: Fetch the submodules (with retries; Eigen's host, gitlab.com, can be overloaded)
+        shell: bash
+        run: tools/ci/fetch_submodules.sh
 
       - name: Read the pinned versions and release settings
         id: conf
