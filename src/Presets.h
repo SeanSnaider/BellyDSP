@@ -139,6 +139,11 @@ juce::File builtInCapture (int slot);       ///< that file in the app's content 
 /// it; anything else, nothing. resolve() and a restored state use it, so old presets and states get the sets.
 juce::File replacementForRetiredCapture (const juce::String& path);
 
+/// Whether a saved path is absolute on this OS or the other one: "/..." on Windows and "C:\..." on a Mac
+/// count too (a state saved on one, opened on the other), where JUCE's isAbsolutePath says no. Only this OS's
+/// absolute paths make a juce::File; this says whether a path that doesn't was a file at all.
+bool isSavedAbsolutePath (const juce::String& path);
+
 /// Whether a file ships with the app (it's inside the app's content folder, libraryRoot ("factory")).
 bool isBundled (const juce::File& file);
 
