@@ -874,7 +874,9 @@ private:
 
     void testThread()
     {
-        beginTest ("TunerThread: real-time pace from a fake audio thread, readings arrive at about 60 Hz, never torn, cleared on disengage");
+        // The update rate is wall-clock pacing, checked in its own subtest below so CI can skip just that.
+        double updatesPerSecond = 0.0;
+        beginTest ("TunerThread: real-time pace from a fake audio thread, readings live and in tune, never torn, cleared on disengage");
         {
             ampsim::TunerThread tuner;
             tuner.prepare (fs, blockSize);
@@ -921,20 +923,34 @@ private:
             const auto updates = tuner.getUpdateCount() - startCount;
 
             tuner.setEngaged (false);
-            std::this_thread::sleep_for (std::chrono::milliseconds (150));
-            const auto afterDisengage = tuner.getReading();
+            // The analysis thread clears the reading on its next pass (60 Hz); poll for it, scaled for CI.
+            const auto disengagedAt = std::chrono::steady_clock::now();
+            auto afterDisengage = tuner.getReading();
+            while (afterDisengage.hasReading && std::chrono::steady_clock::now() - disengagedAt < std::chrono::milliseconds ((int) (1000.0 * testing::cpuBudgetScale())))
+            {
+                std::this_thread::sleep_for (std::chrono::milliseconds (5));
+                afterDisengage = tuner.getReading();
+            }
+            const auto clearMs = std::chrono::duration<double, std::milli> (std::chrono::steady_clock::now() - disengagedAt).count();
+            updatesPerSecond = updates / seconds;
 
             expect (last.live);
             expectEquals (last.midiNote, 45);
             expectLessThan (std::abs (cents (last.frequency, tone.pitch)), 0.5);
             expectEquals (torn, 0);
-            expect (updates / seconds > 40.0 && updates / seconds < 70.0, "expected about 60 updates a second");
             expect (! afterDisengage.hasReading);
             logMessage ("  -> 2 s of A2 pushed in real time: " + juce::String ((int) updates) + " updates in " + str (seconds, 2) + " s ("
                         + str (updates / seconds, 1) + " per second); first live reading after " + str (1000.0 * firstLive, 0) + " ms; last reading "
                         + juce::MidiMessage::getMidiNoteName (last.midiNote, true, true, 4) + " " + str (last.rawCents, 3) + " cents (true "
                         + str (cents (tone.pitch, 110.0), 3) + "); " + juce::String (snapshots) + " GUI snapshots, " + juce::String (torn)
-                        + " torn; after disengaging: hasReading " + (afterDisengage.hasReading ? "true" : "false"));
+                        + " torn; after disengaging: hasReading " + (afterDisengage.hasReading ? "true" : "false") + " within " + juce::String (juce::roundToInt (clearMs)) + " ms");
+        }
+
+        beginTest ("TunerThread pacing: readings arrive at about 60 Hz in real time (wall-clock; skipped on CI's starved runners)");
+        if (! testing::skipped (*this))
+        {
+            expect (updatesPerSecond > 40.0 && updatesPerSecond < 70.0, "expected about 60 updates a second, got " + str (updatesPerSecond, 1));
+            logMessage ("  -> " + str (updatesPerSecond, 1) + " updates per second (the subtest above measured it)");
         }
     }
 

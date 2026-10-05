@@ -65,6 +65,11 @@ jobs:
       - name: Test
         env:
           AMPSIM_CPU_BUDGET_SCALE: "4" # shared runners are several times slower than a dev Mac (tests/TestHelpers.h)
+          # Skipped here, by a substring of "<test> / <subtest>" (tests/TestMain.cpp), and only checks of wall-clock
+          # pacing that a starved shared runner can't hold (ASSUMPTIONS DS54):
+          #   "TunerThread pacing"  the tuner's analysis thread delivering about 60 readings a second in real time.
+          #                         Its correctness on the same run (live, in tune, never torn) still runs.
+          AMPSIM_SKIP_TESTS: "TunerThread pacing"
         run: ctest --test-dir build --output-on-failure -V
 
       - name: Keep the proof (measurements, renders, editor snapshots)

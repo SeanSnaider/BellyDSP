@@ -113,8 +113,15 @@ jobs:
 
       - name: Configure (Visual Studio 2022, x64)
         shell: bash
+        # Release with debug symbols (/Zi, /DEBUG), so a crash's backtrace has function names. The PDBs stay next
+        # to the exes in build-release and never ship: the installer (installer/windows/BellyDSP.iss) lists its
+        # files one by one (the exe, WinSparkle.dll, the licence texts, content/). /OPT:REF and /OPT:ICF are
+        # what a Release link does without /DEBUG, so the shipped code is the same.
         run: |
           cmake -S . -B build-release -G "Visual Studio 17 2022" -A x64 \
+            -DCMAKE_C_FLAGS_RELEASE="/O2 /Ob2 /DNDEBUG /Zi" \
+            -DCMAKE_CXX_FLAGS_RELEASE="/O2 /Ob2 /DNDEBUG /Zi" \
+            -DCMAKE_EXE_LINKER_FLAGS_RELEASE="/DEBUG /OPT:REF /OPT:ICF /INCREMENTAL:NO" \
             -DAMPSIM_VERSION="${{ steps.conf.outputs.version }}" \
             -DAMPSIM_UPDATER=${{ steps.conf.outputs.updater }} \
             -DAMPSIM_ED_PUBLIC_KEY="${{ steps.conf.outputs.ed_public_key }}" \
@@ -128,6 +135,11 @@ jobs:
       - name: Test (the full suite)
         env:
           AMPSIM_CPU_BUDGET_SCALE: "4" # shared runners are several times slower than a dev Mac (tests/TestHelpers.h)
+          # Skipped here, by a substring of "<test> / <subtest>" (tests/TestMain.cpp), and only checks of wall-clock
+          # pacing that a starved shared runner can't hold (ASSUMPTIONS DS54):
+          #   "TunerThread pacing"  the tuner's analysis thread delivering about 60 readings a second in real time.
+          #                         Its correctness on the same run (live, in tune, never torn) still runs.
+          AMPSIM_SKIP_TESTS: "TunerThread pacing"
         run: ctest --test-dir build-release -C Release --output-on-failure -V
 
       - name: Build the installer (Inno Setup)
