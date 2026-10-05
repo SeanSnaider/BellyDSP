@@ -1068,6 +1068,7 @@ public:
             juce::AudioProcessor::copyXmlToBinary (*tree.createXml(), state);
 
             p.setStateInformation (state.getData(), (int) state.getSize());
+            waitForLoads (p); // the loader thread sets the status
             const auto status = p.getStatus();
             expect (status.modelError[0]);
             expect (status.model[0].contains ("missing"));
