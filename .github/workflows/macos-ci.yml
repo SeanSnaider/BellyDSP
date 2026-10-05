@@ -7,18 +7,13 @@
 #
 # UNTESTED: it can't run until the repo is pushed to GitHub.
 #
-# This file lives in both repos (docs/RELEASING.md). On the public SeanSnaider/BellyDSP it runs on every
-# push and pull request (standard runners are free for public repos). On the private dev repo only by
-# hand (Actions tab > macOS tests > Run workflow): there, macOS minutes count ten times against GitHub's
-# free allowance (2,000 a month on the Free plan), so a 20-minute run costs about 200 of them
-# (ASSUMPTIONS DS40).
+# This file lives in both repos (docs/RELEASING.md). It runs only by hand on both (see "on:" below).
 
 name: macOS tests
 
+# Manual only (Actions tab > macOS tests > Run workflow), on both repos: every change already runs the full
+# suite on Sean's Mac before it's pushed, and the runner took 42 minutes for the same check (2026-10-05).
 on:
-  push:
-    branches: ['**']
-  pull_request:
   workflow_dispatch:
 
 # A newer push cancels this workflow's older run on the same branch, so two builds never compete.
@@ -69,7 +64,15 @@ jobs:
           # pacing that a starved shared runner can't hold (ASSUMPTIONS DS54):
           #   "TunerThread pacing"  the tuner's analysis thread delivering about 60 readings a second in real time.
           #                         Its correctness on the same run (live, in tune, never torn) still runs.
-          AMPSIM_SKIP_TESTS: "TunerThread pacing"
+          #   The five slowest groups, about 33 of the 42 minutes the full suite took on the macOS runner (measured
+          #   2026-10-05 from the runner's per-test times). They run in full on Sean's Mac before every push and on
+          #   his Windows PC before a release (docs/RELEASING.md):
+          #   "Amp gain"                gain-set sweeps and listening renders (11 min on a runner)
+          #   "Gain staging"            level audits rendering every block (6 min)
+          #   "Tone match"              all four tone match groups: matching and separation runs (11 min)
+          #   "Cab normalization study" a study, not a check (1.6 min)
+          #   "Full rig"                a CPU benchmark of the whole rig (a shared runner can't judge CPU)
+          AMPSIM_SKIP_TESTS: "TunerThread pacing;Amp gain;Gain staging;Tone match;Cab normalization study;Full rig"
         run: ctest --test-dir build --output-on-failure -V
 
       - name: Keep the proof (measurements, renders, editor snapshots)

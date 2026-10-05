@@ -135,7 +135,15 @@ jobs:
           # pacing that a starved shared runner can't hold (ASSUMPTIONS DS54):
           #   "TunerThread pacing"  the tuner's analysis thread delivering about 60 readings a second in real time.
           #                         Its correctness on the same run (live, in tune, never torn) still runs.
-          AMPSIM_SKIP_TESTS: "TunerThread pacing"
+          #   The five slowest groups, about 33 of the 42 minutes the full suite took on the macOS runner (measured
+          #   2026-10-05 from the runner's per-test times). They run in full on Sean's Mac before every push and on
+          #   his Windows PC before a release (docs/RELEASING.md):
+          #   "Amp gain"                gain-set sweeps and listening renders (11 min on a runner)
+          #   "Gain staging"            level audits rendering every block (6 min)
+          #   "Tone match"              all four tone match groups: matching and separation runs (11 min)
+          #   "Cab normalization study" a study, not a check (1.6 min)
+          #   "Full rig"                a CPU benchmark of the whole rig (a shared runner can't judge CPU)
+          AMPSIM_SKIP_TESTS: "TunerThread pacing;Amp gain;Gain staging;Tone match;Cab normalization study;Full rig"
         run: ctest --test-dir build-release -C Release --output-on-failure -V
 
       - name: Build the installer (Inno Setup)
