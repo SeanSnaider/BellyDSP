@@ -8,6 +8,7 @@
 #include <array>
 #include <cmath>
 #include <complex>
+#include <cstdint>
 
 namespace ampsim::drive
 {
@@ -69,7 +70,7 @@ public:
     /// d current / dv at 0: the pair's small-signal conductance at rest (both diodes with SPICE's gmin).
     double restConductance() const noexcept { return twoIs / vt + 2.0 * gmin; }
 
-    long iterations = 0, solves = 0; // statistics for the tests
+    std::int64_t iterations = 0, solves = 0; // statistics for the tests (64-bit: Windows' long would overflow in about half an hour of playing)
 
 private:
     double twoIs, vt;
@@ -261,7 +262,7 @@ private:
     double gFeedback = 0.0, gLegC5 = 0.0, gLegC6 = 0.0, gC4 = 0.0, gC5 = 0.0, gC6 = 0.0, sumM = 0.0;
     double jC4 = 0.0, jC5 = 0.0, jC6 = 0.0;
     double vo = 0.0, opAmpHistory = 0.0;
-    long opAmpIterations = 0, opAmpSolves = 0;
+    std::int64_t opAmpIterations = 0, opAmpSolves = 0;
 
 
     // Clipper and tone network.
@@ -366,7 +367,7 @@ private:
     double gm = 0.0, outputConductance = 0.0, clampVoltage = 0.0, inputScale = 0.0;
     Companion c7, c8;
     double g11 = 0.0, g12 = 0.0, gH = 0.0, kM = 0.0, vo = 0.0;
-    long opAmpIterations = 0, opAmpSolves = 0;
+    std::int64_t opAmpIterations = 0, opAmpSolves = 0;
     // Clipper and feed-forward network 2.
     Companion c4, c6, c9, c10, c11, c12;
     double g4 = 0.0, gUpper = 0.0, gLower = 0.0, g17 = 0.0;
@@ -428,7 +429,7 @@ public:
     /// The bias (DC operating point), by unknown: Q4 b e c, Q3 b e c d, Q2 b e c d, Q1 b e c.
     const std::array<double, numUnknowns>& bias() const noexcept { return operatingPoint; }
     /// Newton solves that hit the iteration cap (they keep the last iterate). For the tests.
-    long unconverged() const noexcept { return failures; }
+    std::int64_t unconverged() const noexcept { return failures; }
 
     // 2N5088: the Ebers-Moll part of Fairchild's SPICE model (prototypes/circuits.py, BJT_2N5088).
     static constexpr double transistorSaturationCurrent = 5.911e-15, forwardBeta = 1122.0, reverseBeta = 1.271;
@@ -482,7 +483,7 @@ private:
     std::array<double, 4> vbeLimited {}, vbcLimited {};
     std::array<double, 2> diodeLimited {};
     double output = 0.0;
-    long iterations = 0, solves = 0, failures = 0;
+    std::int64_t iterations = 0, solves = 0, failures = 0;
 };
 
 } // namespace ampsim::drive

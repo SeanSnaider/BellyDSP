@@ -22,6 +22,8 @@ Stereo runChain (ampsim::Chain& chain, const std::vector<float>& input,
     });
 }
 
+// Chains are made on the heap: one is 147 KB, and MSVC gives every local in runTest() its own slot in the frame,
+// which would outgrow Windows' 1 MB main-thread stack.
 class ChainTests final : public juce::UnitTest
 {
 public:
@@ -33,7 +35,8 @@ public:
 
         beginTest ("the DI snapshot is the untouched guitar, even after the input gain changes the buffer");
         {
-            ampsim::Chain chain;
+            auto chainOwner = std::make_unique<ampsim::Chain>();
+            auto& chain = *chainOwner;
             chain.inputGain.setGainDecibels (12.0f);
             chain.prepare (fs, blockSize);
 
@@ -50,7 +53,8 @@ public:
 
         beginTest ("zero latency end to end, and left == right for the one-mic chain");
         {
-            ampsim::Chain chain;
+            auto chainOwner = std::make_unique<ampsim::Chain>();
+            auto& chain = *chainOwner;
             const auto loaded = chain.cab.loadCloseMicSamples (0, toBuffer (ir), fs, "synthetic");
             chain.prepare (fs, blockSize);
 
@@ -72,7 +76,12 @@ public:
             const size_t bypassAt = 50 * blockSize;
             const int fade = juce::roundToInt (fs * ampsim::Chain::bypassFadeSeconds); // 480
 
-            ampsim::Chain chain, wetRef, dryRef;
+            auto chainOwner = std::make_unique<ampsim::Chain>();
+            auto& chain = *chainOwner;
+            auto wetRefOwner = std::make_unique<ampsim::Chain>();
+            auto& wetRef = *wetRefOwner;
+            auto dryRefOwner = std::make_unique<ampsim::Chain>();
+            auto& dryRef = *dryRefOwner;
             chain.cab.loadCloseMicSamples (0, toBuffer (ir), fs, "synthetic");
             wetRef.cab.loadCloseMicSamples (0, toBuffer (ir), fs, "synthetic");
             for (auto* c : { &chain, &wetRef, &dryRef })
@@ -123,7 +132,10 @@ public:
             for (size_t n = 0; n < ringing.size(); ++n)
                 longIR[n] = ringing[n] * std::exp (-(double) n / (0.1 * fs));
 
-            ampsim::Chain chain, control;
+            auto chainOwner = std::make_unique<ampsim::Chain>();
+            auto& chain = *chainOwner;
+            auto controlOwner = std::make_unique<ampsim::Chain>();
+            auto& control = *controlOwner;
             chain.cab.loadCloseMicSamples (0, toBuffer (longIR), fs, "ringing");
             control.cab.loadCloseMicSamples (0, toBuffer (longIR), fs, "ringing");
             chain.prepare (fs, blockSize);
@@ -156,7 +168,8 @@ public:
 
         beginTest ("toggling bypass back mid-fade reverses smoothly with no reset");
         {
-            ampsim::Chain chain;
+            auto chainOwner = std::make_unique<ampsim::Chain>();
+            auto& chain = *chainOwner;
             chain.cab.loadCloseMicSamples (0, toBuffer (ir), fs, "synthetic");
             chain.prepare (fs, blockSize);
 
@@ -201,7 +214,10 @@ public:
 
             using Section = ampsim::Chain::Section;
             const std::vector<Slot> swapped { Slot::gateA, Slot::preEq, Slot::preCompressor, Slot::boost, Slot::overdrive };
-            ampsim::Chain chain, reference;
+            auto chainOwner = std::make_unique<ampsim::Chain>();
+            auto& chain = *chainOwner;
+            auto referenceOwner = std::make_unique<ampsim::Chain>();
+            auto& reference = *referenceOwner;
             setUp (chain);
             setUp (reference);
             expect (reference.requestOrder (Section::pre, swapped));
@@ -271,7 +287,8 @@ public:
             using Section = ampsim::Chain::Section;
             const std::vector<Slot> swapped { Slot::postEq, Slot::postCompressor, Slot::delay, Slot::chorus, Slot::reverb };
 
-            ampsim::Chain chain;
+            auto chainOwner = std::make_unique<ampsim::Chain>();
+            auto& chain = *chainOwner;
             setUp (chain);
             chain.prepare (fs, blockSize);
             auto tone = sine (220.0, 0.25, (int) (1.5 * fs));

@@ -17,6 +17,7 @@
 
 #include <array>
 #include <atomic>
+#include <memory>
 #include <mutex>
 
 /// The plugin: parameters, state, file loading, MIDI, and the glue between JUCE's audio callback and
@@ -352,7 +353,12 @@ private:
     void applyCabParameters();
     std::atomic<float>* raw (const juce::String& id) const { return parameters.getRawParameterValue (id); }
 
-    ampsim::Chain chain;
+    // The chain lives on the heap: its blocks hold their fixed-size state inline (147 KB in all), and a
+    // processor that embedded it would be as big. The tests make dozens of processors as locals, and MSVC
+    // gives every one its own slot in the test function's frame, which overflowed Windows' 1 MB main-thread
+    // stack (CI, 2026-10-05). A reference keeps every `chain.` use as it was.
+    const std::unique_ptr<ampsim::Chain> chainStorage = std::make_unique<ampsim::Chain>();
+    ampsim::Chain& chain = *chainStorage;
 
     struct SlotParameters
     {

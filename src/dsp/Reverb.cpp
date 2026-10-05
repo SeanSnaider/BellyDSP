@@ -398,8 +398,9 @@ void FeedbackDelayNetwork::prepare (double rate)
         if (composite[(size_t) p])
             continue;
         primes.push_back (p);
-        for (long m = (long) p * p; m <= limit; m += p)
-            composite[(size_t) m] = true;
+        // size_t, not long: Windows' 32-bit long would overflow p * p above p = 46341 (a 230 kHz rate).
+        for (auto m = (size_t) p * (size_t) p; m <= (size_t) limit; m += (size_t) p)
+            composite[m] = true;
     }
 
     const auto maxExcursion = (int) std::ceil (maxExcursionMs * toSamples);

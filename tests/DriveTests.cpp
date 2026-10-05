@@ -609,7 +609,7 @@ private:
             juce::String extra;
             if (auto* fuzz = dynamic_cast<ampsim::drive::FuzzCircuit*> (&circuit))
             {
-                expectEquals (fuzz->unconverged(), 0L);
+                expectEquals (fuzz->unconverged(), (std::int64_t) 0);
                 extra = " (all 14 unknowns jointly; " + juce::String (fuzz->unconverged()) + " solves hit the iteration cap)";
             }
             logMessage ("  -> " + modeName (mode) + " at full drive on the guitar DI: " + juce::String (circuit.meanIterations(), 2)

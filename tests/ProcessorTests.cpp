@@ -11,6 +11,10 @@
 
 #include <numeric>
 
+// This file alone makes 65 processors as locals of one function, and MSVC gives each its own slot in the
+// frame: a processor must stay small (its chain is on the heap) or Windows' 1 MB main-thread stack overflows.
+static_assert (sizeof (AmpSimProcessor) < 32 * 1024, "AmpSimProcessor grew: keep big members (the chain) on the heap");
+
 namespace
 {
 using namespace testing;
