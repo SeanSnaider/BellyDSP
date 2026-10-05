@@ -9,7 +9,15 @@
 #include "tonematch/GuitarSeparator.h"
 
 #include <iostream>
-#include <sys/resource.h>
+
+#if JUCE_WINDOWS
+ #define NOMINMAX
+ #define WIN32_LEAN_AND_MEAN
+ #include <windows.h>
+ #include <psapi.h>
+#else
+ #include <sys/resource.h>
+#endif
 
 namespace
 {
@@ -24,12 +32,19 @@ void usage()
 
 double peakMemoryMB()
 {
+   #if JUCE_WINDOWS
+    // Windows has no getrusage: the peak working set is the closest match to ru_maxrss.
+    PROCESS_MEMORY_COUNTERS counters {};
+    GetProcessMemoryInfo (GetCurrentProcess(), &counters, sizeof (counters));
+    return (double) counters.PeakWorkingSetSize / (1024.0 * 1024.0);
+   #else
     rusage r {};
     getrusage (RUSAGE_SELF, &r);
    #if JUCE_MAC
     return (double) r.ru_maxrss / (1024.0 * 1024.0); // bytes on macOS
    #else
     return (double) r.ru_maxrss / 1024.0; // kilobytes on Linux
+   #endif
    #endif
 }
 } // namespace
