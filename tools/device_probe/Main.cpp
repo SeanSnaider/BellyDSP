@@ -5,6 +5,7 @@
 // path the standalone app uses, and reports what actually happens. It outputs silence.
 //
 //   ampsim_device_probe [--device "Scarlett Solo 4th Gen"] [--seconds 5] [--buffer 128]
+//                       [--type "Windows Audio (Exclusive Mode)"] [--input <name>] [--output <name>]
 //
 // Checks the problems that needed a patched nih-plug in the Rust version: a 4-input device, input
 // and output on the same device (the old deadlock), and callbacks arriving on time. It also prints
@@ -85,16 +86,27 @@ int main (int argc, char* argv[])
     juce::ScopedJuceInitialiser_GUI juceInit;
 
     juce::String deviceName = "Scarlett Solo 4th Gen";
+    juce::String inputName, outputName, typeName;
     double seconds = 5.0;
     int bufferSize = 128;
 
+    // --input/--output (default: --device) are for Windows, where WASAPI lists a device's input and output as
+    // separate endpoints with different names; --type picks a backend, e.g. "Windows Audio (Exclusive Mode)".
     for (int i = 1; i + 1 < argc; ++i)
     {
         const juce::String arg (argv[i]);
         if (arg == "--device")       deviceName = argv[++i];
+        else if (arg == "--input")   inputName = argv[++i];
+        else if (arg == "--output")  outputName = argv[++i];
+        else if (arg == "--type")    typeName = argv[++i];
         else if (arg == "--seconds") seconds = juce::String (argv[++i]).getDoubleValue();
         else if (arg == "--buffer")  bufferSize = juce::String (argv[++i]).getIntValue();
     }
+
+    if (inputName.isEmpty())
+        inputName = deviceName;
+    if (outputName.isEmpty())
+        outputName = deviceName;
 
     juce::AudioDeviceManager manager;
     std::cout << "Audio devices JUCE can see:\n";
@@ -108,9 +120,12 @@ int main (int argc, char* argv[])
             std::cout << "  [" << type->getTypeName() << "] output: " << name << "\n";
     }
 
+    if (typeName.isNotEmpty())
+        manager.setCurrentAudioDeviceType (typeName, false);
+
     juce::AudioDeviceManager::AudioDeviceSetup setup;
-    setup.inputDeviceName = deviceName;
-    setup.outputDeviceName = deviceName;
+    setup.inputDeviceName = inputName;
+    setup.outputDeviceName = outputName;
     setup.sampleRate = 48000.0;
     setup.bufferSize = bufferSize;
     setup.useDefaultInputChannels = false;
@@ -121,9 +136,10 @@ int main (int argc, char* argv[])
     const auto error = manager.initialise (maxChannels, 2, nullptr, false, {}, &setup);
     auto* device = manager.getCurrentAudioDevice();
 
-    if (error.isNotEmpty() || device == nullptr || device->getName() != deviceName)
+    if (error.isNotEmpty() || device == nullptr || device->getName() != outputName)
     {
-        std::cout << "\nCouldn't open \"" << deviceName << "\": " << (error.isNotEmpty() ? error : juce::String ("not found")) << "\n";
+        std::cout << "\nCouldn't open \"" << inputName << "\" / \"" << outputName << "\": "
+                  << (error.isNotEmpty() ? error : juce::String ("not found")) << "\n";
         return 1;
     }
 
