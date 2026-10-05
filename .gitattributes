@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+
+# Every text file is checked out with LF, as it's stored, on every OS. Git for Windows (and GitHub's Windows
+# runners) default to core.autocrlf=true, which rewrites text files to CRLF on checkout. Bytes matter here:
+# factory presets name their captures by a hash of the file (content/models/*/gainset.json), and tests compare
+# against golden files. Binary files (WAVs, fonts, images) are detected and left alone.
+* text=auto eol=lf
