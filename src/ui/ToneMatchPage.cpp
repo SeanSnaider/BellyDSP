@@ -3,6 +3,7 @@
 
 #include "ToneMatchPage.h"
 
+#include "dsp/GainSet.h"
 #include "tonematch/AudioFileInput.h"
 
 namespace ui
@@ -928,12 +929,20 @@ void ToneMatchPage::updateResultText()
         return;
     }
     const auto& r = session.getResult();
-    const auto capture = ampSim.getSlotCapture (r.slot).getFileNameWithoutExtension();
+    // The amp by the name the head shows: a gain set's own name (its file is always gainset.json), else
+    // the capture's file name. Gain as the head's knob shows it, 0 to 10: the trim's -24..+24 dB maps
+    // linearly with 5 at 0 dB (4.8 dB per step, ASSUMPTIONS UH3).
+    const auto captureFile = ampSim.getSlotCapture (r.slot);
+    auto capture = captureFile.getFileNameWithoutExtension();
+    if (ampsim::GainSet set; ampsim::GainSet::isGainSet (captureFile))
+        if (juce::String why; ampsim::GainSet::read (captureFile, set, why) && set.name.isNotEmpty())
+            capture = set.name;
+    const auto gainPosition = juce::jlimit (0.0, 10.0, 5.0 + r.gainDb / 4.8);
     auto add = [this] (const juce::String& label, juce::StringArray items) {
         resultLabels.add (label);
         resultItems.push_back (std::move (items));
     };
-    add ("Amp", { capture + " (slot " + juce::String (r.slot + 1) + ")", "Gain " + signedDb (r.gainDb) });
+    add ("Amp", { capture + " (slot " + juce::String (r.slot + 1) + ")", "Gain " + juce::String (gainPosition, 1) });
     juce::StringArray tone;
     for (size_t b = 0; b < ampsim::AmpTone::numBands; ++b)
         tone.add (juce::String (ampsim::AmpTone::bands[b].name) + " " + signedDb (r.tone[b]));
