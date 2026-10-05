@@ -2,7 +2,6 @@
 // Copyright (C) 2026 Sean Snaider
 
 #include "SampleRateGuard.h"
-#include "ExclusiveModeInput.h"
 
 #include <juce_core/system/juce_TargetPlatform.h>
 
@@ -17,6 +16,8 @@
  #include <juce_audio_utils/juce_audio_utils.h>
  #include <juce_audio_plugin_client/Standalone/juce_StandaloneFilterWindow.h>
 #endif
+
+#include "ExclusiveModeInput.h" // after JUCE's standalone headers, which must come first (above)
 
 #include <memory>
 
