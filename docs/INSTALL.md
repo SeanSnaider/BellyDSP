@@ -30,7 +30,7 @@ Downloads: **https://github.com/SeanSnaider/BellyDSP/releases/latest**
 2. Windows may show **"Windows protected your PC"** (the installer isn't signed with a paid certificate). Click **More info**, then **Run anyway**.
 3. Click through the installer. It installs just for you, so it doesn't need an administrator password.
 4. **Set your interface to 48 kHz** in its own control panel (or Settings > Sound > your device > Properties > Advanced). BellyDSP only runs at 48 kHz.
-5. **Choose the input** (below). For the lowest delay, pick the device type **Windows Audio (Exclusive Mode)**.
+5. **Choose the input** (below). For the lowest delay, pick the device type **ASIO** and your interface's own ASIO driver (for a Focusrite Scarlett on USB: **Focusrite USB ASIO**; install the interface maker's driver if it isn't listed). Without an ASIO driver, use **Windows Audio (Exclusive Mode)** and the smallest buffer size that plays without crackles (often 256 or more; it may not offer 128).
 
 ## Audio settings (both)
 

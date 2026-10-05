@@ -197,9 +197,9 @@ tools/release/update_e2e.sh 0.1.0 0.1.1 --wrong-key some-other.key   # make one 
 | Geist, Fraunces | SIL Open Font License | Keep the licence with the fonts (done) |
 | zlib, libpng, IJG JPEG, FLAC, Ogg Vorbis, HarfBuzz, SheenBidi (inside JUCE) | Permissive | Keep the notices (done) |
 | The bundled cab IRs | CC0 1.0 | Nothing (credited anyway) |
-| ASIO SDK headers (only with `AMPSIM_WITH_ASIO`) | **Steinberg's ASIO licence, or GPLv3** | See below |
+| ASIO SDK headers (Windows builds) | **GPLv3** (Steinberg's dual licence: its ASIO licence or GPLv3) | Keep the notice (done: the notices generator adds Steinberg's licence when `AMPSIM_WITH_ASIO` is on) |
 
-**ASIO (open question).** JUCE 8.0.15 already bundles Steinberg's ASIO SDK headers, so `-DAMPSIM_WITH_ASIO=ON` (or the Windows workflow's "asio" checkbox) is all a build needs; nothing to download. Licensing: Steinberg offers them under GPLv3 or under its proprietary ASIO licence, which requires a signed agreement with Steinberg before distributing. GPLv3 is compatible with the AGPLv3 (section 13 of each allows combining them), so an open-source BellyDSP can ship ASIO under GPLv3; decided against for now (decision log, 2026-10-03: no ASIO). Without ASIO, Windows players use WASAPI (JUCE's "Windows Audio", shared or exclusive mode), which needs nothing extra and gets reasonably low latency in exclusive mode; many interfaces' ASIO drivers would be lower. Default: off.
+**ASIO (decided 2026-10-05: Windows ships it).** JUCE 8.0.15 already bundles Steinberg's ASIO SDK headers, so `AMPSIM_WITH_ASIO` (on by default; the Windows workflow always sets it) is all a build needs; nothing to download. Steinberg offers the SDK under GPLv3 or under its proprietary ASIO licence, which requires a signed agreement before distributing; BellyDSP uses the GPLv3 option, which is compatible with the AGPLv3 (section 13 of each allows combining them), so no agreement is needed. Why: on Sean's Scarlett Solo, WASAPI can't run below 224 samples without dropping callbacks, and Focusrite's ASIO driver runs 64 to 256 cleanly (BUILD_PLAN decision log). WASAPI (JUCE's "Windows Audio", shared or exclusive mode) stays for interfaces without an ASIO driver. `-DAMPSIM_WITH_ASIO=OFF` builds without it.
 
 ## Troubleshooting
 
