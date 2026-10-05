@@ -292,6 +292,14 @@ public:
     juce::File getSlotCapture (int slot) const { return requestedModel[(size_t) slot].file; }
     ampsim::NamAmp::Calibration getCaptureCalibration() const { return currentCalibration(); }
 
+    /// Tone match's A/B player at the end of the chain (PreviewPlayer.h). Its setters are atomics and a
+    /// Handoff, safe from the message thread; it's idle and bit-transparent unless comparing.
+    ampsim::PreviewPlayer& getPreviewPlayer() noexcept { return chain.preview; }
+
+    /// Any non-audio thread: close mic `mic`'s IR as it plays (loudness-matched; a pack's current morph).
+    /// Empty without one.
+    std::vector<float> getCloseMicIR (int mic) const { return chain.cab.closeMic (mic).getLoadedIR(); }
+
     /// For tests: the DSP chain. Only touch it from the thread that calls processBlock().
     ampsim::Chain& getChain() noexcept { return chain; }
 

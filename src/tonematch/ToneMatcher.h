@@ -84,6 +84,26 @@ struct MatchResult
         double score;
     };
     std::vector<RunnerUp> runnersUp;
+
+    /// Same part: the DTW path (target frame, DI frame) between the target and the winning slot's render at
+    /// Gain 0, as the search used it. The A/B player lines the two up in time with it. Empty in anything mode.
+    std::vector<std::pair<int, int>> alignmentPath;
+};
+
+/// The settings a tone match render plays the DI through (the A/B comparison: what Apply would set, or
+/// what's set now). The values are as the parameters store them, so a render of the settings read back
+/// from the processor equals one of the settings that wrote them.
+struct ToneSettings
+{
+    juce::File model;                   ///< the slot's capture or gain set; empty: no amp
+    NamAmp::Calibration calibration;    ///< as the app loads its captures
+    bool ampOn = true;                  ///< amp_bypass off
+    float gainDb = 0.0f;                ///< the slot's Gain (amp*_input_trim)
+    float masterDb = 0.0f;              ///< the slot's Master (amp*_output_trim)
+    std::array<float, 5> tone {};       ///< Depth, Bass, Mid, Treble, Presence (dB)
+    std::vector<float> cabIR;           ///< close mic 1's IR as the cab plays it (loudness-matched); empty: no cab
+    bool postEqOn = false;              ///< post_fx_on and eq_post_on
+    Equalizer::Settings postEq;
 };
 
 
@@ -101,6 +121,17 @@ public:
     /// Returns an empty vector if the capture won't load or the render was cancelled.
     static std::vector<float> renderAmp (const juce::File& model, const NamAmp::Calibration& calibration,
                                          const std::vector<float>& di, double gainDb, const std::atomic<bool>& cancel);
+
+    /// The DI through `settings`: the chain's own amp block (AmpSection, the capture in its first slot, with
+    /// the Gain, tone, and Master), then the cab IR by FFT convolution, then the post EQ block (Equalizer).
+    /// Mono, 48 kHz, the DI's length. What the chain plays with these settings, the pre effects, mic 2, the
+    /// room, the other post effects, the cab mic's level and pan, and the output level aside. Empty if the
+    /// capture won't load or the render was cancelled. Any thread but the audio thread.
+    static std::vector<float> renderTone (const ToneSettings& settings, const std::vector<float>& di, const std::atomic<bool>& cancel);
+
+    /// An IR file as a close mic plays it: read, capped, faded, and loudness-matched by the cab's own code
+    /// (CabIR::loadFile), the first channel. Empty if it won't load.
+    static std::vector<float> irAsPlayed (const juce::File& file);
 
     /// A cab IR as the cab block takes it for a close mic: the left channel, at most 1 s (CabIR::maxIRSeconds).
     static std::vector<float> loadIR (const juce::File& file);

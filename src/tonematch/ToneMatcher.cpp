@@ -5,6 +5,7 @@
 
 #include "../dsp/AmpSection.h"
 #include "../dsp/CabIR.h"
+#include "../dsp/Equalizer.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_dsp/juce_dsp.h>
@@ -73,6 +74,69 @@ std::vector<float> ToneMatcher::renderAmp (const juce::File& model, const NamAmp
         std::copy (buffer.getReadPointer (0), buffer.getReadPointer (0) + len, out.begin() + (std::ptrdiff_t) start);
     }
     return out;
+}
+
+std::vector<float> ToneMatcher::renderTone (const ToneSettings& settings, const std::vector<float>& di, const std::atomic<bool>& cancel)
+{
+    std::vector<float> out (di);
+    juce::AudioBuffer<float> buffer (1, renderBlock);
+
+    // Runs a mono block over `out` in place, in the chain's block size.
+    const auto run = [&] (Block& block) {
+        for (size_t start = 0; start < out.size(); start += renderBlock)
+        {
+            if (cancel.load (std::memory_order_relaxed))
+                return false;
+            const auto len = (int) std::min ((size_t) renderBlock, out.size() - start);
+            buffer.copyFrom (0, 0, out.data() + start, len);
+            BlockContext context { di.data() + start, len };
+            block.process (juce::dsp::AudioBlock<float> (buffer).getSubBlock (0, (size_t) len), context);
+            std::copy (buffer.getReadPointer (0), buffer.getReadPointer (0) + len, out.begin() + (std::ptrdiff_t) start);
+        }
+        return true;
+    };
+
+    // The amp: a private AmpSection, settings in before prepare(), which snaps every smoother (as renderAmp).
+    if (settings.ampOn && settings.model != juce::File())
+    {
+        auto section = std::make_unique<AmpSection>();
+        auto& slot = section->slot (0);
+        if (! slot.model.loadModel (settings.model, true, settings.calibration).ok)
+            return {};
+        slot.inputTrim.setGainDecibels (settings.gainDb);
+        // To the nearest 0.01 dB, exactly as the processor sets them, so a centred knob is exactly flat.
+        for (int b = 0; b < AmpTone::numBands; ++b)
+            slot.tone.setGainDb ((AmpTone::Band) b, std::round (settings.tone[(size_t) b] * 100.0f) / 100.0f);
+        slot.outputTrim.setGainDecibels (settings.masterDb);
+        section->prepare (sampleRate, renderBlock);
+        if (! run (*section))
+            return {};
+    }
+
+    // The cab: close mic 1's IR, convolved (exact linear convolution, as the cab block's partitioned one).
+    if (! settings.cabIR.empty())
+        out = convolve (out, settings.cabIR);
+    if (cancel.load())
+        return {};
+
+    // The post EQ: the chain's own block, mono, settings in before prepare() (which snaps them).
+    if (settings.postEqOn)
+    {
+        Equalizer eq (false);
+        eq.setSettings (settings.postEq);
+        eq.prepare (sampleRate, renderBlock);
+        if (! run (eq))
+            return {};
+    }
+    return out;
+}
+
+std::vector<float> ToneMatcher::irAsPlayed (const juce::File& file)
+{
+    CabIR mic;
+    if (! mic.loadFile (file).ok)
+        return {};
+    return mic.getLoadedIR();
 }
 
 std::vector<float> ToneMatcher::loadIR (const juce::File& file)
@@ -456,6 +520,8 @@ MatchResult ToneMatcher::match (const std::vector<float>& targetSignal, const st
     result.candidates = (int) candidates.size();
     for (size_t i = 1; i < juce::jmin ((size_t) 4, ranked.size()); ++i)
         result.runnersUp.push_back ({ ranked[i]->slot, ranked[i]->gainDb, settings.cabs[(size_t) ranked[i]->cab], ranked[i]->total() });
+    if (settings.mode == Mode::samePart)
+        result.alignmentPath = alignments.at (best.slot).path;
     result.runtimeSeconds = (juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0;
     result.ok = true;
     report (1.0, "Done");

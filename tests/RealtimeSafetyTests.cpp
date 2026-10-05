@@ -116,7 +116,21 @@ public:
                 for (int n; (n = p.getAnalyzerRing().read (analyzerSink.data(), (int) analyzerSink.size())) > 0;)
                     analyzed += n;
                 p.getDiRecorder().drain(); // tone match's page drains its DI recording the same way
+                p.getPreviewPlayer().collectGarbage(); // and frees the A/B material the audio thread handed back
             };
+
+            // Tone match's A/B player (docs/TONE_MATCH.md, "Comparing"): material built on this (the message)
+            // thread, handed over, played, switched between its three sources, its loops moved, new material
+            // swapped in while it plays, the live mute switched off, and stopped.
+            auto& preview = p.getPreviewPlayer();
+            const auto material = [] (double f)
+            {
+                auto m = std::make_unique<ampsim::PreviewPlayer::Material>();
+                for (size_t s = 0; s < 3; ++s)
+                    m->audio[s] = std::make_shared<const std::vector<float>> (sine (f * (double) (s + 2) / 2.0, 0.1, 96000));
+                return m;
+            };
+            int previewBlocks = 0;
 
             for (size_t start = 0; start + blockSize <= input.size(); start += blockSize, ++blocks)
             {
@@ -265,6 +279,20 @@ public:
                     default: break;
                 }
 
+                switch (blocks)
+                {
+                    case 3050: preview.setMaterial (material (220.0)); preview.setLoop (0, 0, 30000); preview.setLoop (1, 0, 40000); break;
+                    case 3060: preview.setSource (0); preview.setPlaying (true); break;
+                    case 3120: preview.setSource (1); break;
+                    case 3180: preview.setSource (2); break;
+                    case 3240: preview.setLoop (0, 12000, 40000); preview.setLoop (1, 6000, 30000); break;
+                    case 3300: preview.setMaterial (material (330.0)); break;                // swapped in mid-play
+                    case 3360: preview.setSource (0); preview.setLevelDb (-6.0f); preview.setSourceGainDb (0, -3.0f); break;
+                    case 3400: preview.setMuteLive (false); break;
+                    case 3460: preview.setPlaying (false); break;
+                    default: break;
+                }
+
                 // The Gain knobs (BUILD_PLAN "Amp gain"): a drag across every step of slot 3's gain set (Monolith),
                 // a jump between steps as a scene makes, a drag down Ember's set, and a drag on slot 1's single
                 // capture (its loudness-compensated trim, per sample while it moves).
@@ -287,6 +315,7 @@ public:
                 gainMovingBlocks += p.getChain().amp.slot (2).model.isGainMoving() || p.getChain().amp.slot (1).model.isGainMoving()
                                     || p.getChain().amp.slot (0).model.isGainMoving() ? 1 : 0;
                 maxSetModels = std::max (maxSetModels, p.getChain().amp.slot (2).model.getRunningSteps());
+                previewBlocks += preview.isActive() ? 1 : 0;
 
                 if (blocks == 1080)
                     ampWasBypassed = p.getChain().isFullyBypassed (ampsim::Chain::Slot::amp);
@@ -327,6 +356,8 @@ public:
             expectGreaterThan (modelFadeBlocks, 16, "the model loads must have crossfaded during the measurement");
             expectGreaterThan (slotSwitchBlocks, 16, "the slot switches must have crossfaded during the measurement");
             expectGreaterThan (gainMovingBlocks, 250, "the Gain drags must have moved the captures during the measurement");
+            expectGreaterThan (previewBlocks, 395, "the A/B player must have played during the measurement");
+            expect (! preview.isActive(), "the A/B player must have stopped and gone idle");
             expectEquals (maxSetModels, ampsim::NamAmp::maxRunningSteps, "the gain set's sweep must have run a model warming ahead");
             expectEquals (p.getChain().amp.getSelectedSlot(), 0);
             const auto ember = p.parameters.state.getProperty (AmpSimProcessor::modelPathKey (1)).toString() == presets::builtInCapture (1).getFullPathName();
@@ -376,7 +407,8 @@ public:
                         "the chorus on with mode, shape, and sync changes, and the reverb on, re-engined twice, frozen and thawed from the footswitch, resized, "
                         "and bypassed into spillover; the amp bypassed and back (its captures running underneath), and both effect sections switched off and on; "
                         "tone match's DI recorder started and stopped mid-run (" + juce::String (p.getDiRecorder().recordedSeconds(), 2)
-                        + " s recorded, sample-exact, nothing dropped)");
+                        + " s recorded, sample-exact, nothing dropped); tone match's A/B player handed material, played for " + juce::String (previewBlocks)
+                        + " blocks through its loops' wraps, switched source three times, its loops moved, new material swapped in mid-play, the live mute off, stopped");
             logMessage ("  -> the GUI hooks: input and output meters and the CPU meter every buffer, the analyzer tapping the post section, the pre section, "
                         "and the post section again; the GUI read " + juce::String (analyzed) + " samples from the ring and stopped for 400 buffers, "
                         "so the ring filled and the audio thread dropped " + juce::String (analyzerDropped) + " samples instead of waiting; CPU meter "

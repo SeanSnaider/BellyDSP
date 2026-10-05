@@ -132,6 +132,7 @@ const Block& Chain::blockFor (Slot slot) const
         case Slot::delay:          return delay;
         case Slot::reverb:         return reverb;
         case Slot::outputGain:     return outputGain;
+        case Slot::preview:        return preview;
         case Slot::limiter:        return limiter;
         case Slot::count:          break;
     }
@@ -339,6 +340,7 @@ void Chain::process (juce::dsp::AudioBlock<float> io)
 
     runSection (Section::post, io, context, stereoCopied);
     runBlock (Slot::outputGain, io, context, stereoCopied);
+    runBlock (Slot::preview, io, context, stereoCopied); // returns at once unless tone match is comparing
     runBlock (Slot::limiter, io, context, stereoCopied);
 }
 

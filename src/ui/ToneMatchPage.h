@@ -74,8 +74,27 @@ public:
 
     /// The waveform: the target's peaks, with the selected range. Drag to select.
     class Waveform;
-    /// The match EQ over the residual it was fitted to.
+    /// The match EQ over the residual it was fitted to, with the target's and the match's long-term spectra.
     class EqCurve;
+    /// The comparison's loop: the matched section's waveform, the loop on it (drag to set), and the playhead.
+    class LoopStrip;
+    /// The preview level: a short horizontal bar, dragged.
+    class LevelBar;
+
+    // ---- Comparing (A/B) ----------------------------------------------------------------------------------
+    /// Play or stop the comparison (the Play button, Space).
+    void togglePreview();
+    /// Target, Match, or Current (the buttons, 1, 2, 3).
+    void selectSource (int source);
+    bool keyPressed (const juce::KeyPress& key) override;
+    juce::TextButton& getPlayButton() noexcept { return *playButton; }
+    Segmented& getSourceChoice() noexcept { return *sourceChoice; }
+    Switch& getLevelMatchSwitch() noexcept { return *levelMatchSwitch; }
+    Switch& getMuteSwitch() noexcept { return *muteSwitch; }
+    LoopStrip& getLoopStrip() noexcept { return *loopStrip; }
+    LevelBar& getLevelBar() noexcept { return *levelBar; }
+    /// The line under the sources: each one's loudness as it is (LUFS).
+    juce::String getLoudnessText() const;
 
 private:
     void timerCallback() override;
@@ -88,6 +107,13 @@ private:
     ToneMatchSession session;
     std::unique_ptr<Waveform> waveform;
     std::unique_ptr<EqCurve> eqCurve;
+    std::unique_ptr<LoopStrip> loopStrip;
+    std::unique_ptr<LevelBar> levelBar;
+    std::unique_ptr<Segmented> sourceChoice;
+    std::unique_ptr<Switch> levelMatchSwitch, muteSwitch;
+    juce::TextButton* playButton = nullptr;
+    juce::Rectangle<int> compareArea, loudnessRow, levelLabelArea, levelValueArea;
+    bool spectraShown = false;
     std::unique_ptr<Segmented> modeChoice;
     std::unique_ptr<Switch> separateSwitch;
     juce::TextButton *targetButton = nullptr, *referenceButton = nullptr, *recordButton = nullptr, *matchButton = nullptr,

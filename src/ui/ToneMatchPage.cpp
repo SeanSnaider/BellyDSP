@@ -257,6 +257,37 @@ public:
         repaint();
     }
 
+    /// The target's and the match render's long-term spectra (dB per tone match band), drawn on the same dB
+    /// scale as the EQ, level-matched to each other (their weighted means equal, with the fit's weights)
+    /// and shifted together so the target's loudest counted band sits at +9 dB. Empty: none drawn.
+    void setSpectra (const std::vector<double>& targetDb, const std::vector<double>& matchDb, const std::vector<double>& weights)
+    {
+        targetSpectrum.clear();
+        matchSpectrum.clear();
+        const auto n = (size_t) ampsim::tonematch::numBands;
+        if (targetDb.size() == n && matchDb.size() == n && weights.size() == n)
+        {
+            const auto diff = ampsim::tonematch::weightedMean (targetDb, weights) - ampsim::tonematch::weightedMean (matchDb, weights);
+            double wMax = 0.0, top = -1.0e9;
+            for (auto w : weights)
+                wMax = std::max (wMax, w);
+            for (size_t b = 0; b < n; ++b)
+                if (weights[b] >= 0.25 * wMax)
+                    top = std::max (top, targetDb[b]);
+            const auto shift = 9.0 - top;
+            // Third-octave smoothed for the display (smoothBands, as every comparison in the fit is), so the
+            // lines show the tone's shape rather than the notes played.
+            const auto t = ampsim::tonematch::smoothBands (targetDb), m = ampsim::tonematch::smoothBands (matchDb);
+            for (size_t b = 0; b < n; ++b)
+            {
+                const auto f = ampsim::tonematch::bands().centre[b];
+                targetSpectrum.push_back ({ f, t[b] + shift });
+                matchSpectrum.push_back ({ f, m[b] + diff + shift });
+            }
+        }
+        repaint();
+    }
+
     void paint (juce::Graphics& g) override
     {
         const auto r = getLocalBounds().toFloat().reduced (1.0f);
@@ -289,6 +320,26 @@ public:
                 g.fillEllipse (juce::Rectangle<float> (4.0f, 4.0f).withCentre ({ xFor (target[i].first), yFor (target[i].second) }));
             }
         }
+        // The spectra: thin lines, the target in ink and the match in emerald, under the EQ curve.
+        const auto spectrumPath = [this] (const std::vector<std::pair<double, double>>& points) {
+            juce::Path path;
+            for (size_t i = 0; i < points.size(); ++i)
+            {
+                const juce::Point<float> pt { xFor (points[i].first), yFor (points[i].second, false) }; // past the edge: clipped, not flattened
+                i == 0 ? path.startNewSubPath (pt) : path.lineTo (pt);
+            }
+            return path;
+        };
+        if (! targetSpectrum.empty())
+        {
+            const juce::Graphics::ScopedSaveState saved (g);
+            g.reduceClipRegion (r.toNearestInt());
+            g.setColour (ink.withAlpha (0.85f));
+            g.strokePath (spectrumPath (targetSpectrum), juce::PathStrokeType (1.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            g.setColour (accent.withAlpha (0.85f));
+            g.strokePath (spectrumPath (matchSpectrum), juce::PathStrokeType (1.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        }
+
         if (! curve.empty())
         {
             juce::Path line;
@@ -315,8 +366,30 @@ public:
         for (auto db : { -12.0, -6.0, 6.0, 12.0 })
             g.drawText ((db > 0 ? "+" : "") + juce::String (juce::roundToInt (db)), juce::Rectangle<float> (r.getX() + 4.0f, yFor (db) - 13.0f, 30.0f, 12.0f),
                         juce::Justification::centredLeft, false);
-        g.drawText (target.empty() ? "The match EQ appears here" : "Match EQ (line) over what was left to fit (dots, faint ones barely count)",
+        g.drawText (target.empty() ? "The match EQ appears here" : "Match EQ (thick line) over what was left to fit (dots, faint ones barely count)",
                     r.reduced (8.0f, 5.0f).withHeight (13.0f), juce::Justification::centredRight, false);
+
+        // The spectra's legend, under the EQ's caption: a short line in each colour before its name.
+        if (! targetSpectrum.empty())
+        {
+            auto row = r.reduced (8.0f, 5.0f).withTrimmedTop (16.0f).withHeight (13.0f);
+            const auto f = font (Text::caption);
+            const juce::String note ("long-term spectra, level-matched");
+            const auto noteWidth = textWidth (f, note);
+            auto item = [&] (const juce::String& name, juce::Colour c) {
+                const auto w = textWidth (f, name);
+                auto area = row.removeFromRight (w + 22.0f);
+                g.setColour (c);
+                g.fillRect (juce::Rectangle<float> (area.getX(), area.getCentreY() - 0.5f, 14.0f, 1.5f));
+                g.setColour (textDim);
+                g.drawText (name, area.withTrimmedLeft (18.0f), juce::Justification::centredLeft, false);
+            };
+            g.setColour (textDim);
+            g.drawText (note, row.removeFromRight (noteWidth + 4.0f), juce::Justification::centredRight, false);
+            row.removeFromRight (10.0f);
+            item ("Match", accent);
+            item ("Target", ink);
+        }
     }
 
 private:
@@ -326,16 +399,254 @@ private:
         return r.getX() + r.getWidth() * (float) (std::log (f / minF) / std::log (maxF / minF));
     }
 
-    float yFor (double db) const
+    float yFor (double db, bool clamp = true) const
     {
         const auto r = getLocalBounds().toFloat().reduced (1.0f);
-        return r.getCentreY() - (r.getHeight() * 0.5f - 14.0f) * (float) (juce::jlimit (-rangeDb, rangeDb, db) / rangeDb);
+        return r.getCentreY() - (r.getHeight() * 0.5f - 14.0f) * (float) ((clamp ? juce::jlimit (-rangeDb, rangeDb, db) : db) / rangeDb);
     }
 
     static constexpr double minF = 40.0, maxF = 16000.0, rangeDb = 15.0;
-    std::vector<std::pair<double, double>> target, curve;
+    std::vector<std::pair<double, double>> target, curve, targetSpectrum, matchSpectrum;
     std::vector<float> weight;
     double offset = 0.0;
+};
+
+// ---- The comparison's loop -------------------------------------------------------------------------------
+
+class ToneMatchPage::LoopStrip final : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    explicit LoopStrip (ToneMatchSession& s) : session (s) {}
+
+    void paint (juce::Graphics& g) override
+    {
+        const auto r = getLocalBounds().toFloat();
+        g.setColour (bg);
+        g.fillRoundedRectangle (r, radiusControl);
+        g.setColour (line1);
+        g.drawRoundedRectangle (r.reduced (0.5f), radiusControl, 1.0f);
+
+        const auto& audio = session.getCompareAudio (ToneMatchSession::sourceTarget);
+        if (audio.data() != peaksOf || audio.size() != peaksLength)
+            updatePeaks (audio);
+        const auto length = session.getSectionSeconds();
+        if (length <= 0.0 || peaks.empty())
+            return;
+
+        const auto [a, b] = session.getLoop();
+        const auto x0 = xFor (a), x1 = xFor (b);
+        g.setColour (accentDim);
+        g.fillRect (juce::Rectangle<float> (x0, r.getY() + 1.0f, x1 - x0, r.getHeight() - 2.0f));
+        const auto mid = r.getCentreY(), half = r.getHeight() * 0.5f - 4.0f;
+        for (int c = 0; c < columns; ++c)
+        {
+            const auto x = 2.0f + (r.getWidth() - 4.0f) * ((float) c + 0.5f) / (float) columns;
+            const auto [lo, hi] = peaks[(size_t) c];
+            g.setColour (x >= x0 && x <= x1 ? ink.withAlpha (0.7f) : inkFaint);
+            g.drawVerticalLine (juce::roundToInt (x), mid - half * hi * scale - 0.5f, mid - half * lo * scale + 0.5f);
+        }
+        g.setColour (accent);
+        g.fillRect (juce::Rectangle<float> (x0 - 1.0f, r.getY() + 1.0f, 2.0f, r.getHeight() - 2.0f));
+        g.fillRect (juce::Rectangle<float> (x1 - 1.0f, r.getY() + 1.0f, 2.0f, r.getHeight() - 2.0f));
+
+        // The playhead, as a fraction of the loop (in anything mode the DI's loop isn't the target's, so the
+        // fraction is the honest common measure).
+        if (playhead >= 0.0f)
+        {
+            const auto x = x0 + (x1 - x0) * playhead;
+            g.setColour (ink);
+            g.fillRect (juce::Rectangle<float> (x - 0.75f, r.getY() + 3.0f, 1.5f, r.getHeight() - 6.0f));
+        }
+    }
+
+    void setPlayhead (float fraction)
+    {
+        if (std::abs (fraction - playhead) > 1.0e-4f)
+        {
+            playhead = fraction;
+            repaint();
+        }
+    }
+
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        if (session.getSectionSeconds() <= 0.0)
+            return;
+        const auto [start, end] = session.getLoop();
+        const auto x = (float) e.x;
+        if (std::abs (x - xFor (start)) < 6.0f)
+            drag = Drag::start;
+        else if (std::abs (x - xFor (end)) < 6.0f)
+            drag = Drag::end;
+        else if (x > xFor (start) && x < xFor (end))
+        {
+            drag = Drag::move;
+            grabOffset = secondsAt (x) - start;
+        }
+        else
+        {
+            drag = Drag::create;
+            anchor = secondsAt (x);
+        }
+    }
+
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        const auto t = secondsAt ((float) e.x);
+        const auto [start, end] = session.getLoop();
+        const auto minimum = ToneMatchSession::minLoopSeconds;
+        switch (drag)
+        {
+            case Drag::start:  session.setLoop (std::min (t, end - minimum), end); break;
+            case Drag::end:    session.setLoop (start, std::max (t, start + minimum)); break;
+            case Drag::move:   session.setLoop (t - grabOffset, t - grabOffset + (end - start)); break;
+            case Drag::create: session.setLoop (std::min (anchor, t), std::max (anchor, t)); break;
+            case Drag::none:   return;
+        }
+        repaint();
+        if (onChanged)
+            onChanged();
+    }
+
+    void mouseUp (const juce::MouseEvent&) override { drag = Drag::none; }
+
+    void mouseDoubleClick (const juce::MouseEvent&) override
+    {
+        // Back to the whole matched section.
+        session.setLoop (0.0, session.getSectionSeconds());
+        repaint();
+        if (onChanged)
+            onChanged();
+    }
+
+    void mouseMove (const juce::MouseEvent& e) override
+    {
+        const auto [start, end] = session.getLoop();
+        const auto nearEdge = std::abs ((float) e.x - xFor (start)) < 6.0f || std::abs ((float) e.x - xFor (end)) < 6.0f;
+        setMouseCursor (nearEdge ? juce::MouseCursor::LeftRightResizeCursor : juce::MouseCursor::NormalCursor);
+    }
+
+    std::function<void()> onChanged;
+
+private:
+    void updatePeaks (const std::vector<float>& x)
+    {
+        peaksOf = x.data();
+        peaksLength = x.size();
+        peaks.clear();
+        if (x.empty())
+            return;
+        peaks.assign ((size_t) columns, { 0.0f, 0.0f });
+        for (int c = 0; c < columns; ++c)
+        {
+            const auto a = x.size() * (size_t) c / (size_t) columns, b = std::max (a + 1, x.size() * (size_t) (c + 1) / (size_t) columns);
+            float lo = 0.0f, hi = 0.0f;
+            for (size_t i = a; i < b && i < x.size(); ++i)
+            {
+                lo = std::min (lo, x[i]);
+                hi = std::max (hi, x[i]);
+            }
+            peaks[(size_t) c] = { lo, hi };
+        }
+        float top = 1.0e-6f;
+        for (const auto& [lo, hi] : peaks)
+            top = std::max (top, std::max (-lo, hi));
+        scale = 1.0f / top;
+    }
+
+    float xFor (double seconds) const
+    {
+        const auto length = std::max (1.0e-9, session.getSectionSeconds());
+        return 2.0f + (float) (getWidth() - 4) * (float) (seconds / length);
+    }
+
+    double secondsAt (float x) const
+    {
+        return juce::jlimit (0.0, session.getSectionSeconds(), (double) (x - 2.0f) / (double) std::max (1, getWidth() - 4) * session.getSectionSeconds());
+    }
+
+    enum class Drag
+    {
+        none,
+        start,
+        end,
+        move,
+        create
+    };
+
+    ToneMatchSession& session;
+    static constexpr int columns = 170;
+    std::vector<std::pair<float, float>> peaks;
+    const float* peaksOf = nullptr;
+    size_t peaksLength = 0;
+    float scale = 1.0f, playhead = -1.0f;
+    Drag drag = Drag::none;
+    double anchor = 0.0, grabOffset = 0.0;
+};
+
+// ---- The preview level --------------------------------------------------------------------------------------
+
+class ToneMatchPage::LevelBar final : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    LevelBar()
+    {
+        setMouseCursor (juce::MouseCursor::LeftRightResizeCursor);
+        setTooltip ("The comparison's level (double-click: 0 dB)");
+    }
+
+    std::function<void (float)> onChange;
+
+    void setDb (float db)
+    {
+        value = juce::jlimit (ToneMatchSession::minPreviewLevelDb, ToneMatchSession::maxPreviewLevelDb, db);
+        repaint();
+    }
+    float getDb() const noexcept { return value; }
+
+    void paint (juce::Graphics& g) override
+    {
+        // A 3 px track (line-2), emerald up to the value, a 9 px dot at it, and a tick at 0 dB.
+        const auto r = getLocalBounds().toFloat().reduced (5.0f, 0.0f);
+        const auto y = r.getCentreY();
+        g.setColour (line2);
+        g.fillRoundedRectangle (r.withHeight (3.0f).withCentre ({ r.getCentreX(), y }), 1.5f);
+        const auto x = xFor (value);
+        g.setColour (isEnabled() ? accent : inkFaint);
+        g.fillRoundedRectangle (juce::Rectangle<float> (r.getX(), y - 1.5f, x - r.getX(), 3.0f), 1.5f);
+        g.setColour (inkFaint);
+        g.fillRect (juce::Rectangle<float> (xFor (0.0f) - 0.5f, y - 6.0f, 1.0f, 3.0f));
+        g.setColour (isEnabled() ? ink : inkFaint);
+        g.fillEllipse (juce::Rectangle<float> (9.0f, 9.0f).withCentre ({ x, y }));
+    }
+
+    void mouseDown (const juce::MouseEvent& e) override { set (dbAt ((float) e.x)); }
+    void mouseDrag (const juce::MouseEvent& e) override { set (dbAt ((float) e.x)); }
+    void mouseDoubleClick (const juce::MouseEvent&) override { set (0.0f); }
+
+private:
+    void set (float db)
+    {
+        // Half-dB steps.
+        setDb (std::round (db * 2.0f) / 2.0f);
+        if (onChange)
+            onChange (value);
+    }
+
+    float xFor (float db) const
+    {
+        const auto r = getLocalBounds().toFloat().reduced (5.0f, 0.0f);
+        return r.getX() + r.getWidth() * (db - ToneMatchSession::minPreviewLevelDb) / (ToneMatchSession::maxPreviewLevelDb - ToneMatchSession::minPreviewLevelDb);
+    }
+
+    float dbAt (float x) const
+    {
+        const auto r = getLocalBounds().toFloat().reduced (5.0f, 0.0f);
+        return ToneMatchSession::minPreviewLevelDb
+               + (ToneMatchSession::maxPreviewLevelDb - ToneMatchSession::minPreviewLevelDb) * juce::jlimit (0.0f, 1.0f, (x - r.getX()) / r.getWidth());
+    }
+
+    float value = 0.0f;
 };
 
 // ---- The page -------------------------------------------------------------------------------------------------
@@ -393,6 +704,38 @@ ToneMatchPage::ToneMatchPage (AmpSimProcessor& p)
         if (onClose)
             onClose();
     });
+
+    // The comparison (A/B): the sources, Play, the loop, the level match, the live mute, the level.
+    playButton = &addButton ("Play", [this] { togglePreview(); });
+    playButton->setTooltip ("Play or stop the comparison, looped (Space)");
+    sourceChoice = std::make_unique<Segmented> (juce::StringArray { "Target", "Match", "Current" });
+    sourceChoice->onChange = [this] (int i) { selectSource (i); };
+    addChildComponent (*sourceChoice);
+    loopStrip = std::make_unique<LoopStrip> (session);
+    loopStrip->setTooltip ("The loop: drag to set it, drag its edges or middle to adjust, double-click for the whole section");
+    loopStrip->onChanged = [this] { repaint (compareArea); };
+    addChildComponent (*loopStrip);
+    levelMatchSwitch = std::make_unique<Switch> ("Level match");
+    levelMatchSwitch->setToggleState (session.getLevelMatch(), juce::dontSendNotification);
+    levelMatchSwitch->setTooltip ("All three at the same loudness (BS.1770), so the comparison is about tone, not volume");
+    levelMatchSwitch->onClick = [this] {
+        session.setLevelMatch (levelMatchSwitch->getToggleState());
+        repaint (compareArea);
+    };
+    addChildComponent (*levelMatchSwitch);
+    muteSwitch = std::make_unique<Switch> ("Mute my guitar while comparing");
+    muteSwitch->setToggleState (session.getMuteLive(), juce::dontSendNotification);
+    muteSwitch->onClick = [this] { session.setMuteLive (muteSwitch->getToggleState()); };
+    addChildComponent (*muteSwitch);
+    levelBar = std::make_unique<LevelBar>();
+    levelBar->setDb (session.getPreviewLevelDb());
+    levelBar->onChange = [this] (float db) {
+        session.setPreviewLevelDb (db);
+        repaint (levelValueArea);
+    };
+    addChildComponent (*levelBar);
+
+    setWantsKeyboardFocus (true);
     refresh();
 }
 
@@ -418,6 +761,9 @@ void ToneMatchPage::pageShown()
 
 void ToneMatchPage::pageHidden()
 {
+    // Leaving the page stops the comparison, so the live guitar comes back.
+    session.setPreviewPlaying (false);
+
     // A recording or a match keeps going while another page shows (the session runs it); only the display stops.
     if (! session.isRecording() && ! session.isMatching())
         stopTimer();
@@ -429,8 +775,54 @@ void ToneMatchPage::timerCallback()
     refresh();
     repaint (matchCard);
     repaint (referenceCard);
-    if (! isShowing() && ! session.isRecording() && ! session.isMatching())
+    if (! isShowing() && ! session.isRecording() && ! session.isMatching() && ! session.isRenderingCompare())
         stopTimer();
+}
+
+void ToneMatchPage::togglePreview()
+{
+    session.setPreviewPlaying (! session.isPreviewPlaying());
+    refresh();
+    repaint (compareArea);
+}
+
+void ToneMatchPage::selectSource (int source)
+{
+    session.setPreviewSource (source);
+    sourceChoice->setSelected (source, juce::dontSendNotification);
+    repaint (compareArea);
+}
+
+bool ToneMatchPage::keyPressed (const juce::KeyPress& key)
+{
+    // The comparison's keys, once there's something to compare: Space plays or stops, 1 2 3 pick the source.
+    if (! session.isCompareReady() || key.getModifiers().isAnyModifierKeyDown())
+        return false;
+    if (key == juce::KeyPress::spaceKey)
+    {
+        togglePreview();
+        return true;
+    }
+    auto c = (int) key.getTextCharacter();
+    if (c == 0)
+        c = key.getKeyCode();
+    if (c >= '1' && c <= '3')
+    {
+        selectSource ((int) (c - '1'));
+        return true;
+    }
+    return false;
+}
+
+juce::String ToneMatchPage::getLoudnessText() const
+{
+    juce::StringArray parts;
+    for (int s = 0; s < ToneMatchSession::numSources; ++s)
+    {
+        const auto l = session.getLoudness (s);
+        parts.add (ToneMatchSession::sourceName (s) + " " + (std::isfinite (l) ? juce::String (l, 1) : juce::String ("-")));
+    }
+    return parts.joinIntoString (", ") + " LUFS";
 }
 
 void ToneMatchPage::chooseTarget()
@@ -624,6 +1016,27 @@ void ToneMatchPage::refresh()
     else if (! session.hasResult())
         updateResultText(); // clears it
 
+    // The comparison: shown with a result, usable once its renders are in.
+    const auto comparing = session.hasResult();
+    const auto ready = session.isCompareReady();
+    for (auto* c : std::initializer_list<juce::Component*> { playButton, sourceChoice.get(), loopStrip.get(), levelMatchSwitch.get(), muteSwitch.get(), levelBar.get() })
+    {
+        c->setVisible (comparing);
+        c->setEnabled (ready);
+    }
+    playButton->setButtonText (session.isPreviewPlaying() ? "Stop" : "Play");
+    loopStrip->setPlayhead (session.isPreviewPlaying() && ampSim.getPreviewPlayer().isActive() ? ampSim.getPreviewPlayer().getPlayheadFraction() : -1.0f);
+    sourceChoice->setSelected (session.getPreviewSource(), juce::dontSendNotification);
+    const auto haveSpectra = ! session.getTargetSpectrum().empty() && ! session.getMatchSpectrum().empty();
+    if (haveSpectra != spectraShown)
+    {
+        spectraShown = haveSpectra;
+        if (haveSpectra)
+            eqCurve->setSpectra (session.getTargetSpectrum(), session.getMatchSpectrum(), session.getResult().weights);
+        else
+            eqCurve->setSpectra ({}, {}, {});
+    }
+
     if (session.getError().isNotEmpty())
         statusText = session.getError();
     else if (matching)
@@ -643,9 +1056,9 @@ void ToneMatchPage::resized()
 
     area.removeFromTop (8);
     auto row = area.removeFromTop (272);
-    targetCard = row.removeFromLeft (560);
+    targetCard = row.removeFromLeft (520);
     row.removeFromLeft (space::m);
-    referenceCard = row.removeFromLeft (318);
+    referenceCard = row.removeFromLeft (284);
     row.removeFromLeft (space::m);
     matchCard = row;
     area.removeFromTop (space::m);
@@ -673,17 +1086,38 @@ void ToneMatchPage::resized()
         modeChoice->setBounds (in.removeFromTop (Segmented::preferredHeight).withWidth (modeChoice->getPreferredWidth()));
     }
 
-    // Match.
+    // Match, and under it the comparison (once there's a result).
     {
         auto in = card (matchCard, "Match");
         auto top = in.removeFromTop (controlHeight);
-        matchButton->setBounds (top.removeFromLeft (120));
+        matchButton->setBounds (top.removeFromLeft (110));
         top.removeFromLeft (space::s);
-        cancelButton->setBounds (top.removeFromLeft (90));
+        cancelButton->setBounds (top.removeFromLeft (84));
         in.removeFromTop (space::m);
         progressArea = in.removeFromTop (6);
         in.removeFromTop (space::s);
         statusArea = in; // the stage, or what went wrong (an error can take several lines)
+
+        // The comparison takes the bottom of the card: the sources (and their loudness under them), the
+        // loop, the live mute, the level match and the level.
+        auto compare = in.withTrimmedTop (30 + 4); // under two lines of status
+        compareArea = compare;
+        auto sources = compare.removeFromTop (controlHeight);
+        playButton->setBounds (sources.removeFromLeft (72));
+        sources.removeFromLeft (space::l);
+        sourceChoice->setBounds (sources.withWidth (sourceChoice->getPreferredWidth()).withSizeKeepingCentre (sourceChoice->getPreferredWidth(), Segmented::preferredHeight));
+        loudnessRow = compare.removeFromTop (14).withTrimmedLeft (72 + space::l);
+        compare.removeFromTop (6);
+        loopStrip->setBounds (compare.removeFromTop (34));
+        compare.removeFromTop (6);
+        muteSwitch->setBounds (compare.removeFromTop (Switch::preferredHeight).withWidth (muteSwitch->getPreferredWidth()).translated (-Switch::margin, 0));
+        compare.removeFromTop (2);
+        auto levels = compare.removeFromTop (Switch::preferredHeight);
+        levelMatchSwitch->setBounds (levels.removeFromLeft (levelMatchSwitch->getPreferredWidth()).translated (-Switch::margin, 0));
+        levels.removeFromLeft (space::l);
+        levelLabelArea = levels.removeFromLeft (34);
+        levelValueArea = levels.removeFromRight (44);
+        levelBar->setBounds (levels);
     }
 
     // Result.
@@ -767,11 +1201,43 @@ void ToneMatchPage::paint (juce::Graphics& g)
             g.setColour (accent);
             g.fillRoundedRectangle (p.withWidth (p.getWidth() * (float) (session.isMatching() ? session.getProgress() : 1.0)), 3.0f);
         }
-        const auto shown = statusText.isEmpty() ? (session.hasResult() ? "Done in " + juce::String (session.getResult().runtimeSeconds, 1) + " s" : "Ready")
-                                               : statusText;
+        auto shown = statusText.isEmpty() ? (session.hasResult() ? "Done in " + juce::String (session.getResult().runtimeSeconds, 1) + " s." : "Ready")
+                                         : statusText;
+        if (statusText.isEmpty() && session.hasResult())
+        {
+            // With a result, the line also says what the comparison is doing and how the sources line up.
+            if (const auto c = session.getCompareStatus(); c.isNotEmpty())
+                shown << " " << c;
+            else if (session.isCurrentStale())
+                shown << " Current follows your settings once they stop moving.";
+            else
+                shown << (session.isAligned() ? " Same part: your DI is lined up with the target in time."
+                                              : " Anything: the target loops the range, your DI its whole take.");
+        }
         g.setFont (font (Text::caption));
         g.setColour (session.getError().isNotEmpty() ? ink : inkDim);
-        g.drawFittedText (shown, statusArea, juce::Justification::topLeft, juce::jmax (1, statusArea.getHeight() / 15), 1.0f);
+        const auto area = session.hasResult() ? statusArea.withHeight (30) : statusArea;
+        g.drawFittedText (shown, area, juce::Justification::topLeft, juce::jmax (1, area.getHeight() / 15), 1.0f);
+
+        if (session.hasResult())
+        {
+            // Under each source, its loudness as it is (before the level match).
+            g.setFont (tabular (font (Text::caption)));
+            for (int s = 0; s < ToneMatchSession::numSources; ++s)
+            {
+                const auto l = session.getLoudness (s);
+                const auto option = sourceChoice->optionArea (s).toNearestInt().translated (sourceChoice->getX(), 0);
+                g.setColour (inkFaint);
+                g.drawText (std::isfinite (l) ? juce::String (l, 1) : juce::String ("-"), loudnessRow.withX (option.getX()).withWidth (60),
+                            juce::Justification::centredLeft, false);
+            }
+            g.drawText ("LUFS", loudnessRow, juce::Justification::centredRight, false);
+            g.setFont (font (Text::caption));
+            g.setColour (session.isCompareReady() ? inkDim : inkFaint);
+            g.drawText ("Level", levelLabelArea, juce::Justification::centredLeft, false);
+            g.drawText ((session.getPreviewLevelDb() > 0.0f ? "+" : "") + juce::String (session.getPreviewLevelDb(), 1) + " dB", levelValueArea,
+                        juce::Justification::centredRight, false);
+        }
     }
 
     // Result: the settings, the closeness, and what it means.

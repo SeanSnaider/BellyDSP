@@ -6,7 +6,9 @@
 #include "PluginProcessor.h"
 #include "tonematch/ToneMatcher.h"
 
+#include <array>
 #include <atomic>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -113,8 +115,87 @@ public:
     /// For tests: let the worker finish (or give up after timeoutMs). True if it finished.
     bool waitForMatch (int timeoutMs);
 
+    // ---- Comparing (A/B: docs/TONE_MATCH.md, "Comparing") --------------------------------------------------
+    // Three sources, looped by the processor's PreviewPlayer at the end of the chain: the target (what was
+    // matched: the separated stem, or the song section), the match (the DI through what Apply would set),
+    // and the current settings (the same DI through what's set now). The two renders run on their own
+    // worker, through ToneMatcher::renderTone, never on the audio thread; they start by themselves when a
+    // match finishes, and the current one again whenever the settings it depends on change.
+    enum Source
+    {
+        sourceTarget = 0,
+        sourceMatch = 1,
+        sourceCurrent = 2,
+        numSources = 3
+    };
+    static juce::String sourceName (int source);
+
+    /// The settings the Match source plays: the result as Apply writes it (the values as the parameters
+    /// store them), with the matched slot's Master as it is now. The cab IR is left empty (the worker reads it).
+    ampsim::tonematch::ToneSettings matchedSettings() const;
+    /// The settings the Current source plays: what's set now (the playing slot, close mic 1's IR as it
+    /// plays, the post EQ if its section and itself are on).
+    ampsim::tonematch::ToneSettings currentSettings() const;
+
+    bool isRenderingCompare() const noexcept { return compareRunning.load(); }
+    double getCompareProgress() const noexcept { return compareProgress.load(); }
+    void cancelCompare();
+    /// True when the sources are rendered and handed to the player.
+    bool isCompareReady() const noexcept { return compareReady; }
+    /// What the comparison is doing or why it can't (empty when it's ready and idle).
+    juce::String getCompareStatus() const;
+    /// The current settings changed since Current was rendered (it re-renders on its own after 300 ms still).
+    bool isCurrentStale() const;
+
+    void setPreviewPlaying (bool shouldPlay);
+    bool isPreviewPlaying() const noexcept { return previewPlaying; }
+    void setPreviewSource (int source);
+    int getPreviewSource() const noexcept { return previewSource; }
+    void setLevelMatch (bool on);
+    bool getLevelMatch() const noexcept { return levelMatch; }
+    void setMuteLive (bool on);
+    bool getMuteLive() const noexcept { return muteLive; }
+    void setPreviewLevelDb (float db);
+    float getPreviewLevelDb() const noexcept { return previewLevelDb; }
+    static constexpr float minPreviewLevelDb = -30.0f, maxPreviewLevelDb = 6.0f;
+
+    /// The loop, in seconds of the matched section (0 is the section's start), 1 s or longer. The default is
+    /// the whole section. In same-part mode the DI's loop follows it through the alignment; in anything
+    /// mode the DI loops over its whole length, from its own start.
+    void setLoop (double startSeconds, double endSeconds);
+    std::pair<double, double> getLoop() const noexcept { return { loopStart, loopEnd }; }
+    double getSectionSeconds() const noexcept { return comparedTarget ? (double) comparedTarget->size() / 48000.0 : 0.0; }
+    static constexpr double minLoopSeconds = 1.0;
+    /// Whether the DI-based sources are lined up with the target (same part, with an alignment).
+    bool isAligned() const noexcept { return compareAligned; }
+
+    /// A source's audio (48 kHz mono; empty until rendered), its BS.1770 loudness over its loop as it is
+    /// (LUFS; -infinity for silence or nothing), and the gain the level match gives it (dB, 0 when off).
+    const std::vector<float>& getCompareAudio (int source) const;
+    double getLoudness (int source) const { return loudness[(size_t) source]; }
+    float getLevelMatchGainDb (int source) const { return matchGainDb[(size_t) source]; }
+    /// The DI's loop (in samples of the DI) for the current loop, as the player gets it.
+    std::pair<int64_t, int64_t> getDiLoopSamples() const noexcept { return diLoop; }
+
+    /// The long-term spectra of the target and the match render, dB in tone match's sixth-octave bands
+    /// (ampsim::tonematch::bands()), empty until rendered.
+    const std::vector<double>& getTargetSpectrum() const noexcept { return targetSpectrum; }
+    const std::vector<double>& getMatchSpectrum() const noexcept { return matchSpectrum; }
+
+    /// For tests: let the compare worker finish (or give up). True if nothing is rendering.
+    bool waitForCompare (int timeoutMs);
+    /// Starts the renders now (both, or only Current). Normally automatic. False if there's no result.
+    bool startCompareRender (bool renderMatch);
+
 private:
     void join();
+    void joinCompare();
+    void pollCompare();
+    void stopAndClearCompare();
+    void updateLoops();
+    void updateLevels();
+    juce::String currentFingerprint (const ampsim::tonematch::ToneSettings&) const;
+    float storedValue (const juce::String& parameterId, double value) const;
 
     AmpSimProcessor& ampSim;
     std::vector<float> target, reference;
@@ -132,4 +213,34 @@ private:
     juce::String stage;
     MatchResult pending, result;
     bool resultReady = false;
+    // What the finished match compared (the target after separation, and the DI), for the comparison.
+    std::vector<float> pendingTarget, pendingReference;
+    std::shared_ptr<const std::vector<float>> comparedTarget, comparedReference;
+
+    // The comparison. The compare worker reads only what's copied for it and hands back through
+    // `compareFinished` (picked up by poll()).
+    struct CompareRender
+    {
+        bool ok = false, cancelled = false, renderedMatch = false;
+        juce::String error, fingerprint;
+        std::shared_ptr<const std::vector<float>> match, current;
+        std::vector<double> targetSpectrum, matchSpectrum;
+    };
+    std::thread compareWorker;
+    std::atomic<bool> compareRunning { false }, compareCancel { false }, compareFinished { false };
+    std::atomic<double> compareProgress { 0.0 };
+    CompareRender comparePending;
+    juce::String compareStage, compareError;
+    std::shared_ptr<const std::vector<float>> matchAudio, currentAudio;
+    std::vector<double> targetSpectrum, matchSpectrum;
+    juce::String renderedFingerprint, seenFingerprint;
+    double fingerprintChangedMs = 0.0;
+    bool compareReady = false, compareAligned = false, previewPlaying = false, levelMatch = true, muteLive = true;
+    int previewSource = sourceTarget;
+    float previewLevelDb = 0.0f;
+    double loopStart = 0.0, loopEnd = 0.0;
+    std::pair<int64_t, int64_t> diLoop { 0, 0 };
+    std::array<double, numSources> loudness {};
+    std::array<float, numSources> matchGainDb {};
+    std::unique_ptr<ampsim::PreviewPlayer::Material> material; // a copy of what the player has (its tables), message thread
 };

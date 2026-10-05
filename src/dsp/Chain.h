@@ -19,6 +19,7 @@
 #include "LinkedGates.h"
 #include "OutputLimiter.h"
 #include "Overdrive.h"
+#include "PreviewPlayer.h"
 
 #include <array>
 #include <atomic>
@@ -33,7 +34,7 @@ namespace ampsim
 /// design", decisions 2 to 6).
 ///
 ///   input gain ─► PRE FX (mono, reorderable) ─► amp ─► Gate B ─► cab (mono to stereo) ─► POST FX
-///   (stereo, reorderable) ─► output level ─► output safety limiter
+///   (stereo, reorderable) ─► output level ─► tone match's A/B player ─► output safety limiter
 ///
 /// Blocks are typed members (decision 6), so the processor can call block-specific setters. The
 /// generic logic reaches them through blockFor(). A section's order is an array of slots, changed by
@@ -63,6 +64,7 @@ public:
     Delay delay;
     Reverb reverb;
     Gain outputGain { true };
+    PreviewPlayer preview; // tone match's A/B player: idle (and bit-transparent) unless comparing (PreviewPlayer.h)
     OutputLimiter limiter; // the last block: nothing leaves above its ceiling (OutputLimiter.h)
 
     enum class Slot : size_t
@@ -85,6 +87,7 @@ public:
         delay,
         reverb,
         outputGain,
+        preview,
         limiter,
         count
     };

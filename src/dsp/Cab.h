@@ -134,6 +134,7 @@ public:
     /// Audio thread, for tests.
     bool hasAnyImpulseResponse() const noexcept;
     CabIR& closeMic (int index) { return closeMics[(size_t) index]; }
+    const CabIR& closeMic (int index) const { return closeMics[(size_t) index]; }
     CabIR& roomMic() { return room; }
 
     void prepare (double sampleRate, int maxBlockSize) override;

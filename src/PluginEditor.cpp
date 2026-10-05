@@ -819,6 +819,9 @@ bool AmpSimEditor::keyPressed (const juce::KeyPress& key)
         refreshState();
         return redone;
     }
+    // The tone match page's comparison keys (Space, 1, 2, 3) from wherever the focus is.
+    if (shownPage == ui::PageId::toneMatch)
+        return toneMatchPage->keyPressed (key);
     return false;
 }
 
