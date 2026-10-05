@@ -11,18 +11,27 @@
 namespace
 {
 using namespace testing;
-using Setup = juce::AudioDeviceManager::AudioDeviceSetup;
+using platform::exclusivemode::Situation;
 
-/// A failed exclusive-mode request for the guitar on Input 1 alone, as JUCE's device manager holds it.
-Setup inputOneAlone()
+const juce::String scarlettIn = "Analogue 1 + 2 (Focusrite USB Audio)", scarlettOut = "Speakers (Focusrite USB Audio)";
+
+/// What JUCE's device manager holds after exclusive mode refused the guitar on Input 1 alone (measured on
+/// Sean's Scarlett Solo, 2026-10-05): the device closed, its names cleared, one default input, and the last
+/// setup that opened (DirectSound, same names) remembered by the guard.
+Situation refusedInputOne()
 {
-    Setup s;
-    s.inputDeviceName = "Analogue 1 + 2 (Focusrite USB Audio)";
-    s.outputDeviceName = "Speakers (Focusrite USB Audio)";
-    s.sampleRate = 48000.0;
-    s.bufferSize = 256;
-    s.inputChannels.setBit (0);
-    s.outputChannels.setRange (0, 2, true);
+    Situation s;
+    s.deviceType = platform::exclusivemode::typeName;
+    s.setup.sampleRate = 48000.0;
+    s.setup.bufferSize = 256;
+    s.setup.inputChannels.setBit (0);
+    s.setup.outputChannels.setRange (0, 2, true);
+    s.lastOpened.inputDeviceName = scarlettIn;
+    s.lastOpened.outputDeviceName = scarlettOut;
+    s.inputs = { scarlettIn, "Microphone (Blue Snowball )", "Microphone Array (Realtek(R) Audio)" };
+    s.outputs = { scarlettOut, "Speakers (Realtek(R) Audio)" };
+    s.defaultInput = 0;
+    s.defaultOutput = 0;
     return s;
 }
 
@@ -34,36 +43,58 @@ public:
     void runTest() override
     {
         using platform::exclusivemode::retryWithInputPair;
-        using platform::exclusivemode::typeName;
 
-        beginTest ("exclusive mode refusing Input 1 alone is retried once with Inputs 1 and 2, and nothing else is");
+        beginTest ("exclusive mode refusing Input 1 alone is retried once with Inputs 1 and 2 on the last devices that opened");
         {
-            const auto failed = inputOneAlone();
-            const auto retry = retryWithInputPair (typeName, failed, false);
+            const auto failed = refusedInputOne();
+            const auto retry = retryWithInputPair (failed);
             expect (retry.has_value());
             if (retry.has_value())
             {
                 expect (retry->inputChannels[0] && retry->inputChannels[1] && retry->inputChannels.countNumberOfSetBits() == 2);
                 expect (! retry->useDefaultInputChannels);
-                auto rest = *retry; // everything but the inputs is the request as it was
-                rest.inputChannels = failed.inputChannels;
-                rest.useDefaultInputChannels = failed.useDefaultInputChannels;
-                expect (rest == failed);
-                expect (! retryWithInputPair (typeName, *retry, false).has_value()); // the retry failed too: left alone
+                expectEquals (retry->inputDeviceName, scarlettIn);
+                expectEquals (retry->outputDeviceName, scarlettOut);
+                expectEquals (retry->bufferSize, 256);
+                expectEquals (retry->sampleRate, 48000.0);
+                auto again = failed; // the retry failed too: JUCE clears the names again, the inputs stay a pair
+                again.setup = *retry;
+                again.setup.inputDeviceName.clear();
+                again.setup.outputDeviceName.clear();
+                expect (! retryWithInputPair (again).has_value());
             }
+            logMessage ("  -> after the refusal (names cleared by JUCE): retried on \"" + scarlettIn + "\" / \"" + scarlettOut
+                        + "\" with Inputs 1 and 2, 48 kHz and 256 samples kept; a failed retry is left alone");
+        }
 
-            auto inputTwo = failed;
-            inputTwo.inputChannels.clear();
-            inputTwo.inputChannels.setBit (1); // opens two channels, so it never fails this way
-            auto noInput = failed;
-            noInput.inputDeviceName.clear();
-            expect (! retryWithInputPair (typeName, failed, true).has_value());           // it opened
-            expect (! retryWithInputPair ("Windows Audio", failed, false).has_value());   // shared mode converts
-            expect (! retryWithInputPair ("DirectSound", failed, false).has_value());
-            expect (! retryWithInputPair (typeName, inputTwo, false).has_value());
-            expect (! retryWithInputPair (typeName, noInput, false).has_value());
-            logMessage ("  -> retried: exclusive mode, closed, Input 1 alone -> Inputs 1 and 2, the rest unchanged; left alone: open, "
-                        "shared mode, DirectSound, Input 2 alone, no input device, and a failed retry");
+        beginTest ("the retry names only devices exclusive mode lists, falling back to its defaults, and acts only on that refusal");
+        {
+            auto otherNames = refusedInputOne(); // the last devices that opened aren't in this type's lists
+            otherNames.lastOpened.inputDeviceName = "Primary Sound Capture Driver";
+            otherNames.lastOpened.outputDeviceName = "Primary Sound Driver";
+            otherNames.defaultInput = 2;
+            otherNames.defaultOutput = 1;
+            const auto fallback = retryWithInputPair (otherNames);
+            expect (fallback.has_value() && fallback->inputDeviceName == otherNames.inputs[2] && fallback->outputDeviceName == otherNames.outputs[1]);
+
+            auto nothingOpenedYet = otherNames;
+            nothingOpenedYet.lastOpened = {};
+            nothingOpenedYet.defaultInput = -1;
+            expect (! retryWithInputPair (nothingOpenedYet).has_value()); // no input to name
+
+            auto open = refusedInputOne();
+            open.deviceOpen = true;
+            auto shared = refusedInputOne();
+            shared.deviceType = "Windows Audio";
+            auto directSound = refusedInputOne();
+            directSound.deviceType = "DirectSound";
+            auto inputTwo = refusedInputOne();
+            inputTwo.setup.inputChannels.clear();
+            inputTwo.setup.inputChannels.setBit (1); // opens two channels, so it never fails this way
+            for (const auto* s : { &open, &shared, &directSound, &inputTwo })
+                expect (! retryWithInputPair (*s).has_value());
+            logMessage ("  -> unlisted last devices: this type's defaults instead; left alone: nothing to name, an open device, "
+                        "shared mode, DirectSound, Input 2 alone");
         }
 
         beginTest ("with Inputs 1 and 2 open, the processor hears Input 1 alone: Input 2 never reaches the output");

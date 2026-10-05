@@ -44,15 +44,27 @@ private:
 
        #if JUCE_WINDOWS
         // Exclusive mode refused Input 1 alone (a stereo-only endpoint): open Inputs 1 and 2 (ExclusiveModeInput.h).
-        if (auto* type = manager.getCurrentDeviceTypeObject())
-            if (const auto retry = exclusivemode::retryWithInputPair (type->getTypeName(), manager.getAudioDeviceSetup(),
-                                                                      manager.getCurrentAudioDevice() != nullptr))
+        // A failed open clears the setup's device names, so remember the last ones that opened.
+        if (manager.getCurrentAudioDevice() != nullptr)
+            lastOpened = manager.getAudioDeviceSetup();
+        else if (auto* type = manager.getCurrentDeviceTypeObject())
+        {
+            exclusivemode::Situation s;
+            s.deviceType = type->getTypeName();
+            s.setup = manager.getAudioDeviceSetup();
+            s.lastOpened = lastOpened;
+            s.inputs = type->getDeviceNames (true);
+            s.outputs = type->getDeviceNames (false);
+            s.defaultInput = type->getDefaultDeviceIndex (true);
+            s.defaultOutput = type->getDefaultDeviceIndex (false);
+            if (const auto retry = exclusivemode::retryWithInputPair (s))
             {
                 const auto error = manager.setAudioDeviceSetup (*retry, true);
                 juce::Logger::writeToLog ("BellyDSP: exclusive mode can't open Input 1 alone; opened Inputs 1 and 2"
                                           + (error.isEmpty() ? juce::String() : " (failed: " + error + ")"));
                 return;
             }
+        }
        #endif
 
         auto* device = manager.getCurrentAudioDevice();
@@ -96,6 +108,7 @@ private:
     bool gaveUp = false;
     juce::uint32 windowStartMs = 0;
     int switchesInWindow = 0;
+    juce::AudioDeviceManager::AudioDeviceSetup lastOpened; // Windows: the device names for an exclusive-mode retry
 };
 
 std::unique_ptr<Guard> guard;
