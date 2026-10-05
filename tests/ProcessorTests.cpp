@@ -741,9 +741,11 @@ public:
             p.loadCabIR (0, irFile);
             waitForLoads (p);
             p.prepareToPlay (fs, blockSize);
+            // The paths quoted and escaped as JSON: a raw Windows path's backslashes would read as escapes.
+            const auto quoted = [] (const juce::File& f) { return juce::JSON::toString (juce::var (f.getFullPathName())); };
             const auto other = juce::JSON::parse (R"({ "format_version": 1, "name": "Other", "parameters": { "amp_slot": 0, "output_gain": -4.0, "delay_on": 1 },
-                                                     "amps": [ ")" + exampleModel ("lstm.nam").getFullPathName() + R"(", "", "" ], "cab": { "mic1": ")"
-                                                     + writeSyntheticIR ("preset_other_ir", 2048).getFullPathName() + R"(" }, "order": {} })");
+                                                     "amps": [ )" + quoted (exampleModel ("lstm.nam")) + R"(, "", "" ], "cab": { "mic1": )"
+                                                     + quoted (writeSyntheticIR ("preset_other_ir", 2048)) + R"( }, "order": {} })");
 
             const auto input = guitarDI ((int) (4.0 * fs));
             juce::AudioBuffer<float> buffer (2, blockSize);
@@ -1037,7 +1039,9 @@ public:
                 control.mouseUp (e);
             };
             click (juce::ModifierKeys::rightButtonModifier);
-            click (juce::ModifierKeys::leftButtonModifier | juce::ModifierKeys::ctrlModifier);
+           #if JUCE_MAC
+            click (juce::ModifierKeys::leftButtonModifier | juce::ModifierKeys::ctrlModifier); // a right-click only on a Mac
+           #endif
             const auto reachedOnRightClick = control.downs + control.drags + control.ups;
             click (juce::ModifierKeys::leftButtonModifier);
             expectEquals (reachedOnRightClick, 0);
@@ -2115,8 +2119,9 @@ public:
             knob.mouseDown (event (centre, juce::ModifierKeys::altModifier));
             knob.mouseUp (event (centre, juce::ModifierKeys::altModifier));
             const auto afterReset = getParam (p, "delay_mix");
-            knob.mouseDown (event (centre, juce::ModifierKeys::ctrlModifier)); // a right-click (ctrl-click) does nothing
-            knob.mouseDrag (event ({ 42.0f, 0.0f }, juce::ModifierKeys::ctrlModifier));
+            // A right-click (on a Mac, also a ctrl-click: popupMenuClickModifier) does nothing.
+            knob.mouseDown (event (centre, juce::ModifierKeys::popupMenuClickModifier));
+            knob.mouseDrag (event ({ 42.0f, 0.0f }, juce::ModifierKeys::popupMenuClickModifier));
             const auto afterRightDrag = getParam (p, "delay_mix");
 
             // While dragging, the label is the value.

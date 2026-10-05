@@ -51,7 +51,7 @@ struct OldInstall
     {
         juce::StringArray rows;
         for (const auto& entry : juce::RangedDirectoryIterator (root, true, "*", juce::File::findFiles))
-            rows.add (entry.getFile().getRelativePathFrom (root) + " " + juce::String (entry.getFile().getSize()) + " "
+            rows.add (entry.getFile().getRelativePathFrom (root).replaceCharacter ('\\', '/') + " " + juce::String (entry.getFile().getSize()) + " "
                       + juce::String::toHexString (entry.getFile().loadFileAsString().hashCode64()));
         rows.sort (true);
         return rows;
