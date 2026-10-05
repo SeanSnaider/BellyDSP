@@ -17,6 +17,9 @@
 /// when the device can't do 48 kHz or when something keeps switching it away (more than maxSwitches in a
 /// minute), so it never fights another app forever. Never touches the audio thread.
 ///
+/// On Windows the same check also reopens Windows Audio (Exclusive Mode) with Inputs 1 and 2 when it
+/// refused Input 1 alone (ExclusiveModeInput.h explains why).
+///
 /// One implementation per build, chosen by CMake: SampleRateGuard_standalone.cpp in the app (it reaches
 /// JUCE's StandalonePluginHolder), SampleRateGuard_none.cpp in the tests and anything that isn't the
 /// standalone app.

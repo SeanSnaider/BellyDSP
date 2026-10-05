@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Sean Snaider
 
 #include "SampleRateGuard.h"
+#include "ExclusiveModeInput.h"
 
 #include <juce_core/system/juce_TargetPlatform.h>
 
@@ -39,6 +40,20 @@ private:
         if (holder == nullptr)
             return;
         auto& manager = holder->deviceManager;
+
+       #if JUCE_WINDOWS
+        // Exclusive mode refused Input 1 alone (a stereo-only endpoint): open Inputs 1 and 2 (ExclusiveModeInput.h).
+        if (auto* type = manager.getCurrentDeviceTypeObject())
+            if (const auto retry = exclusivemode::retryWithInputPair (type->getTypeName(), manager.getAudioDeviceSetup(),
+                                                                      manager.getCurrentAudioDevice() != nullptr))
+            {
+                const auto error = manager.setAudioDeviceSetup (*retry, true);
+                juce::Logger::writeToLog ("BellyDSP: exclusive mode can't open Input 1 alone; opened Inputs 1 and 2"
+                                          + (error.isEmpty() ? juce::String() : " (failed: " + error + ")"));
+                return;
+            }
+       #endif
+
         auto* device = manager.getCurrentAudioDevice();
         if (device == nullptr || std::abs (device->getCurrentSampleRate() - requiredRate) < 0.5)
             return;
