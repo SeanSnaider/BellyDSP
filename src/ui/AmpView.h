@@ -87,6 +87,8 @@ public:
     Knob& getKnob (int slot, int index) { return *knobs[(size_t) slot][(size_t) index]; }
     juce::Component& getGrille() noexcept;
     bool isGateLightOn() const noexcept { return gateOpen; }
+    /// The gate's first switch-on, as the strip shows it beside the Gate group (empty: nothing shown).
+    juce::String getGatePromptText() const { return gatePrompt; }
     Switch& getGateSwitch() noexcept { return *gateOn; }
 
     /// What the info row shows, for tests.
@@ -120,6 +122,7 @@ private:
     class GateLight;
     class GainSteps;
     void updateGainSteps();
+    void updateGatePrompt();
     void timerCallback() override;
     void showSlot (int slot);
 
@@ -137,6 +140,9 @@ private:
     std::array<int, 3> dividers {};
     int shownSlot = -1;
     bool gateOpen = false;
+    juce::String gatePrompt; // the first switch-on's prompt or result, shown in the strip right of the groups
+    float gateLearnProgress = -1.0f; // 0 .. 1 while Learn measures; -1 otherwise
+    juce::Rectangle<int> promptArea;
     std::map<juce::String, juce::String> toneTypes; // capture path -> its tone type (read once)
     struct SetInfo
     {

@@ -467,6 +467,7 @@ public:
             const auto transitions = [&] (float hysteresis)
             {
                 Gate::Settings s;
+                s.thresholdDb = -55.0f; // the threshold the stimulus is built around (the default until 2026-10-04)
                 s.hysteresisDb = hysteresis;
                 Gate g;
                 g.setSettings (s);
@@ -815,6 +816,7 @@ public:
                     const auto onset = at (1.5);
                     place (di, tone (f0, -40.0, 0.6, 20.0, 80), 1.5);
                     Gate::Settings s;
+                    s.thresholdDb = -55.0f; // the threshold the hum is set against (the default until 2026-10-04)
                     s.sidechainHighPass = highPass;
                     Gate g;
                     g.setSettings (s);
@@ -1110,8 +1112,8 @@ public:
             expect (openState);
             expectWithinAbsoluteError ((double) closedReduction, 40.0, 1.0e-3);
             expect (! closedState);
-            expectEquals (g.getOpenThresholdDb(), -55.0f);
-            expectEquals (g.getCloseThresholdDb(), -63.0f);
+            expectEquals (g.getOpenThresholdDb(), -45.0f); // the defaults: -45 dBFS open, 8 dB of hysteresis
+            expectEquals (g.getCloseThresholdDb(), -53.0f);
             expectEquals (m.getGainReductionDb(), 100.0f);
             logMessage ("  -> 1 kHz at -20 dBFS: detector " + juce::String (openLevel, 2) + " dB, open, reduction " + juce::String (openReduction, 1)
                         + " dB; on the floor: detector " + juce::String (closedLevel, 1) + " dB against open/close thresholds " + whole (g.getOpenThresholdDb())

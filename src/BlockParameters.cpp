@@ -27,7 +27,7 @@ juce::AudioParameterFloatAttributes percent() { return juce::AudioParameterFloat
 
 void GateParameters::addTo (Layout& layout, const juce::String& p, const juce::String& n)
 {
-    // Defaults and ranges are the block's (Gate.h): threshold -55 dBFS with 8 dB of hysteresis, 10 ms
+    // Defaults and ranges are the block's (Gate.h): threshold -45 dBFS (-55 until 2026-10-04) with 8 dB of hysteresis, 10 ms
     // hold, 0.5 ms attack, adaptive release with a 250 ms slow side, a full mute when closed, detecting
     // from the DI through a 100 Hz sidechain high-pass. Off by default, like every effect.
     const ampsim::Gate::Settings d;

@@ -7,6 +7,8 @@
     "gate_a_on": 1,
     "gate_b_on": 1,
     "gate_link": 1,
+    "gate_a_threshold": -55.0,
+    "gate_b_threshold": -55.0,
     "gate_a_release_mode": 1,
     "gate_a_release": 120.0,
     "boost_on": 1,

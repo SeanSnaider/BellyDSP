@@ -4,6 +4,8 @@
 #include "Controls.h"
 #include "LookAndFeel.h"
 
+#include <utility>
+
 namespace ui
 {
 
@@ -621,14 +623,31 @@ void Switch::paintButton (juce::Graphics& g, bool, bool)
         drawFocusRing (g, box);
 }
 
+void Switch::mouseUp (const juce::MouseEvent& e)
+{
+    // A mouse-up over the switch makes the click (Button::internalClickCallback, synchronously); the flag
+    // marks that click as the user's. Cleared after, in case the mouse left the switch and nothing clicked.
+    userGesture = true;
+    IgnoresRightClick<juce::ToggleButton>::mouseUp (e);
+    userGesture = false;
+}
+
 bool Switch::keyPressed (const juce::KeyPress& key)
 {
     if (key == juce::KeyPress::spaceKey || key == juce::KeyPress::returnKey)
     {
+        userGesture = true; // triggerClick() clicks asynchronously: clicked() consumes the flag then
         triggerClick();
         return true;
     }
     return juce::ToggleButton::keyPressed (key);
+}
+
+void Switch::clicked()
+{
+    // Every click comes through here, the parameter attachment's included; only one the user made calls back.
+    if (std::exchange (userGesture, false) && onUserToggle)
+        onUserToggle (getToggleState());
 }
 
 void Switch::focusGained (FocusChangeType cause)
@@ -678,7 +697,10 @@ void PowerSwitch::paint (juce::Graphics& g)
 void PowerSwitch::toggle()
 {
     beginUndoStep (state);
-    attachment.setValueAsCompleteGesture ((! on) != inverted ? 1.0f : 0.0f);
+    const auto value = (! on) != inverted;
+    attachment.setValueAsCompleteGesture (value ? 1.0f : 0.0f);
+    if (onUserToggle)
+        onUserToggle (value);
 }
 
 void PowerSwitch::mouseDown (const juce::MouseEvent& e)

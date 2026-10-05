@@ -1209,7 +1209,7 @@ public:
             const auto learnedA = getParam (p, "gate_a_threshold");
             expect (! p.isLearningGates());
             expectWithinAbsoluteError (learnedA, p.getChain().gateA.getLearnedThresholdDb(), 0.051f);
-            expectEquals (getParam (p, "gate_b_threshold"), -55.0f);
+            expectEquals (getParam (p, "gate_b_threshold"), ampsim::Gate::Settings().thresholdDb); // untouched: the default
             setParam (p, "gate_link", 0.0f);
             p.learnGates();
             processAll (p, quiet);

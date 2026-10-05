@@ -120,7 +120,8 @@ public:
 
     struct Settings
     {
-        float thresholdDb = -55.0f;  // open threshold, dBFS of the detector's peak level (-100 to 0)
+        float thresholdDb = -45.0f;  // open threshold, dBFS of the detector's peak level (-100 to 0); was -55 until
+                                     // 2026-10-04 (BUILD_PLAN decision log, ASSUMPTIONS G6, PT12)
         float hysteresisDb = 8.0f;   // the close threshold sits this far below it (0 to 24)
         float holdMs = 10.0f;        // after the level drops below the close threshold (0 to 500)
         float attackMs = 0.5f;       // raised-cosine opening (0.05 to 50)
@@ -264,7 +265,7 @@ private:
     Settings settings;
 
     // Smoothed knobs and crossfaded switches.
-    juce::SmoothedValue<double> thresholdDb { -55.0 }, hysteresisDb { 8.0 }, floorGain { 0.0 };
+    juce::SmoothedValue<double> thresholdDb { -45.0 }, hysteresisDb { 8.0 }, floorGain { 0.0 };
     juce::SmoothedValue<double> sidechainMix { 1.0 }; // 0 raw, 1 high-passed
     juce::SmoothedValue<double> sourceMix { 0.0 };    // 0 DI, 1 own input
     juce::SmoothedValue<double, juce::ValueSmoothingTypes::Multiplicative> sidechainHz { 100.0 };
@@ -296,12 +297,12 @@ private:
 
     // Learn: requested by any thread, measured on the audio thread.
     std::atomic<bool> learnRequested { false }, learning { false };
-    std::atomic<float> learnProgress { 0.0f }, learnedThreshold { -55.0f }, learnedNoiseFloor { -100.0f };
+    std::atomic<float> learnProgress { 0.0f }, learnedThreshold { -45.0f }, learnedNoiseFloor { -100.0f };
     std::atomic<int> learnCount { 0 };
     std::array<int, learnBins> learnHistogram {};
     int learnTotal = 96000, learnLeft = 0;
 
-    std::atomic<float> meterDetector { -180.0f }, meterOpen { -55.0f }, meterClose { -63.0f }, meterReduction { 0.0f };
+    std::atomic<float> meterDetector { -180.0f }, meterOpen { -45.0f }, meterClose { -53.0f }, meterReduction { 0.0f };
     std::atomic<bool> meterOpenState { true };
 };
 

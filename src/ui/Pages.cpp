@@ -28,6 +28,7 @@ Switch& ControlGroup::addSwitch (const juce::String& parameterId, const juce::St
 {
     auto& control = adopt (std::make_unique<Switch> (label));
     buttonAttachments.add (new juce::AudioProcessorValueTreeState::ButtonAttachment (state, parameterId, tagged (control, parameterId)));
+    control.onUserToggle = [this, parameterId] (bool on) { ampSim.switchedByUser (parameterId, on); };
     return control;
 }
 

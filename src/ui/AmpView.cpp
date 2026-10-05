@@ -563,6 +563,7 @@ juce::String AmpView::toneTypeOf (const juce::File& namFile)
 void AmpView::refresh()
 {
     showSlot (juce::roundToInt (state.getRawParameterValue (AmpSimProcessor::slotParamId)->load()));
+    updateGatePrompt();
 
     // The capture: lit while one is loaded; its voice from the metadata, its file.
     const auto status = ampSim.getStatus();
@@ -621,6 +622,21 @@ void AmpView::timerCallback()
     gateOpen = ampSim.isGateOpen() && state.getRawParameterValue ("gate_a_on")->load() >= 0.5f;
     gateLight->set (gateOpen);
     updateGainSteps(); // the lit steps follow the knob, whoever turns it
+    updateGatePrompt();
+}
+
+void AmpView::updateGatePrompt()
+{
+    // The gate's first switch-on (ASSUMPTIONS PT13): the prompt next to the switch that started it, with the
+    // measurement's progress under it, then the threshold it set. (The info row says the same: UH5.)
+    const auto prompt = ampSim.getAutoLearnPrompt();
+    const auto progress = prompt == AmpSimProcessor::autoLearnPromptText ? (ampSim.isLearningGates() ? ampSim.getGateLearnProgress() : 0.0f) : -1.0f;
+    if (prompt != gatePrompt || std::abs (progress - gateLearnProgress) > 0.005f)
+    {
+        gatePrompt = prompt;
+        gateLearnProgress = progress;
+        repaint (promptArea);
+    }
 }
 
 void AmpView::paint (juce::Graphics& g)
@@ -654,6 +670,25 @@ void AmpView::paint (juce::Graphics& g)
         g.drawText (name, juce::Rectangle<int> (x, knobsTop, 52, 74), juce::Justification::centredLeft, false);
     // The Gate group's name sits above its switch, the pair centred on the knobs' row.
     g.drawText ("Gate", juce::Rectangle<int> (dividers[0] + 27, knobsTop + 37 - 22, 52, 16), juce::Justification::centredLeft, false);
+
+    // The gate's first switch-on: the prompt in ink (the result after it in ink-dim), and while Learn
+    // measures, its progress as a thin emerald bar under the words.
+    if (gatePrompt.isNotEmpty())
+    {
+        auto area = promptArea;
+        const auto measuring = gateLearnProgress >= 0.0f;
+        g.setFont (geist (Weight::regular, 13.0f));
+        g.setColour (measuring ? ink : inkDim);
+        g.drawText (gatePrompt, area.removeFromTop (18), juce::Justification::centredLeft, true);
+        if (measuring)
+        {
+            const auto bar = area.withTrimmedTop (6).withHeight (3).withWidth (juce::jmin (area.getWidth(), 300)).toFloat();
+            g.setColour (line2);
+            g.fillRoundedRectangle (bar, 1.5f);
+            g.setColour (accent);
+            g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * juce::jlimit (0.0f, 1.0f, gateLearnProgress)), 1.5f);
+        }
+    }
 }
 
 void AmpView::resized()
@@ -705,6 +740,7 @@ void AmpView::resized()
     x += 1 + 26 + 52 + 2;
     output->setCssPosition (x, knobsTop);
     dividers[2] = x + 68 + 26; // (the last group has no divider)
+    promptArea = juce::Rectangle<int> (dividers[2] + 26, knobsTop + 37 - 16, getWidth() - dividers[2] - 26, 32);
 }
 
 } // namespace ui

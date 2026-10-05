@@ -4,6 +4,8 @@
   "notes": "Slots 1 to 3 start on the built-in gain sets, Glass (clean to the edge of breakup), Ember (light to heavy crunch), and Monolith (tight high gain to a saturated lead, with a Screamer boost built in): stand-ins until your own. Scenes: Clean on Glass at Gain 2.5 (bright), Crunch on Ember at 5, Lead on Monolith at 7.5 with the Boost on. Close mic 1 starts on a built-in vintage 4x12 IR (pick another on the Cab page). Swap in your own captures; these settings are starting points to tune by ear.",
   "parameters": {
     "amp_slot": 0,
+    "gate_a_threshold": -55.0,
+    "gate_b_threshold": -55.0,
     "comp_pre_on": 1,
     "comp_pre_threshold": -32.0,
     "comp_pre_ratio": 8.0,

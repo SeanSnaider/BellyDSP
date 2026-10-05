@@ -169,6 +169,27 @@ public:
     bool isGateBOnItsOwn() const;
     float getGateLearnProgress() const { return chain.gateA.getLearnProgress(); }
 
+    /// Message thread: a switch in the UI turned a parameter on or off (a click or a key on the switch
+    /// itself: the Amp page's strip, a block page's header, a tab's or the chain's bypass dot). Presets,
+    /// scenes, MIDI, undo, and the host never call it. Used for the gate's first switch-on: the first time
+    /// on this install that the user switches Gate A on, Learn runs by itself (ASSUMPTIONS PT13), after a
+    /// short lead-in so the prompt can be read and the strings muted. Once per install: the flag is in the
+    /// app's settings file (platform/AppSettings.h), never in a preset or the state.
+    void switchedByUser (const juce::String& parameterId, bool on);
+
+    /// The lead-in between the switch and the measurement (the prompt shows from the click).
+    static constexpr double autoLearnLeadInMs = 1000.0;
+    /// How long the result line shows after the measurement.
+    static constexpr double autoLearnResultMs = 4000.0;
+
+    /// Message thread: the first switch-on's prompt while it runs ("Mute your strings for a second: learning
+    /// the noise floor"), then the result for a few seconds; empty otherwise.
+    juce::String getAutoLearnPrompt() const;
+    static inline const juce::String autoLearnPromptText { "Mute your strings for a second: learning the noise floor" };
+
+    /// For tests: how many times the first switch-on has started Learn in this processor (0 or 1).
+    int getAutoLearnCount() const noexcept { return autoLearnCount; }
+
     /// Any thread: gate meters, for Gate A (b = false) or Gate B.
     struct GateMeter
     {
@@ -411,6 +432,12 @@ private:
     params::Raw driveOversampling;
     std::atomic<float>* gateLink = nullptr;
     int gateALearnSeen = 0, gateBLearnSeen = 0;
+    // The first switch-on's Learn (message thread): when it starts (0: not pending), whether it's running,
+    // and until when its result line shows.
+    double autoLearnAtMs = 0.0, autoLearnResultUntilMs = 0.0;
+    bool autoLearnRunning = false;
+    int autoLearnCount = 0;
+    float autoLearnResultDb = 0.0f;
     params::CompressorParameters preCompParams, postCompParams;
     params::EqualizerParameters preEqParams, postEqParams;
     params::DelayParameters delayParams;

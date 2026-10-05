@@ -36,6 +36,7 @@ public:
         {
             dot = std::make_unique<PowerSwitch> (p.parameters, item.parameterId, item.inverted);
             dot->setTooltip ("Switch " + item.label + " on or off");
+            dot->onUserToggle = [&p, id = item.parameterId] (bool on) { p.switchedByUser (id, on); };
             addAndMakeVisible (*dot);
         }
     }

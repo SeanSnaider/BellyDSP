@@ -10,6 +10,7 @@
 
 #include "PluginProcessor.h"
 #include "TestHelpers.h"
+#include "platform/AppSettings.h"
 
 #include <juce_events/juce_events.h>
 
@@ -59,6 +60,11 @@ int main (int argc, char* argv[])
     // The tests were written against processors that start with empty amp slots; the ones about the
     // built-in captures turn them back on (testing::WithBuiltInCaptures).
     AmpSimProcessor::builtInCapturesForFreshSlots = false;
+
+    // The app's own settings (the gate's first switch-on, ...) go to a fresh file of the tests' own, never the user's.
+    const auto settingsFile = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ampsim_tests_settings.json");
+    settingsFile.deleteFile();
+    platform::settings::setFileForTests (settingsFile);
 
     juce::Array<juce::UnitTest*> tests;
     for (auto* test : juce::UnitTest::getAllTests())

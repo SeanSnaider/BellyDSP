@@ -361,11 +361,14 @@ void AmpSimEditor::refreshState()
         note = juce::MidiMessage::getMidiNoteName (reading.midiNote, true, false, 4);
     topBar.setTuner (shownPage == ui::PageId::tuner, note);
 
-    // The message: the sample rate first, then MIDI learn waiting for a controller, then a preset that
-    // couldn't load or loaded with gaps (or a factory preset's notes).
+    // The message: the sample rate first, then the gate's first switch-on learning the noise floor, then
+    // MIDI learn waiting for a controller, then a preset that couldn't load or loaded with gaps (or a
+    // factory preset's notes).
     juce::String message;
     if (! ampSim.isSampleRateOk())
         message = rateText (ampSim.getDeviceSampleRate()) + ": muted, set the interface to 48 kHz";
+    else if (const auto prompt = ampSim.getAutoLearnPrompt(); prompt.isNotEmpty())
+        message = prompt;
     else if (const auto& midi = ampSim.getMidiMap(); midi.isLearning())
     {
         if (auto* parameter = ampSim.parameters.getParameter (midi.getLearnTarget()))
@@ -374,7 +377,9 @@ void AmpSimEditor::refreshState()
     if (message.isEmpty())
         message = presetMessage.isNotEmpty() ? presetMessage : ampSim.getPresetWarnings().joinIntoString ("; ");
     statusText = message;
-    ampView->setStatus (message);
+    // On the Amp page the gate's first switch-on shows in the strip, beside the switch that started it
+    // (AmpView::updateGatePrompt), so the info row keeps its rate.
+    ampView->setStatus (message == ampSim.getAutoLearnPrompt() ? juce::String() : message);
     statusLine->set (shownPage == ui::PageId::amp ? juce::String() : message);
 }
 

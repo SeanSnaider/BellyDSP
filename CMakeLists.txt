@@ -246,7 +246,7 @@ endif()
 
 # Where the app finds out about itself (name, version, source, bundled files, the user's folder) and the
 # one-time copy of the user's files from the old name: compiled into the app and the tests.
-set(AMPSIM_PLATFORM_SOURCES src/platform/AppInfo.cpp src/platform/DataMigration.cpp)
+set(AMPSIM_PLATFORM_SOURCES src/platform/AppInfo.cpp src/platform/AppSettings.cpp src/platform/DataMigration.cpp)
 
 # ---------------------------------------------------------------------------------------------
 # The auto-updater (docs/RELEASING.md). Off: a no-op. On: Sparkle 2 on macOS, WinSparkle on Windows,

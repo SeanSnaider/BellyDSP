@@ -92,6 +92,7 @@ public:
             dot = std::make_unique<PowerSwitch> (p.parameters, parameterId, inverted);
             dot->setTooltip (juce::String ("Bypass ") + name + " (click the dot; the block itself opens its page)");
             dot->onChange = [this] { repaint(); };
+            dot->onUserToggle = [&p, id = juce::String (parameterId)] (bool on) { p.switchedByUser (id, on); };
             addAndMakeVisible (*dot);
             tagged (*this, parameterId); // a right-click anywhere on the block learns its bypass
         }

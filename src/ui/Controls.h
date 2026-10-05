@@ -285,14 +285,24 @@ public:
     static constexpr int margin = 4;
     static constexpr int preferredHeight = 16 + 2 * margin;
 
+    /// Called with the new state when the user flips it (a click, Space, or Enter on it), after the
+    /// toggle and before the attached parameter hears of it. Not called when the parameter moves it (a
+    /// preset, a scene, MIDI, undo, the host): onClick can't tell those apart, since an attachment's
+    /// update sends a click too.
+    std::function<void (bool)> onUserToggle;
+
     void paintButton (juce::Graphics&, bool highlighted, bool down) override;
+    void mouseUp (const juce::MouseEvent&) override;
     bool keyPressed (const juce::KeyPress&) override;
     void focusGained (FocusChangeType) override;
     void focusLost (FocusChangeType) override;
 
 private:
+    void clicked() override;
+
     juce::Colour textColour = theme::inkDim;
     bool keyboardFocus = false;
+    bool userGesture = false; // set by a mouse-up or key on the switch, consumed by the click it causes
 };
 
 /// A bypass dot (handoff 4.4): 7 px, emerald when the block is engaged, line-2 when it's bypassed. Bound
@@ -315,6 +325,9 @@ public:
     void toggle();
 
     std::function<void()> onChange;
+    /// Called after the user flips it (toggle()), with the parameter's new value (true: 1). Never when
+    /// the parameter moves it.
+    std::function<void (bool)> onUserToggle;
 
 private:
     juce::AudioProcessorValueTreeState& state;

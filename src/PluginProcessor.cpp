@@ -3,6 +3,7 @@
 
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "platform/AppSettings.h"
 #include "platform/DataMigration.h"
 
 AmpSimProcessor::AmpSimProcessor()
@@ -444,6 +445,27 @@ void AmpSimProcessor::learnGates()
     chain.gateA.startLearn();
     if (isGateBOnItsOwn())
         chain.gateB.gate.startLearn();
+}
+
+void AmpSimProcessor::switchedByUser (const juce::String& parameterId, bool on)
+{
+    // Gate A's first switch-on from the UI on this install: Learn, once. The flag is set at the click, so
+    // switching it off and on again (or a second window, or a crash mid-measurement) never asks twice.
+    if (parameterId == "gate_a_on" && on && ! platform::settings::getBool (platform::settings::gateAutoLearnDone, false))
+    {
+        platform::settings::setBool (platform::settings::gateAutoLearnDone, true);
+        autoLearnAtMs = juce::Time::getMillisecondCounterHiRes() + autoLearnLeadInMs;
+        autoLearnResultUntilMs = 0.0;
+    }
+}
+
+juce::String AmpSimProcessor::getAutoLearnPrompt() const
+{
+    if (autoLearnAtMs > 0.0 || autoLearnRunning)
+        return autoLearnPromptText;
+    if (juce::Time::getMillisecondCounterHiRes() < autoLearnResultUntilMs)
+        return "Noise floor learned: Gate A's threshold is now " + juce::String (juce::roundToInt (autoLearnResultDb)) + " dBFS";
+    return {};
 }
 
 bool AmpSimProcessor::isGateBOnItsOwn() const
@@ -1153,6 +1175,21 @@ void AmpSimProcessor::timerCallback()
     };
     writeLearned (chain.gateA, gateALearnSeen, "gate_a_threshold");
     writeLearned (chain.gateB.gate, gateBLearnSeen, "gate_b_threshold");
+
+    // The gate's first switch-on: start Learn once the lead-in is over, and say what it set when it's done.
+    if (const auto now = juce::Time::getMillisecondCounterHiRes(); autoLearnAtMs > 0.0 && now >= autoLearnAtMs)
+    {
+        autoLearnAtMs = 0.0;
+        autoLearnRunning = true;
+        ++autoLearnCount;
+        learnGates();
+    }
+    else if (autoLearnRunning && ! isLearningGates())
+    {
+        autoLearnRunning = false;
+        autoLearnResultDb = parameters.getRawParameterValue ("gate_a_threshold")->load();
+        autoLearnResultUntilMs = now + autoLearnResultMs;
+    }
 
     // Bloom's through-zero flanger is the one latency the chain ever has (5 ms, while it's on): tell the host.
     if (const auto latency = chain.latencySamples(); latency != getLatencySamples())
