@@ -113,11 +113,13 @@ int main (int argc, char* argv[])
 
     for (auto* type : manager.getAvailableDeviceTypes())
     {
+        // The default devices are what the standalone app opens before anything is chosen in its Options.
         type->scanForDevices();
-        for (const auto& name : type->getDeviceNames (true))
-            std::cout << "  [" << type->getTypeName() << "] input:  " << name << "\n";
-        for (const auto& name : type->getDeviceNames (false))
-            std::cout << "  [" << type->getTypeName() << "] output: " << name << "\n";
+        const auto inputs = type->getDeviceNames (true), outputs = type->getDeviceNames (false);
+        for (int i = 0; i < inputs.size(); ++i)
+            std::cout << "  [" << type->getTypeName() << "] input:  " << inputs[i] << (i == type->getDefaultDeviceIndex (true) ? "  (default)" : "") << "\n";
+        for (int i = 0; i < outputs.size(); ++i)
+            std::cout << "  [" << type->getTypeName() << "] output: " << outputs[i] << (i == type->getDefaultDeviceIndex (false) ? "  (default)" : "") << "\n";
     }
 
     if (typeName.isNotEmpty())
@@ -149,6 +151,7 @@ int main (int argc, char* argv[])
               << "  output channels: " << device->getOutputChannelNames().joinIntoString (", ") << "\n"
               << "  reported latency: input " << device->getInputLatencyInSamples() << " + output "
               << device->getOutputLatencyInSamples() << " samples\n"
+              << "  buffer sizes it offers: " << [device] { juce::StringArray s; for (auto b : device->getAvailableBufferSizes()) s.add (juce::String (b)); return s.joinIntoString (", "); }() << "\n"
               << "Running for " << seconds << " s with silent output. Strum the guitar now to see its channel.\n";
 
     Probe probe;
