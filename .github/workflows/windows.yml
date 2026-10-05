@@ -113,11 +113,16 @@ jobs:
         # to the exes in build-release and never ship: the installer (installer/windows/BellyDSP.iss) lists its
         # files one by one (the exe, WinSparkle.dll, the licence texts, content/). /OPT:REF and /OPT:ICF are
         # what a Release link does without /DEBUG, so the shipped code is the same.
+        # The flags are written with '-', which MSVC accepts like '/': this step runs in Git's bash, which turns
+        # anything that looks like a Unix path ("/O2") into a Windows one ("C:/Program Files/Git/O2"), and that
+        # broke the first run with these flags (2026-10-05). MSYS_NO_PATHCONV stops the conversion as well.
+        env:
+          MSYS_NO_PATHCONV: "1"
         run: |
           cmake -S . -B build-release -G "Visual Studio 17 2022" -A x64 \
-            -DCMAKE_C_FLAGS_RELEASE="/O2 /Ob2 /DNDEBUG /Zi" \
-            -DCMAKE_CXX_FLAGS_RELEASE="/O2 /Ob2 /DNDEBUG /Zi" \
-            -DCMAKE_EXE_LINKER_FLAGS_RELEASE="/DEBUG /OPT:REF /OPT:ICF /INCREMENTAL:NO" \
+            -DCMAKE_C_FLAGS_RELEASE="-O2 -Ob2 -DNDEBUG -Zi" \
+            -DCMAKE_CXX_FLAGS_RELEASE="-O2 -Ob2 -DNDEBUG -Zi" \
+            -DCMAKE_EXE_LINKER_FLAGS_RELEASE="-DEBUG -OPT:REF -OPT:ICF -INCREMENTAL:NO" \
             -DAMPSIM_VERSION="${{ steps.conf.outputs.version }}" \
             -DAMPSIM_UPDATER=${{ steps.conf.outputs.updater }} \
             -DAMPSIM_ED_PUBLIC_KEY="${{ steps.conf.outputs.ed_public_key }}" \
