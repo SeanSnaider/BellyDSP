@@ -53,7 +53,10 @@ std::vector<float> ToneMatcher::renderAmp (const juce::File& model, const NamAmp
 {
     // A private amp section, built here and dropped at the end: the chain's own amp block, the capture in
     // its first slot (selected), the other slots empty. Settings go in before prepare(), which snaps the
-    // smoothers and installs the model with no fade, as ampsim_render does.
+    // smoothers and installs the model with no fade, as ampsim_render does. Loading can't be interrupted, so a
+    // render that starts after a cancel (the rest of a parallel grid) returns before it loads anything.
+    if (cancel.load())
+        return {};
     auto section = std::make_unique<AmpSection>();
     if (! section->slot (0).model.loadModel (model, true, calibration).ok)
         return {};
@@ -97,6 +100,8 @@ std::vector<float> ToneMatcher::renderTone (const ToneSettings& settings, const 
     };
 
     // The amp: a private AmpSection, settings in before prepare(), which snaps every smoother (as renderAmp).
+    if (cancel.load())
+        return {};
     if (settings.ampOn && settings.model != juce::File())
     {
         auto section = std::make_unique<AmpSection>();
