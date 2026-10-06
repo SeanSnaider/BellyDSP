@@ -6,12 +6,11 @@
 # beyond that; the pages are plain HTML. docs/WEBSITE.md has the one-time settings (Settings > Pages >
 # Source: GitHub Actions, the custom domain, Enforce HTTPS) and the DNS records.
 #
-# UNTESTED on GitHub: it can't run until the public repo exists. The data script and the site are tested
-# locally (tools/site/test_site.py, tools/site/check_site.py).
-#
 # When it runs (automatic triggers only in the public repo, like the other workflows; by hand anywhere):
 #   - a push to main that changes the site, its scripts, or the release notes;
-#   - a release is published (release.sh publishes with Sean's token, so the event fires);
+#   - (not on "release published": that run belongs to the tag, and GitHub Pages only deploys from main,
+#     which refused v0.1.0's on 2026-10-06. The Windows build the tag starts is the trigger instead: a
+#     workflow_run belongs to main, and it fires after the Windows files are on the release);
 #   - the daily "Download stats" run finishes (fresh counts);
 #   - a "Windows build" run for a version tag finishes (it adds the Windows files to the release with the
 #     workflow token, which doesn't fire release events, so this is how the site learns about them);
@@ -30,8 +29,6 @@ on:
       - 'tools/release/make_appcast.py'
       - 'tools/release/release.conf'
       - '.github/workflows/pages.yml'
-  release:
-    types: [published]
   workflow_run:
     workflows: ["Download stats", "Windows build"]
     types: [completed]
