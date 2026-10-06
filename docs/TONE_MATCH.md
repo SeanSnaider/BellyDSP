@@ -271,11 +271,198 @@ Other tests (`tests/ToneMatchTests.cpp`, `ToneMatchAppTests.cpp`, `ToneMatchSepa
 
 Two groups need a flag, so the default suite stays offline. `AMPSIM_HTTP_TESTS=1` runs the installer against `tests/model_server.py` (through uv), which redirects like Hugging Face, to another host name with a long percent-escaped query it refuses to accept changed, and misbehaves on purpose: a connection dropped at 20 MB, two 503s, a 25 s wait for the first byte, a 404, a flipped byte. Then the page's whole flow from an empty model folder on `tests/fixtures/tone_match/song_44k.mp3` (20 s of the synthetic song, 44.1 kHz stereo, LAME through lameenc), from 7.3 s. `AMPSIM_NETWORK_TESTS=1` runs the page's whole flow against the real URL (any song with `AMPSIM_SONG`, `AMPSIM_SONG_DI`, `AMPSIM_SONG_START`, `AMPSIM_SONG_SECONDS`).
 
+## Learning a capture from the song (prototype)
+
+Sean, 2026-10-06: tone match "doesn't feel right but also just feels off". The matcher above picks among three gain sets, a Gain, five tone bands, 21 cabs, and a match EQ, judged on long-term spectra and four distortion statistics. That fits brightness. It can't fit feel: how loudness, compression, and harmonics change with picking strength, the attack, the bloom. The idea prototyped here: train a small NAM model that turns Sean's play-along take into the record's guitar, so the dynamics come from the record. It's `prototypes/learn_tone.py` (ASSUMPTIONS TM41 to TM49). **It didn't pass its gate** (below), so there's no Learn tone button. What did come out of it: Save take, which collects real takes for a benchmark, and the informed mask, which helped every method on a mixed record.
+
+### The design
+
+The obstacle: the two performances are never sample-identical. Notes land 10 to 40 ms apart, at other velocities, with other picks, so NAM's ESR (sample by sample) compares unrelated waveforms. Three pieces:
+
+1. **Per-note alignment.** Onsets are found in the take's clean DI (spectral flux, Bello et al. 2005, refined to the sample at the steepest rise of a 1 ms envelope: 0.02 to 0.04 ms median error, precision and recall 0.99 to 1.00 on every case). Each onset goes into the target's timeline through the chroma DTW path the matcher already computes (within the 0.5 s play-along band; unbanded, DTW on a mix put 10% of the notes over 0.7 s off), then moves to the strongest onset of that note in the target: the flux over the bins near the note's first 12 harmonics (its pitch from the DI, McLeod's method), times a 30 ms Gaussian prior, within +-60 ms, corrected by the flux's own lag measured on the DI. On a clean target the found onsets are off the truth by a constant (the cab IR's first arrival, which the model learns) plus 0.7 ms median and 1.3 to 2.7 ms at the 90th percentile; on a separated mix, 0.8 to 1.7 ms median but 43 to 116 ms at the 90th (a tenth of the notes find the wrong onset).
+2. **A per-note loss** (the brief's option b). The model runs on the take as played (no warping: a 40 ms jitter on a 250 ms note would need a 16% stretch, which shifts the pitch or splices in the next attack). Each note's output, from 5 ms before its onset to the next onset in either performance, is compared with the same stretch of the target from that note's onset there, by NAM's bundled auraloss MRSTFT (Yamamoto et al. 2020; Steinmetz and Reiss 2020): spectral convergence plus log-magnitude distance at FFT sizes 256 to 4096, magnitudes only. No ESR term: between two performances it rewards outputting less.
+3. **The model.** NAM's feather WaveNet (0.12.3's own table: 3,025 weights, receptive field 4,093 samples), built from `nam.models.wavenet`, trained by a small loop of our own (NAM 0.12.3's `LossConfig` has an `mrstft_weight`, but `core.train` only ever adds a 2e-4 pre-emphasized MRSTFT to its MSE, and it's built around NAM's test file: its latency blips and validation split), Adam 4e-3 decaying to 4e-4, 3000 steps of 16 notes, 15% of the notes held out to keep the best step. Exported with NAM's own exporter as an `amp_cab` capture: NAM core (through `ampsim_render`) and PyTorch agree on the held-out DI to an ESR of 1e-13. **Training time: 217 s for 3000 steps on this Mac's GPU (MPS)**, for a 25 s take of 86 notes.
+
+Also tried, in the study: a "latent velocity" variant (one learnable input gain per note, penalized, so the model needn't learn the player's softer or harder picking as part of the rig; the regression-dilution argument is in the prototype's docstring), the take with no per-note alignment, a floored log-magnitude MRSTFT, a warm start from the matcher's sound (distilled by ESR on the take) with and without an anchor to it, and lite and standard WaveNets.
+
+### How it was judged (synthetic, known rigs)
+
+- **Four hidden rigs**, none of them a built-in amp: *high_gain* (the app's Screamer model at +3 dB into a three-stage gray-box channel on the clean channel's tone-stack voice (the built-in high gain uses the other), a 75 W cab, a mid scoop), *crunch* (two asymmetric stages, the power amp pushed, a bus compressor after the cab, 3:1 with a 10 ms attack), *edge_comp* (a pedal compressor into an edge-of-breakup channel), *high_gain_fx* (another high gain, with a 360 ms delay and a room on the record).
+- **Three performances of one 24 s lead score** (86 notes, each with a picking strength from the music's own swell and accents plus noise, which sets the level and the pick's brightness): A, the record's guitarist; B, Sean's take of the same notes, 1% slower, with 10 to 40 ms jitter, his own velocities (0.8 of the swell, 2.5 dB noise), and a darker pick; C, held out, other melodies.
+- **Targets:** the record unmixed (*stem*); the record in a band (drums, bass, and a palm-muted rhythm guitar 3 dB under the lead) separated by Demucs (*separated*); and that stem through the informed mask (*masked*).
+- **Methods:** the current matcher (`tone_match.py`, the C++ matcher's golden reference, with the built-in gain sets as the app has them), in Same part (the app's default after a take) and Anything; the learned capture; the learned capture followed by a match EQ fitted the matcher's way; the oracle (the hidden rig).
+- **Spectral distance:** the matcher's long-term spectral error on the held-out DI C, method against the hidden rig without its time effects.
+- **The feel metric** (`feel_measures`, `feel_distance`): one pluck of E4 and an A power chord at input peaks of -30 to -6 dBFS in 3 dB steps (the takes' range), through the method and the rig. Four facets, in dB, each averaged over the two probes, and their mean, the feel score: *compression*, the RMS difference of the output-level curve (first 400 ms) with its mean removed; *harmonics*, the RMS difference of harmonics 2 to 8 relative to the fundamental (100 to 500 ms) over all levels; *attack*, the RMS difference of the first 60 ms envelope (2 ms RMS) relative to its peak; *decay*, the same from 60 ms to 1.2 s (20 ms RMS) relative to its start. For a sense of scale: the hidden high-gain rig itself with its drive 3 dB off scores 0.56 feel and 0.55 dB spectral; 6 dB off, 0.96 and 1.07; another cab, 2.07 and 2.72.
+- **The gate:** feel at least 20% lower than the matcher's AND spectral distance no more than 0.25 dB higher, against the matcher's better mode on that target, in most cases.
+
+No embedding distance (it was optional): I didn't find and check a small pretrained audio embedding whose weights' licence is clear, and the four facets answer the question asked.
+
+### Results
+
+Spectral distance and feel facets on the held-out DI against the hidden rig (the oracle is 0 on all of them). The last column is the note probe's compression slope (output dB per input dB) with the rig's own in brackets. From `uv run prototypes/learn_tone.py study --json out.json` (about two hours, renders cached), then `report out.json`.
+
+| Case | Target | Method | Spectral (dB) | Compression | Harmonics | Attack | Decay | Feel | Slope (rig's) |
+|---|---|---|---|---|---|---|---|---|---|
+| high_gain | stem | matcher, same part (Monolith -22.5, Modern 4x12, dynamic, 75 W, var. 2) | 0.58 | 0.20 | 4.47 | 0.46 | 0.31 | **1.36** | 0.35 (0.33) |
+| high_gain | stem | learned | 1.51 | 0.88 | 5.01 | 1.88 | 1.80 | **2.39** | 0.41 (0.33) |
+| high_gain | stem | learned + match EQ | 1.46 | 0.91 | 4.89 | 1.86 | 1.77 | **2.36** | 0.41 (0.33) |
+| high_gain | stem | learned, latent | 1.43 | 1.09 | 11.41 | 1.87 | 1.67 | **4.01** | 0.45 (0.33) |
+| high_gain | stem | learned, no alignment | 2.72 | 0.69 | 10.92 | 1.37 | 1.35 | **3.58** | 0.20 (0.33) |
+| high_gain | stem | upper bound: same performance, ESR | 2.55 | 0.25 | 2.63 | 0.94 | 0.43 | **1.06** | 0.31 (0.33) |
+| high_gain | separated | matcher, same part (Monolith +22.5, Modern 4x12, dynamic, dark 60 W) | 6.73 | 2.15 | 17.27 | 3.57 | 6.67 | **7.41** | 0.05 (0.33) |
+| high_gain | separated | matcher, anything (Ember +3.0, Modern 4x12, supercardioid, dark 60 W) | 4.50 | 3.85 | 18.03 | 2.43 | 3.38 | **6.92** | 0.85 (0.33) |
+| high_gain | separated | learned | 2.96 | 1.02 | 9.89 | 1.80 | 1.32 | **3.51** | 0.21 (0.33) |
+| high_gain | separated | learned + match EQ | 4.94 | 1.29 | 11.75 | 2.19 | 2.09 | **4.33** | 0.24 (0.33) |
+| high_gain | masked | matcher, same part (Monolith +22.5, Modern 4x12, dynamic, dark 60 W) | 3.86 | 2.25 | 12.87 | 2.25 | 5.92 | **5.82** | 0.04 (0.33) |
+| high_gain | masked | matcher, anything (Ember +15.0, Modern 4x12, blend, 75 W + bright 60 W, 2) | 2.08 | 2.61 | 8.23 | 1.13 | 3.45 | **3.85** | 0.69 (0.33) |
+| high_gain | masked | learned | 1.82 | 0.76 | 10.02 | 1.73 | 1.10 | **3.40** | 0.23 (0.33) |
+| high_gain | masked | learned + match EQ | 2.04 | 0.69 | 8.20 | 1.70 | 1.12 | **2.93** | 0.24 (0.33) |
+| crunch | stem | matcher, same part (Ember -9.0, Vintage 4x12, supercardioid, lower) | 1.81 | 3.49 | 0.90 | 3.57 | 3.26 | **2.80** | 0.89 (0.44) |
+| crunch | stem | learned | 4.14 | 2.36 | 8.96 | 3.55 | 2.64 | **4.38** | 0.75 (0.44) |
+| crunch | stem | learned + match EQ | 2.14 | 2.34 | 8.44 | 3.58 | 2.59 | **4.24** | 0.75 (0.44) |
+| crunch | stem | learned, latent | 3.03 | 3.15 | 9.38 | 3.71 | 3.48 | **4.93** | 0.91 (0.44) |
+| crunch | stem | learned, no alignment | 7.20 | 1.23 | 8.03 | 4.44 | 1.59 | **3.82** | 0.60 (0.44) |
+| crunch | stem | upper bound: same performance, ESR | 4.61 | 0.61 | 4.45 | 2.50 | 1.59 | **2.29** | 0.50 (0.44) |
+| crunch | separated | matcher, same part (Monolith +22.5, Modern 4x12, dynamic, dark 60 W) | 9.46 | 2.88 | 15.17 | 4.81 | 7.53 | **7.60** | 0.06 (0.44) |
+| crunch | separated | matcher, anything (Ember -16.5, Modern 4x12, blend, dark + bright 60 W, 1) | 4.54 | 3.69 | 14.58 | 3.14 | 3.86 | **6.32** | 0.91 (0.44) |
+| crunch | separated | learned | 2.61 | 0.72 | 13.39 | 3.70 | 3.91 | **5.43** | 0.39 (0.44) |
+| crunch | separated | learned + match EQ | 4.34 | 0.94 | 11.84 | 3.70 | 4.29 | **5.19** | 0.38 (0.44) |
+| crunch | masked | matcher, same part (Ember +3.0, Modern 4x12, blend, dark + bright 60 W, 1) | 3.10 | 2.85 | 15.28 | 3.42 | 3.95 | **6.38** | 0.82 (0.44) |
+| crunch | masked | matcher, anything (Ember -13.5, Modern 4x12, blend, dark + bright 60 W, 1) | 2.04 | 3.53 | 7.00 | 3.09 | 6.28 | **4.98** | 0.88 (0.44) |
+| crunch | masked | learned | 2.90 | 0.94 | 10.02 | 3.58 | 3.20 | **4.43** | 0.52 (0.44) |
+| crunch | masked | learned + match EQ | 2.45 | 1.13 | 9.98 | 3.40 | 3.26 | **4.44** | 0.55 (0.44) |
+| edge_comp | stem | matcher, same part (Ember +21.0, Vintage 4x12, dynamic, upper, var. 2) | 1.32 | 1.22 | 1.60 | 0.76 | 0.92 | **1.12** | 0.56 (0.42) |
+| edge_comp | stem | learned | 1.88 | 0.86 | 10.70 | 1.17 | 1.51 | **3.56** | 0.44 (0.42) |
+| edge_comp | stem | learned + match EQ | 1.69 | 0.92 | 10.21 | 1.14 | 1.36 | **3.41** | 0.44 (0.42) |
+| edge_comp | stem | learned, latent | 1.28 | 1.13 | 7.52 | 0.93 | 1.21 | **2.70** | 0.47 (0.42) |
+| edge_comp | stem | learned, no alignment | 5.15 | 0.69 | 13.11 | 1.18 | 2.59 | **4.39** | 0.37 (0.42) |
+| edge_comp | stem | upper bound: same performance, ESR | 3.04 | 0.52 | 1.37 | 0.48 | 0.73 | **0.78** | 0.46 (0.42) |
+| edge_comp | separated | matcher, same part (Monolith +22.5, Modern 4x12, dynamic, dark 60 W) | 9.10 | 2.69 | 16.78 | 4.12 | 9.66 | **8.31** | 0.05 (0.42) |
+| edge_comp | separated | matcher, anything (Ember +1.5, Modern 4x12, supercardioid, dark 60 W) | 5.53 | 3.38 | 20.31 | 2.76 | 2.72 | **7.29** | 0.86 (0.42) |
+| edge_comp | separated | learned | 2.26 | 0.66 | 9.81 | 1.62 | 4.41 | **4.12** | 0.36 (0.42) |
+| edge_comp | separated | learned + match EQ | 4.89 | 0.97 | 12.98 | 2.41 | 5.50 | **5.46** | 0.34 (0.42) |
+| edge_comp | masked | matcher, same part (Monolith +18.0, Modern 4x12, dynamic, dark 60 W) | 4.98 | 2.35 | 12.43 | 2.82 | 7.92 | **6.38** | 0.10 (0.42) |
+| edge_comp | masked | matcher, anything (Ember +6.0, Modern 4x12, blend, dark + bright 60 W, 2) | 1.95 | 2.85 | 9.39 | 1.28 | 3.22 | **4.19** | 0.77 (0.42) |
+| edge_comp | masked | learned | 1.38 | 0.64 | 7.23 | 1.89 | 2.26 | **3.01** | 0.48 (0.42) |
+| edge_comp | masked | learned + match EQ | 1.79 | 0.65 | 7.17 | 1.87 | 2.19 | **2.97** | 0.48 (0.42) |
+| high_gain_fx | stem | matcher, same part (Ember -7.5, Modern 4x12, vocal mic, bright 60 W) | 1.27 | 0.89 | 3.97 | 0.80 | 0.98 | **1.66** | 0.86 (0.74) |
+| high_gain_fx | stem | learned | 2.43 | 0.75 | 9.42 | 1.46 | 3.29 | **3.73** | 0.63 (0.74) |
+| high_gain_fx | stem | learned + match EQ | 1.33 | 0.60 | 7.96 | 1.36 | 2.19 | **3.03** | 0.65 (0.74) |
+| high_gain_fx | stem | learned, latent | 1.56 | 0.63 | 8.38 | 1.68 | 2.75 | **3.36** | 0.64 (0.74) |
+| high_gain_fx | stem | learned, no alignment | 3.27 | 3.85 | 10.23 | 2.48 | 8.87 | **6.36** | 0.30 (0.74) |
+| high_gain_fx | stem | upper bound: same performance, ESR | 2.40 | 0.21 | 4.68 | 0.48 | 0.29 | **1.41** | 0.73 (0.74) |
+| high_gain_fx | separated | matcher, same part (Monolith +22.5, Modern 4x12, dynamic, dark 60 W) | 8.79 | 5.40 | 17.63 | 3.42 | 12.86 | **9.83** | 0.05 (0.74) |
+| high_gain_fx | separated | matcher, anything (Ember -15.0, Modern 4x12, blend, dark + bright 60 W, 1) | 4.28 | 1.21 | 20.52 | 1.92 | 3.85 | **6.87** | 0.91 (0.74) |
+| high_gain_fx | separated | learned | 3.05 | 3.58 | 9.27 | 2.52 | 7.90 | **5.82** | 0.25 (0.74) |
+| high_gain_fx | separated | learned + match EQ | 4.47 | 3.68 | 16.38 | 3.06 | 8.66 | **7.94** | 0.22 (0.74) |
+| high_gain_fx | masked | matcher, same part (Ember -12.0, Modern 4x12, blend, dark + bright 60 W, 1) | 3.29 | 1.06 | 19.27 | 1.27 | 2.67 | **6.06** | 0.89 (0.74) |
+| high_gain_fx | masked | matcher, anything (Ember -12.0, Modern 4x12, blend, dark + bright 60 W, 1) | 1.86 | 1.03 | 11.10 | 0.96 | 1.52 | **3.65** | 0.88 (0.74) |
+| high_gain_fx | masked | learned | 2.10 | 1.88 | 9.99 | 1.92 | 4.66 | **4.61** | 0.48 (0.74) |
+| high_gain_fx | masked | learned + match EQ | 2.21 | 1.70 | 9.43 | 2.00 | 4.03 | **4.29** | 0.50 (0.74) |
+
+Medians over the four rigs (the learned capture against the matcher's better mode): on the unmixed record, feel 3.64 against 1.51 and spectral 2.15 against 1.30 dB (the matcher wins); on the separated mix, feel 4.78 against 6.90 and spectral 2.78 against 4.52 dB (the learned capture wins); masked, 3.92 against 4.02 and 1.96 against 2.00 dB (even). By facet, the learned capture had the lower compression error in 9 of 12 cases and the lower harmonics error in 6, attack in 3, decay in 5.
+
+What the take itself says (what's measurable on real data; the target's per-note compression slope, its note levels against the take's DI, and the spectral distance to the target on the take):
+
+| Case | Target | Per-note slope: target, oracle, matcher, learned | Per-note level error (dB): matcher, learned | Spectral vs target on the take (dB): oracle, matcher, learned, learned + EQ |
+|---|---|---|---|---|
+| high_gain | stem | 0.13, 0.24, 0.29, 0.20 | 1.83, 1.27 | 0.98, 0.92, 0.95, 0.68 |
+| high_gain | separated | 0.17, 0.24, 0.14, 0.09 | 2.17, 1.28 | 7.47, 5.50, 4.05, 1.69 |
+| high_gain | masked | 0.20, 0.24, 0.10, 0.14 | 2.74, 2.00 | 2.51, 3.17, 2.04, 1.03 |
+| crunch | stem | 0.20, 0.32, 0.77, 0.55 | 2.70, 2.12 | 0.96, 1.64, 3.03, 1.00 |
+| crunch | separated | 0.27, 0.32, -0.01, 0.41 | 2.76, 1.60 | 5.42, 7.54, 4.46, 1.69 |
+| crunch | masked | 0.32, 0.32, 0.66, 0.39 | 3.07, 2.25 | 1.73, 3.32, 1.55, 1.13 |
+| edge_comp | stem | 0.11, 0.22, 0.34, 0.26 | 1.64, 1.51 | 1.26, 1.94, 1.33, 0.94 |
+| edge_comp | separated | 0.15, 0.22, -0.05, 0.13 | 2.24, 1.51 | 7.38, 6.72, 4.67, 1.74 |
+| edge_comp | masked | 0.18, 0.22, 0.04, 0.13 | 3.26, 2.13 | 2.59, 4.42, 1.88, 1.00 |
+| high_gain_fx | stem | 0.45, 0.57, 0.73, 0.55 | 3.46, 3.05 | 0.88, 1.44, 2.22, 1.02 |
+| high_gain_fx | separated | 0.31, 0.57, 0.03, 0.39 | 3.13, 1.59 | 8.85, 6.55, 4.84, 1.95 |
+| high_gain_fx | masked | 0.37, 0.57, 0.74, 0.43 | 4.10, 2.67 | 3.49, 2.44, 1.90, 1.22 |
+
+The target's per-note slope is flatter than the oracle's on the same take in every case (0.13 against 0.24 on high_gain): its note levels follow the original guitarist's picking, not Sean's. That's the regression dilution the latent-velocity variant was meant to undo.
+
+### The gate: failed
+
+**3 of 12 pass** (high_gain separated, edge_comp separated and masked), and 3 of 12 for the learned capture with a match EQ. Not "most cases", so per the brief: stop, and no in-app Learn tone. The honest summary:
+
+- **On a clean or unmixed target the matcher is better**, on both measures (it fits the spectrum within 0.6 to 1.8 dB; the learned capture 1.5 to 4.1). The built-in gain sets are well-trained captures of amps related to the hidden ones, and the matcher's search can only produce real amps.
+- **On a separated mix the learned capture is better** in all four rigs, on spectral distance and on feel (by 14 to 49%). The matcher's same-part mode breaks on Demucs's bleed (Monolith at +22.5 dB in all four, feel 7.4 to 9.8), and Anything is better but still over 6. The learned capture's per-note windows and harmonic onsets ignore most of what isn't the lead. With the mask, the matcher catches up.
+- **The learned capture gets the compression right more often** (9 of 12) **and the harmonics wrong** (errors of 5 to 13 dB where the matcher, on a clean target, has 0.9 to 4.5).
+
+Why, from the diagnostics (high_gain, run before the study):
+
+1. **The loss doesn't single out the rig.** On the per-note MRSTFT, the hidden rig itself scores 0.910 against the target, the matcher 0.918, and the learned capture reached 0.855 to 0.89: lower than the truth. Perturbing the rig (drive +-6 dB, another cab, a 3 kHz boost, treble, master) raised it by only 1 to 18%. Between two performances, the best predictor of the target is not the rig: it's the rig plus whatever undoes Sean's playing (a darker pick, other velocities), and the extra harmonics are that.
+2. **Even with the performance difference removed, MRSTFT alone trains poorly.** With the take the same performance as the record's except its timing (same plucks, same velocities, only jitter and tempo), the learned capture still had 11.8 dB of harmonics error and 2.74 dB spectral, and couldn't reach the oracle's loss (1.01 against 0.83, on the floored variant of the loss). A phase-blind loss from scratch is a hard optimization for a waveform model.
+3. **Feather is small for these rigs.** The upper bound, the same performance sample-aligned and trained with ESR (6000 steps), reaches feel 0.78 to 2.29 (better than the matcher in all four) but 2.4 to 4.6 dB spectral: at a held-out ESR of 0.016 its error floor sits 20 to 30 dB under the signal, which is where the cab has rolled off (7 kHz up: +17 to +29 dB of fizz) and where the spectral distance's weights still count. On high_gain, lite reached 1.10 feel (ESR 0.011) and standard 0.74 (0.011), all at about 2.5 dB spectral.
+4. Variants that didn't help: latent velocity (its gains correlated only 0.39 to 0.51 with the true velocity differences; feel worse in two cases, better in two), the floored log loss (feel 3.43 against 2.94), a warm start from the matcher (400 steps of distillation left ESR 0.99; 1500 got 0.048 but the fine-tuned results were worse than either), no per-note alignment (spectral worse in all four, 2.7 to 7.2 dB; feel worse in three).
+
+What would be needed to try again:
+
+- A loss whose minimum is the rig and not the rig plus the player: per-note statistics that don't depend on the pluck (band energies averaged over many notes at a similar level, the level curve fitted with the take's own velocities as the input, not per-note magnitudes), or a conditional model of the player's picking difference that's thrown away at export.
+- A start that's already a good amp: fine-tune a real, well-trained capture (the matched gain set's own model, standard size) with a small learning rate and a spectral anchor, instead of training feather from nothing. That keeps the matcher's harmonics and lets the target move the compression, the one facet the learned capture got right.
+- Longer and bigger: the upper bound needed 6000 steps and the standard size to beat the matcher on feel; 3000 feather steps is too little.
+- Real takes to judge it on, which Save take now collects.
+
+### Informed separation (task 3): a clear win
+
+The take's pitches (McLeod's method on the DI, per note, then refined within +-60 cents against the target) make a harmonic mask on the target's STFT (4096 points): 35 cents (or the window's main lobe) around each harmonic of the notes sounding, everything else turned down 20 dB (a floor of 0.1; with no floor, the mask applied to the clean record alone moved its spectrum by 11 to 23 dB, because a distorted guitar has real energy between and below its harmonics). Against the unmixed record:
+
+| Case | Onsets found (precision / recall, median error) | Target onsets, spread (median / 90th, ms): stem, separated, masked | Separation SI-SDR (dB): Demucs, + mask | Spectral distance to the record (dB): Demucs, + mask |
+|---|---|---|---|---|
+| high_gain | 1.00 / 1.00, 0.04 ms | 0.7 / 1.4, 1.7 / 64.0, 1.7 / 44.4 | 2.9, 8.8 | 4.73, 1.77 |
+| crunch | 1.00 / 1.00, 0.02 ms | 0.7 / 1.3, 1.2 / 43.1, 1.1 / 33.2 | 3.0, 8.1 | 4.95, 2.20 |
+| edge_comp | 1.00 / 1.00, 0.04 ms | 0.7 / 1.5, 0.8 / 91.0, 0.9 / 62.3 | 2.9, 7.8 | 5.47, 1.43 |
+| high_gain_fx | 0.99 / 0.99, 0.04 ms | 0.9 / 2.7, 1.1 / 115.6, 1.0 / 72.1 | 1.4, 4.8 | 4.70, 1.89 |
+
+(the 2nd column: precision and recall of the take's onsets; the 3rd: how far the target's onsets land from the truth, median and 90th percentile.) Separation quality rises by 3 to 6 dB SI-SDR and the spectral distance to the record falls from about 5 dB to about 2 in every case, and every method's feel was better on the masked stem than on the bare one (and its spectral distance, except the learned capture's on crunch): the matcher's Anything mode went from 4.3 to 5.5 dB spectral to 1.9 to 2.1, feel from 6.3 to 7.3 to 3.7 to 5.0. Applied straight to the mix, without Demucs, it reached 8.0 dB SI-SDR and 3.3 dB spectral on high_gain (the mix: -1.8 dB and 6.3).
+
+It stays in the prototype for now (the brief: unless it's clearly a win; it is, on synthetic songs). Into C++ it would go as a step between the separation and the match, on the session's worker, only when the reference is a play-along take of the section: onsets in the DI (an STFT flux, which `TempoEstimate` already computes), the notes' pitches from `PitchDetector` (the harmonizer's McLeod settings), the onset refinement against the stem, the mask and its inverse STFT with JUCE's FFT. Its golden test would be this prototype's mask on the fixtures. Unverified on real records: a real lead's bends and vibrato move the harmonics within a note, which a per-note pitch doesn't follow (a per-frame pitch track would), and a record tuned differently from Sean's guitar is caught only within +-60 cents.
+
+### Save take, and a benchmark of real takes
+
+After a play-along take of the section selected now, a quiet **Save take** button appears next to the mode in the Your DI card (it reads "Saved" until the next take; the status line says ", saved"). It writes `~/Library/Application Support/BellyDSP/ToneMatchTakes/<the target file's name>-<yyyymmdd-hhmmss>/` (a second save in the same second gets `-2`):
+
+| File | What |
+|---|---|
+| `target.wav` | the selected section as decoded (48 kHz mono, 32-bit float) |
+| `stem.wav` | its separated guitar, if a separated match of exactly this section made one |
+| `di_raw.wav` | the take as recorded, from the song's first sample |
+| `di.wav` | the take lined up with the section (`di_raw` from `align_samples` on): what Same part matches |
+| `take.json` | `format` "bellydsp-tone-match-take", `version` 1, the app version and time, the target file and range, `section_samples`, `align_samples` and `latency_ms`, the device's reported latencies, the offset, the count-in, which source played, `band_seconds` 0.5, and `dtw` (the match's path, its frame size and hop, its slot) once a same-part match of exactly this take exists |
+
+Writing happens on the message thread when the button is pressed; nothing touches the audio thread (the real-time safety test is unchanged and still passes). Tested (`tests/ToneMatchSaveTakeTests.cpp`, 70 checks): every file read back sample for sample against the session (with a DI that says where it was, `di.wav` starts exactly at input sample t0 + 352 for a reported 100 + 156 samples and a 2 ms offset), the JSON's fields, a second save in the same second, nothing to save before a take or for another range, the DTW path after a same-part match (167 steps, first and last pairs checked), `stem.wav` after a separated match, and the page's button (snapshot `build/proof/tone_match/25_take_saved.png`). Like the other tone match groups it's skipped on CI ("Tone match").
+
+To build the benchmark (PROGRESS TM.8): on songs he knows, select the lead, record a take playing along, run Match (Same part, and with Separate the guitar first for a full mix, so `stem.wav` exists), Save take; then run the prototype on each folder and note, next to its numbers, which of the matcher's sound, the learned capture's, and the record he prefers.
+
+### Running the prototype on a saved take
+
+```
+uv run prototypes/learn_tone.py "~/Library/Application Support/BellyDSP/ToneMatchTakes/<folder>"   [--mask] [--full-song] [--steps 3000]
+```
+
+uv reads the script's dependencies from its header (neural-amp-modeler 0.12.3, NumPy, SciPy, Demucs; about 1 GB the first time). It uses `stem.wav` if it's there (`--full-song`: the section instead), lines the notes up within the 0.5 s band, runs the current matcher on the same take (through `ampsim_render`, so the Release build has to exist), trains the capture (about 4 minutes), and writes into the folder `learned.nam` (an `amp_cab` capture: load it in a slot with the Cab off), `learned_take.wav` and `matcher_take.wav` (the take through each, to listen to), and `learn_tone_results.json`. It prints, per method: the spectral distance to the target, the per-note level error and spectrum error against the target's notes, and the per-note compression slope against the target's, plus the match EQ for the learned capture. There's no oracle on real data, and the target's slope is biased flat (above), so these say how close it got to the record on this take, not which is the better amp. Tried on a synthetic folder in the same format (the crunch rig in the band, masked): matcher 5.23 dB spectral, learned 2.53.
+
+### What a "Learn tone" button would take
+
+Inference is solved (the .nam loads in NAM core like any capture; tested). Training without Python is the hard part. The model is tiny (feather: 3,025 weights), the loss is a few FFTs, and one training is about 3000 steps of 16 notes.
+
+| Option | What ships | Size | Licence | Cost and risk |
+|---|---|---|---|---|
+| A. libtorch in the app | PyTorch's C++ library, NAM's WaveNet and the loop ported to C++ | libtorch_cpu alone is hundreds of MB (the Python wheel's torch folder is 567 MB here); MPS from C++ is possible but not what NAM uses | BSD-3 (compatible with AGPL) | The biggest install by an order of magnitude, a second copy of NAM's model code to keep in step with NAM core and the trainer, a heavy CMake dependency on two OSes |
+| B. A small hand-written trainer in C++ | forward and backward for the WaveNet layers (dilated conv, tanh, 1x1 mixes, the heads), Adam, the MRSTFT with JUCE's FFT, the .nam writer | tens of KB of code | ours (AGPL) | A few thousand lines with its own gradient bugs; it needs a golden test against PyTorch's gradients; CPU only. Rough cost: 3000 steps x 16 x 20,000 samples x ~3 x 3k multiply-adds per sample (forward and backward) is about 9e12 operations, a few minutes on all cores with SIMD. It's NAM-core-adjacent: a candidate upstream contribution (training in C++), which matches Sean's NAM goals |
+| C. NAM's trainer through a local Python (uv) | the take folder (Save take already writes it) and a call to `uv run prototypes/learn_tone.py <folder>`; the app loads the .nam it writes | uv is 35 MB (could ship inside the app); the first run downloads Python and PyTorch, 1.1 GB here | uv MIT/Apache-2.0, PyTorch BSD, NAM trainer MIT | The cheapest to build (days), and it reuses exactly this prototype; but a 1 GB first-run download, a Python failure mode in a music app, and friends on Windows need it to work there too |
+| D. Train on a server | an upload of the take and the section, a GPU job, a download of the .nam | nothing in the app | AGPL's network clause applies to a modified server (its source must be offered) | Running costs, accounts, and uploading excerpts of commercial recordings to a server Sean runs, which is a copyright and privacy question for a public service; the website is GitHub Pages (static), so it's new infrastructure |
+
+### Not verified
+
+How any of it sounds: the learned captures, the matcher's results here, the masked stems. Every number is a measurement on synthetic guitars through gray-box rigs. Whether real takes line up note by note as well as the synthetic ones (real leads have bends, slides, and ghost notes the onset detector and the per-note pitch don't model). Whether Save take's folder holds what Sean needs on his own songs (TM.8).
+
 ## Not verified (only Sean can)
 
 - How a match sounds, on anything. Every number here is a measurement on synthetic guitars.
 - How the comparison sounds and feels: whether the switches and the loop are click-free to his ears, whether equal loudness by BS.1770 sounds equally loud on his material, and whether same part's alignment keeps a switch on the same note (PROGRESS TM.6).
 - Real songs: Demucs on real mixes, real lead tones, real DIs (PROGRESS TM.1 to TM.3).
+- The learning prototype and the informed mask on real takes (PROGRESS TM.8).
 
 ## Sources
 
@@ -287,3 +474,7 @@ Two groups need a flag, so the default suite stays offline. `AMPSIM_HTTP_TESTS=1
 - Ellis, "Beat tracking by dynamic programming", Journal of New Music Research 36(1), 2007 (section 3.1, the tempo estimate).
 - Karplus and Strong, "Digital synthesis of plucked-string and drum timbres", Computer Music Journal 7(2), 1983; Jaffe and Smith, "Extensions of the Karplus-Strong plucked-string algorithm", Computer Music Journal 7(2), 1983.
 - Rouard, Massa, and Defossez, "Hybrid Transformers for Music Source Separation", ICASSP 2023.
+- Bello, Daudet, Abdallah, Duxbury, Davies, Sandler, "A tutorial on onset detection in music signals", IEEE TSAP 13(5), 2005.
+- Yamamoto, Song, Kim, "Parallel WaveGAN", ICASSP 2020 (the multi-resolution STFT loss); Steinmetz and Reiss, "auraloss: Audio focused loss functions in PyTorch", DMRN+15, 2020.
+- McLeod and Wyvill, "A Smarter Way to Find Pitch", ICMC 2005.
+- Le Roux, Wisdom, Erdogan, Hershey, "SDR - half-baked or well done?", ICASSP 2019 (SI-SDR).

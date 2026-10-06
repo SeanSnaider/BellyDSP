@@ -217,8 +217,9 @@ STUDIO = dict(mode="studio", detector="rms", knee_db=6.0, auto_release=False, au
               sidechain_hz=80.0, sidechain_high_pass=False)
 
 RIGS = {
-    # High gain: a Screamer (the app's TS808 circuit model, ported from circuits.py) at +3 dB into a
-    # three-stage channel with a Fender-style stack, a 75 W cab, a mid scoop.
+    # High gain: the app's Screamer boost (its circuit model, ported from circuits.py) at +3 dB into a
+    # three-stage channel on the clean channel's tone-stack voice (the built-in high gain uses the other), a 75 W
+    # cab, a mid scoop.
     "high_gain": dict(boost=3.0, channel="hidden_hg", drive_db=-26.0, knobs=dict(bass=6.0, mid=3.5, treble=7.0, master=4.0),
                       cab="Modern 4x12/Modern 4x12, dynamic, 75 W, var. 2.wav", eq=[("peak", 700.0, -3.0, 0.8)],
                       comp=None, pre_comp=None, fx=None, tone_type="hi_gain", jitter_ms=25.0),
