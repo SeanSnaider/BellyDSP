@@ -6,6 +6,7 @@
 #include "MidiMap.h"
 #include "PluginProcessor.h"
 #include "TestHelpers.h"
+#include "ToneMatchSession.h"
 #include "platform/AppInfo.h"
 
 namespace
@@ -52,7 +53,7 @@ public:
             logMessage ("  -> deliberately bad code: " + describe (c) + " (detector works)");
         }
 
-        beginTest ("10 s through the whole processor while using everything: nothing allocated, freed, or locked on the audio thread");
+        beginTest ("14 s through the whole processor while using everything: nothing allocated, freed, or locked on the audio thread");
         {
             const auto irA = tempDir().getChildFile ("rt_ir_a.wav");
             const auto irB = tempDir().getChildFile ("rt_ir_b.wav");
@@ -98,7 +99,7 @@ public:
                 juce::Thread::sleep (5);
             p.prepareToPlay (fs, blockSize);
 
-            const auto input = guitarDI ((int) (10.0 * fs));
+            const auto input = guitarDI ((int) (14.0 * fs));
             juce::AudioBuffer<float> buffer (2, blockSize);
             juce::MidiBuffer midi;
             rtcheck::Counts total;
@@ -132,6 +133,30 @@ public:
                 return m;
             };
             int previewBlocks = 0;
+
+            // Play along (docs/TONE_MATCH.md, "Play along"): the song and its guitar with a count-in, looped, switched
+            // between, stopped (the player directly, as the Target card's Play drives it); then a whole take through
+            // the session the page uses: Record with a target, the count-in, the section while the DI records from
+            // the song's first sample, and its end by itself.
+            ToneMatchSession session (p);
+            session.setLatencySource ([] {
+                platform::device::Latency l;
+                l.known = true;
+                l.inputSamples = 150;
+                l.outputSamples = 190;
+                return l;
+            });
+            std::vector<float> firstRecording;
+            int countInBlocks = 0, takeBlocks = 0;
+            const auto songMaterial = []
+            {
+                auto m = std::make_unique<ampsim::PreviewPlayer::Material>();
+                m->audio[3] = std::make_shared<const std::vector<float>> (sine (196.0, 0.1, 72000));
+                m->audio[4] = std::make_shared<const std::vector<float>> (sine (392.0, 0.1, 72000));
+                m->clickAccent = std::make_shared<const std::vector<float>> (sine (1760.0, 0.2, 1920));
+                m->click = std::make_shared<const std::vector<float>> (sine (1320.0, 0.2, 1920));
+                return m;
+            };
 
             for (size_t start = 0; start + blockSize <= input.size(); start += blockSize, ++blocks)
             {
@@ -291,8 +316,35 @@ public:
                     case 3360: preview.setSource (0); preview.setLevelDb (-6.0f); preview.setSourceGainDb (0, -3.0f); break;
                     case 3400: preview.setMuteLive (false); break;
                     case 3460: preview.setPlaying (false); break;
+                    // The Target card's Play: two clicks at 240 BPM, then the section looped; to the guitar and back; stopped.
+                    case 3480:
+                        preview.setMaterial (songMaterial());
+                        preview.setLoop (2, 0, 72000);
+                        preview.setSource (3);
+                        preview.setOnce (false);
+                        preview.setMuteLive (false);
+                        preview.setLevelDb (-3.0f);
+                        preview.setCountIn (2, 12000.0);
+                        preview.startFresh();
+                        break;
+                    case 3600: preview.setSource (4); break;
+                    case 3640: preview.setSource (3); break;
+                    case 3660: preview.setClickLevelDb (-12.0f); preview.startFresh(); break; // from the top again, with its count-in
+                    case 3760: preview.setPlaying (false); break;
+                    // A take: Record with a target loaded (a 3 s section, 2 clicks at 240 BPM).
+                    case 3800:
+                        session.setTargetSignal (sine (220.0, 0.1, (int) (4.0 * fs)), "rt song");
+                        session.setRange (0.5, 3.5); // 3 s, the shortest section
+                        session.setCountInForTake (true);
+                        session.setCountInBeats (2);
+                        session.setCountInBpm (240.0);
+                        expect (session.startPlayAlong());
+                        break;
+                    case 4300: session.setSongLevelDb (-9.0f); session.setClickLevelDb (-3.0f); break; // a level moved mid-take
                     default: break;
                 }
+                if (blocks == 2611)
+                    firstRecording = p.getDiRecorder().getRecording();
 
                 // The Gain knobs (BUILD_PLAN "Amp gain"): a drag across every step of slot 3's gain set (Monolith),
                 // a jump between steps as a scene makes, a drag down Ember's set, and a drag on slot 1's single
@@ -340,6 +392,8 @@ public:
                     maxTotalModels = std::max (maxTotalModels, models);
                 }
                 previewBlocks += preview.isActive() ? 1 : 0;
+                countInBlocks += preview.getCountInRemaining() > 0 ? 1 : 0;
+                takeBlocks += session.isPlayingAlong() ? 1 : 0;
 
                 if (blocks == 1080)
                     ampWasBypassed = p.getChain().isFullyBypassed (ampsim::Chain::Slot::amp);
@@ -372,6 +426,8 @@ public:
                     p.runHousekeeping();
                     if (blocks <= 2400 || blocks > 2800)
                         guiReads();
+                    if (blocks > 3800)
+                        session.poll(); // the page's timer: drains the take, ends it
                 }
             }
 
@@ -391,7 +447,7 @@ public:
             expect (ember, "slot 2 must be back on its built-in capture");
             expect (p.getStatus().cab[0].contains ("Modern 4x12, dynamic, 75 W, var. 3"), p.getStatus().cab[0]); // the built-in IR replaced rt_ir_b
             expectEquals (p.getCalibrationReloadCount(), 1, "the calibration change must have reloaded the captures during the measurement");
-            expectEquals (p.getChain().gateA.getLearnCount(), 1, "the gate Learn must have finished during the measurement");
+            expectEquals (p.getChain().gateA.getLearnCount(), 2, "both gate Learns must have finished during the measurement");
             using Slot = ampsim::Chain::Slot;
             expect (p.getChain().getAppliedOrder (ampsim::Chain::Section::pre) == std::vector<Slot> { Slot::gateA, Slot::preEq, Slot::preCompressor, Slot::boost, Slot::overdrive },
                     "the pre FX reorder must have reached the audio thread");
@@ -410,13 +466,22 @@ public:
             expectGreaterThan (analyzerDropped, (juce::int64) 0, "the ring must have filled while the GUI stopped reading, and dropped");
             expectGreaterThan (p.getCpuLoad(), 0.0f, "the CPU meter must have measured the callbacks");
             // The recording is exactly the DI the chain took in blocks 400 to 2609, with nothing dropped.
-            const auto& recording = p.getDiRecorder().getRecording();
+            const auto& recording = firstRecording;
             const auto recordedFrom = (size_t) 400 * blockSize;
             const auto recordingExact = recording.size() == (size_t) 2210 * blockSize
                                         && std::equal (recording.begin(), recording.end(), input.begin() + (std::ptrdiff_t) recordedFrom);
             expect (recordingExact, "the DI recording must be the input of blocks 400 to 2609, sample for sample (got "
                                         + juce::String ((int) recording.size()) + " samples)");
             expectEquals ((juce::int64) p.getDiRecorder().takeDroppedCount(), (juce::int64) 0);
+            // The take: complete, the section plus the round trip long, a run of the input from the song's first sample.
+            const auto& take = session.getTake();
+            expect (take.valid && take.complete, "the play-along take must have finished by itself during the measurement");
+            expectEquals ((juce::int64) take.raw.size(), (juce::int64) (3 * fs + 340));
+            const auto takeAt = take.raw.size() < 64 ? input.end() : std::search (input.begin(), input.end(), take.raw.begin(), take.raw.begin() + 64);
+            const auto takeExact = takeAt != input.end() && (size_t) (input.end() - takeAt) >= take.raw.size() && std::equal (take.raw.begin(), take.raw.end(), takeAt);
+            expect (takeExact, "the take must be the input from one sample on, in order");
+            expectGreaterThan (countInBlocks, 150, "the count-ins must have played during the measurement");
+            expect (! session.isPlayingAlong());
             expectEquals (total.allocations, 0L);
             expectEquals (total.frees, 0L);
             expectEquals (total.blockingLocks, 0L);
@@ -435,7 +500,10 @@ public:
                         "and bypassed into spillover; the amp bypassed and back (its captures running underneath), and both effect sections switched off and on; "
                         "tone match's DI recorder started and stopped mid-run (" + juce::String (p.getDiRecorder().recordedSeconds(), 2)
                         + " s recorded, sample-exact, nothing dropped); tone match's A/B player handed material, played for " + juce::String (previewBlocks)
-                        + " blocks through its loops' wraps, switched source three times, its loops moved, new material swapped in mid-play, the live mute off, stopped");
+                        + " blocks through its loops' wraps, switched source three times, its loops moved, new material swapped in mid-play, the live mute off, stopped; "
+                        "play along: the song and its guitar with a two-click count-in, looped, switched to the guitar and back, restarted from the top with its count-in, stopped, "
+                        "then a take through the session (" + juce::String (countInBlocks) + " blocks counting in across both, the take running for " + juce::String (takeBlocks)
+                        + " blocks, a level moved mid-take, " + juce::String ((int) take.raw.size()) + " samples recorded from the song's first sample, ended by itself)");
             logMessage ("  -> the GUI hooks: input and output meters and the CPU meter every buffer, the analyzer tapping the post section, the pre section, "
                         "and the post section again; the GUI read " + juce::String (analyzed) + " samples from the ring and stopped for 400 buffers, "
                         "so the ring filled and the audio thread dropped " + juce::String (analyzerDropped) + " samples instead of waiting; CPU meter "
