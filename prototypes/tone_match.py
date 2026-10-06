@@ -41,6 +41,7 @@ Usage (Python through uv, see docs/TONE_MATCH.md):
   uv run --with numpy --with scipy python prototypes/tone_match.py match TARGET.wav DI.wav [--mode same|anything]
   uv run --with numpy --with scipy python prototypes/tone_match.py study [--quick]
   uv run --with numpy --with scipy python prototypes/tone_match.py features
+  uv run --with numpy --with scipy python prototypes/tone_match.py playalong tests/fixtures/tone_match
   uv run --python 3.11 --with demucs --with numpy --with scipy --with lameenc python prototypes/tone_match.py golden \
       tests/fixtures/tone_match --separation
   uv run --python 3.11 --with demucs --with numpy --with scipy python prototypes/tone_match.py study --separation
@@ -675,23 +676,44 @@ def chroma(power):
     return c
 
 
-def dtw_path(cost):
+def band_limits(n, m, band):
+    """The Sakoe-Chiba band (Sakoe and Chiba 1978, section IV) around the straight line from (0, 0) to
+    (n-1, m-1): row i may use the columns j with |j - i (m-1)/(n-1)| <= band. None: every column.
+    A play-along take (docs/TONE_MATCH.md, "Play along") is recorded lined up with the target, so its
+    alignment is that line give or take the player's timing; the band keeps DTW near it. The band is
+    widened to at least the line's slope (and 1), so the steps (1,1), (1,0), (0,1) can always follow it."""
+    if band is None:
+        return np.zeros(n, dtype=int), np.full(n, m - 1, dtype=int)
+    slope = (m - 1) / max(1, n - 1)
+    w = max(float(band), slope, 1.0 / max(slope, 1e-9), 1.0)
+    centre = np.arange(n) * slope
+    lo = np.clip(np.ceil(centre - w - 1e-9), 0, m - 1).astype(int)
+    hi = np.clip(np.floor(centre + w + 1e-9), 0, m - 1).astype(int)
+    lo[0], hi[-1] = 0, m - 1
+    return lo, hi
+
+
+def dtw_path(cost, band=None):
     """Classic DTW (Sakoe and Chiba 1978) with steps (1,1), (1,0), (0,1), both ends anchored:
         D[i, j] = cost[i, j] + min(D[i-1, j-1], D[i-1, j], D[i, j-1]).
     Row by row; the horizontal term is a running min-plus scan: with A[j] = cost[i, j] +
     min(D[i-1, j-1], D[i-1, j]) and C the row's cumulative cost, D[i, j] = C[j] + min_{k<=j} (A[k] - C[k]).
+    With a band (band_limits), only the cells inside it are computed; the others stay infinite, so no
+    path leaves it. Without one the result is exactly the unbanded computation.
     The backtrack prefers the diagonal, then (i-1, j), then (i, j-1), so ties go the same way every time.
     Returns the path as (i, j) pairs from (0, 0) to the end, and the mean cost along it."""
     n, m = cost.shape
+    lo, hi = band_limits(n, m, band)
     d = np.full((n, m), np.inf)
-    d[0] = np.cumsum(cost[0])
+    d[0, : hi[0] + 1] = np.cumsum(cost[0, : hi[0] + 1])
     for i in range(1, n):
-        prev = d[i - 1]
-        best = prev.copy()
-        best[1:] = np.minimum(prev[1:], prev[:-1])
-        a = cost[i] + best
-        c = np.cumsum(cost[i])
-        d[i] = c + np.minimum.accumulate(a - c)
+        a, b = lo[i], hi[i]
+        prev = d[i - 1, a : b + 1]
+        diag = d[i - 1, a - 1 : b] if a > 0 else np.concatenate([[np.inf], d[i - 1, : b]])
+        best = np.minimum(prev, diag)
+        row = cost[i, a : b + 1] + best
+        c = np.cumsum(cost[i, a : b + 1])
+        d[i, a : b + 1] = c + np.minimum.accumulate(row - c)
     i, j = n - 1, m - 1
     path = [(i, j)]
     while i > 0 or j > 0:
@@ -713,10 +735,20 @@ def dtw_path(cost):
     return p, float(d[-1, -1] / len(p))
 
 
-def align(target_power, candidate_power):
+def align(target_power, candidate_power, band=None):
     ct, cc = chroma(target_power), chroma(candidate_power)
     cost = 1.0 - ct @ cc.T                                          # cosine distance
-    return dtw_path(cost)
+    return dtw_path(cost, band)
+
+
+# A play-along take's band: half a second either side of the recorded alignment (12 frames of 43 ms).
+# Wide enough for a player who rushes or drags a little and for a latency compensation that's off by
+# tens of milliseconds; narrow enough that DTW can't wander to another repeat of a riff.
+PLAY_ALONG_BAND_SECONDS = 0.5
+
+
+def band_frames(seconds):
+    return None if seconds is None or seconds <= 0 else int(math.ceil(seconds * SR / HOP))
 
 
 # =====================================================================================================
@@ -885,8 +917,10 @@ def fit_match_eq(residual, w):
     return decode(p), sm
 
 
-def match(target_x, di_x, mode="anything", log=print, workers=8):
-    """Find slot, Gain, tone, cab, and match EQ for di_x to sound like target_x. Returns a dict."""
+def match(target_x, di_x, mode="anything", log=print, workers=8, band_seconds=None):
+    """Find slot, Gain, tone, cab, and match EQ for di_x to sound like target_x. Returns a dict.
+    band_seconds (same part): the DI was recorded playing along, lined up with the target; DTW stays
+    within this far of that alignment (band_limits). None: unconstrained."""
     t0 = time.time()
     target = Target(target_x)
     renders, paths, cands = {}, {}, {}
@@ -905,7 +939,7 @@ def match(target_x, di_x, mode="anything", log=print, workers=8):
 
     if mode == "same":
         for s in range(3):
-            p, c = align(target.analysis.power, stft_power(amp(s, 0.0)))
+            p, c = align(target.analysis.power, stft_power(amp(s, 0.0)), band_frames(band_seconds))
             paths[s] = p
             log(f"  aligned against {AMPS[s]}: {len(p)} steps, mean chroma distance {c:.3f}")
 
@@ -972,6 +1006,7 @@ def match(target_x, di_x, mode="anything", log=print, workers=8):
         "runtime_s": elapsed, "renders": len(renders), "candidates": len(cands),
         "runner_up": [(AMPS[c.slot], c.gain, c.cab.name, round(c.total(), 2)) for c in ranked[1:4]],
         "eq_target": eq_target.tolist(), "residual": residual.tolist(),
+        "path": paths[best.slot].tolist() if mode == "same" else [],
     }
     return result
 
@@ -1335,6 +1370,65 @@ def golden(args):
     print(f"wrote {out}")
 
 
+# The play-along study's cases: the C++ synthetic search test's three (tests/ToneMatchTests.cpp).
+PLAY_ALONG_CASES = [
+    (0, 9.0, (0, 2, -1, 3, 1), "Vintage 4x12, dynamic, upper, var. 3", None),
+    (1, -7.0, (0, 0, 0, 0, 0), "Modern 4x12, blend, 75 W + bright 60 W, 2", [("highShelf", 6000.0, -4.0, SHELF_Q)]),
+    (2, 3.0, (4, -2, -5, 2, 1), "Modern 4x12, dynamic, dark 60 W", None),
+]
+
+
+def alignment_error(path, active, shift_frames=0.0):
+    """Mean and largest |j - (i + shift)| along a path, in frames, over the target's playing frames (in
+    silence any path costs the same, and nothing there is compared): how far it strays from the true
+    alignment of two takes at the same tempo (the DI shifted by shift_frames)."""
+    p = np.asarray(path, dtype=float)
+    keep = np.asarray(active)[p[:, 0].astype(int)]
+    e = np.abs(p[keep, 1] - (p[keep, 0] + shift_frames))
+    return float(e.mean()), float(e.max())
+
+
+def play_along(args):
+    """Same part, played along (docs/TONE_MATCH.md, "Play along"): the target guitarist's take and the
+    player's at the same tempo (the player heard the song), so the true alignment is the diagonal give or
+    take each note's timing. Writes tests/fixtures/tone_match/target_di_playalong.wav (lead_a, seed 64,
+    12 ms jitter; the reference DI is reference_di.wav, lead_a seed 61) and expected_playalong.json (the
+    banded DTW path on it, for the C++ golden test), then matches each case with and without the band,
+    also with the player's DI 80 ms late (a latency compensation that's that far off)."""
+    out = pathlib.Path(args.dir)
+    q = np.clip(np.round(synth_di(["lead_a"], 64, tempo=1.0, jitter_ms=12.0) * 32768.0), -32768, 32767).astype(np.int16)
+    wavfile.write(out / "target_di_playalong.wav", SR, q)
+    tdi = read_wav(out / "target_di_playalong.wav")[1]
+    reference = read_wav(out / "reference_di.wav")[1]
+    n = min(len(tdi), len(reference))
+    tdi, reference = tdi[:n], reference[:n]
+
+    slot, gain, tone, cab, eq = PLAY_ALONG_CASES[2]
+    target = render(tdi, slot, gain, tone=tone, cab=cab_named(cab), eq=eq)
+    path, cost = align(stft_power(target), stft_power(render(reference, slot, 0.0)), band_frames(PLAY_ALONG_BAND_SECONDS))
+    full, full_cost = align(stft_power(target), stft_power(render(reference, slot, 0.0)))
+    expected = {"band_frames": band_frames(PLAY_ALONG_BAND_SECONDS), "case": 2, "samples": int(n),
+                "banded": {"length": int(len(path)), "mean_cost": cost, "checksum": int(np.sum(path[:, 0] * 3 + path[:, 1] * 7)),
+                           "error": alignment_error(path, Analysis(target).active)},
+                "full": {"length": int(len(full)), "mean_cost": full_cost, "checksum": int(np.sum(full[:, 0] * 3 + full[:, 1] * 7)),
+                         "error": alignment_error(full, Analysis(target).active)}}
+    (out / "expected_playalong.json").write_text(json.dumps(expected, indent=1))
+    print(f"wrote {out}: banded path {len(path)} steps, mean cost {cost:.4f}; unbanded {len(full)} steps, mean cost {full_cost:.4f}")
+
+    late = int(0.080 * SR)
+    for label, di, shift in (("lined up", reference, 0.0), ("80 ms late", np.concatenate([np.zeros(late), reference[:-late]]), late / HOP)):
+        for c in PLAY_ALONG_CASES:
+            slot, gain, tone, cab, eq = c
+            t = render(tdi, slot, gain, tone=tone, cab=cab_named(cab), eq=eq)
+            for band in (None, PLAY_ALONG_BAND_SECONDS):
+                r = match(t, di, "same", log=lambda *a: None, band_seconds=band)
+                spectral, nl = verify(r, t, di, "same")
+                mean_e, max_e = alignment_error(r["path"], Analysis(t).active, shift)
+                print(f"  {label:10s} {AMPS[slot]:8s} {gain:+5.1f} | {'band 0.5 s' if band else 'full DTW  '} | {r['amp']:8s} {r['gain_db']:+5.1f} "
+                      f"{r['cab'][:-4]:45s} | alignment error mean {mean_e:.2f} max {max_e:.0f} frames | spectral {spectral:.2f} dB "
+                      f"distortion {nl:.2f} combined {spectral + LAMBDA * nl:.2f}", flush=True)
+
+
 def match_files(args):
     target = to_mono_48k(args.target)
     di = to_mono_48k(args.di)
@@ -1361,6 +1455,8 @@ def main():
     st.add_argument("--json", help="write the rows here")
     st.add_argument("--separation", action="store_true", help="also the Demucs cases (needs uv run --with demucs)")
     sub.add_parser("features", help="the distortion feature study")
+    pa = sub.add_parser("playalong", help="the play-along fixture, and same part with and without the band")
+    pa.add_argument("dir")
     gd = sub.add_parser("golden", help="write the C++ golden fixtures")
     gd.add_argument("dir")
     gd.add_argument("--separation", action="store_true", help="also the Demucs pair (needs --with demucs)")
@@ -1373,6 +1469,8 @@ def main():
         match_files(args)
     elif args.cmd == "study":
         study(args)
+    elif args.cmd == "playalong":
+        play_along(args)
 
 
 if __name__ == "__main__":

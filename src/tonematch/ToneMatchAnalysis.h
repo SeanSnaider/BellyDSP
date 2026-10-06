@@ -103,7 +103,19 @@ struct Alignment
     std::vector<std::pair<int, int>> path; ///< (target frame, candidate frame) from the start to the end
     double meanCost = 0.0;
 };
-Alignment align (const Analysis& target, const Analysis& candidate);
+/// bandFrames > 0: only within a Sakoe-Chiba band (Sakoe and Chiba 1978, section IV) of that many frames
+/// around the straight line from the first frames to the last (bandLimits), for a play-along take, which
+/// is recorded lined up with the target (docs/TONE_MATCH.md, "Play along"). 0: unconstrained.
+Alignment align (const Analysis& target, const Analysis& candidate, int bandFrames = 0);
+
+/// The band's columns for each of n rows against m columns: |j - i (m-1)/(n-1)| <= w, where w is
+/// bandFrames widened to at least the line's slope (and 1) so the steps can always follow the line;
+/// the first row starts at column 0 and the last ends at m-1. bandFrames <= 0: every column.
+std::pair<std::vector<int>, std::vector<int>> bandLimits (int n, int m, int bandFrames);
+
+/// A play-along take's band (prototypes/tone_match.py, PLAY_ALONG_BAND_SECONDS): half a second either
+/// side of the recorded alignment.
+inline constexpr double playAlongBandSeconds = 0.5;
 
 /// Same part: the frame-wise comparison along an alignment, over pairs where both frames are playing.
 ///   residual   smoothed mean of the band dB differences (what the linear part must fit)

@@ -350,9 +350,10 @@ MatchResult ToneMatcher::match (const std::vector<float>& targetSignal, const st
     if (settings.mode == Mode::samePart)
     {
         report (0.46, "Aligning the two performances");
+        const auto bandFrames = settings.alignmentBandSeconds > 0.0 ? (int) std::ceil (settings.alignmentBandSeconds * sampleRate / hop) : 0;
         for (auto s : slots)
         {
-            alignments[s] = align (target, Analysis::of (renders.at (key (s, 0.0))));
+            alignments[s] = align (target, Analysis::of (renders.at (key (s, 0.0))), bandFrames);
             if (cancelled())
                 return result;
         }

@@ -384,13 +384,33 @@ double nonlinearDistance (const std::array<double, numFeatures>& target, const s
 
 // ---- Same part: DTW ------------------------------------------------------------------------------------
 
-Alignment align (const Analysis& target, const Analysis& candidate)
+std::pair<std::vector<int>, std::vector<int>> bandLimits (int n, int m, int bandFrames)
+{
+    std::vector<int> lo ((size_t) n, 0), hi ((size_t) n, m - 1);
+    if (bandFrames <= 0 || n <= 0 || m <= 0)
+        return { lo, hi };
+    const auto slope = (double) (m - 1) / (double) std::max (1, n - 1);
+    const auto w = std::max ({ (double) bandFrames, slope, 1.0 / std::max (slope, 1.0e-9), 1.0 });
+    for (int i = 0; i < n; ++i)
+    {
+        const auto centre = (double) i * slope;
+        lo[(size_t) i] = juce::jlimit (0, m - 1, (int) std::ceil (centre - w - 1.0e-9));
+        hi[(size_t) i] = juce::jlimit (0, m - 1, (int) std::floor (centre + w + 1.0e-9));
+    }
+    lo.front() = 0;
+    hi.back() = m - 1;
+    return { lo, hi };
+}
+
+Alignment align (const Analysis& target, const Analysis& candidate, int bandFrames)
 {
     const auto n = target.numFrames, m = candidate.numFrames;
-    std::vector<double> cost ((size_t) n * (size_t) m), d ((size_t) n * (size_t) m);
+    const auto [lo, hi] = bandLimits (n, m, bandFrames);
+    const auto inf = std::numeric_limits<double>::infinity();
+    std::vector<double> cost ((size_t) n * (size_t) m, inf), d ((size_t) n * (size_t) m, inf);
 
     for (int i = 0; i < n; ++i)
-        for (int j = 0; j < m; ++j)
+        for (int j = lo[(size_t) i]; j <= hi[(size_t) i]; ++j)
         {
             double dot = 0.0;
             for (int pc = 0; pc < 12; ++pc)
@@ -400,16 +420,18 @@ Alignment align (const Analysis& target, const Analysis& candidate)
 
     // D[i, j] = cost[i, j] + min(D[i-1, j-1], D[i-1, j], D[i, j-1]), computed per row as the prototype
     // does: with A[j] = cost[i, j] + min(D[i-1, j-1], D[i-1, j]) and C the row's running sum of cost,
-    // D[i, j] = C[j] + min over k <= j of (A[k] - C[k]).
+    // D[i, j] = C[j] + min over k <= j of (A[k] - C[k]). With a band, each row only over its columns
+    // (the running sums start at the row's first column); every cell outside stays infinite, so the
+    // path can't leave the band. Without one, exactly the unbanded computation.
     auto at = [m] (int i, int j) { return (size_t) i * (size_t) m + (size_t) j; };
     double run = 0.0;
-    for (int j = 0; j < m; ++j)
+    for (int j = 0; j <= hi[0]; ++j)
         d[at (0, j)] = (run += cost[at (0, j)]);
 
     for (int i = 1; i < n; ++i)
     {
-        double c = 0.0, best = std::numeric_limits<double>::infinity();
-        for (int j = 0; j < m; ++j)
+        double c = 0.0, best = inf;
+        for (int j = lo[(size_t) i]; j <= hi[(size_t) i]; ++j)
         {
             const auto prev = j > 0 ? std::min (d[at (i - 1, j)], d[at (i - 1, j - 1)]) : d[at (i - 1, j)];
             const auto a = cost[at (i, j)] + prev;

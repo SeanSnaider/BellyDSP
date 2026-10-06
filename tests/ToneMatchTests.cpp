@@ -447,6 +447,143 @@ public:
                         + juce::String (better) + "/" + juce::String (total));
         }
 
+        // ---- Play along (docs/TONE_MATCH.md, "Play along"): a take recorded lined up with the target ----
+        const auto playAlongTargetDi = [&] {
+            auto x = readMono (fixtures().getChildFile ("target_di_playalong.wav"));
+            x.resize (std::min (x.size(), reference.size()));
+            return x;
+        }();
+        // How far a path strays from the true alignment (the diagonal, shifted by `shift` frames when the DI
+        // is late), in frames, over the target's playing frames (in silence any path costs the same).
+        const auto alignmentError = [] (const std::vector<std::pair<int, int>>& path, const Analysis& target, double shift) {
+            double sum = 0.0, worst = 0.0;
+            int count = 0;
+            for (const auto& [i, j] : path)
+                if (target.active[(size_t) i])
+                {
+                    const auto off = std::abs ((double) j - ((double) i + shift));
+                    sum += off;
+                    worst = std::max (worst, off);
+                    ++count;
+                }
+            return std::pair<double, double> { sum / std::max (1, count), worst };
+        };
+
+        beginTest ("golden (play along): DTW within the 0.5 s band on the play-along fixture finds the prototype's path, and unbanded too");
+        {
+            const juce::var pe = juce::JSON::parse (fixtures().getChildFile ("expected_playalong.json").loadFileAsString());
+            const auto bandFrames = (int) std::ceil (playAlongBandSeconds * sampleRate / hop);
+            expectEquals (bandFrames, (int) pe["band_frames"]);
+            const auto target = renderChain (playAlongTargetDi, 2, 3.0f, { 4, -2, -5, 2, 1 }, cabNamed ("Modern 4x12, dynamic, dark 60 W"));
+            const std::atomic<bool> noCancel { false };
+            const auto ta = Analysis::of (target);
+            const auto ca = Analysis::of (ToneMatcher::renderAmp (model (2), {}, std::vector<float> (reference.begin(), reference.begin() + (long) playAlongTargetDi.size()), 0.0, noCancel));
+            juce::StringArray lines;
+            for (const auto* which : { "banded", "full" })
+            {
+                const auto banded = juce::String (which) == "banded";
+                const auto a = align (ta, ca, banded ? bandFrames : 0);
+                long long checksum = 0;
+                for (const auto& [i, j] : a.path)
+                    checksum += i * 3 + j * 7;
+                const auto& golden = pe[which];
+                expectEquals ((int) a.path.size(), (int) golden["length"]);
+                expectEquals ((juce::int64) checksum, (juce::int64) golden["checksum"]);
+                expectWithinAbsoluteError (a.meanCost, (double) golden["mean_cost"], 1.0e-6);
+                // Inside the band: every pair within bandFrames of the diagonal.
+                int outside = 0;
+                if (banded)
+                    for (const auto& [i, j] : a.path)
+                        outside += std::abs ((double) j - (double) i * (ca.numFrames - 1) / (double) (ta.numFrames - 1)) > bandFrames ? 1 : 0;
+                expectEquals (outside, 0);
+                const auto [mean, worst] = alignmentError (a.path, ta, 0.0);
+                lines.add (juce::String (which) + ": " + juce::String ((int) a.path.size()) + " pairs, checksum " + juce::String (checksum) + ", mean cost "
+                           + juce::String (a.meanCost, 5) + " (prototype " + juce::String ((double) golden["mean_cost"], 5) + "), off the true alignment by "
+                           + juce::String (mean, 2) + " frames on average, " + juce::String (worst, 0) + " at most");
+            }
+            for (const auto& l : lines)
+                logMessage ("  -> " + l);
+        }
+
+        beginTest ("play along, measured: same part on a take at the target's tempo, with the 0.5 s band and without, lined up and 80 ms late");
+        {
+            struct Case
+            {
+                int slot;
+                float gain;
+                std::array<float, 5> tone;
+                const char* cab;
+                std::vector<ampsim::Equalizer::Band> eq;
+            };
+            using BT = ampsim::Equalizer::BandType;
+            const std::vector<Case> cases {
+                { 0, 9.0f, { 0, 2, -1, 3, 1 }, "Vintage 4x12, dynamic, upper, var. 3", {} },
+                { 1, -7.0f, { 0, 0, 0, 0, 0 }, "Modern 4x12, blend, 75 W + bright 60 W, 2", { { BT::highShelf, 6000.0f, -4.0f, 0.7071f } } },
+                { 2, 3.0f, { 4, -2, -5, 2, 1 }, "Modern 4x12, dynamic, dark 60 W", {} },
+            };
+            const auto di = std::vector<float> (reference.begin(), reference.begin() + (long) playAlongTargetDi.size());
+            const auto lateSamples = (size_t) (0.080 * sampleRate);
+            auto late = std::vector<float> (lateSamples, 0.0f);
+            late.insert (late.end(), di.begin(), di.end() - (long) lateSamples);
+            juce::StringArray rows;
+            int sameResult = 0, total = 0, right = 0, beatDefault = 0, runs = 0;
+            double worstBanded = 0.0;
+            for (const auto& [label, reference2, shift] : std::initializer_list<std::tuple<const char*, const std::vector<float>*, double>> {
+                     { "lined up", &di, 0.0 }, { "80 ms late", &late, (double) lateSamples / hop } })
+            {
+                for (const auto& c : cases)
+                {
+                    const auto target = renderChain (playAlongTargetDi, c.slot, c.gain, c.tone, cabNamed (c.cab), c.eq);
+                    const auto ta = Analysis::of (target);
+                    double bestDefault = 1.0e9;
+                    for (int s = 0; s < 3; ++s)
+                    {
+                        MatchResult d;
+                        d.mode = Mode::samePart;
+                        d.slot = s;
+                        d.cab = cabNamed ("Vintage 4x12, dynamic, upper, var. 2");
+                        const auto [ds, dn] = verify (d, target, *reference2);
+                        bestDefault = std::min (bestDefault, ds + lambda * dn);
+                    }
+                    MatchResult results[2];
+                    for (int banded = 0; banded < 2; ++banded)
+                    {
+                        auto settings = settingsFor (Mode::samePart);
+                        settings.alignmentBandSeconds = banded ? playAlongBandSeconds : 0.0;
+                        const std::atomic<bool> noCancel { false };
+                        const auto r = ToneMatcher::match (target, *reference2, settings, noCancel);
+                        expect (r.ok, r.error);
+                        const auto [spectral, distortion] = verify (r, target, *reference2);
+                        const auto [mean, worst] = alignmentError (r.alignmentPath, ta, shift);
+                        if (banded)
+                            worstBanded = std::max (worstBanded, worst);
+                        right += r.slot == c.slot ? 1 : 0;
+                        beatDefault += spectral + lambda * distortion < bestDefault ? 1 : 0;
+                        ++runs;
+                        rows.add (juce::String (label) + " | " + ampName (c.slot) + " " + juce::String (c.gain, 0) + " dB | " + (banded ? "band 0.5 s" : "full DTW")
+                                  + " | " + ampName (r.slot) + " " + juce::String (r.gainDb, 1) + " dB, " + r.cab.getFileNameWithoutExtension()
+                                  + " | off the true alignment " + juce::String (mean, 2) + " frames mean, " + juce::String (worst, 0) + " max | spectral "
+                                  + juce::String (spectral, 2) + " dB, distortion " + juce::String (distortion, 2) + ", combined "
+                                  + juce::String (spectral + lambda * distortion, 2) + " vs best default " + juce::String (bestDefault, 2) + " | "
+                                  + juce::String (r.runtimeSeconds, 1) + " s");
+                        results[banded] = r;
+                    }
+                    sameResult += results[0].slot == results[1].slot && std::abs (results[0].gainDb - results[1].gainDb) < 1.0e-9 && results[0].cab == results[1].cab ? 1 : 0;
+                    ++total;
+                }
+            }
+            // The band keeps the path within 0.5 s (12 frames) of the recorded alignment, plus the 80 ms the DI
+            // is late; and every match beats the defaults, as the synthetic search test asks.
+            expectLessOrEqual (worstBanded, 12.0 + (double) lateSamples / hop + 0.5);
+            expectEquals (beatDefault, runs);
+            logMessage ("  -> mode | true | alignment | matched | path against the truth | verified through the chain | time");
+            for (const auto& row : rows)
+                logMessage ("  -> " + row);
+            logMessage ("  -> the band changed the matched amp, Gain, or cab in " + juce::String (total - sameResult) + " of " + juce::String (total)
+                        + " cases; amp right " + juce::String (right) + "/" + juce::String (runs) + "; better than the best default " + juce::String (beatDefault)
+                        + "/" + juce::String (runs));
+        }
+
         beginTest ("cancel: a match stops within a second of the flag (renders check it every 128 samples, and no capture loads after it) and says so");
         {
             // With the default worker count, and with one worker (a starved runner, where the grid's queued

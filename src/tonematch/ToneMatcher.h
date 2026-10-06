@@ -51,6 +51,10 @@ struct MatchSettings
     double gainMin = -24.0, gainMax = 24.0; ///< amp*_input_trim's range
     int cabsPerAmp = 4;
     int refineSlots = 2;
+    /// Same part: > 0 when the DI is a play-along take, recorded lined up with the target (the session
+    /// trims it so its sample 0 is the target's), so DTW only searches this far either side of that
+    /// alignment (align's band; playAlongBandSeconds). 0: unconstrained, as for a take played on its own.
+    double alignmentBandSeconds = 0.0;
 };
 
 struct MatchResult
