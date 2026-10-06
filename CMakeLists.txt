@@ -221,6 +221,7 @@ set(AMPSIM_DSP_SOURCES
 set(AMPSIM_TONEMATCH_SOURCES
     src/tonematch/ToneMatchAnalysis.cpp
     src/tonematch/ToneMatcher.cpp
+    src/tonematch/TempoEstimate.cpp
     src/tonematch/AudioFileInput.cpp
     src/tonematch/GuitarSeparator.cpp)
 
@@ -332,6 +333,7 @@ target_sources(BellyDSP PRIVATE
     ${AMPSIM_PLATFORM_SOURCES}
     ${AMPSIM_UPDATER_SOURCE}
     src/platform/SampleRateGuard_standalone.cpp
+    src/platform/DeviceLatency_standalone.cpp
     ${AMPSIM_UI_SOURCES}
     src/BlockParameters.cpp
     src/Presets.cpp
@@ -556,6 +558,7 @@ target_sources(ampsim_tests PRIVATE
     tests/ToneMatchAppTests.cpp
     tests/ToneMatchSeparationTests.cpp
     tests/ToneMatchCompareTests.cpp
+    tests/ToneMatchPlayAlongTests.cpp
     tests/AudioDeviceTests.cpp
     tools/capture/CaptureEngine.cpp
     src/PluginProcessor.cpp
@@ -563,6 +566,7 @@ target_sources(ampsim_tests PRIVATE
     ${AMPSIM_PLATFORM_SOURCES}
     src/platform/Updater_none.cpp
     src/platform/SampleRateGuard_none.cpp
+    src/platform/DeviceLatency_none.cpp
     ${AMPSIM_UI_SOURCES}
     src/BlockParameters.cpp
     src/Presets.cpp

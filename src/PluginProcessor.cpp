@@ -706,7 +706,11 @@ void AmpSimProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         const auto len = juce::jmin (maxChunk, (size_t) numSamples - start);
         chain.process (io.getSubBlock (start, len));
 
-        // Tone match's recorder takes the chain's own DI snapshot (wait-free; a no-op unless recording).
+        // Tone match's recorder takes the chain's own DI snapshot (wait-free; a no-op unless recording). A
+        // play-along take starts on the sample where the preview player's song started in this piece, so
+        // recording sample 0 and the song's first sample are the same sample (docs/TONE_MATCH.md, "Play along").
+        if (const auto songStart = chain.preview.songStartedAt(); songStart >= 0)
+            diRecorder.beginArmed (songStart);
         diRecorder.push (chain.lastDISnapshot().data(), (int) len);
     }
 

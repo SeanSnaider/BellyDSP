@@ -7,6 +7,7 @@
 #include "platform/AppInfo.h"
 #include "dsp/Loudness.h"
 #include "tonematch/AudioFileInput.h"
+#include "tonematch/TempoEstimate.h"
 
 #include <cmath>
 #include <limits>
@@ -15,6 +16,8 @@ using namespace ampsim::tonematch;
 
 namespace
 {
+bool sameSeconds (double a, double b) { return std::abs (a - b) < 1.0e-9; }
+
 void setPlain (AmpSimProcessor& p, const juce::String& id, float value)
 {
     if (auto* param = p.parameters.getParameter (id))
@@ -65,9 +68,33 @@ private:
 };
 } // namespace
 
-ToneMatchSession::ToneMatchSession (AmpSimProcessor& processor) : ampSim (processor)
+/// One count-in click (docs/TONE_MATCH.md, "Play along"): a sine burst, 1 ms linear rise (so it doesn't
+/// start with a step) then an exponential decay with an 8 ms time constant, 40 ms long and faded to 0 over its
+/// last 5 ms, peak 0.5 (-6 dBFS). The accent (beat 1) at 1760 Hz, the others at 1320 Hz, a fifth below.
+static std::shared_ptr<const std::vector<float>> makeClick (double frequency)
+{
+    const auto fs = 48000.0;
+    const auto n = (int) (0.040 * fs), rise = (int) (0.001 * fs), tail = (int) (0.005 * fs);
+    std::vector<float> x ((size_t) n);
+    for (int i = 0; i < n; ++i)
+    {
+        const auto t = i / fs;
+        auto env = std::exp (-t / 0.008);
+        if (i < rise)
+            env *= (double) i / rise;
+        if (i >= n - tail)
+            env *= (double) (n - 1 - i) / tail;
+        x[(size_t) i] = (float) (0.5 * env * std::sin (juce::MathConstants<double>::twoPi * frequency * t));
+    }
+    return std::make_shared<const std::vector<float>> (std::move (x));
+}
+
+ToneMatchSession::ToneMatchSession (AmpSimProcessor& processor) : ampSim (processor), latencySource (&platform::device::reportedLatency)
 {
     loudness.fill (-std::numeric_limits<double>::infinity());
+    material = std::make_unique<ampsim::PreviewPlayer::Material>();
+    material->clickAccent = makeClick (1760.0);
+    material->click = makeClick (1320.0);
 }
 
 ToneMatchSession::~ToneMatchSession()
@@ -76,8 +103,10 @@ ToneMatchSession::~ToneMatchSession()
     join();
     cancelCompare();
     joinCompare();
+    tempoCancel = true;
+    joinTempo();
     ampSim.getPreviewPlayer().setPlaying (false); // the live guitar comes back; the material stays until the next
-    if (recordingReference)
+    if (recordingReference || takeRunning)
         ampSim.getDiRecorder().stop();
 }
 
@@ -97,10 +126,14 @@ bool ToneMatchSession::setTargetFile (const juce::File& file)
 
 void ToneMatchSession::setTargetSignal (std::vector<float> samples48k, const juce::String& name)
 {
+    if (takeRunning)
+        stopRecording();
+    setTargetPlaying (false);
     target = std::move (samples48k);
     targetName = name;
     ++targetVersion;
     error.clear();
+    suggestedBpm = 0.0;
     setRange (0.0, defaultRangeSeconds);
 }
 
@@ -115,8 +148,11 @@ void ToneMatchSession::setRange (double startSeconds, double endSeconds)
     if (endSeconds < startSeconds)
         std::swap (startSeconds, endSeconds);
     const auto span = juce::jlimit (juce::jmin (minRangeSeconds, length), juce::jmin (maxRangeSeconds, length), endSeconds - startSeconds);
+    const auto before = std::make_pair (rangeStart, rangeEnd);
     rangeStart = juce::jlimit (0.0, length - span, startSeconds);
     rangeEnd = rangeStart + span;
+    if (before != std::make_pair (rangeStart, rangeEnd))
+        rangeChangedMs = juce::Time::getMillisecondCounterHiRes(); // the song material and the tempo follow once it's still
 }
 
 std::vector<float> ToneMatchSession::targetSelection() const
@@ -137,6 +173,11 @@ void ToneMatchSession::startRecording()
 
 void ToneMatchSession::stopRecording()
 {
+    if (takeRunning)
+    {
+        finishTake (false);
+        return;
+    }
     if (! recordingReference)
         return;
     auto& recorder = ampSim.getDiRecorder();
@@ -147,7 +188,7 @@ void ToneMatchSession::stopRecording()
 
 bool ToneMatchSession::isRecording() const
 {
-    return recordingReference;
+    return recordingReference || takeRunning;
 }
 
 bool ToneMatchSession::setReferenceFile (const juce::File& file)
@@ -166,6 +207,7 @@ void ToneMatchSession::setReferenceSignal (std::vector<float> samples48k, const 
 {
     reference = std::move (samples48k);
     referenceName = name;
+    take.valid = false; // a take sets itself valid again after this (finishTake)
     error.clear();
 }
 
@@ -184,7 +226,7 @@ juce::String ToneMatchSession::whyCantMatch() const
         return "Matching already";
     if (target.empty())
         return "Choose a target: a song or a guitar track";
-    if (recordingReference)
+    if (recordingReference || takeRunning)
         return "Stop the recording first";
     if (reference.size() < (size_t) (minReferenceSeconds * 48000.0))
         return "Record or choose your DI (at least " + juce::String ((int) minReferenceSeconds) + " s)";
@@ -215,8 +257,17 @@ bool ToneMatchSession::startMatch()
     }
     settings.cabs = builtInCabs();
     settings.calibration = ampSim.getCaptureCalibration();
+    // A play-along take of this section is lined up with it already: DTW only near that alignment.
+    if (mode == Mode::samePart && referenceIsTake())
+        settings.alignmentBandSeconds = ampsim::tonematch::playAlongBandSeconds;
+    pendingSeparated = separate;
+    pendingRangeStart = rangeStart;
+    pendingRangeEnd = rangeEnd;
+    pendingTargetVersion = targetVersion;
+    pendingBand = settings.alignmentBandSeconds > 0.0;
 
     stopAndClearCompare();
+    setTargetPlaying (false);
     cancelFlag = false;
     finished = false;
     progress = 0.0;
@@ -297,6 +348,29 @@ bool ToneMatchSession::waitForMatch (int timeoutMs)
 
 void ToneMatchSession::poll()
 {
+    if (takeRunning)
+    {
+        // The recorder stops itself at the take's length (arm's limit); what it was still writing is in the
+        // ring, so check first and drain after.
+        auto& recorder = ampSim.getDiRecorder();
+        const auto stillGoing = recorder.isRecording() || recorder.isArmed();
+        recorder.drain();
+        if (! stillGoing || (int64_t) recorder.getRecording().size() >= takeNeeded)
+            finishTake (true);
+    }
+
+    // The song material and the tempo estimate follow the range once it has been still for 250 ms.
+    if (! target.empty() && juce::Time::getMillisecondCounterHiRes() - rangeChangedMs >= 250.0)
+    {
+        if (targetPlaying && (! sameSeconds (songRangeStart, rangeStart) || ! sameSeconds (songRangeEnd, rangeEnd) || songTargetVersion != targetVersion))
+        {
+            refreshSongMaterial();
+            publishMaterial();
+        }
+        if (! tempoRunning && (! sameSeconds (tempoRangeStart, rangeStart) || ! sameSeconds (tempoRangeEnd, rangeEnd) || tempoTargetVersion != targetVersion))
+            startTempoEstimate();
+    }
+
     if (recordingReference)
     {
         auto& recorder = ampSim.getDiRecorder();
@@ -321,6 +395,10 @@ void ToneMatchSession::poll()
                 resultReady = true;
                 comparedTarget = std::make_shared<const std::vector<float>> (std::move (pendingTarget));
                 comparedReference = std::make_shared<const std::vector<float>> (std::move (pendingReference));
+                matchedSeparated = pendingSeparated;
+                matchedRangeStart = pendingRangeStart;
+                matchedRangeEnd = pendingRangeEnd;
+                matchedTargetVersion = pendingTargetVersion;
                 ok = true;
             }
             else
@@ -657,9 +735,15 @@ void ToneMatchSession::pollCompare()
             renderedFingerprint = r.fingerprint;
 
             // The material: the three sources, and in same-part mode the alignment as two monotone tables
-            // (each frame's mean partner on the other clock, at the analysis frames' centres).
-            auto m = std::make_unique<ampsim::PreviewPlayer::Material>();
-            m->audio = { comparedTarget, matchAudio, currentAudio };
+            // (each frame's mean partner on the other clock, at the analysis frames' centres). The song and its
+            // guitar (sources 3 and 4) and the clicks stay as they are.
+            auto m = std::make_unique<ampsim::PreviewPlayer::Material> (*material);
+            m->audio[0] = comparedTarget;
+            m->audio[1] = matchAudio;
+            m->audio[2] = currentAudio;
+            m->aligned = false;
+            m->diAtTarget.clear();
+            m->targetAtDi.clear();
             const auto& path = result.alignmentPath;
             if (result.mode == Mode::samePart && ! path.empty())
             {
@@ -689,11 +773,14 @@ void ToneMatchSession::pollCompare()
                     m->targetAtDi.push_back (sumI[j] / juce::jmax (1, countI[j]) * hop + m->offset);
             }
             compareAligned = m->aligned;
-            material = std::make_unique<ampsim::PreviewPlayer::Material> (*m);
+            material = std::move (m);
             compareReady = true;
             compareError.clear();
             updateLoops();
-            player.setMaterial (std::move (m));
+            // A take plays on what it started with: a swap mid-take would crossfade the song into itself
+            // (the same audio, 3 dB up halfway through an equal-power fade). It's handed over after the take.
+            if (! takeRunning)
+                publishMaterial();
         }
     }
 
@@ -727,7 +814,10 @@ void ToneMatchSession::stopAndClearCompare()
     targetSpectrum.clear();
     matchSpectrum.clear();
     renderedFingerprint.clear();
-    material.reset();
+    material->audio[0] = material->audio[1] = material->audio[2] = nullptr;
+    material->aligned = false;
+    material->diAtTarget.clear();
+    material->targetAtDi.clear();
     loudness.fill (-std::numeric_limits<double>::infinity());
     matchGainDb.fill (0.0f);
 }
@@ -741,18 +831,29 @@ const std::vector<float>& ToneMatchSession::getCompareAudio (int source) const
 
 void ToneMatchSession::setPreviewPlaying (bool shouldPlay)
 {
-    previewPlaying = shouldPlay && compareReady;
+    const auto was = previewPlaying;
+    previewPlaying = shouldPlay && compareReady && ! takeRunning;
     auto& player = ampSim.getPreviewPlayer();
-    player.setMuteLive (muteLive);
-    player.setLevelDb (previewLevelDb);
-    player.setSource (previewSource);
-    player.setPlaying (previewPlaying);
+    if (previewPlaying)
+    {
+        targetPlaying = false;
+        player.setOnce (false);
+        player.setCountIn (0, 1.0);
+        player.setMuteLive (muteLive);
+        player.setLevelDb (previewLevelDb);
+        player.setSource (previewSource);
+        if (! was)
+            player.startFresh();
+    }
+    else if (was)
+        player.setPlaying (false); // only what this started: a target preview or a take is left alone
 }
 
 void ToneMatchSession::setPreviewSource (int source)
 {
     previewSource = juce::jlimit (0, numSources - 1, source);
-    ampSim.getPreviewPlayer().setSource (previewSource);
+    if (previewPlaying)
+        ampSim.getPreviewPlayer().setSource (previewSource);
 }
 
 void ToneMatchSession::setLevelMatch (bool on)
@@ -764,13 +865,15 @@ void ToneMatchSession::setLevelMatch (bool on)
 void ToneMatchSession::setMuteLive (bool on)
 {
     muteLive = on;
-    ampSim.getPreviewPlayer().setMuteLive (on);
+    if (previewPlaying)
+        ampSim.getPreviewPlayer().setMuteLive (on);
 }
 
 void ToneMatchSession::setPreviewLevelDb (float db)
 {
     previewLevelDb = juce::jlimit (minPreviewLevelDb, maxPreviewLevelDb, db);
-    ampSim.getPreviewPlayer().setLevelDb (previewLevelDb);
+    if (previewPlaying)
+        ampSim.getPreviewPlayer().setLevelDb (previewLevelDb);
 }
 
 void ToneMatchSession::setLoop (double startSeconds, double endSeconds)
@@ -793,7 +896,7 @@ void ToneMatchSession::updateLoops()
     const auto a = (int64_t) std::llround (loopStart * 48000.0), b = (int64_t) std::llround (loopEnd * 48000.0);
     player.setLoop (0, a, b);
     const auto diLength = comparedReference != nullptr ? (int64_t) comparedReference->size() : (int64_t) 0;
-    if (material != nullptr && material->aligned)
+    if (material->aligned)
         diLoop = { (int64_t) std::llround (ampsim::PreviewPlayer::alignedPosition (*material, 0, (double) a)),
                    (int64_t) std::llround (ampsim::PreviewPlayer::alignedPosition (*material, 0, (double) b)) };
     else
@@ -831,4 +934,255 @@ void ToneMatchSession::updateLevels()
         matchGainDb[(size_t) s] = levelMatch && std::isfinite (l) && std::isfinite (reference) ? (float) juce::jlimit (-40.0, 40.0, reference - l) : 0.0f;
         ampSim.getPreviewPlayer().setSourceGainDb (s, matchGainDb[(size_t) s]);
     }
+}
+
+// ---- Hearing the target, and playing along ---------------------------------------------------------------
+
+bool ToneMatchSession::hasGuitarStem() const
+{
+    return matchedSeparated && comparedTarget != nullptr && ! comparedTarget->empty() && matchedTargetVersion == targetVersion
+           && sameSeconds (matchedRangeStart, rangeStart) && sameSeconds (matchedRangeEnd, rangeEnd);
+}
+
+void ToneMatchSession::setSongSource (int newSource)
+{
+    songSource = newSource == songGuitar ? songGuitar : songFull;
+    if (targetPlaying || takeRunning)
+    {
+        // The stem shares the song's clock (the section's samples), so the switch keeps the exact place.
+        if (getSongSource() == songGuitar && ! songStem)
+        {
+            refreshSongMaterial();
+            publishMaterial();
+        }
+        ampSim.getPreviewPlayer().setSource (getSongSource() == songGuitar ? 4 : 3);
+    }
+}
+
+void ToneMatchSession::setSongLevelDb (float db)
+{
+    songLevelDb = juce::jlimit (minLevelDb, maxLevelDb, db);
+    if (targetPlaying || takeRunning)
+        ampSim.getPreviewPlayer().setLevelDb (songLevelDb);
+}
+
+void ToneMatchSession::setClickLevelDb (float db)
+{
+    clickLevelDb = juce::jlimit (minLevelDb, maxLevelDb, db);
+    ampSim.getPreviewPlayer().setClickLevelDb (clickLevelDb);
+}
+
+void ToneMatchSession::setCountInBeats (int beats)
+{
+    countInBeats = beats <= 2 ? 2 : 4;
+}
+
+void ToneMatchSession::setCountInBpm (double bpm)
+{
+    countInBpm = juce::jlimit (minBpm, maxBpm, bpm);
+    countInBpmSetHere = true;
+}
+
+double ToneMatchSession::getCountInBpm() const
+{
+    return countInBpmSetHere ? countInBpm : juce::jlimit (minBpm, maxBpm, ampSim.getTempo());
+}
+
+void ToneMatchSession::tapCountInTempo (double nowSeconds)
+{
+    if (tapTempo.tap (nowSeconds) && tapTempo.hasTempo())
+        setCountInBpm (std::round (tapTempo.getBpm() * 10.0) / 10.0);
+}
+
+void ToneMatchSession::setLatencyOffsetMs (double ms)
+{
+    latencyOffsetMs = juce::jlimit (minOffsetMs, maxOffsetMs, ms);
+}
+
+void ToneMatchSession::refreshSongMaterial()
+{
+    // Sources 3 and 4 on clock 2, the section's own samples: the song's selected section (a copy, at most a
+    // minute), and its separated guitar when a separated match made one of exactly this section.
+    material->audio[3] = std::make_shared<const std::vector<float>> (targetSelection());
+    songStem = hasGuitarStem();
+    material->audio[4] = songStem ? comparedTarget : nullptr;
+    songRangeStart = rangeStart;
+    songRangeEnd = rangeEnd;
+    songTargetVersion = targetVersion;
+}
+
+void ToneMatchSession::publishMaterial()
+{
+    auto& player = ampSim.getPreviewPlayer();
+    player.collectGarbage();
+    if (material->audio[3] != nullptr)
+        player.setLoop (2, 0, (int64_t) material->audio[3]->size());
+    player.setMaterial (std::make_unique<ampsim::PreviewPlayer::Material> (*material));
+}
+
+void ToneMatchSession::applySongPlayerSettings()
+{
+    auto& player = ampSim.getPreviewPlayer();
+    player.setSource (getSongSource() == songGuitar ? 4 : 3);
+    player.setLevelDb (songLevelDb);
+    player.setClickLevelDb (clickLevelDb);
+    player.setSourceGainDb (3, 0.0f);
+    player.setSourceGainDb (4, 0.0f);
+    player.setMuteLive (false); // the song is for playing along to: your guitar stays in
+}
+
+void ToneMatchSession::setTargetPlaying (bool shouldPlay)
+{
+    auto& player = ampSim.getPreviewPlayer();
+    if (! shouldPlay || target.empty() || takeRunning)
+    {
+        if (targetPlaying)
+            player.setPlaying (false);
+        targetPlaying = false;
+        return;
+    }
+    if (previewPlaying)
+        previewPlaying = false; // the A/B stops; this takes the player
+    if (! sameSeconds (songRangeStart, rangeStart) || ! sameSeconds (songRangeEnd, rangeEnd) || songTargetVersion != targetVersion
+        || songStem != hasGuitarStem() || material->audio[3] == nullptr)
+        refreshSongMaterial();
+    publishMaterial();
+    applySongPlayerSettings();
+    player.setOnce (false);
+    player.setCountIn (countInForPlay ? countInBeats : 0, 60.0 * 48000.0 / getCountInBpm());
+    player.startFresh();
+    targetPlaying = true;
+}
+
+bool ToneMatchSession::startPlayAlong()
+{
+    if (target.empty() || running || takeRunning)
+        return false;
+    if (recordingReference)
+    {
+        ampSim.getDiRecorder().stop();
+        recordingReference = false;
+    }
+    previewPlaying = false;
+    targetPlaying = false;
+    error.clear();
+
+    refreshSongMaterial();
+    publishMaterial();
+
+    // The alignment (docs/TONE_MATCH.md, "Play along"). The player's song sample p sounds at the output
+    // (the callback's sample) t0 + p, reaches the ears the output latency later, and what the guitarist
+    // plays against it reaches the callback the input latency after that: at t0 + p + L, L = input +
+    // output latency (+ the user's offset). The recorder starts at t0 (the song's first sample), so the
+    // take's sample p + L is the guitar played against song sample p: the reference is the take from L on,
+    // the section's length (the recorder runs L past the section's end to catch its last notes).
+    take = {};
+    take.latency = latencySource != nullptr ? latencySource() : platform::device::Latency {};
+    take.offsetMs = latencyOffsetMs;
+    take.alignSamples = std::max<int64_t> (0, (int64_t) take.latency.inputSamples + take.latency.outputSamples + std::llround (latencyOffsetMs * 48.0));
+    take.sectionSamples = (int64_t) material->audio[3]->size();
+    take.rangeStart = rangeStart;
+    take.rangeEnd = rangeEnd;
+    take.targetVersion = targetVersion;
+    take.songSource = getSongSource();
+    take.countIn = countInForTake;
+    take.countInBeats = countInForTake ? countInBeats : 0;
+    take.countInBpm = getCountInBpm();
+    takeNeeded = take.sectionSamples + take.alignSamples;
+
+    auto& player = ampSim.getPreviewPlayer();
+    applySongPlayerSettings();
+    player.setOnce (true);
+    player.setCountIn (take.countInBeats, 60.0 * 48000.0 / take.countInBpm);
+    ampSim.getDiRecorder().arm ((int) takeNeeded); // before the start, which releases it to the audio thread
+    player.startFresh();
+    takeRunning = true;
+    return true;
+}
+
+void ToneMatchSession::finishTake (bool complete)
+{
+    if (! takeRunning)
+        return;
+    takeRunning = false;
+    auto& recorder = ampSim.getDiRecorder();
+    recorder.stop();
+    ampSim.getPreviewPlayer().setPlaying (false);
+    publishMaterial(); // anything the comparison rendered during the take
+
+    take.raw = recorder.getRecording();
+    take.complete = complete && (int64_t) take.raw.size() >= takeNeeded;
+    // The reference: the take from the aligned start, at most the section's length.
+    const auto from = (size_t) std::min<int64_t> (take.alignSamples, (int64_t) take.raw.size());
+    const auto to = (size_t) std::min<int64_t> (take.alignSamples + take.sectionSamples, (int64_t) take.raw.size());
+    if (to - from < (size_t) (minReferenceSeconds * 48000.0))
+    {
+        error = "The take was too short to match (at least " + juce::String ((int) minReferenceSeconds) + " s of the section)";
+        return;
+    }
+    setReferenceSignal (std::vector<float> (take.raw.begin() + (std::ptrdiff_t) from, take.raw.begin() + (std::ptrdiff_t) to), "Play-along take");
+    take.valid = true;
+    mode = Mode::samePart; // the notes line up now (switchable)
+}
+
+bool ToneMatchSession::referenceIsTake() const
+{
+    return take.valid && take.targetVersion == targetVersion && sameSeconds (take.rangeStart, rangeStart) && sameSeconds (take.rangeEnd, rangeEnd);
+}
+
+int ToneMatchSession::getCountInRemaining() const
+{
+    return (takeRunning || targetPlaying) ? ampSim.getPreviewPlayer().getCountInRemaining() : 0;
+}
+
+double ToneMatchSession::getSectionPlayheadSeconds() const
+{
+    if (! (takeRunning || targetPlaying))
+        return -1.0;
+    const auto& player = ampSim.getPreviewPlayer();
+    const auto source = player.getSoundingSource();
+    if (source != 3 && source != 4)
+        return -1.0;
+    return (double) player.getPlayheadPosition() / 48000.0;
+}
+
+// ---- The tempo suggestion ---------------------------------------------------------------------------------
+
+void ToneMatchSession::startTempoEstimate()
+{
+    joinTempo();
+    tempoRangeStart = rangeStart;
+    tempoRangeEnd = rangeEnd;
+    tempoTargetVersion = targetVersion;
+    suggestedBpm = 0.0;
+    tempoCancel = false;
+    tempoRunning = true;
+    tempoWorker = std::thread ([this, x = targetSelection()] {
+        const auto t = ampsim::tonematch::estimateTempo (x.data(), (int) x.size(), 48000.0, tempoCancel);
+        if (! tempoCancel.load())
+            suggestedBpm = t.confident ? t.bpm : 0.0;
+        tempoRunning = false;
+    });
+}
+
+void ToneMatchSession::joinTempo()
+{
+    if (tempoWorker.joinable())
+    {
+        tempoCancel = true;
+        tempoWorker.join();
+    }
+}
+
+bool ToneMatchSession::waitForTempo (int timeoutMs)
+{
+    const auto end = juce::Time::getMillisecondCounterHiRes() + timeoutMs;
+    while (juce::Time::getMillisecondCounterHiRes() < end)
+    {
+        poll();
+        if (! tempoRunning && sameSeconds (tempoRangeStart, rangeStart) && sameSeconds (tempoRangeEnd, rangeEnd) && tempoTargetVersion == targetVersion)
+            return true;
+        juce::Thread::sleep (5);
+    }
+    return false;
 }

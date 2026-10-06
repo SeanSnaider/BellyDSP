@@ -4,6 +4,8 @@
 #pragma once
 
 #include "PluginProcessor.h"
+#include "dsp/Tempo.h"
+#include "platform/DeviceLatency.h"
 #include "tonematch/ToneMatcher.h"
 
 #include <array>
@@ -51,8 +53,11 @@ public:
     std::vector<float> targetSelection() const;
 
     // ---- The reference (the player's DI) ---------------------------------------------------------------
+    /// Record without a target: the DI from the next buffer, up to a minute, until stopRecording().
     void startRecording();
+    /// Stops a recording or a play-along take (a take stopped early keeps what lines up with the section).
     void stopRecording();
+    /// Recording, or a play-along take running (its count-in included).
     bool isRecording() const;
     bool setReferenceFile (const juce::File& file);
     void setReferenceSignal (std::vector<float> samples48k, const juce::String& name);
@@ -73,6 +78,91 @@ public:
                                                          const ampsim::tonematch::ProgressFn&, juce::String& error)>;
     void setSeparator (SeparateFn fn) { separator = std::move (fn); }
     bool hasSeparator() const { return separator != nullptr; }
+
+    // ---- Hearing the target, and playing along (docs/TONE_MATCH.md, "Play along") ------------------------
+    // The selected section is played by the processor's PreviewPlayer (sources 3, the song, and 4, its
+    // separated guitar), the same player and the same handoff as the A/B. The Target card's Play loops it;
+    // a play-along take (Record with a target loaded) plays it once, after a count-in, while recording the
+    // DI from the song's first sample, and lines the take up with the section by the device's round trip.
+    enum SongSource
+    {
+        songFull = 0,
+        songGuitar = 1
+    };
+    /// The separated guitar of exactly the selected section (a separated match on this range made it).
+    bool hasGuitarStem() const;
+    void setSongSource (int songSource);
+    /// What plays: the guitar only if chosen and there's a stem for this section, otherwise the full song.
+    int getSongSource() const noexcept { return songSource == songGuitar && hasGuitarStem() ? songGuitar : songFull; }
+    void setSongLevelDb (float db);
+    float getSongLevelDb() const noexcept { return songLevelDb; }
+
+    /// The Target card's Play: the selected section, looped (after a count-in if that's on for Play).
+    void setTargetPlaying (bool shouldPlay);
+    bool isTargetPlaying() const noexcept { return targetPlaying; }
+
+    /// Record with a target loaded: count-in (if on), then the section once, the DI recorded from its first
+    /// sample; the take ends by itself at the section's end (plus the round trip). False without a target.
+    bool startPlayAlong();
+    bool isPlayingAlong() const noexcept { return takeRunning; }
+
+    /// The count-in: clicks at a tempo before the song. On before Record by default, off before Play.
+    void setCountInForTake (bool on) { countInForTake = on; }
+    bool getCountInForTake() const noexcept { return countInForTake; }
+    void setCountInForPlay (bool on) { countInForPlay = on; }
+    bool getCountInForPlay() const noexcept { return countInForPlay; }
+    void setCountInBeats (int beats); ///< 2 or 4
+    int getCountInBeats() const noexcept { return countInBeats; }
+    /// The count-in's tempo: the app's tempo (tempo_bpm, with its Tap) until one is set here.
+    void setCountInBpm (double bpm);
+    double getCountInBpm() const;
+    bool isCountInBpmSetHere() const noexcept { return countInBpmSetHere; }
+    /// A tap of the page's Tap button (the app's TapTempo rules: 2 s apart starts over, strays ignored).
+    void tapCountInTempo (double nowSeconds);
+    static constexpr double minBpm = 30.0, maxBpm = 300.0;
+    void setClickLevelDb (float db);
+    float getClickLevelDb() const noexcept { return clickLevelDb; }
+    static constexpr float minLevelDb = -30.0f, maxLevelDb = 6.0f;
+
+    /// The section's tempo, estimated from its onsets on a worker after the range stays still (0: none yet,
+    /// or no clear tempo). A suggestion only; nothing waits for it.
+    double getSuggestedBpm() const noexcept { return suggestedBpm.load(); }
+    /// For tests: let the tempo worker finish.
+    bool waitForTempo (int timeoutMs);
+
+    /// How far the take's DI is shifted to line up: the device's reported input and output latencies plus
+    /// this (ms; positive if you hear yourself playing late against the song in the take).
+    void setLatencyOffsetMs (double ms);
+    double getLatencyOffsetMs() const noexcept { return latencyOffsetMs; }
+    static constexpr double minOffsetMs = -50.0, maxOffsetMs = 200.0;
+    /// Where the latencies come from (the standalone app's device; tests put a fake device here).
+    void setLatencySource (std::function<platform::device::Latency()> source) { latencySource = std::move (source); }
+
+    /// The take's progress: the beats left in the count-in (4, 3, 2, 1; 0 when not counting in), and the
+    /// song's position in the section (seconds; -1 when nothing of the section plays).
+    int getCountInRemaining() const;
+    double getSectionPlayheadSeconds() const;
+
+    /// The last play-along take and how it was lined up.
+    struct Take
+    {
+        bool valid = false;
+        platform::device::Latency latency; ///< as reported when it started
+        double offsetMs = 0.0;
+        int64_t alignSamples = 0;          ///< input + output + offset: the raw recording's sample for the section's start
+        int64_t sectionSamples = 0;
+        double rangeStart = 0.0, rangeEnd = 0.0;
+        int targetVersion = -1;
+        int songSource = songFull;
+        bool countIn = false;
+        int countInBeats = 0;
+        double countInBpm = 0.0;
+        bool complete = false;             ///< ran to the section's end (not stopped early)
+        std::vector<float> raw;            ///< the DI from the song's first sample
+    };
+    const Take& getTake() const noexcept { return take; }
+    /// The reference is a play-along take of the section selected now (so same part uses the band).
+    bool referenceIsTake() const;
 
     // ---- Matching ----------------------------------------------------------------------------------------
     /// Empty when a match can start; otherwise what's missing, in words for the page.
@@ -188,6 +278,12 @@ public:
     bool startCompareRender (bool renderMatch);
 
 private:
+    void finishTake (bool complete);
+    void refreshSongMaterial();
+    void publishMaterial();
+    void startTempoEstimate();
+    void joinTempo();
+    void applySongPlayerSettings();
     void join();
     void joinCompare();
     void pollCompare();
@@ -242,5 +338,31 @@ private:
     std::pair<int64_t, int64_t> diLoop { 0, 0 };
     std::array<double, numSources> loudness {};
     std::array<float, numSources> matchGainDb {};
-    std::unique_ptr<ampsim::PreviewPlayer::Material> material; // a copy of what the player has (its tables), message thread
+    std::unique_ptr<ampsim::PreviewPlayer::Material> material; // what the player has (the newest published), message thread
+
+    // Hearing the target and playing along.
+    bool targetPlaying = false, takeRunning = false, countInForTake = true, countInForPlay = false, countInBpmSetHere = false;
+    int songSource = songFull, countInBeats = 4;
+    double countInBpm = 120.0, latencyOffsetMs = 0.0;
+    float songLevelDb = 0.0f, clickLevelDb = -6.0f;
+    ampsim::TapTempo tapTempo;
+    Take take;
+    int64_t takeNeeded = 0;
+    std::function<platform::device::Latency()> latencySource;
+    // The song material's section (what source 3 and 4 hold), so a range change rebuilds them.
+    double songRangeStart = -1.0, songRangeEnd = -1.0;
+    int songTargetVersion = -1;
+    bool songStem = false;
+    double rangeChangedMs = 0.0;
+    // What the finished match compared, for the guitar stem: separated, its range, its target.
+    bool matchedSeparated = false, pendingSeparated = false;
+    double matchedRangeStart = -1.0, matchedRangeEnd = -1.0, pendingRangeStart = 0.0, pendingRangeEnd = 0.0;
+    int matchedTargetVersion = -1, pendingTargetVersion = -1;
+    bool pendingBand = false;
+    // The tempo estimate's worker.
+    std::thread tempoWorker;
+    std::atomic<bool> tempoCancel { false }, tempoRunning { false };
+    std::atomic<double> suggestedBpm { 0.0 };
+    double tempoRangeStart = -1.0, tempoRangeEnd = -1.0;
+    int tempoTargetVersion = -1;
 };

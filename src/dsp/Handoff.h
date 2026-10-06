@@ -42,6 +42,9 @@ public:
         delete pending.exchange (obj.release());
     }
 
+    /// Any thread: whether a published object is waiting to be taken.
+    bool hasPending() const noexcept { return pending.load() != nullptr; }
+
     /// Audio thread. Returns the newest published object, or nullptr. The caller now owns it.
     T* take() noexcept { return pending.exchange (nullptr); }
 

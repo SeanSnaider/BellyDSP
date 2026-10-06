@@ -1,0 +1,27 @@
+{
+ "target_anything.wav": {
+  "bpm": 120.00362550807324,
+  "confidence": 0.5570229381822579,
+  "confident": true
+ },
+ "target_same.wav": {
+  "bpm": 154.32294343510222,
+  "confidence": 0.5066696036017706,
+  "confident": true
+ },
+ "target_di_playalong.wav": {
+  "bpm": 159.1609885216974,
+  "confidence": 0.24332161871650923,
+  "confident": true
+ },
+ "reference_di.wav": {
+  "bpm": 119.96970823391375,
+  "confidence": 0.6695203959304228,
+  "confident": true
+ },
+ "separation_mix.wav": {
+  "bpm": 119.9880302527147,
+  "confidence": 0.5817926763038272,
+  "confident": true
+ }
+}
