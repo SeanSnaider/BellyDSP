@@ -322,6 +322,8 @@ juce_add_plugin(BellyDSP
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
     MICROPHONE_PERMISSION_ENABLED TRUE
     MICROPHONE_PERMISSION_TEXT "BellyDSP needs audio input to hear your guitar."
+    # The Dock and taskbar icon (tools/content/make_icon.py); JUCE makes the .icns and .ico from it.
+    ICON_BIG resources/icon/BellyDSP_icon_1024.png
     ${AMPSIM_PLIST_ARGS})
 
 target_sources(BellyDSP PRIVATE
