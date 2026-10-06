@@ -9,6 +9,8 @@
 // stops at the section's end by itself, the live path is untouched (bit for bit with the song silent) and
 // the output is live plus song at its level; and the tempo suggestion against its prototype.
 
+#include "BuiltInCaptures.h"
+#include "PluginEditor.h"
 #include "TestHelpers.h"
 #include "ToneMatchSession.h"
 #include "dsp/PreviewPlayer.h"
@@ -105,6 +107,31 @@ std::unique_ptr<AmpSimProcessor> makeProcessor()
     p->prepareToPlay (fs, blockSize);
     setParam (*p, "output_limit_on", 0.0f);
     return p;
+}
+
+bool savePng (const juce::Image& image, const juce::File& file)
+{
+    file.deleteFile();
+    juce::FileOutputStream stream (file);
+    return stream.openedOk() && juce::PNGImageFormat().writeImageToStream (image, stream);
+}
+
+/// The processor over `numSamples` of a quiet guitar, in 128-sample buffers (the page's audio, in effect).
+void play (AmpSimProcessor& p, int numSamples, ToneMatchSession* session = nullptr)
+{
+    static const auto guitar = guitarDI ((int) (20.0 * fs));
+    static int64_t at = 0;
+    juce::AudioBuffer<float> buffer (2, blockSize);
+    juce::MidiBuffer midi;
+    for (int start = 0; start < numSamples; start += blockSize)
+    {
+        buffer.clear();
+        for (int n = 0; n < blockSize; ++n)
+            buffer.setSample (0, n, 0.3f * guitar[(size_t) (at++ % (int64_t) guitar.size())]);
+        p.processBlock (buffer, midi);
+        if (session != nullptr && (start / blockSize) % 8 == 0)
+            session->poll();
+    }
 }
 
 /// The first sample at or after `from` where |a - b| exceeds `threshold`, or -1.
@@ -444,6 +471,155 @@ public:
                         + " samples recorded = the section + 256; 5 s of the riff with the gate on through the processor taking it, with the song silent: identical, bit for bit, "
                         "to the same processor without (" + juce::String ((int) a.size()) + " samples); Stop 3.5 s into a 5 s section kept "
                         + juce::String (session.getReferenceSeconds(), 3) + " s");
+        }
+
+        beginTest ("the page: Play on the Target card, the count-in, a take with its playhead, the take done (Same part, lined up); snapshots at 2x");
+        {
+            const auto shots = proofDir().getChildFile ("tone_match");
+            shots.createDirectory();
+            WithBuiltInCaptures builtIns;
+            AmpSimProcessor p;
+            for (int i = 0; i < 4000 && p.isLoading(); ++i)
+                juce::Thread::sleep (5);
+            p.prepareToPlay (fs, blockSize);
+            std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+            auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
+            ed.showPage (ui::PageId::toneMatch);
+            auto& page = ed.getToneMatchPage();
+            auto& session = page.getSession();
+            session.setLatencySource ([] {
+                platform::device::Latency l;
+                l.known = true;
+                l.inputSamples = 182; // what a 128-sample buffer on an interface like the Solo might report
+                l.outputSamples = 214;
+                return l;
+            });
+            juce::StringArray pngs;
+            auto snap = [&] (const juce::String& name) {
+                session.poll();
+                page.refresh();
+                ed.refresh();
+                const auto file = shots.getChildFile (name + ".png");
+                expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), file));
+                pngs.add ("tone_match/" + file.getFileName());
+            };
+
+            expect (session.setTargetFile (fixtures().getChildFile ("target_anything.wav")));
+            session.setRange (0.5, 8.5);
+            expect (session.waitForTempo (5000));
+            page.refresh();
+
+            // Play: the section looped; the playhead on the waveform.
+            page.toggleTargetPlay();
+            expect (session.isTargetPlaying());
+            expectEquals (page.getTargetPlayButton().getButtonText(), juce::String ("Stop"));
+            play (p, (int) (2.5 * fs), &session);
+            const auto previewHead = session.getSectionPlayheadSeconds();
+            expectWithinAbsoluteError (previewHead, 2.5, 0.05);
+            snap ("20_play_target");
+            page.toggleTargetPlay();
+            play (p, 4800, &session);
+            expect (! p.getPreviewPlayer().isActive());
+
+            // Record with the target loaded: the count-in (4 at 120 BPM), "3" one beat in.
+            session.setCountInBpm (120.0);
+            page.toggleRecording();
+            expect (session.isPlayingAlong());
+            play (p, (int) (0.75 * fs), &session);
+            page.refresh(); // as the page's timer does
+            expectEquals (session.getCountInRemaining(), 3);
+            expectEquals (page.getRecordButton().getButtonText(), juce::String ("Count-in... (Stop)"));
+            snap ("21_count_in");
+
+            // Recording, with the playhead 3 s into the section.
+            play (p, (int) (1.25 * fs + 3.0 * fs), &session);
+            page.refresh(); // as the page's timer does
+            expectEquals (session.getCountInRemaining(), 0);
+            expectEquals (page.getRecordButton().getButtonText(), juce::String ("Recording... (Stop)"));
+            const auto head = session.getSectionPlayheadSeconds();
+            expectWithinAbsoluteError (head, 3.0, 0.05);
+            expect (page.getReferenceStatus().startsWith ("Recording with the song"), page.getReferenceStatus());
+            snap ("22_recording");
+
+            // The rest of the section: the take ends by itself, Same part chosen, the caption says how it lined up.
+            play (p, (int) (5.2 * fs), &session);
+            session.poll();
+            page.refresh(); // as the page's timer does
+            expect (! session.isRecording());
+            expect (session.getTake().valid && session.getTake().complete);
+            expect (session.getMode() == ToneMatchSession::Mode::samePart);
+            expectEquals (page.getModeChoice().getSelected(), 0);
+            expectEquals (page.getRecordButton().getButtonText(), juce::String ("Record"));
+            expectWithinAbsoluteError (session.getReferenceSeconds(), 8.0, 1.0e-9);
+            expect (session.referenceIsTake());
+            snap ("23_take_done");
+            logMessage ("  -> Play: the section's playhead at " + juce::String (previewHead, 3) + " s after 2.5 s; the count-in showed 3 one beat in; recording with the playhead at "
+                        + juce::String (head, 3) + " s 3 s into the section; done: " + juce::String (session.getReferenceSeconds(), 3) + " s take lined up by "
+                        + juce::String ((double) session.getTake().alignSamples / 48.0, 2) + " ms, Same part chosen; the section's tempo suggested "
+                        + juce::String (session.getSuggestedBpm(), 1) + " BPM");
+            logMessage ("  -> snapshots: " + pngs.joinIntoString (", "));
+        }
+
+        beginTest ("Guitar only: after a separated match of this section the Target card offers the stem; it plays on the song's clock; a new range takes it away; snapshot at 2x");
+        {
+            WithBuiltInCaptures builtIns;
+            AmpSimProcessor p;
+            for (int i = 0; i < 4000 && p.isLoading(); ++i)
+                juce::Thread::sleep (5);
+            p.prepareToPlay (fs, blockSize);
+            setParam (p, "output_limit_on", 0.0f);
+            std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+            auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
+            ed.showPage (ui::PageId::toneMatch);
+            auto& page = ed.getToneMatchPage();
+            auto& session = page.getSession();
+            // A stand-in separator (the real one is ToneMatchSeparationTests'): the "stem" is the section at half level.
+            session.setSeparator ([] (const std::vector<float>& x, const std::atomic<bool>&, const ampsim::tonematch::ProgressFn&, juce::String&) {
+                auto y = x;
+                for (auto& v : y)
+                    v *= 0.5f;
+                return y;
+            });
+            expect (session.setTargetFile (fixtures().getChildFile ("target_anything.wav")));
+            expect (session.setReferenceFile (fixtures().getChildFile ("reference_di.wav")));
+            session.setRange (0.5, 6.5);
+            session.setSeparate (true);
+            expect (! session.hasGuitarStem());
+            expect (session.startMatch());
+            expect (session.waitForMatch (120000));
+            expect (session.hasResult(), session.getError());
+            expect (session.hasGuitarStem());
+            page.refresh();
+            expect (page.getSongChoice().isVisible());
+
+            // Guitar only: the player sounds source 4, the stem; the output is half the full song's (it is the song x 0.5).
+            page.getSongChoice().setSelected (1, juce::sendNotification);
+            expectEquals (session.getSongSource(), (int) ToneMatchSession::songGuitar);
+            page.toggleTargetPlay();
+            play (p, (int) (1.0 * fs), &session);
+            expectEquals (p.getPreviewPlayer().getSoundingSource(), 4);
+            const auto before = session.getSectionPlayheadSeconds();
+            page.getSongChoice().setSelected (0, juce::sendNotification); // back to the full song, mid-play
+            play (p, 4800, &session);
+            expectEquals (p.getPreviewPlayer().getSoundingSource(), 3);
+            const auto after = session.getSectionPlayheadSeconds();
+            expectWithinAbsoluteError (after - before, 0.1, 0.01); // the same clock: it carried on
+            page.getSongChoice().setSelected (1, juce::sendNotification);
+            play (p, 4800, &session);
+            page.refresh();
+            const auto shot = proofDir().getChildFile ("tone_match").getChildFile ("24_play_guitar_only.png");
+            expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), shot));
+            page.toggleTargetPlay();
+
+            // Another range: the stem was of the old one, so it's gone and the full song plays.
+            session.setRange (1.0, 7.0);
+            page.refresh();
+            expect (! session.hasGuitarStem());
+            expect (! page.getSongChoice().isVisible());
+            expectEquals (session.getSongSource(), (int) ToneMatchSession::songFull);
+            logMessage ("  -> a separated match of 0:00.5 to 0:06.5 (a stand-in separator): Guitar only offered and played (source 4); switched to the full song "
+                        + juce::String (before, 3) + " s in, it carried on at " + juce::String (after, 3) + " s 0.1 s later; another range: Guitar only gone; tone_match/"
+                        + shot.getFileName());
         }
 
         beginTest ("the tempo suggestion: the C++ estimate against its prototype on the fixtures, and the session offers it once the range is still");

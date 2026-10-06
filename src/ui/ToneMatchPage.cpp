@@ -40,7 +40,7 @@ void drawWrapped (juce::Graphics& g, const juce::String& s, juce::Rectangle<int>
     g.drawFittedText (s, area, juce::Justification::topLeft, 4, 1.0f);
 }
 
-constexpr int waveformHeight = 96;
+constexpr int waveformHeight = 84;
 
 const char* const honestNote =
     "A song only holds the rig's output, mixed with everything else, so the real amp can't be recovered. "
@@ -119,15 +119,46 @@ public:
         g.fillRect (juce::Rectangle<float> (x0 - 1.0f, r.getY() + 1.0f, 2.0f, r.getHeight() - 2.0f));
         g.fillRect (juce::Rectangle<float> (x1 - 1.0f, r.getY() + 1.0f, 2.0f, r.getHeight() - 2.0f));
 
+        // The playhead while the section plays (Play, or a take); during a take what's recorded so far is
+        // shaded, so you see where you are in the section.
+        if (const auto head = session.getSectionPlayheadSeconds(); head >= 0.0)
+        {
+            const auto x = xFor (start + head);
+            if (session.isPlayingAlong())
+            {
+                g.setColour (accent.withAlpha (0.22f));
+                g.fillRect (juce::Rectangle<float> (x0, r.getY() + 1.0f, x - x0, r.getHeight() - 2.0f));
+            }
+            g.setColour (ink);
+            g.fillRect (juce::Rectangle<float> (x - 1.0f, r.getY() + 1.0f, 2.0f, r.getHeight() - 2.0f));
+        }
+
         g.setFont (font (Text::caption));
         g.setColour (inkFaint);
         g.drawText ("0:00", getLocalBounds().reduced (6, 3), juce::Justification::bottomLeft, false);
         g.drawText (timeText (length), getLocalBounds().reduced (6, 3), juce::Justification::bottomRight, false);
+
+        // The count-in: the beats left (4, 3, 2, 1), large, over the start of the section.
+        if (const auto count = session.getCountInRemaining(); count > 0)
+        {
+            const auto badge = juce::Rectangle<float> (92.0f, 64.0f).withCentre ({ juce::jlimit (48.0f, r.getRight() - 48.0f, x0 + 50.0f), r.getCentreY() });
+            g.setColour (bg.withAlpha (0.9f));
+            g.fillRoundedRectangle (badge, radiusControl);
+            g.setColour (accent);
+            g.drawRoundedRectangle (badge.reduced (0.5f), radiusControl, 1.0f);
+            g.setFont (tabular (geist (Weight::light, 40.0f)));
+            g.setColour (ink);
+            g.drawText (juce::String (count), badge.withTrimmedBottom (14.0f), juce::Justification::centred, false);
+            g.setFont (font (Text::caption));
+            g.setColour (inkDim);
+            g.drawText ("count-in", badge.withTrimmedTop (44.0f).withTrimmedBottom (4.0f), juce::Justification::centred, false);
+        }
     }
 
     void mouseDown (const juce::MouseEvent& e) override
     {
-        if (session.getTargetSeconds() <= 0.0)
+        drag = Drag::none;
+        if (session.getTargetSeconds() <= 0.0 || session.isPlayingAlong()) // the section stays put during a take
             return;
         const auto [start, end] = session.getRange();
         const auto x = (float) e.x;
@@ -168,6 +199,8 @@ public:
 
     void mouseUp (const juce::MouseEvent& e) override
     {
+        if (session.isPlayingAlong())
+            return;
         // A click without a drag puts a default-length range (30 s, or what fits) starting there.
         if (drag == Drag::create && ! dragged)
         {
@@ -650,6 +683,128 @@ private:
     float value = 0.0f;
 };
 
+// ---- A number in a field ---------------------------------------------------------------------------------------
+
+class ToneMatchPage::NumberField final : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    NumberField (juce::String labelText, double lo, double hi, double stepSize, int decimalPlaces, juce::String unit, bool signedValue = false)
+        : label (std::move (labelText)), suffix (std::move (unit)), minimum (lo), maximum (hi), step (stepSize), decimals (decimalPlaces), showSign (signedValue)
+    {
+        setMouseCursor (juce::MouseCursor::UpDownResizeCursor);
+    }
+
+    std::function<void (double)> onChange;
+
+    void setValue (double v)
+    {
+        v = juce::jlimit (minimum, maximum, std::round (v / step) * step);
+        if (std::abs (v - value) > 1.0e-12)
+        {
+            value = v;
+            repaint();
+        }
+    }
+    double getValue() const noexcept { return value; }
+
+    /// What the user did (the tests call it as a drag would).
+    void setValueFromUser (double v)
+    {
+        setValue (v);
+        if (onChange)
+            onChange (value);
+    }
+
+    juce::String valueText() const
+    {
+        return (showSign && value > 0.0 ? "+" : "") + juce::String (value, decimals) + suffix;
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        const auto b = getLocalBounds().toFloat().reduced (0.5f);
+        g.setColour (surface);
+        g.fillRoundedRectangle (b, 5.0f);
+        g.setColour (dragging ? accent : (isMouseOver() ? inkFaint : line2));
+        g.drawRoundedRectangle (b, 5.0f, 1.0f);
+        if (entry != nullptr)
+            return;
+        auto area = getLocalBounds().reduced (8, 0);
+        g.setFont (font (Text::label));
+        g.setColour (isEnabled() ? inkDim : inkFaint);
+        g.drawText (label, area, juce::Justification::centredLeft, false);
+        g.setFont (tabular (font (Text::value)));
+        g.setColour (isEnabled() ? ink : inkFaint);
+        g.drawText (valueText(), area, juce::Justification::centredRight, false);
+    }
+
+    void mouseEnter (const juce::MouseEvent&) override { repaint(); }
+    void mouseExit (const juce::MouseEvent&) override { repaint(); }
+    void mouseDown (const juce::MouseEvent&) override
+    {
+        dragStart = value;
+        dragging = true;
+        repaint();
+    }
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        // One step per 3 px up; with Shift, a tenth of that.
+        const auto steps = -e.getDistanceFromDragStartY() / (e.mods.isShiftDown() ? 30.0 : 3.0);
+        setValueFromUser (dragStart + std::round (steps) * step);
+    }
+    void mouseUp (const juce::MouseEvent&) override
+    {
+        dragging = false;
+        repaint();
+    }
+    void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails& wheel) override
+    {
+        if (wheel.deltaY != 0.0f)
+            setValueFromUser (value + (wheel.deltaY > 0.0f ? step : -step));
+    }
+    void mouseDoubleClick (const juce::MouseEvent&) override { showEntry(); }
+
+private:
+    void showEntry()
+    {
+        entry = std::make_unique<juce::TextEditor>();
+        entry->setFont (font (Text::value));
+        entry->setJustification (juce::Justification::centredRight);
+        entry->setIndents (6, 1);
+        entry->setText (juce::String (value, decimals), false);
+        entry->setSelectAllWhenFocused (true);
+        // Deleted later, never from inside its own callbacks.
+        const auto finish = [safe = juce::Component::SafePointer<NumberField> (this)] (bool apply) {
+            juce::MessageManager::callAsync ([safe, apply] {
+                if (safe == nullptr || safe->entry == nullptr)
+                    return;
+                const auto typed = safe->entry->getText().trim();
+                safe->entry.reset();
+                if (apply && typed.containsAnyOf ("0123456789"))
+                    safe->setValueFromUser (typed.getDoubleValue());
+                safe->repaint();
+            });
+        };
+        entry->onReturnKey = [finish] { finish (true); };
+        entry->onEscapeKey = [finish] { finish (false); };
+        entry->onFocusLost = [finish] { finish (true); };
+        addAndMakeVisible (*entry);
+        entry->setBounds (getLocalBounds().reduced (2));
+        if (isShowing())
+            entry->grabKeyboardFocus();
+        entry->selectAll();
+        repaint();
+    }
+
+    juce::String label, suffix;
+    double minimum, maximum, step;
+    int decimals;
+    bool showSign;
+    double value = 0.0, dragStart = 0.0;
+    bool dragging = false;
+    std::unique_ptr<juce::TextEditor> entry;
+};
+
 // ---- The page -------------------------------------------------------------------------------------------------
 
 ToneMatchPage::ToneMatchPage (AmpSimProcessor& p)
@@ -736,6 +891,63 @@ ToneMatchPage::ToneMatchPage (AmpSimProcessor& p)
     };
     addChildComponent (*levelBar);
 
+    // Hearing the target, and playing along.
+    targetPlayButton = &addButton ("Play", [this] { toggleTargetPlay(); });
+    targetPlayButton->setTooltip ("Play the selected section, looped, through your output, with your guitar on top");
+    songChoice = std::make_unique<Segmented> (juce::StringArray { "Full song", "Guitar only" });
+    songChoice->onChange = [this] (int i) {
+        session.setSongSource (i);
+        repaint (targetCard);
+    };
+    addChildComponent (*songChoice); // once a separated match made the section's guitar
+    songLevelBar = std::make_unique<LevelBar>();
+    songLevelBar->setTooltip ("The song's level, for Play and for playing along (double-click: 0 dB)");
+    songLevelBar->setDb (session.getSongLevelDb());
+    songLevelBar->onChange = [this] (float db) {
+        session.setSongLevelDb (db);
+        repaint (songLevelValueArea);
+    };
+    addAndMakeVisible (*songLevelBar);
+    countInPlaySwitch = std::make_unique<Switch> ("Count-in before Play");
+    countInPlaySwitch->setToggleState (session.getCountInForPlay(), juce::dontSendNotification);
+    countInPlaySwitch->onClick = [this] { session.setCountInForPlay (countInPlaySwitch->getToggleState()); };
+    addAndMakeVisible (*countInPlaySwitch);
+
+    countInSwitch = std::make_unique<Switch> ("Count-in");
+    countInSwitch->setToggleState (session.getCountInForTake(), juce::dontSendNotification);
+    countInSwitch->setTooltip ("Clicks before the song when you press Record with a target loaded");
+    countInSwitch->onClick = [this] { session.setCountInForTake (countInSwitch->getToggleState()); };
+    addAndMakeVisible (*countInSwitch);
+    beatsChoice = std::make_unique<Segmented> (juce::StringArray { "4 beats", "2 beats" });
+    beatsChoice->setSelected (session.getCountInBeats() == 2 ? 1 : 0);
+    beatsChoice->onChange = [this] (int i) { session.setCountInBeats (i == 1 ? 2 : 4); };
+    addAndMakeVisible (*beatsChoice);
+    bpmField = std::make_unique<NumberField> ("Tempo", ToneMatchSession::minBpm, ToneMatchSession::maxBpm, 0.5, 1, " BPM");
+    bpmField->setTooltip ("The count-in's tempo: the app's tempo until you set one here (drag, scroll, or double-click to type)");
+    bpmField->onChange = [this] (double bpm) { session.setCountInBpm (bpm); };
+    addAndMakeVisible (*bpmField);
+    tapButton = &addButton ("Tap", [this] {
+        session.tapCountInTempo (juce::Time::getMillisecondCounterHiRes() / 1000.0);
+        refresh();
+    });
+    tapButton->setTooltip ("Tap the song's beat: the count-in follows");
+    suggestionButton = &addButton ("Song", [this] {
+        if (session.getSuggestedBpm() > 0.0)
+            session.setCountInBpm (std::round (session.getSuggestedBpm() * 2.0) / 2.0);
+        refresh();
+    });
+    suggestionButton->setTooltip ("The section's tempo, measured from its onsets. A suggestion: on a solo line it can be half, double, or off");
+    clickField = std::make_unique<NumberField> ("Click", ToneMatchSession::minLevelDb, ToneMatchSession::maxLevelDb, 0.5, 1, " dB", true);
+    clickField->setTooltip ("The count-in clicks' level");
+    clickField->setValue (session.getClickLevelDb());
+    clickField->onChange = [this] (double db) { session.setClickLevelDb ((float) db); };
+    addAndMakeVisible (*clickField);
+    offsetField = std::make_unique<NumberField> ("Offset", ToneMatchSession::minOffsetMs, ToneMatchSession::maxOffsetMs, 0.5, 1, " ms", true);
+    offsetField->setTooltip ("Added to your interface's reported round trip when a take is lined up: raise it if the take still sounds late against the song");
+    offsetField->setValue (session.getLatencyOffsetMs());
+    offsetField->onChange = [this] (double ms) { session.setLatencyOffsetMs (ms); };
+    addAndMakeVisible (*offsetField);
+
     setWantsKeyboardFocus (true);
     refresh();
 }
@@ -762,8 +974,10 @@ void ToneMatchPage::pageShown()
 
 void ToneMatchPage::pageHidden()
 {
-    // Leaving the page stops the comparison, so the live guitar comes back.
+    // Leaving the page stops the comparison and the Target card's Play, so the live guitar comes back
+    // alone. A take keeps going (it ends by itself at the section's end).
     session.setPreviewPlaying (false);
+    session.setTargetPlaying (false);
 
     // A recording or a match keeps going while another page shows (the session runs it); only the display stops.
     if (! session.isRecording() && ! session.isMatching())
@@ -776,6 +990,8 @@ void ToneMatchPage::timerCallback()
     refresh();
     repaint (matchCard);
     repaint (referenceCard);
+    if (session.isTargetPlaying() || session.isPlayingAlong())
+        waveform->repaint();
     if (! isShowing() && ! session.isRecording() && ! session.isMatching() && ! session.isRenderingCompare())
         stopTimer();
 }
@@ -785,6 +1001,15 @@ void ToneMatchPage::togglePreview()
     session.setPreviewPlaying (! session.isPreviewPlaying());
     refresh();
     repaint (compareArea);
+    repaint (targetCard);
+}
+
+void ToneMatchPage::toggleTargetPlay()
+{
+    session.setTargetPlaying (! session.isTargetPlaying());
+    refresh();
+    repaint (compareArea);
+    waveform->repaint();
 }
 
 void ToneMatchPage::selectSource (int source)
@@ -853,15 +1078,38 @@ void ToneMatchPage::chooseReference()
 
 void ToneMatchPage::toggleRecording()
 {
+    // With a target loaded, Record is a play-along take (the count-in, then the section while you play);
+    // without one, it records your DI on its own.
     if (session.isRecording())
         session.stopRecording();
     else
     {
-        session.startRecording();
+        if (! session.getTarget().empty())
+            session.startPlayAlong();
+        else
+            session.startRecording();
         startTimerHz (15);
     }
     refresh();
     repaint();
+}
+
+juce::String ToneMatchPage::getReferenceStatus() const
+{
+    if (session.isPlayingAlong())
+    {
+        const auto count = session.getCountInRemaining();
+        if (count > 0)
+            return "Count-in: " + juce::String (count);
+        const auto head = session.getSectionPlayheadSeconds();
+        const auto [a, b] = session.getRange();
+        return "Recording with the song... " + juce::String (juce::jmax (0.0, head), 1) + " s of " + juce::String (b - a, 1);
+    }
+    if (session.isRecording())
+        return "Recording your DI... " + juce::String (ampSim.getDiRecorder().recordedSeconds(), 1) + " s of " + juce::String ((int) ampsim::tonematch::DiRecorder::maxSeconds);
+    if (session.getReference().empty())
+        return session.getTarget().empty() ? "Record a minute of playing, or choose a DI file" : "Record to play along with the section";
+    return session.getReferenceName() + ", " + juce::String (session.getReferenceSeconds(), 1) + " s";
 }
 
 void ToneMatchPage::startMatch()
@@ -1006,8 +1254,35 @@ void ToneMatchPage::refresh()
     session.poll();
     const auto matching = session.isMatching();
     const auto recording = session.isRecording();
-    recordButton->setButtonText (recording ? "Stop" : "Record");
+    const auto take = session.isPlayingAlong();
+    recordButton->setButtonText (take ? (session.getCountInRemaining() > 0 ? "Count-in... (Stop)" : "Recording... (Stop)") : recording ? "Stop" : "Record");
+    recordButton->setTooltip (session.getTarget().empty() ? "Record your DI (up to a minute)"
+                                                          : "Play along: the count-in, then the section once while your DI records, lined up with it");
     recordButton->setEnabled (! matching);
+
+    // Hearing the target, and the count-in.
+    targetPlayButton->setEnabled (! session.getTarget().empty() && ! take && ! matching);
+    targetPlayButton->setButtonText (session.isTargetPlaying() ? "Stop" : "Play");
+    songChoice->setVisible (session.hasGuitarStem());
+    songChoice->setSelected (session.getSongSource(), juce::dontSendNotification);
+    songLevelBar->setEnabled (! session.getTarget().empty());
+    countInSwitch->setToggleState (session.getCountInForTake(), juce::dontSendNotification);
+    countInPlaySwitch->setToggleState (session.getCountInForPlay(), juce::dontSendNotification);
+    beatsChoice->setSelected (session.getCountInBeats() == 2 ? 1 : 0, juce::dontSendNotification);
+    bpmField->setValue (session.getCountInBpm());
+    if (const auto suggested = session.getSuggestedBpm(); suggested > 0.0)
+    {
+        const auto shown = std::round (suggested * 2.0) / 2.0;
+        suggestionButton->setButtonText ("Song " + juce::String (shown, std::abs (shown - std::round (shown)) < 0.01 ? 0 : 1));
+        suggestionButton->setVisible (true);
+        suggestionButton->setEnabled (std::abs (shown - session.getCountInBpm()) > 0.01);
+    }
+    else
+        suggestionButton->setVisible (false);
+    modeChoice->setSelected (session.getMode() == Mode::samePart ? 0 : 1, juce::dontSendNotification);
+    // A take uses the count-in and the offset it started with: they wait until it's done.
+    for (auto* c : std::initializer_list<juce::Component*> { countInSwitch.get(), beatsChoice.get(), bpmField.get(), tapButton, suggestionButton, offsetField.get() })
+        c->setEnabled (! take && (c != suggestionButton || suggestionButton->isEnabled()));
     referenceButton->setEnabled (! matching && ! recording);
     targetButton->setEnabled (! matching);
     matchButton->setEnabled (session.whyCantMatch().isEmpty());
@@ -1031,7 +1306,7 @@ void ToneMatchPage::refresh()
     for (auto* c : std::initializer_list<juce::Component*> { playButton, sourceChoice.get(), loopStrip.get(), levelMatchSwitch.get(), muteSwitch.get(), levelBar.get() })
     {
         c->setVisible (comparing);
-        c->setEnabled (ready);
+        c->setEnabled (ready && ! take);
     }
     playButton->setButtonText (session.isPreviewPlaying() ? "Stop" : "Play");
     loopStrip->setPlayhead (session.isPreviewPlaying() && ampSim.getPreviewPlayer().isActive() ? ampSim.getPreviewPlayer().getPlayheadFraction() : -1.0f);
@@ -1073,26 +1348,62 @@ void ToneMatchPage::resized()
     area.removeFromTop (space::m);
     resultCard = area;
 
-    // Target.
+    // Target: the file (and the section, painted at the right), the waveform, Play with the song's choice
+    // and level, the two switches, the hint.
     {
         auto in = card (targetCard, "Target");
         auto top = in.removeFromTop (controlHeight);
         targetButton->setBounds (top.removeFromLeft (110));
+        sectionTextArea = top.removeFromRight (190);
         in.removeFromTop (space::s);
         waveform->setBounds (in.removeFromTop (waveformHeight));
-        in.removeFromTop (space::s + 16); // the range line, painted
-        separateSwitch->setBounds (in.removeFromTop (Switch::preferredHeight).withWidth (separateSwitch->getPreferredWidth()));
+        in.removeFromTop (space::s);
+        auto play = in.removeFromTop (controlHeight);
+        targetPlayButton->setBounds (play.removeFromLeft (72));
+        play.removeFromLeft (space::l);
+        songChoice->setBounds (play.removeFromLeft (songChoice->getPreferredWidth()).withSizeKeepingCentre (songChoice->getPreferredWidth(), Segmented::preferredHeight));
+        songLevelValueArea = play.removeFromRight (48);
+        songLevelBar->setBounds (play.removeFromRight (130));
+        songLevelLabelArea = play.removeFromRight (70);
+        in.removeFromTop (space::s);
+        auto switches = in.removeFromTop (Switch::preferredHeight);
+        separateSwitch->setBounds (switches.removeFromLeft (separateSwitch->getPreferredWidth()).translated (-Switch::margin, 0));
+        switches.removeFromLeft (space::xl);
+        countInPlaySwitch->setBounds (switches.removeFromLeft (countInPlaySwitch->getPreferredWidth()).translated (-Switch::margin, 0));
     }
 
-    // Your DI.
+    // Your DI: Record and Choose file, the status, the mode and what it means, then the count-in (on, beats;
+    // the tempo, Tap, the song's measured tempo; the click's level and the latency offset).
     {
         auto in = card (referenceCard, "Your DI");
         auto top = in.removeFromTop (controlHeight);
-        recordButton->setBounds (top.removeFromLeft (84));
+        recordButton->setBounds (top.removeFromLeft (140));
         top.removeFromLeft (space::s);
         referenceButton->setBounds (top.removeFromLeft (110));
-        in.removeFromTop (space::s + 18 + space::m); // the status line, painted
+        in.removeFromTop (space::s);
+        statusLineArea = in.removeFromTop (18);
+        in.removeFromTop (10);
         modeChoice->setBounds (in.removeFromTop (Segmented::preferredHeight).withWidth (modeChoice->getPreferredWidth()));
+        in.removeFromTop (6);
+        modeCaptionArea = in.removeFromTop (30);
+        in.removeFromTop (space::s);
+        auto countRow = in.removeFromTop (Switch::preferredHeight);
+        countInSwitch->setBounds (countRow.removeFromLeft (countInSwitch->getPreferredWidth()).translated (-Switch::margin, 0));
+        countRow.removeFromLeft (space::m);
+        beatsChoice->setBounds (countRow.removeFromLeft (beatsChoice->getPreferredWidth()).withSizeKeepingCentre (beatsChoice->getPreferredWidth(), Segmented::preferredHeight));
+        in.removeFromTop (4);
+        auto tempoRow = in.removeFromTop (controlHeight);
+        bpmField->setBounds (tempoRow.removeFromLeft (126));
+        tempoRow.removeFromLeft (space::s);
+        tapButton->setBounds (tempoRow.removeFromLeft (48));
+        tempoRow.removeFromLeft (space::s);
+        suggestionButton->setBounds (tempoRow);
+        in.removeFromTop (4);
+        auto levelRow = in.removeFromTop (controlHeight);
+        const auto half = (levelRow.getWidth() - space::s) / 2;
+        clickField->setBounds (levelRow.removeFromLeft (half));
+        levelRow.removeFromLeft (space::s);
+        offsetField->setBounds (levelRow);
     }
 
     // Match, and under it the comparison (once there's a result).
@@ -1157,47 +1468,62 @@ void ToneMatchPage::paint (juce::Graphics& g)
         drawWrapped (g, honestNote, h.withTrimmedRight (100), Text::caption, inkFaint);
     }
 
-    // Target: the file, the range, the hint.
+    // Target: the file, the section, the song's level, the hint.
     {
         auto in = targetCard.reduced (cardPadding).withTrimmedTop (cardHeading);
         auto top = in.removeFromTop (controlHeight).withTrimmedLeft (110 + space::m);
+        top.removeFromRight (sectionTextArea.getWidth());
         const auto name = session.getTargetName();
-        drawText (g, name.isEmpty() ? "No file" : name + "  (" + timeText (session.getTargetSeconds()) + ")", top, Text::label, name.isEmpty() ? inkFaint : ink);
-        in.removeFromTop (space::s + waveformHeight + 4);
+        g.setFont (font (Text::label));
+        g.setColour (name.isEmpty() ? inkFaint : ink);
+        g.drawText (name.isEmpty() ? "No file" : name + "  (" + timeText (session.getTargetSeconds()) + ")", top, juce::Justification::centredLeft, true);
         const auto [start, end] = session.getRange();
-        drawText (g, session.getTarget().empty() ? juce::String() : "Matching " + timeText (start) + " to " + timeText (end) + "  (" + juce::String (end - start, 1) + " s)",
-                  in.removeFromTop (16), Text::value, inkDim);
-        in.removeFromTop (space::s + Switch::preferredHeight + space::s);
-        juce::String hint = "Pick a section where the lead guitar dominates. A song's other instruments and its mix change what's measured";
+        drawText (g, session.getTarget().empty() ? juce::String() : timeText (start) + " to " + timeText (end) + "  (" + juce::String (end - start, 1) + " s)",
+                  sectionTextArea, Text::value, inkDim, juce::Justification::centredRight);
+        drawText (g, "Song level", songLevelLabelArea, Text::label, session.getTarget().empty() ? inkFaint : inkDim, juce::Justification::centredRight);
+        drawText (g, (session.getSongLevelDb() > 0.0f ? "+" : "") + juce::String (session.getSongLevelDb(), 1) + " dB", songLevelValueArea, Text::caption,
+                  session.getTarget().empty() ? inkFaint : inkDim, juce::Justification::centredRight);
+        in.removeFromTop (space::s + waveformHeight + space::s + controlHeight + space::s + Switch::preferredHeight + 6);
+        juce::String hint = "Pick a section where the lead guitar dominates; the rest of the mix changes what's measured.";
         if (session.hasSeparator())
         {
-            hint << "; separation (Demucs) keeps every guitar, not just the lead, and takes about a minute per minute of audio.";
+            hint << " Separation (Demucs) keeps every guitar, not just the lead, and takes about a minute per minute of audio.";
             if (! separator->isInstalled())
                 hint << " The first time, it downloads the model (" << juce::String (juce::roundToInt ((double) ampsim::tonematch::GuitarSeparator::weightsBytes / 1.0e6))
-                     << " MB) from its author's page into the BellyDSP data folder.";
+                     << " MB) from its author's page.";
         }
-        else
-            hint << ".";
-        drawWrapped (g, hint, in.removeFromTop (48), Text::caption, inkFaint);
+        g.setFont (font (Text::caption));
+        g.setColour (inkFaint);
+        g.drawFittedText (hint, in, juce::Justification::topLeft, 3, 0.9f);
     }
 
-    // Your DI: what's recorded or chosen, and what the mode means.
+    // Your DI: what's recorded or chosen (or the take's progress), and what the mode means.
     {
-        auto in = referenceCard.reduced (cardPadding).withTrimmedTop (cardHeading + controlHeight + space::s);
-        juce::String status;
-        if (session.isRecording())
-            status = "Recording your DI... " + juce::String (ampSim.getDiRecorder().recordedSeconds(), 1) + " s of "
-                     + juce::String ((int) ampsim::tonematch::DiRecorder::maxSeconds);
-        else if (session.getReference().empty())
-            status = "Record a minute of playing, or choose a DI file";
+        const auto status = getReferenceStatus();
+        const auto busy = session.isRecording();
+        drawText (g, status, statusLineArea, Text::label, busy ? accent : (session.getReference().empty() ? inkFaint : ink));
+        juce::String caption;
+        if (session.getMode() == Mode::samePart && session.referenceIsTake() && ! busy)
+        {
+            const auto& t = session.getTake();
+            const auto roundTrip = (t.latency.inputSamples + t.latency.outputSamples) / 48.0;
+            const auto hasOffset = std::abs (t.offsetMs) > 0.01;
+            if (! t.latency.known)
+                caption = "Played along, lined up by the offset only (" + juce::String ((double) t.alignSamples / 48.0, 1) + " ms; no device latency here).";
+            else if (! hasOffset)
+                caption = "Played along, lined up by your interface's round trip (" + juce::String (roundTrip, 1) + " ms).";
+            else
+                caption = "Played along, lined up by " + juce::String ((double) t.alignSamples / 48.0, 1) + " ms (round trip " + juce::String (roundTrip, 1)
+                          + ", offset " + (t.offsetMs > 0 ? "+" : "") + juce::String (t.offsetMs, 1) + ").";
+            caption << " Same part matches near that.";
+        }
+        else if (session.getMode() == Mode::samePart)
+            caption = "Same part: you played the target's part. The two are lined up and compared moment by moment.";
         else
-            status = session.getReferenceName() + ", " + juce::String (session.getReferenceSeconds(), 1) + " s";
-        drawText (g, status, in.removeFromTop (18), Text::label, session.isRecording() ? accent : (session.getReference().empty() ? inkFaint : ink));
-        in.removeFromTop (space::m + Segmented::preferredHeight + space::s);
-        drawWrapped (g, session.getMode() == Mode::samePart
-                            ? "Same part: you played the same part as the target. The two are lined up in time and compared moment by moment."
-                            : "Anything: compared by long-term statistics. Play the same kind of part (a lead for a lead, in a similar register).",
-                     in.removeFromTop (48), Text::caption, inkFaint);
+            caption = "Anything: long-term statistics. Play the same kind of part (a lead for a lead, a similar register).";
+        g.setFont (font (Text::caption));
+        g.setColour (inkFaint);
+        g.drawFittedText (caption, modeCaptionArea, juce::Justification::topLeft, 2, 0.9f);
     }
 
     // Match: the progress and the stage (or what's missing).

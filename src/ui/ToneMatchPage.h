@@ -15,10 +15,14 @@ namespace ui
 /// with the honest note, three cards across (Target, Your DI, Match), and the result under them.
 ///
 ///   Target    Choose file... (or drop one on the page), the waveform with the range to match (drag to
-///             select, drag an edge or the middle to adjust; 3 to 60 s), and, when the build has it,
-///             "Separate the guitar first".
-///   Your DI   Record (the clean DI, up to a minute, through the app's own input) or Choose file..., and the
-///             mode: Same part (you played the same part) or Anything.
+///             select, drag an edge or the middle to adjust; 3 to 60 s), Play (the section, looped; Full song
+///             or Guitar only once a separated match made a stem; its level), and, when the build has it,
+///             "Separate the guitar first"; "Count-in before Play".
+///   Your DI   Record: with a target loaded, a play-along take (the count-in, then the section once while
+///             your DI records, lined up with it; docs/TONE_MATCH.md, "Play along"); without one, the clean
+///             DI up to a minute. Or Choose file... The mode: Same part or Anything. The count-in (on, 4 or
+///             2 beats, its tempo with Tap and the section's measured tempo as a suggestion, the click's
+///             level) and the latency offset.
 ///   Match     the button, the progress with its stage, and Cancel.
 ///   Result    the amp, Gain, tone, cab, and match EQ found; the closeness score with what it does and doesn't
 ///             mean; the match EQ curve over what it was fitted to; Apply (one undo step) and Discard.
@@ -70,6 +74,9 @@ public:
     juce::TextButton& getMatchButton() noexcept { return *matchButton; }
     juce::TextButton& getApplyButton() noexcept { return *applyButton; }
     juce::TextButton& getRecordButton() noexcept { return *recordButton; }
+    juce::TextButton& getTargetPlayButton() noexcept { return *targetPlayButton; }
+    juce::TextButton& getTapButton() noexcept { return *tapButton; }
+    juce::TextButton& getSuggestionButton() noexcept { return *suggestionButton; }
     Segmented& getModeChoice() noexcept { return *modeChoice; }
 
     /// The waveform: the target's peaks, with the selected range. Drag to select.
@@ -80,6 +87,23 @@ public:
     class LoopStrip;
     /// The preview level: a short horizontal bar, dragged.
     class LevelBar;
+    /// A number in a field (the count-in's tempo, the click's level, the latency offset): drag up or down,
+    /// scroll, or double-click to type.
+    class NumberField;
+
+    // ---- Hearing the target, and playing along ----------------------------------------------------------
+    /// The Target card's Play: the section, looped.
+    void toggleTargetPlay();
+    Segmented& getSongChoice() noexcept { return *songChoice; }
+    LevelBar& getSongLevelBar() noexcept { return *songLevelBar; }
+    Switch& getCountInSwitch() noexcept { return *countInSwitch; }
+    Switch& getCountInPlaySwitch() noexcept { return *countInPlaySwitch; }
+    Segmented& getBeatsChoice() noexcept { return *beatsChoice; }
+    NumberField& getBpmField() noexcept { return *bpmField; }
+    NumberField& getClickField() noexcept { return *clickField; }
+    NumberField& getOffsetField() noexcept { return *offsetField; }
+    /// The line under Your DI's status: what's recording, or how the take was lined up.
+    juce::String getReferenceStatus() const;
 
     // ---- Comparing (A/B) ----------------------------------------------------------------------------------
     /// Play or stop the comparison (the Play button, Space).
@@ -114,7 +138,12 @@ private:
     juce::TextButton* playButton = nullptr;
     juce::Rectangle<int> compareArea, loudnessRow, levelLabelArea, levelValueArea;
     bool spectraShown = false;
-    std::unique_ptr<Segmented> modeChoice;
+    std::unique_ptr<Segmented> modeChoice, songChoice, beatsChoice;
+    std::unique_ptr<LevelBar> songLevelBar;
+    std::unique_ptr<NumberField> bpmField, clickField, offsetField;
+    std::unique_ptr<Switch> countInSwitch, countInPlaySwitch;
+    juce::TextButton *targetPlayButton = nullptr, *tapButton = nullptr, *suggestionButton = nullptr;
+    juce::Rectangle<int> sectionTextArea, songLevelLabelArea, songLevelValueArea, statusLineArea, modeCaptionArea;
     std::unique_ptr<Switch> separateSwitch;
     juce::TextButton *targetButton = nullptr, *referenceButton = nullptr, *recordButton = nullptr, *matchButton = nullptr,
                      *cancelButton = nullptr, *applyButton = nullptr, *discardButton = nullptr, *closeButton = nullptr;
