@@ -373,7 +373,7 @@ public:
 
                     const auto t = summarize (blockTimes);
                     if (file == a1 && slots == 3)
-                        threeA1Fits = t.mean < 0.5 * deadlineMicros;
+                        threeA1Fits = t.mean < 0.5 * deadlineMicros * cpuBudgetScale();
 
                     logMessage ("  -> " + file.getFileName() + " x" + juce::String (slots) + ": mean " + micros (t.mean) + " ("
                                 + percentOfDeadline (t.mean) + " of deadline), p99 " + micros (t.p99) + ", worst "
