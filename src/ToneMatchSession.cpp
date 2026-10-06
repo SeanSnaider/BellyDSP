@@ -1122,12 +1122,137 @@ void ToneMatchSession::finishTake (bool complete)
     }
     setReferenceSignal (std::vector<float> (take.raw.begin() + (std::ptrdiff_t) from, take.raw.begin() + (std::ptrdiff_t) to), "Play-along take");
     take.valid = true;
+    ++takeNumber;
     mode = Mode::samePart; // the notes line up now (switchable)
 }
 
 bool ToneMatchSession::referenceIsTake() const
 {
     return take.valid && take.targetVersion == targetVersion && sameSeconds (take.rangeStart, rangeStart) && sameSeconds (take.rangeEnd, rangeEnd);
+}
+
+// ---- Saving a take ------------------------------------------------------------------------------------------
+
+namespace
+{
+/// 48 kHz mono, 32-bit float (so nothing is rounded on the way to the prototype).
+bool writeMonoWav (const juce::File& file, const std::vector<float>& x)
+{
+    file.deleteFile();
+    std::unique_ptr<juce::OutputStream> stream = std::make_unique<juce::FileOutputStream> (file);
+    if (! static_cast<juce::FileOutputStream&> (*stream).openedOk())
+        return false;
+    auto writer = juce::WavAudioFormat().createWriterFor (stream, juce::AudioFormatWriterOptions {}
+                                                                      .withSampleRate (48000.0)
+                                                                      .withNumChannels (1)
+                                                                      .withBitsPerSample (32)
+                                                                      .withSampleFormat (juce::AudioFormatWriterOptions::SampleFormat::floatingPoint));
+    if (writer == nullptr)
+        return false;
+    const float* channels[] = { x.data() };
+    return writer->writeFromFloatArrays (channels, 1, (int) x.size()) && writer->flush();
+}
+} // namespace
+
+bool ToneMatchSession::canSaveTake() const
+{
+    return ! takeRunning && ! recordingReference && referenceIsTake() && ! take.raw.empty() && ! reference.empty();
+}
+
+juce::File ToneMatchSession::defaultTakesFolder()
+{
+    return platform::userDataFolder().getChildFile ("ToneMatchTakes");
+}
+
+juce::File ToneMatchSession::saveTake (const juce::File& parent)
+{
+    if (! canSaveTake())
+    {
+        error = "There's no play-along take of this section to save";
+        return {};
+    }
+    auto name = juce::File::createLegalFileName (juce::File::createFileWithoutCheckingPath ("/" + targetName).getFileNameWithoutExtension()).trim();
+    if (name.isEmpty())
+        name = "target";
+    const auto stamp = juce::Time::getCurrentTime().formatted ("%Y%m%d-%H%M%S");
+    auto folder = parent.getChildFile (name + "-" + stamp);
+    for (int i = 2; folder.exists(); ++i)
+        folder = parent.getChildFile (name + "-" + stamp + "-" + juce::String (i));
+    if (! folder.createDirectory())
+    {
+        error = "Couldn't create " + folder.getFullPathName();
+        return {};
+    }
+
+    const auto stem = hasGuitarStem();
+    bool ok = writeMonoWav (folder.getChildFile ("target.wav"), targetSelection()) && writeMonoWav (folder.getChildFile ("di_raw.wav"), take.raw)
+              && writeMonoWav (folder.getChildFile ("di.wav"), reference);
+    if (ok && stem)
+        ok = writeMonoWav (folder.getChildFile ("stem.wav"), *comparedTarget);
+
+    // How the take was lined up (docs/TONE_MATCH.md, "Lining it up"), and the match's DTW path if a same-part
+    // match of exactly this take exists (the path is against the winning slot's render at Gain 0, in analysis
+    // frames: frame f covers samples f hop .. f hop + fftSize).
+    auto* root = new juce::DynamicObject();
+    juce::var json (root);
+    root->setProperty ("format", "bellydsp-tone-match-take");
+    root->setProperty ("version", 1);
+    root->setProperty ("app_version", platform::appVersion());
+    root->setProperty ("saved", juce::Time::getCurrentTime().toISO8601 (true));
+    root->setProperty ("sample_rate", 48000);
+    root->setProperty ("target_file", targetName);
+    root->setProperty ("range_start_s", rangeStart);
+    root->setProperty ("range_end_s", rangeEnd);
+    juce::var files (new juce::DynamicObject());
+    files.getDynamicObject()->setProperty ("target", "target.wav");
+    files.getDynamicObject()->setProperty ("stem", stem ? juce::var ("stem.wav") : juce::var());
+    files.getDynamicObject()->setProperty ("di_raw", "di_raw.wav");
+    files.getDynamicObject()->setProperty ("di", "di.wav");
+    root->setProperty ("files", files);
+    root->setProperty ("section_samples", (juce::int64) take.sectionSamples);
+    root->setProperty ("align_samples", (juce::int64) take.alignSamples);
+    root->setProperty ("latency_ms", (double) take.alignSamples / 48.0);
+    root->setProperty ("complete", take.complete);
+    juce::var latency (new juce::DynamicObject());
+    latency.getDynamicObject()->setProperty ("known", take.latency.known);
+    latency.getDynamicObject()->setProperty ("input_samples", take.latency.inputSamples);
+    latency.getDynamicObject()->setProperty ("output_samples", take.latency.outputSamples);
+    latency.getDynamicObject()->setProperty ("buffer_size", take.latency.bufferSize);
+    latency.getDynamicObject()->setProperty ("device_sample_rate", take.latency.sampleRate);
+    root->setProperty ("device_latency", latency);
+    root->setProperty ("offset_ms", take.offsetMs);
+    juce::var countIn (new juce::DynamicObject());
+    countIn.getDynamicObject()->setProperty ("on", take.countIn);
+    countIn.getDynamicObject()->setProperty ("beats", take.countInBeats);
+    countIn.getDynamicObject()->setProperty ("bpm", take.countInBpm);
+    root->setProperty ("count_in", countIn);
+    root->setProperty ("song_source", take.songSource == songGuitar ? "guitar" : "full");
+    root->setProperty ("band_seconds", ampsim::tonematch::playAlongBandSeconds);
+    const auto matchedThisTake = resultReady && result.mode == Mode::samePart && comparedReference != nullptr && *comparedReference == reference
+                                 && matchedTargetVersion == targetVersion && sameSeconds (matchedRangeStart, rangeStart) && sameSeconds (matchedRangeEnd, rangeEnd);
+    if (matchedThisTake && ! result.alignmentPath.empty())
+    {
+        juce::var dtw (new juce::DynamicObject());
+        dtw.getDynamicObject()->setProperty ("fft_size", ampsim::tonematch::fftSize);
+        dtw.getDynamicObject()->setProperty ("hop", ampsim::tonematch::hop);
+        dtw.getDynamicObject()->setProperty ("slot", result.slot);
+        juce::Array<juce::var> path;
+        path.ensureStorageAllocated ((int) result.alignmentPath.size());
+        for (const auto& [i, j] : result.alignmentPath)
+            path.add (juce::Array<juce::var> { i, j });
+        dtw.getDynamicObject()->setProperty ("path", path);
+        root->setProperty ("dtw", dtw);
+    }
+    else
+        root->setProperty ("dtw", juce::var());
+    ok = ok && folder.getChildFile ("take.json").replaceWithText (juce::JSON::toString (json, juce::JSON::FormatOptions {}.withSpacing (juce::JSON::Spacing::multiLine)));
+    if (! ok)
+    {
+        error = "Couldn't write the take into " + folder.getFullPathName();
+        return {};
+    }
+    error.clear();
+    return folder;
 }
 
 int ToneMatchSession::getCountInRemaining() const

@@ -22,7 +22,7 @@ namespace ui
 ///             your DI records, lined up with it; docs/TONE_MATCH.md, "Play along"); without one, the clean
 ///             DI up to a minute. Or Choose file... The mode: Same part or Anything. The count-in (on, 4 or
 ///             2 beats, its tempo with Tap and the section's measured tempo as a suggestion, the click's
-///             level) and the latency offset.
+///             level) and the latency offset. After a take, a quiet Save take (for the learning prototype).
 ///   Match     the button, the progress with its stage, and Cancel.
 ///   Result    the amp, Gain, tone, cab, and match EQ found; the closeness score with what it does and doesn't
 ///             mean; the match EQ curve over what it was fitted to; Apply (one undo step) and Discard.
@@ -105,6 +105,16 @@ public:
     /// The line under Your DI's status: what's recording, or how the take was lined up.
     juce::String getReferenceStatus() const;
 
+    // ---- Saving a take (for prototypes/learn_tone.py; docs/TONE_MATCH.md) ---------------------------------
+    /// Save take: the section, its stem if there is one, the take, and how it lined up, into a new folder in
+    /// the takes folder (ToneMatchSession::saveTake). The quiet button next to the mode.
+    void saveTake();
+    juce::TextButton& getSaveTakeButton() noexcept { return *saveTakeButton; }
+    /// Where Save take writes (ToneMatchSession::defaultTakesFolder unless a test points it elsewhere).
+    void setTakesFolder (const juce::File& folder) { takesFolder = folder; }
+    /// The folder the last Save take wrote (empty if none, or it failed).
+    juce::File getLastSavedTake() const { return lastSavedTake; }
+
     // ---- Comparing (A/B) ----------------------------------------------------------------------------------
     /// Play or stop the comparison (the Play button, Space).
     void togglePreview();
@@ -142,7 +152,9 @@ private:
     std::unique_ptr<LevelBar> songLevelBar;
     std::unique_ptr<NumberField> bpmField, clickField, offsetField;
     std::unique_ptr<Switch> countInSwitch, countInPlaySwitch;
-    juce::TextButton *targetPlayButton = nullptr, *tapButton = nullptr, *suggestionButton = nullptr;
+    juce::TextButton *targetPlayButton = nullptr, *tapButton = nullptr, *suggestionButton = nullptr, *saveTakeButton = nullptr;
+    juce::File takesFolder { ToneMatchSession::defaultTakesFolder() }, lastSavedTake;
+    int savedTakeNumber = -1; // the session's take number Save take last wrote
     juce::Rectangle<int> sectionTextArea, songLevelLabelArea, songLevelValueArea, statusLineArea, modeCaptionArea;
     std::unique_ptr<Switch> separateSwitch;
     juce::TextButton *targetButton = nullptr, *referenceButton = nullptr, *recordButton = nullptr, *matchButton = nullptr,

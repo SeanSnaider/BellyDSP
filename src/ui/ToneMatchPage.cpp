@@ -937,6 +937,8 @@ ToneMatchPage::ToneMatchPage (AmpSimProcessor& p)
         refresh();
     });
     suggestionButton->setTooltip ("The section's tempo, measured from its onsets. A suggestion: on a solo line it can be half, double, or off");
+    saveTakeButton = &addButton ("Save take", [this] { saveTake(); });
+    saveTakeButton->setVisible (false);
     clickField = std::make_unique<NumberField> ("Click", ToneMatchSession::minLevelDb, ToneMatchSession::maxLevelDb, 0.5, 1, " dB", true);
     clickField->setTooltip ("The count-in clicks' level");
     clickField->setValue (session.getClickLevelDb());
@@ -1094,6 +1096,17 @@ void ToneMatchPage::toggleRecording()
     repaint();
 }
 
+void ToneMatchPage::saveTake()
+{
+    if (! session.canSaveTake())
+        return;
+    lastSavedTake = session.saveTake (takesFolder);
+    if (lastSavedTake != juce::File())
+        savedTakeNumber = session.getTakeNumber();
+    refresh();
+    repaint (referenceCard);
+}
+
 juce::String ToneMatchPage::getReferenceStatus() const
 {
     if (session.isPlayingAlong())
@@ -1109,7 +1122,8 @@ juce::String ToneMatchPage::getReferenceStatus() const
         return "Recording your DI... " + juce::String (ampSim.getDiRecorder().recordedSeconds(), 1) + " s of " + juce::String ((int) ampsim::tonematch::DiRecorder::maxSeconds);
     if (session.getReference().empty())
         return session.getTarget().empty() ? "Record a minute of playing, or choose a DI file" : "Record to play along with the section";
-    return session.getReferenceName() + ", " + juce::String (session.getReferenceSeconds(), 1) + " s";
+    const auto saved = session.canSaveTake() && savedTakeNumber == session.getTakeNumber() ? ", saved" : "";
+    return session.getReferenceName() + ", " + juce::String (session.getReferenceSeconds(), 1) + " s" + saved;
 }
 
 void ToneMatchPage::startMatch()
@@ -1284,6 +1298,15 @@ void ToneMatchPage::refresh()
     for (auto* c : std::initializer_list<juce::Component*> { countInSwitch.get(), beatsChoice.get(), bpmField.get(), tapButton, suggestionButton, offsetField.get() })
         c->setEnabled (! take && (c != suggestionButton || suggestionButton->isEnabled()));
     referenceButton->setEnabled (! matching && ! recording);
+    // Save take: quiet, only once there's a take of this section; "Saved" until the next take.
+    const auto savedThis = savedTakeNumber == session.getTakeNumber();
+    saveTakeButton->setVisible (session.canSaveTake());
+    saveTakeButton->setEnabled (! savedThis && ! matching);
+    saveTakeButton->setButtonText (savedThis ? "Saved" : "Save take");
+    saveTakeButton->setTooltip (savedThis && lastSavedTake != juce::File()
+                                    ? "Saved in " + lastSavedTake.getFullPathName()
+                                    : "Save the section, its guitar stem if there is one, your take, and how they lined up, into "
+                                          + takesFolder.getFullPathName() + " (for prototypes/learn_tone.py)");
     targetButton->setEnabled (! matching);
     matchButton->setEnabled (session.whyCantMatch().isEmpty());
     cancelButton->setEnabled (matching);
@@ -1383,7 +1406,9 @@ void ToneMatchPage::resized()
         in.removeFromTop (space::s);
         statusLineArea = in.removeFromTop (18);
         in.removeFromTop (10);
-        modeChoice->setBounds (in.removeFromTop (Segmented::preferredHeight).withWidth (modeChoice->getPreferredWidth()));
+        auto modeRow = in.removeFromTop (Segmented::preferredHeight);
+        modeChoice->setBounds (modeRow.withWidth (modeChoice->getPreferredWidth()));
+        saveTakeButton->setBounds (modeRow.removeFromRight (84));
         in.removeFromTop (6);
         modeCaptionArea = in.removeFromTop (30);
         in.removeFromTop (space::s);

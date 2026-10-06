@@ -164,6 +164,24 @@ public:
     /// The reference is a play-along take of the section selected now (so same part uses the band).
     bool referenceIsTake() const;
 
+    // ---- Saving a take (docs/TONE_MATCH.md, "Learning a capture from the song (prototype)") ---------------
+    /// The last play-along take is of the section selected now, and nothing is recording.
+    bool canSaveTake() const;
+    /// Writes, into a new folder <parent>/<the target's file name without its extension>-<yyyymmdd-hhmmss>:
+    ///   target.wav  the selected section, as decoded (48 kHz mono);
+    ///   stem.wav    its separated guitar, if a separated match of this section made one;
+    ///   di_raw.wav  the take as recorded, from the song's first sample;
+    ///   di.wav      the take lined up with the section (di_raw from alignSamples on): what Same part matches;
+    ///   take.json   how it was lined up (the latencies, the offset, alignSamples, the band), and the match's
+    ///               DTW path when a same-part match of exactly this take exists.
+    /// 32-bit float WAVs, for prototypes/learn_tone.py and a real-take benchmark. Message thread (file writes,
+    /// never the audio thread). Returns the folder; an empty File (and getError()) if it couldn't.
+    juce::File saveTake (const juce::File& parent);
+    /// Where the page saves takes: ToneMatchTakes in the user data folder.
+    static juce::File defaultTakesFolder();
+    /// Goes up with every finished take (the page's Save take uses it to tell a new take from a saved one).
+    int getTakeNumber() const noexcept { return takeNumber; }
+
     // ---- Matching ----------------------------------------------------------------------------------------
     /// Empty when a match can start; otherwise what's missing, in words for the page.
     juce::String whyCantMatch() const;
@@ -347,6 +365,7 @@ private:
     float songLevelDb = 0.0f, clickLevelDb = -6.0f;
     ampsim::TapTempo tapTempo;
     Take take;
+    int takeNumber = 0;
     int64_t takeNeeded = 0;
     std::function<platform::device::Latency()> latencySource;
     // The song material's section (what source 3 and 4 hold), so a range change rebuilds them.
