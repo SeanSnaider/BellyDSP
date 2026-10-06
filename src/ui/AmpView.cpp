@@ -223,13 +223,43 @@ public:
 
     juce::String voice, model, rate;
 
-    juce::Rectangle<float> modelArea() const
+    /// Where everything goes, right to left: the rate or message at the right edge, "Model <file>" left of it,
+    /// the voice from the left edge. The voice is never covered: whatever's left between it and the model goes
+    /// to the message, which is cut short with "..." when it doesn't fit (its tooltip has all of it). If even a
+    /// short message doesn't fit beside the model, the model gives way to the message. Found 2026-10-06: a
+    /// factory preset's notes, drawn at full width from the right edge, ran over the voice and pushed the model
+    /// name off the left.
+    struct Layout
     {
-        const auto rateWidth = textWidth (small(), rate);
-        const auto modelWidth = textWidth (small(), model);
-        const auto right = (float) getWidth() - 2.0f - rateWidth - 18.0f;
-        return { right - modelWidth, 0.0f, modelWidth, (float) getHeight() };
+        float rateX = 0.0f, rateWidth = 0.0f;
+        juce::Rectangle<float> model; // empty when the model gives way
+    };
+
+    Layout layout() const
+    {
+        constexpr float gap = 18.0f, edge = 2.0f, minimumMessage = 120.0f;
+        const auto width = (float) getWidth();
+        const auto left = edge + textWidth (geist (Weight::regular, 14.0f), voice) + 24.0f; // the voice's end, plus room
+        const auto labelWidth = textWidth (small(), "Model ");
+        const auto modelWidth = model.isEmpty() ? 0.0f : textWidth (small(), model);
+        const auto modelBlock = model.isEmpty() ? 0.0f : labelWidth + modelWidth + gap;
+
+        Layout l;
+        auto rateSpace = width - edge - left - modelBlock;
+        auto showModel = ! model.isEmpty();
+        if (rateSpace < std::min (minimumMessage, textWidth (small(), rate)) && showModel)
+        {
+            showModel = false; // a message too long for the space beside the model: the model gives way
+            rateSpace = width - edge - left;
+        }
+        l.rateWidth = juce::jlimit (0.0f, std::max (0.0f, rateSpace), textWidth (small(), rate));
+        l.rateX = width - edge - l.rateWidth;
+        if (showModel)
+            l.model = { l.rateX - gap - modelWidth, 0.0f, modelWidth, (float) getHeight() };
+        return l;
     }
+
+    juce::Rectangle<float> modelArea() const { return layout().model; }
 
     void paint (juce::Graphics& g) override
     {
@@ -240,21 +270,24 @@ public:
         {
             g.setFont (f);
             const juce::Font font (f);
+            // Ellipses: a message wider than the room it's given ends in "..." instead of running on.
             g.drawText (words, juce::Rectangle<float> (x, baseline - font.getAscent(), w + 2.0f, font.getAscent() + font.getDescent()),
-                        juce::Justification::topLeft, false);
+                        juce::Justification::topLeft, true);
         };
+        const auto l = layout();
         g.setColour (inkDim);
-        draw (voice, geist (Weight::regular, 14.0f), 2.0f, (float) getWidth() * 0.6f);
+        draw (voice, geist (Weight::regular, 14.0f), 2.0f, textWidth (geist (Weight::regular, 14.0f), voice));
 
-        const auto rateWidth = textWidth (small(), rate);
         g.setColour (inkFaint);
-        draw (rate, small(), (float) getWidth() - 2.0f - rateWidth, rateWidth);
-        const auto m = modelArea();
-        g.setColour (hovered ? ink : inkDim);
-        draw (model, small(), m.getX(), m.getWidth());
-        const auto label = juce::String ("Model ");
-        g.setColour (inkFaint);
-        draw (label, small(), m.getX() - textWidth (small(), label), textWidth (small(), label));
+        draw (rate, small(), l.rateX, l.rateWidth);
+        if (! l.model.isEmpty())
+        {
+            g.setColour (hovered ? ink : inkDim);
+            draw (model, small(), l.model.getX(), l.model.getWidth());
+            const auto label = juce::String ("Model ");
+            g.setColour (inkFaint);
+            draw (label, small(), l.model.getX() - textWidth (small(), label), textWidth (small(), label));
+        }
     }
 
     void mouseMove (const juce::MouseEvent& e) override

@@ -1914,6 +1914,17 @@ public:
             const auto warningFile = proofDir().getChildFile ("editor_44k_warning.png");
             expect (savePng (warningEditor->createComponentSnapshot (warningEditor->getLocalBounds(), true, 2.0f), warningFile));
 
+            // A message far longer than the row (a factory preset's notes, as Sean saw on 2026-10-06): the voice
+            // keeps its place, and the message is cut short with "..." instead of running over it.
+            if (auto* amp = dynamic_cast<AmpSimEditor*> (warningEditor.get()))
+            {
+                amp->getAmpView().setStatus ("Crunch is Ember at Gain 5 (the scenes hold Ember's Gain). Close mic 1 starts on a built-in vintage "
+                                             "4x12 IR (pick another on the Cab page). Swap in your own captures; these settings are starting "
+                                             "points to tune by ear.");
+                expect (savePng (warningEditor->createComponentSnapshot (warningEditor->getLocalBounds(), true, 2.0f),
+                                 proofDir().getChildFile ("editor_long_message.png")));
+            }
+
             logMessage ("  -> " + file.getFullPathName() + " (" + juce::String (image.getWidth()) + "x" + juce::String (image.getHeight()) + ")");
             logMessage ("  -> " + warningFile.getFullPathName());
         }
