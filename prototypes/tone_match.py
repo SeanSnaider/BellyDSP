@@ -1420,11 +1420,12 @@ def play_along(args):
         for c in PLAY_ALONG_CASES:
             slot, gain, tone, cab, eq = c
             t = render(tdi, slot, gain, tone=tone, cab=cab_named(cab), eq=eq)
-            for band in (None, PLAY_ALONG_BAND_SECONDS):
+            # None: unconstrained; the play-along band; and a one-frame band, which is a fixed alignment in effect.
+            for band in (None, PLAY_ALONG_BAND_SECONDS, 0.001):
                 r = match(t, di, "same", log=lambda *a: None, band_seconds=band)
                 spectral, nl = verify(r, t, di, "same")
                 mean_e, max_e = alignment_error(r["path"], Analysis(t).active, shift)
-                print(f"  {label:10s} {AMPS[slot]:8s} {gain:+5.1f} | {'band 0.5 s' if band else 'full DTW  '} | {r['amp']:8s} {r['gain_db']:+5.1f} "
+                print(f"  {label:10s} {AMPS[slot]:8s} {gain:+5.1f} | {('full DTW  ' if band is None else 'band 0.5 s' if band > 0.01 else '1 frame   ')} | {r['amp']:8s} {r['gain_db']:+5.1f} "
                       f"{r['cab'][:-4]:45s} | alignment error mean {mean_e:.2f} max {max_e:.0f} frames | spectral {spectral:.2f} dB "
                       f"distortion {nl:.2f} combined {spectral + LAMBDA * nl:.2f}", flush=True)
 

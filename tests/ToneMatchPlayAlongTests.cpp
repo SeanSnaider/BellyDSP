@@ -645,6 +645,12 @@ public:
             const auto noise = whiteNoise ((int) (10.0 * fs), 0.1f, 1);
             const auto n = ampsim::tonematch::estimateTempo (noise.data(), (int) noise.size(), fs, never);
             expect (! n.confident);
+            // Its cost on the longest section, a minute.
+            const auto minute = guitarDI ((int) (60.0 * fs));
+            const auto m0 = juce::Time::getMillisecondCounterHiRes();
+            const auto tm = ampsim::tonematch::estimateTempo (minute.data(), (int) minute.size(), fs, never);
+            const auto minuteMs = juce::Time::getMillisecondCounterHiRes() - m0;
+            lines.add ("a minute of the test riff: " + juce::String (tm.bpm, 1) + " BPM in " + juce::String (minuteMs, 1) + " ms");
 
             auto p = makeProcessor();
             ToneMatchSession session (*p);
