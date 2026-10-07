@@ -519,12 +519,131 @@ Inference is solved (the .nam loads in NAM core like any capture; tested). Train
 
 How any of it sounds: the learned captures, the matcher's results here, the masked stems. Every number is a measurement on synthetic guitars through gray-box rigs. Whether real takes line up note by note as well as the synthetic ones (real leads have bends, slides, and ghost notes the onset detector and the per-note pitch don't model). Whether Save take's folder holds what Sean needs on his own songs (TM.8).
 
+## tone_bench: a benchmark the matcher hasn't seen (Round 1)
+
+Sean, 2026-10-06: tone matching "as powerful and accurate as possible", in gated rounds. Round 1 builds the benchmark and diagnoses the current matcher without changing it (ASSUMPTIONS TM57 to TM70). The earlier studies used hidden rigs made from the project's own gray-box models, which flatters the matcher; this one doesn't.
+
+```
+uv run prototypes/tone_bench/run.py --split dev|test --matcher current [--config same_clean,any_raw] [--cases id,...]
+uv run prototypes/tone_bench/run.py --estimates --split dev|test     # the Round 2 what-ifs, then the report
+```
+
+It writes `build/tone_bench/<split>_current/report.md`, `results.json`, and one JSON per case (a rerun skips the done ones). Renders, records, and Demucs stems are cached in `build/tone_bench/cache`. A full split takes about 45 minutes (DEV) and 30 (TEST) with four cases in parallel on this Mac, the diagnosis included.
+
+### What's in it
+
+50 cases (`prototypes/tone_bench/cases.json`, seeded and calibrated, so they're reproducible): 10 per style (clean, edge of breakup, crunch, high gain, saturated lead), each style's ten split 3 dry, 3 produced, 4 mixed. DEV is 30 (for tuning) and TEST 20 (report only), with the same mix of styles and productions in both.
+
+- **Amps the matcher never searches.** NAM core's example models (MIT, "Copyright (c) 2023 Steven Atkinson"; checked in `third_party/NeuralAmpModelerCore/LICENSE`): `lstm.nam` (nearly linear, a clean amp), `wavenet.nam` (edge to crunch with its input level), `A2.nam`, `slimmable_container.nam`, and `wavenet_a1_standard.nam` (high gain); the folder's generated test weights (outputs of +15 to +20 dBFS, crest near 0 dB) aren't used, and its files' provenance isn't documented. And ten new gray-box voicings (`tone_bench/rigs.py`), unlike the built-ins: 1 to 4 inverting triode stages with their own couplings, Miller filters, and bias shift (blocking), the tone stack between stages on some, three passive stacks with our own component values and an active one, a push-pull power amp with crossover, sag, presence, and resonance. 15 cases use a NAM model, 35 a gray-box. Each case's drive is set by bisection so the amp's own nonlinear energy ratio lands on a target drawn from its style's range (clean -40 to -28 dB, edge -26 to -17, crunch -16 to -9, high gain -9 to -5.5, lead -6 to -3.5).
+- **Pedals, sometimes** (21 of 50): the pedal compressor, the clean boost, Mid Drive, Distortion, Transparent, and Fuzz, the app's own circuits (golden-tested against `circuits.py` and `compressor.py`) through new `ampsim_render` options (`--od`, `--pre-comp`, `--post-comp`, `--boost-tilt`), random settings.
+- **Cabs the matcher can't pick.** Per split, a third of the 21 IRs (7, disjoint between splits; the factory cab stays searchable) is held out of the matcher's search, and the hidden cab is one of them, in 33 of 50 cases modified into a new IR: resonances moved (0.85 to 1.2 times), a mic-distance comb (0.4 to 2.5 ms), off-axis darkening, a small-speaker or a 4x12 low end, the minimum-phase version.
+- **Recording and production.** Always a mic or channel EQ (a high-pass and 1 to 3 bands). Produced and mixed cases: a bus compressor (2 to 6 dB of reduction, 24 cases), a time effect at record mix levels (plate, room, slap, or a dotted-eighth delay, 24 cases), double tracking hard-panned on rhythm parts, drums and bass (and a rhythm guitar under a lead), a mastering limiter pushed 3 to 9 dB, and a lossy file (AAC through `afconvert` or MP3 through LAME, 128 to 256 kbps, at 44.1 kHz). Mixes are separated with Demucs and mixed to mono, as the app does.
+- **Performances** (`tone_bench/performance.py`): scores per style with arpeggios that ring, strummed chords, power chords, palm mutes, gallops, runs with legato notes, bends, vibrato, and slides (a pitch curve read into the Karplus-Strong pluck), velocity setting level and pick brightness, a pickup resonance, a noise floor. A, the record's guitarist; B, the player's play-along take of the same notes (8 to 30 ms jitter on a slow drift of up to 40 ms, his own dynamics and attack, bends a little off, **his own guitar**); C, a held-out score on B's guitar, for scoring.
+
+### How it scores
+
+Every method's rig and the hidden rig play one evaluation signal (C, then probes), so the outputs are sample-aligned. The truth is the hidden rig's tone (pedal, amp, cab, mic EQ, bus compressor) with the player's guitar; the time effect is scored on its own. Facets (`tone_bench/metrics.py`, with the math): the loudness-weighted ERB long-term spectral distance (Glasberg and Moore's ERB scale, Zwicker's 0.23 power law over the PEAQ ear weighting and Terhardt's threshold), the same per note, the feel metric (learn_tone's compression, harmonics, attack, decay, probes 6 dB apart), the harmonic distribution on sine steps, intermodulation on a power chord's two tones, the crest-factor distribution, the time-effect tails, and a mel-cepstral distance (a check, not scored: no small embedding model with a clear licence installs without a large download). **Combined** is a weighted mean of the six scored facets, each divided by its median for a deliberately wrong rig on DEV: 0 is the hidden rig, about 1 a wrong rig. Weights: spectrum 0.5 (long-term 0.35, per note 0.15), feel 0.25, harmonics 0.1, crest 0.1, IMD 0.05.
+
+Anchors on every case: the hidden rig scores exactly 0 (all facets 0.000 in both splits); a deliberately wrong rig (another style's case) 1.05 / 1.04 (DEV / TEST medians); "nothing matched" (each built-in at Gain 0, flat, the factory cab, no EQ) 0.93 / 0.92 on average, 0.65 / 0.68 for the best of the three.
+
+### Baselines
+
+The current matcher (`tone_match.py` with the gain sets: the C++ is its golden-tested port; the cleanup is `learn_tone.py`'s, which the C++ matches within 1e-7), the take as its DI, the 0.5 s play-along band in Same part, in four configurations: **same_clean** (the app's default after a take), same_raw, any_clean (TM55's proposal), and **any_raw**. Combined score, medians (lower is closer):
+
+| Group | DEV same_clean | same_raw | any_clean | any_raw | TEST same_clean | same_raw | any_clean | any_raw |
+|---|---|---|---|---|---|---|---|---|
+| **all** (30 / 20) | 0.677 | 0.551 | 0.592 | **0.497** | 0.653 | 0.702 | 0.607 | **0.586** |
+| clean | 0.636 | 0.650 | 0.498 | 0.541 | 0.760 | 0.663 | 0.602 | 0.562 |
+| edge | 0.558 | 0.477 | 0.406 | 0.410 | 0.798 | 1.008 | 0.623 | 0.594 |
+| crunch | 0.644 | 0.549 | 0.566 | 0.512 | 0.539 | 0.604 | 0.492 | 0.470 |
+| high gain | 0.564 | 0.531 | 0.648 | 0.532 | 0.933 | 0.687 | 0.797 | 0.710 |
+| lead | 0.743 | 0.605 | 0.631 | 0.545 | 0.713 | 0.780 | 0.646 | 0.663 |
+| dry | 0.636 | 0.475 | 0.556 | 0.491 | 0.509 | 0.469 | 0.501 | 0.446 |
+| produced | 0.604 | 0.445 | 0.599 | 0.451 | 0.861 | 0.648 | 0.611 | 0.568 |
+| mixed, separated | 0.695 | 0.787 | 0.602 | 0.529 | 0.830 | 0.852 | 0.649 | 0.633 |
+| no time effect | 0.688 | 0.637 | 0.594 | 0.513 | 0.556 | 0.598 | 0.592 | 0.519 |
+| dotted-eighth delay | 0.497 | 0.532 | 0.638 | 0.498 | 0.882 | 0.856 | 0.743 | 0.746 |
+| slap | 0.593 | 0.443 | 0.580 | 0.366 | 0.366 | 0.524 | 0.449 | 0.466 |
+| plate | 0.661 | 0.479 | 0.548 | 0.525 | 1.065 | 1.157 | 0.652 | 0.743 |
+| room | 0.582 | 0.622 | 0.427 | 0.419 | 0.811 | 0.702 | 0.682 | 0.546 |
+
+(With 1 to 10 cases per cell, a single row means little; the "all" row and the paired tests below are what to read.) Beating the best of the three defaults (which needs the oracle to choose): same_clean 29 of 50, same_raw 33, any_clean 37, any_raw 43. The time-effect facet (not in the combined score) is 10.3 dB for the matcher on the 24 cases with a time effect and 2.2 dB if the true effect is added after its result.
+
+What it says:
+
+- **The app's default after a take is the worst of the four.** Same part with the cleanup lands at 0.665 (pooled median), no better than picking the best default by hand (0.656). Plain Anything without the cleanup is the best everywhere it counts: 0.516, better than same_clean in 38 of 50 cases (Wilcoxon signed-rank p = 2.5e-6) and than same_raw in 34 (p = 0.0003).
+- **The cleanup hurts on a target that's already clean** and doesn't win on a separated mix either. On the clean record (the rig on A) of the 30 unmixed cases, cleaning moves the long-term spectrum by 1.1 (clean), 1.8 (edge), 1.9 (crunch), 3.6 (high gain), and 4.8 dB (lead) (the matcher's own measure, medians): chords and arpeggios that ring hold more than one pitch, bends and vibrato leave the 35-cent lobes, and a saturated amp has real energy between its harmonics. On the separated mixes it rescues Same part (0.695 against 0.789 on DEV) but Anything without it is as good or better (0.529 against 0.602 on DEV, 0.633 against 0.649 on TEST).
+
+**TM55's verdict:** yes. After the cleanup, Anything beats Same part: 35 of 50 cases, median difference -0.032, Wilcoxon p = 0.0013 (DEV 20 of 30, p = 0.028; TEST 15 of 20, p = 0.022). But the question is overtaken: drop the cleanup too, and Anything is better still (any_raw beats any_clean in 33 of 50, p = 0.014).
+
+### Diagnosis: where the error comes from
+
+Per case, a ladder of matcher runs and oracle configurations (the oracle searches with the benchmark's own metric against the hidden rig on the evaluation signal; `tone_bench/oracle.py`):
+
+- L0 the matcher on the real target; L1 on the dry target (the rig on A, no production or separation); L1b on the record's performance played on the player's guitar; L2 on the rig played by the player himself (no performance difference at all);
+- L3 the oracle in the matcher's own search space (a built-in amp, Gain, tone, a searchable cab, match EQ); L4 the oracle allowed BellyDSP's pedal and post compressor too (the best of with and without);
+- amp only, cab only, EQ only: the hidden rig with just that part replaced by BellyDSP's best, the linear parts refitted.
+
+The oracle applies the linear part after a model (tone bands, cab, post EQ) by FFT convolution with its exact impulse response instead of re-rendering; against ampsim_render on every case it agrees within 64 to 86 dB SNR.
+
+Means over all 50 cases (they add up to L0's mean):
+
+| Part | same_clean | share | any_clean | share |
+|---|---|---|---|---|
+| L0 | 0.681 | | 0.599 | |
+| production and separation (L0 - L1) | 0.057 | 8% | 0.030 | 5% |
+| the player's guitar (L1 - L1b) | 0.018 | 3% | 0.060 | 10% |
+| the playing: timing, dynamics, attack, alignment (L1b - L2) | 0.180 | 26% | 0.094 | 16% |
+| objective and optimizer with a perfect target (L2 - L3) | 0.056 | 8% | 0.045 | 8% |
+| pedal and compressor not searched (L3 - L4) | 0.064 | 9% | 0.064 | 11% |
+| left at L4: amp and cab coverage | 0.306 | 45% | 0.306 | 51% |
+
+| Oracle configuration | median | mean | notes |
+|---|---|---|---|
+| in-space (L3) | 0.347 | 0.370 | its Gain sits at the end of the range in 22 of 50 (17 at +24 dB: the built-ins don't reach the hidden rig's drive) |
+| with pedal and compressor (L4) | 0.268 | 0.306 | on the 32 cases with a pedal or a bus compressor, 0.099 better; the compressor is in the winning variant in 23 of them, the pedal in 15; feel falls from about 2.5 to 1.3 dB |
+| amp only | 0.171 | 0.201 | by style (mean): clean 0.109, edge 0.145, crunch 0.169, high gain 0.293, lead 0.288; NAM amps 0.25, gray-box 0.18 |
+| cab only | 0.171 | 0.183 | modified IRs 0.202, exact held-out IRs 0.146 |
+| EQ only (the 5-band match EQ for the mic EQ) | 0.031 | 0.040 | the post EQ can express a studio EQ |
+
+**The objective is what fails, not the optimizer.** Scored by the matcher's own objective on its own target, the oracle's in-space configuration beat the matcher's pick in only 5 of 50 cases (same_clean; 3 of 50 for any_clean): the search finds what its score prefers. In the other 45 the score preferred a configuration that's further from the hidden rig. The ladder says why: given the rig played by the player himself (L2), the same matcher lands at 0.43, within 0.06 of the oracle; given another performance of the same notes (L1b) it lands at 0.61. The objective's statistics (long-term spectra and four distortion features, or the frame-by-frame comparison) move with how the notes were played, and the matcher fits the playing.
+
+### Round 2 estimates
+
+`run.py --estimates` (`tone_bench/estimates.py`), means over 50 cases:
+
+| What-if | change in combined |
+|---|---|
+| the pick (any_raw) with a high-resolution minimum-phase match curve (1/12-octave, 8192 taps) instead of the 5-band EQ, fitted to the target without the oracle | -0.015 (better in 33 of 50) |
+| the same curve on the oracle's in-space configuration | -0.042 (44 of 50) |
+| the same curve on cab only (the true amp, the best searchable IR) | -0.075 (47 of 50): it absorbs about 40% of the cab coverage error |
+| the true time effect after the pick (the time-effect facet only) | 10.3 to 2.2 dB on the 24 cases with one |
+
+### The Round 2 plan this points to (for Sean's go)
+
+In order, with what the numbers say each can close (combined units, means over 50; L0 is 0.68 for the app's default today):
+
+1. **Make Anything the default after a take, and run the cleanup only when there's bleed to remove** (a separated mix, judged by the stem's energy between the take's harmonics). Measured now: 0.665 to 0.516 median (-0.15), no new DSP. The cheapest and biggest win.
+2. **A performance-robust objective** (the largest closable share inside today's search space: from any_raw's 0.56 mean to the oracle's 0.37, up to -0.19, of which the playing difference alone is 0.09 to 0.18). Concretely: compare notes at matched input levels (bin the take's and the target's notes by their DI level, so a softer player isn't read as a cleaner amp), judge distortion on per-note harmonic and IMD profiles rather than whole-signal level statistics, use the benchmark's loudness-weighted ERB spectrum, and fit the player's guitar as a pre-amp EQ difference (the guitar is 3 to 10% of the error). Tune on DEV, report on TEST.
+3. **New amp voicings as gain sets** (amp coverage: 0.20 mean, 0.29 on high gain and lead; the oracle's Gain at +24 dB in 17 of 50). Two high-gain sets (a tight four-stage one, a fat one with blocking), two saturated leads (with sag and compression), one power-amp-driven edge or crunch: five, each a five-step gain set from `make_default_captures.py` with the new voicings. Estimated: half of the amp share, about -0.10 at L4, and more of it on high gain and lead.
+4. **The compressor and pedals in the search, the compressor first** (-0.10 on the 32 cases that have one, -0.06 over all; feel halves). A post-compressor fit (threshold, ratio, attack, release from the target's per-note level curve) before pedal selection; the pedal (Mid Drive, boost) as a discrete choice with drive on the 4 dB grid.
+5. **A high-resolution minimum-phase match curve** instead of the 5-band EQ (-0.015 now, -0.04 once the amp is right, and 40% of the cab error). Cheap; worth more after 2 and 3.
+6. **Cab coverage** last: the curve absorbs much of it; more IRs (small speakers, other mics) for the rest (cab only 0.18, modified IRs 0.20).
+7. **A time-effect fit** (reverb decay, delay time and level, into the app's delay and reverb): outside the tone score, but the facet falls from 10.3 to 2.2 dB with a perfect fit.
+
+The optimizer needs no work (5 misses in 50).
+
+### Limits of this round
+
+All of it is synthetic and judged by a metric we wrote: the facets and their weights are a reasoned guess at what matters, not a listening test. The gray-box voicings are still tanh-family models (if different ones), and only five NAM models are real captures of something. The guitars are Karplus-Strong. So the ranking of what limits the matcher is what to take from it, not the absolute numbers; whether the improvements it suggests sound closer is Sean's to judge.
+
 ## Not verified (only Sean can)
 
 - How a match sounds, on anything. Every number here is a measurement on synthetic guitars.
 - How the comparison sounds and feels: whether the switches and the loop are click-free to his ears, whether equal loudness by BS.1770 sounds equally loud on his material, and whether same part's alignment keeps a switch on the same note (PROGRESS TM.6).
 - Real songs: Demucs on real mixes, real lead tones, real DIs (PROGRESS TM.1 to TM.3).
 - The learning prototype and the informed mask on real takes (PROGRESS TM.8), and the cleanup in the app on a real song (TM.9).
+- tone_bench's facets and weights as a stand-in for listening: whether a lower combined score sounds closer.
 
 ## Sources
 
@@ -541,3 +660,8 @@ How any of it sounds: the learned captures, the matcher's results here, the mask
 - McLeod and Wyvill, "A Smarter Way to Find Pitch", ICMC 2005.
 - Le Roux, Wisdom, Erdogan, Hershey, "SDR - half-baked or well done?", ICASSP 2019 (SI-SDR).
 - Griffin and Lim, "Signal estimation from modified short-time Fourier transform", IEEE TASSP 32(2), 1984 (the least-squares inverse STFT).
+- Glasberg and Moore, "Derivation of auditory filter shapes from notched-noise data", Hearing Research 47, 1990 (the ERB scale). Zwicker and Fastl, *Psychoacoustics: Facts and Models*, Springer (the loudness power law). ITU-R BS.1387 (PEAQ: the outer and middle ear weighting). Terhardt, "Calculating virtual pitch", Hearing Research 1, 1979 (the threshold in quiet).
+- Kubichek, "Mel-cepstral distance measure for objective speech quality assessment", IEEE PACRIM 1993.
+- Grey, "Multidimensional perceptual scaling of musical timbres", JASA 61(5), 1977; McAdams, Winsberg, Donnadieu, De Soete, Krimphoff, "Perceptual scaling of synthesized musical timbres", Psychological Research 58, 1995.
+- Pakarinen and Yeh, "A review of digital techniques for modeling vacuum-tube guitar amplifiers", Computer Music Journal 33(2), 2009. Yeh and Smith, DAFx 2006 (the three-knob tone stack's nodal analysis, the circuit model behind the gray-box stacks).
+- Oppenheim and Schafer, *Discrete-Time Signal Processing* (the minimum-phase IR from the folded real cepstrum). Bristow-Johnson, "Cookbook formulae for audio EQ biquad filter coefficients".
