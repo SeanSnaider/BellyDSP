@@ -252,9 +252,22 @@ public:
     /// The names of those that are on right now ("boost, overdrive"), for the page.
     juce::StringArray preEffectsOnNow() const;
     void discard();
+    /// For tests: a result as if a match had made it (Apply, matchedSettings, and the page read it).
+    void setResultForTests (MatchResult r);
 
     /// The cab files the search chooses from: the built-in IRs, sorted by path (as the prototype sorts them).
     static std::vector<juce::File> builtInCabs();
+
+    /// Every gain set in the content folder (content/models/<name>/gainset.json): the built-ins in slot order, then
+    /// the others by name, so a new set joins the search by being there.
+    static std::vector<juce::File> contentGainSets();
+    /// The amps the search chooses from: contentGainSets(), then each slot's own capture that isn't one of them.
+    std::vector<juce::File> modelsToSearch() const;
+    /// A model's name for the page: a gain set's folder ("Ember"), a capture's file name.
+    static juce::String modelName (const juce::File& model);
+    /// The slot Apply plays the result in: the slot that holds the matched amp already, otherwise the playing slot
+    /// (Apply loads the matched gain set into it).
+    int applySlot() const;
 
     /// For tests: let the worker finish (or give up after timeoutMs). True if it finished.
     bool waitForMatch (int timeoutMs);
@@ -351,6 +364,8 @@ private:
     void updateLoops();
     void updateLevels();
     juce::String currentFingerprint (const ampsim::tonematch::ToneSettings&) const;
+    static void setCompressor (AmpSimProcessor& p, const juce::String& id, bool on, const ampsim::Compressor::Settings& c);
+    float masterNowDb (int slot) const;
     float storedValue (const juce::String& parameterId, double value) const;
 
     AmpSimProcessor& ampSim;

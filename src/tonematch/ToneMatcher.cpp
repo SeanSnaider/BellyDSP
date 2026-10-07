@@ -50,8 +50,144 @@ constexpr int renderBlock = 128;
 
 // ---- Rendering and the cab ------------------------------------------------------------------------------
 
+namespace
+{
+/// Runs a mono block over x in place, in the chain's block size, the DI as its context. False if cancelled.
+bool runBlock (Block& block, std::vector<float>& x, const std::vector<float>& di, const std::atomic<bool>& cancel)
+{
+    juce::AudioBuffer<float> buffer (1, renderBlock);
+    for (size_t start = 0; start < x.size(); start += renderBlock)
+    {
+        if (cancel.load (std::memory_order_relaxed))
+            return false;
+        const auto len = (int) std::min ((size_t) renderBlock, x.size() - start);
+        buffer.copyFrom (0, 0, x.data() + start, len);
+        BlockContext context { di.data() + std::min (start, di.size()), len };
+        block.process (juce::dsp::AudioBlock<float> (buffer).getSubBlock (0, (size_t) len), context);
+        std::copy (buffer.getReadPointer (0), buffer.getReadPointer (0) + len, x.begin() + (std::ptrdiff_t) start);
+    }
+    return true;
+}
+} // namespace
+
+std::vector<float> ToneMatcher::renderPedal (const Pedal& pedal, const std::vector<float>& di, const std::atomic<bool>& cancel)
+{
+    std::vector<float> out (di);
+    // The chain's own blocks, settings in before prepare() (which snaps their smoothers), as ampsim_render sets them.
+    switch (pedal.kind)
+    {
+        case Pedal::Kind::none:
+            return out;
+        case Pedal::Kind::compressor:
+        {
+            Compressor c (false);
+            c.setSettings (pedal.compressor);
+            c.prepare (sampleRate, renderBlock);
+            return runBlock (c, out, di, cancel) ? out : std::vector<float>();
+        }
+        case Pedal::Kind::boost:
+        {
+            auto b = std::make_unique<Boost>();
+            b->setSettings (pedal.boost);
+            b->prepare (sampleRate, renderBlock);
+            return runBlock (*b, out, di, cancel) ? out : std::vector<float>();
+        }
+        case Pedal::Kind::overdrive:
+        {
+            auto o = std::make_unique<Overdrive>();
+            o->setSettings (pedal.overdrive);
+            o->prepare (sampleRate, renderBlock);
+            return runBlock (*o, out, di, cancel) ? out : std::vector<float>();
+        }
+    }
+    return out;
+}
+
+bool ToneMatcher::compress (const Compressor::Settings& settings, std::vector<float>& x, const std::atomic<bool>& cancel)
+{
+    Compressor c (false);
+    c.setSettings (settings);
+    c.prepare (sampleRate, renderBlock);
+    const auto context = x; // the post compressor's sidechain is its own input
+    return runBlock (c, x, context, cancel);
+}
+
+double ToneMatcher::playingLevelDb (const std::vector<float>& x)
+{
+    // numpy's convolve(x^2, ones(2400) / 2400, "same"): the mean square over [n - 1200, n + 1200).
+    const auto n = (int) x.size();
+    std::vector<double> prefix ((size_t) n + 1, 0.0);
+    for (int i = 0; i < n; ++i)
+        prefix[(size_t) i + 1] = prefix[(size_t) i] + (double) x[(size_t) i] * x[(size_t) i];
+    std::vector<double> e;
+    e.reserve ((size_t) n);
+    for (int i = 0; i < n; ++i)
+    {
+        const auto lo = juce::jlimit (0, n, i - 1200), hi = juce::jlimit (0, n, i + 1200);
+        const auto v = std::sqrt (std::max (0.0, (prefix[(size_t) hi] - prefix[(size_t) lo]) / 2400.0));
+        if (v > 1.0e-6)
+            e.push_back (v);
+    }
+    return e.empty() ? -120.0 : 20.0 * std::log10 (percentile (std::move (e), 90.0));
+}
+
+std::vector<std::pair<Pedal, double>> ToneMatcher::pedalVariants (const std::vector<float>& di, double gainDb, const MatchSettings& settings)
+{
+    std::vector<std::pair<Pedal, double>> out;
+    const Overdrive::Mode modes[] { Overdrive::Mode::midDrive, Overdrive::Mode::distortion, Overdrive::Mode::transparent, Overdrive::Mode::fuzz };
+    for (auto mode : modes)
+        for (auto drive : { 0.3f, 0.7f })
+        {
+            Pedal p;
+            p.kind = Pedal::Kind::overdrive;
+            p.overdrive.mode = mode;
+            p.overdrive.drive = drive;
+            p.overdrive.tone = 0.5f;
+            p.overdrive.levelDb = 0.0f;
+            p.overdrive.tightHz = DriveEngine::tightOffHz;
+            p.overdrive.unityTrim = true;
+            p.overdrive.oversampling = settings.pedalOversampling;
+            p.overdrive.voltsAtFullScale = settings.voltsAtFullScale;
+            out.push_back ({ p, gainDb });
+            out.push_back ({ p, std::max (settings.gainMin, gainDb - 6.0) });
+        }
+    if (gainDb >= 18.0)
+        for (auto level : { 6.0f, 12.0f })
+        {
+            // The Gain knob ends at +24 dB: a clean boost in front drives the amp further.
+            Pedal p;
+            p.kind = Pedal::Kind::boost;
+            p.boost.mode = Boost::Mode::clean;
+            p.boost.levelDb = level;
+            p.boost.tiltDb = 0.0f;
+            p.boost.unityTrim = true;
+            p.boost.oversampling = settings.pedalOversampling;
+            p.boost.voltsAtFullScale = settings.voltsAtFullScale;
+            out.push_back ({ p, settings.gainMax });
+        }
+    const auto play = playingLevelDb (di);
+    for (auto below : { 6.0, 12.0 })
+    {
+        Pedal p;
+        p.kind = Pedal::Kind::compressor;
+        auto& c = p.compressor;
+        c.mode = Compressor::Mode::pedal;
+        c.detector = Compressor::Detector::peak;
+        c.thresholdDb = (float) (std::round ((play - below) * 10.0) / 10.0);
+        c.ratio = 4.0f;
+        c.attackMs = 2.0f;
+        c.releaseMs = 200.0f;
+        c.autoRelease = false;
+        c.makeupDb = (float) (std::round (0.75 * below * 100.0) / 100.0);
+        c.autoMakeup = false;
+        c.mix = 1.0f;
+        out.push_back ({ p, gainDb });
+    }
+    return out;
+}
+
 std::vector<float> ToneMatcher::renderAmp (const juce::File& model, const NamAmp::Calibration& calibration, const std::vector<float>& di,
-                                           double gainDb, const std::atomic<bool>& cancel)
+                                           double gainDb, const std::atomic<bool>& cancel, const Pedal& pedal)
 {
     // A private amp section, built here and dropped at the end: the chain's own amp block, the capture in
     // its first slot (selected), the other slots empty. Settings go in before prepare(), which snaps the
@@ -69,46 +205,26 @@ std::vector<float> ToneMatcher::renderAmp (const juce::File& model, const NamAmp
     section->slot (0).inputTrim.setGainDecibels ((float) gainDb);
     section->prepare (sampleRate, renderBlock);
 
-    std::vector<float> out (di.size());
-    juce::AudioBuffer<float> buffer (1, renderBlock);
-    for (size_t start = 0; start < di.size(); start += renderBlock)
-    {
-        if (cancel.load (std::memory_order_relaxed))
-            return {};
-        const auto len = (int) std::min ((size_t) renderBlock, di.size() - start);
-        buffer.copyFrom (0, 0, di.data() + start, len);
-        BlockContext context { buffer.getReadPointer (0), len };
-        section->process (juce::dsp::AudioBlock<float> (buffer).getSubBlock (0, (size_t) len), context);
-        std::copy (buffer.getReadPointer (0), buffer.getReadPointer (0) + len, out.begin() + (std::ptrdiff_t) start);
-    }
-    return out;
+    auto out = renderPedal (pedal, di, cancel);
+    if (out.empty() && ! di.empty())
+        return {};
+    return runBlock (*section, out, di, cancel) ? out : std::vector<float>();
 }
 
 std::vector<float> ToneMatcher::renderTone (const ToneSettings& settings, const std::vector<float>& di, const std::atomic<bool>& cancel)
 {
     if (cancel.load (std::memory_order_relaxed))
         return {}; // before the capture loads (as renderAmp)
-    std::vector<float> out (di);
-    juce::AudioBuffer<float> buffer (1, renderBlock);
 
-    // Runs a mono block over `out` in place, in the chain's block size.
-    const auto run = [&] (Block& block) {
-        for (size_t start = 0; start < out.size(); start += renderBlock)
-        {
-            if (cancel.load (std::memory_order_relaxed))
-                return false;
-            const auto len = (int) std::min ((size_t) renderBlock, out.size() - start);
-            buffer.copyFrom (0, 0, out.data() + start, len);
-            BlockContext context { di.data() + start, len };
-            block.process (juce::dsp::AudioBlock<float> (buffer).getSubBlock (0, (size_t) len), context);
-            std::copy (buffer.getReadPointer (0), buffer.getReadPointer (0) + len, out.begin() + (std::ptrdiff_t) start);
-        }
-        return true;
-    };
-
-    // The amp: a private AmpSection, settings in before prepare(), which snaps every smoother (as renderAmp).
-    if (cancel.load())
-        return {};
+    // The pedal in front, then the amp: a private AmpSection, settings in before prepare(), which snaps every
+    // smoother (as renderAmp).
+    auto out = di;
+    for (const auto& pedal : settings.pedals)
+    {
+        out = renderPedal (pedal, out, cancel);
+        if (cancel.load() || out.empty())
+            return {};
+    }
     if (settings.ampOn && settings.model != juce::File())
     {
         auto section = std::make_unique<AmpSection>();
@@ -121,7 +237,7 @@ std::vector<float> ToneMatcher::renderTone (const ToneSettings& settings, const 
             slot.tone.setGainDb ((AmpTone::Band) b, std::round (settings.tone[(size_t) b] * 100.0f) / 100.0f);
         slot.outputTrim.setGainDecibels (settings.masterDb);
         section->prepare (sampleRate, renderBlock);
-        if (! run (*section))
+        if (! runBlock (*section, out, di, cancel))
             return {};
     }
 
@@ -137,16 +253,19 @@ std::vector<float> ToneMatcher::renderTone (const ToneSettings& settings, const 
         Equalizer eq (false);
         eq.setSettings (settings.postEq);
         eq.prepare (sampleRate, renderBlock);
-        if (! run (eq))
+        if (! runBlock (eq, out, di, cancel))
             return {};
     }
+    // The post compressor, after the post EQ.
+    if (settings.postCompressor.on && ! compress (settings.postCompressor.settings, out, cancel))
+        return {};
     return out;
 }
 
 ToneSettings ToneMatcher::settingsFor (const MatchResult& r, const MatchSettings& settings)
 {
     ToneSettings t;
-    t.model = settings.models[(size_t) juce::jlimit (0, 2, r.slot)];
+    t.model = r.model != juce::File() ? r.model : settings.models[(size_t) juce::jlimit (0, (int) settings.models.size() - 1, r.slot)];
     t.calibration = settings.calibration;
     t.gainDb = (float) r.gainDb;
     for (size_t b = 0; b < 5; ++b)
@@ -158,6 +277,9 @@ ToneSettings ToneMatcher::settingsFor (const MatchResult& r, const MatchSettings
         t.postEq.bands[b] = r.eq[b];
     t.postEq.lowCut.on = false;
     t.postEq.highCut.on = false;
+    if (r.pedal.kind != Pedal::Kind::none)
+        t.pedals.push_back (r.pedal);
+    t.postCompressor = r.postCompressor;
     return t;
 }
 
@@ -313,7 +435,7 @@ MatchResult ToneMatcher::match (const std::vector<float>& targetSignal, const st
     }
 
     std::vector<int> slots;
-    for (int s = 0; s < 3; ++s)
+    for (int s = 0; s < (int) settings.models.size(); ++s)
         if (settings.models[(size_t) s] != juce::File())
             slots.push_back (s);
     if (slots.empty() || settings.cabs.empty())
@@ -332,23 +454,27 @@ MatchResult ToneMatcher::match (const std::vector<float>& targetSignal, const st
         cabBins.push_back (cabPowerOnBins (irs.back()));
     }
 
-    // Renders, keyed by (slot, Gain in thousandths of a dB).
-    std::map<std::pair<int, int>, std::vector<float>> renders;
-    auto key = [] (int s, double g) { return std::make_pair (s, (int) std::lround (g * 1000.0)); };
+    // Renders, keyed by (slot, Gain in thousandths of a dB, pedal: an index into `pedals`, -1 for none).
+    std::map<std::tuple<int, int, int>, std::vector<float>> renders;
+    auto key = [] (int s, double g, int p = -1) { return std::make_tuple (s, (int) std::lround (g * 1000.0), p); };
     std::atomic<bool> renderFailed { false };
+    std::vector<Pedal> pedals;
 
-    auto renderAll = [&] (const std::vector<std::pair<int, double>>& jobs, double fromFraction, double toFraction) {
+    auto renderAll = [&] (const std::vector<std::pair<int, double>>& jobs, double fromFraction, double toFraction,
+                          const std::vector<int>& pedalOf = {}) {
         std::vector<std::vector<float>> outs (jobs.size());
         std::atomic<int> done { 0 };
         parallelFor ((int) jobs.size(), threads, [&] (int i, int) {
+            const auto p = pedalOf.empty() ? -1 : pedalOf[(size_t) i];
             outs[(size_t) i] = renderAmp (settings.models[(size_t) jobs[(size_t) i].first], settings.calibration, reference,
-                                          jobs[(size_t) i].second, cancel);
+                                          jobs[(size_t) i].second, cancel, p >= 0 ? pedals[(size_t) p] : Pedal {});
             if (outs[(size_t) i].empty() && ! cancel.load())
                 renderFailed = true;
-            report (fromFraction + (toFraction - fromFraction) * ++done / (double) jobs.size(), "Rendering your DI through the amps");
+            report (fromFraction + (toFraction - fromFraction) * ++done / (double) jobs.size(),
+                    p >= 0 ? "Trying pedals in front of the amp" : "Rendering your DI through the amps");
         });
         for (size_t i = 0; i < jobs.size(); ++i)
-            renders[key (jobs[i].first, jobs[i].second)] = std::move (outs[i]);
+            renders[key (jobs[i].first, jobs[i].second, pedalOf.empty() ? -1 : pedalOf[i])] = std::move (outs[i]);
     };
 
     // 1. The grid.
@@ -380,7 +506,7 @@ MatchResult ToneMatcher::match (const std::vector<float>& targetSignal, const st
     }
 
     // 2. Candidates.
-    std::map<std::tuple<int, int, int>, Candidate> candidates;
+    std::map<std::tuple<int, int, int, int>, Candidate> candidates;
     std::mutex candidatesLock;
 
     auto screen = [&] (int slot, double gain) {
@@ -428,7 +554,8 @@ MatchResult ToneMatcher::match (const std::vector<float>& targetSignal, const st
         return out;
     };
 
-    auto evaluate = [&] (const std::vector<std::tuple<int, double, std::vector<int>>>& jobs, double fromFraction, double toFraction) {
+    auto evaluate = [&] (const std::vector<std::tuple<int, double, std::vector<int>>>& jobs, double fromFraction, double toFraction,
+                         int pedalIndex = -1, const std::vector<int>& pedalOf = {}) {
         // Expand (slot, Gain, cabs or empty for "screen first") into one job per candidate. The screens
         // run in parallel; the maps are only read while the workers run.
         std::vector<std::vector<int>> chosenCabs (jobs.size());
@@ -438,24 +565,26 @@ MatchResult ToneMatcher::match (const std::vector<float>& targetSignal, const st
             const auto& [s, g, cabs] = jobs[(size_t) i];
             chosenCabs[(size_t) i] = cabs.empty() ? screen (s, g) : cabs;
         });
-        std::vector<std::tuple<int, double, int>> work;
+        std::vector<std::tuple<int, double, int, int>> work;
         for (size_t j = 0; j < jobs.size(); ++j)
         {
             const auto& [s, g, cabs] = jobs[j];
+            const auto p = pedalOf.empty() ? pedalIndex : pedalOf[j];
             for (auto c : chosenCabs[j])
-                if (candidates.find ({ s, (int) std::lround (g * 1000.0), c }) == candidates.end())
-                    work.push_back ({ s, g, c });
+                if (candidates.find ({ s, (int) std::lround (g * 1000.0), c, p }) == candidates.end())
+                    work.push_back ({ s, g, c, p });
         }
         std::atomic<int> done { 0 };
         parallelFor ((int) work.size(), threads, [&] (int i, int) {
             if (cancel.load())
                 return;
-            const auto [s, g, c] = work[(size_t) i];
-            auto cand = score (s, g, c, renders.at (key (s, g)), irs[(size_t) c], target, settings.mode,
+            const auto [s, g, c, p] = work[(size_t) i];
+            auto cand = score (s, g, c, renders.at (key (s, g, p)), irs[(size_t) c], target, settings.mode,
                                settings.mode == Mode::samePart ? &alignments.at (s) : nullptr);
+            cand.pedal = p;
             {
                 const std::lock_guard<std::mutex> lock (candidatesLock); // worker threads only, never audio
-                candidates[{ s, (int) std::lround (g * 1000.0), c }] = std::move (cand);
+                candidates[{ s, (int) std::lround (g * 1000.0), c, p }] = std::move (cand);
             }
             report (fromFraction + (toFraction - fromFraction) * ++done / (double) work.size(), "Trying cabs and tone");
         });
@@ -483,7 +612,8 @@ MatchResult ToneMatcher::match (const std::vector<float>& targetSignal, const st
     std::stable_sort (slotOrder.begin(), slotOrder.end(), [&] (int a, int b) { return bestFor (a)->total() < bestFor (b)->total(); });
     const auto refineCount = juce::jmin (settings.refineSlots, (int) slotOrder.size());
     double fraction = 0.70;
-    const auto fractionStep = 0.22 / juce::jmax (1, refineCount * (int) settings.refineSteps.size());
+    const auto refineEnd = settings.searchPedals ? 0.80 : 0.92;
+    const auto fractionStep = (refineEnd - 0.70) / juce::jmax (1, refineCount * (int) settings.refineSteps.size());
 
     for (int r = 0; r < refineCount; ++r)
     {
@@ -523,6 +653,56 @@ MatchResult ToneMatcher::match (const std::vector<float>& targetSignal, const st
             if (cancelled())
                 return result;
         }
+    }
+
+    // 3b. The pedals in front of the best amp, at its best cabs (pedalVariants; prototypes/tone_match.py, the
+    //     pedal search). They join the candidates, so the scores decide whether one is used at all.
+    if (settings.searchPedals)
+    {
+        const Candidate* s0 = nullptr;
+        for (const auto& [k, c] : candidates)
+            if (s0 == nullptr || c.total() < s0->total())
+                s0 = &c;
+        const auto slot = s0->slot;
+        const auto gain = s0->gainDb;
+        std::map<int, double> bestPerCab;
+        for (const auto& [k, c] : candidates)
+            if (c.slot == slot)
+            {
+                auto it = bestPerCab.find (c.cab);
+                if (it == bestPerCab.end() || c.total() < it->second)
+                    bestPerCab[c.cab] = c.total();
+            }
+        std::vector<std::pair<double, int>> order;
+        for (const auto& [cab, t] : bestPerCab)
+            order.push_back ({ t, cab });
+        std::stable_sort (order.begin(), order.end(), [] (const auto& a, const auto& b) { return a.first < b.first; });
+        std::vector<int> cabs;
+        for (int i = 0; i < juce::jmin (settings.cabsPerAmp, (int) order.size()); ++i)
+            cabs.push_back (order[(size_t) i].second);
+
+        const auto variants = pedalVariants (reference, gain, settings);
+        std::vector<std::pair<int, double>> jobs;
+        std::vector<int> pedalOf;
+        std::vector<std::tuple<int, double, std::vector<int>>> evalJobs;
+        for (const auto& [pedal, g] : variants)
+        {
+            pedalOf.push_back ((int) pedals.size());
+            pedals.push_back (pedal);
+            jobs.push_back ({ slot, g });
+            evalJobs.push_back ({ slot, g, cabs });
+        }
+        renderAll (jobs, 0.80, 0.90, pedalOf);
+        if (cancelled())
+            return result;
+        if (renderFailed)
+        {
+            result.error = "A capture failed to load.";
+            return result;
+        }
+        evaluate (evalJobs, 0.90, 0.93, -1, pedalOf);
+        if (cancelled())
+            return result;
     }
 
     // 4. The best candidate: polish its tone, fit the match EQ. With a play-along take, the old score's shortlist
@@ -572,7 +752,7 @@ MatchResult ToneMatcher::match (const std::vector<float>& targetSignal, const st
                 return;
             const auto& c = *ranked[(size_t) i];
             fins[(size_t) i] = finish (c);
-            const auto& amp = renders.at (key (c.slot, c.gainDb));
+            const auto& amp = renders.at (key (c.slot, c.gainDb, c.pedal));
             fins[(size_t) i].score = take::score (takeNotes, target, amp, convolve (amp, irs[(size_t) c.cab]), fins[(size_t) i].tone, &fins[(size_t) i].eq,
                                                   c.spectral);
         });
@@ -609,7 +789,10 @@ MatchResult ToneMatcher::match (const std::vector<float>& targetSignal, const st
     result.spectralErrorAfterEqDb = weightedRmsCentred (after, target.weights);
 
     result.slot = best.slot;
+    result.model = settings.models[(size_t) best.slot];
     result.gainDb = best.gainDb;
+    if (best.pedal >= 0)
+        result.pedal = pedals[(size_t) best.pedal];
     result.cab = settings.cabs[(size_t) best.cab];
     result.distortion = best.distortion;
     result.closeness = 100.0 * std::exp (-(result.spectralErrorAfterEqDb + lambda * best.distortion) / scoreScaleDb);
@@ -622,6 +805,64 @@ MatchResult ToneMatcher::match (const std::vector<float>& targetSignal, const st
         result.runnersUp.push_back ({ ranked[i]->slot, ranked[i]->gainDb, settings.cabs[(size_t) ranked[i]->cab], ranked[i]->total() });
     if (settings.mode == Mode::samePart)
         result.alignmentPath = alignments.at (best.slot).path;
+
+    // 5. The post compressor on the finished match (prototypes/tone_match.py, search_post_comp): the take through
+    //    everything as the chain plays it (renderTone), then through the compressor 4 and 8 dB under that render's
+    //    playing level (studio mode, RMS, 3:1, 10 ms, 150 ms), each scored with the take-aware score on the whole
+    //    render against the same score without it; the lowest wins. The threshold is absolute, so it's set from the
+    //    render at the level the chain plays it, which is what Apply sets.
+    if (settings.searchPedals && result.takeScored && settings.mode == Mode::anything)
+    {
+        report (0.97, "Trying the post compressor");
+        auto tone = settingsFor (result, settings);
+        const auto base = renderTone (tone, reference, cancel);
+        if (cancelled() || base.empty())
+        {
+            if (! result.cancelled)
+                result.error = "A capture failed to load.";
+            return result;
+        }
+        const auto fullScore = [&] (const std::vector<float>& y) {
+            const auto ya = Analysis::of (y);
+            std::vector<double> r ((size_t) numBands);
+            for (size_t b = 0; b < r.size(); ++b)
+                r[b] = target.ltas[b] - ya.ltas[b];
+            return take::score (takeNotes, target, y, y, {}, nullptr, weightedRmsCentred (smoothBands (r), target.weights)).total;
+        };
+        const auto play = playingLevelDb (base);
+        std::vector<Compressor::Settings> comps;
+        for (auto below : { 4.0, 8.0 })
+        {
+            Compressor::Settings c;
+            c.mode = Compressor::Mode::studio;
+            c.detector = Compressor::Detector::rms;
+            c.thresholdDb = (float) (std::round ((play - below) * 100.0) / 100.0);
+            c.ratio = 3.0f;
+            c.attackMs = 10.0f;
+            c.releaseMs = 150.0f;
+            c.autoRelease = false;
+            c.makeupDb = 0.0f;
+            c.autoMakeup = false;
+            c.mix = 1.0f;
+            comps.push_back (c);
+        }
+        std::vector<double> scores ((size_t) comps.size() + 1);
+        scores[0] = fullScore (base);
+        parallelFor ((int) comps.size(), threads, [&] (int i, int) {
+            auto y = base;
+            if (compress (comps[(size_t) i], y, cancel))
+                scores[(size_t) i + 1] = fullScore (y);
+        });
+        if (cancelled())
+            return result;
+        const auto k = (size_t) std::distance (scores.begin(), std::min_element (scores.begin(), scores.end()));
+        result.postCompressorScores = scores;
+        if (k > 0)
+        {
+            result.postCompressor.on = true;
+            result.postCompressor.settings = comps[k - 1];
+        }
+    }
     result.runtimeSeconds = (juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0;
     result.ok = true;
     report (1.0, "Done");

@@ -138,6 +138,8 @@ public:
     juce::String getCleanupText() const;
     /// The cleanup's caption beside its switch: what it does, or why it can't now.
     juce::String getCleanupCaption() const;
+    /// A pedal as the result card lists it ("Overdrive, Distortion;Drive 30;Tone 50;Level +0.0 dB": items split at ';').
+    static juce::String pedalText (const ampsim::tonematch::Pedal& pedal);
 
 private:
     void timerCallback() override;

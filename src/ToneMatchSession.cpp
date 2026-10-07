@@ -4,6 +4,7 @@
 #include "ToneMatchSession.h"
 
 #include "BlockParameters.h"
+#include "Presets.h"
 #include "platform/AppInfo.h"
 #include "dsp/Loudness.h"
 #include "tonematch/AudioFileInput.h"
@@ -67,6 +68,47 @@ private:
     int slot;
     juce::File next, previous, previousAssignment;
 };
+/// A slot's capture, as one undoable action (Apply loads a matched gain set that no slot holds into the playing
+/// slot; undo puts the slot's previous capture back, or empties it if it was empty).
+class ModelChange final : public juce::UndoableAction
+{
+public:
+    ModelChange (AmpSimProcessor& p, int slotToLoad, juce::File newModel)
+        : processor (p), slot (slotToLoad), next (std::move (newModel)), previous (p.getSlotCapture (slotToLoad))
+    {
+    }
+
+    bool perform() override
+    {
+        processor.loadModel (slot, next);
+        return true;
+    }
+
+    bool undo() override
+    {
+        if (previous == juce::File())
+            processor.clearModel (slot);
+        else
+            processor.loadModel (slot, previous);
+        return true;
+    }
+
+private:
+    AmpSimProcessor& processor;
+    int slot;
+    juce::File next, previous;
+};
+
+/// The Settings the chain's pedal and compressor blocks get, from the parameters as the processor reads them.
+int driveOversampling (AmpSimProcessor& p)
+{
+    return p.parameters.getRawParameterValue ("drive_oversampling")->load() >= 0.5f ? 8 : 4;
+}
+
+double driveVolts (AmpSimProcessor& p)
+{
+    return params::voltsAtFullScale ((double) p.parameters.getRawParameterValue ("input_level_dbu")->load());
+}
 } // namespace
 
 /// One count-in click (docs/TONE_MATCH.md, "Play along"): a sine burst, 1 ms linear rise (so it doesn't
@@ -233,11 +275,8 @@ juce::String ToneMatchSession::whyCantMatch() const
         return "Record or choose your DI (at least " + juce::String ((int) minReferenceSeconds) + " s)";
     if (separate && separator == nullptr)
         return "Separation isn't available in this build";
-    bool anyCapture = false;
-    for (int s = 0; s < AmpSimProcessor::numAmpSlots; ++s)
-        anyCapture = anyCapture || ampSim.getSlotCapture (s).existsAsFile();
-    if (! anyCapture)
-        return "Every amp slot is empty";
+    if (modelsToSearch().empty())
+        return "No amps to search: the content folder has no gain sets and every amp slot is empty";
     if (builtInCabs().empty())
         return "The built-in cabs are missing";
     return {};
@@ -258,12 +297,13 @@ bool ToneMatchSession::startMatch()
 
     MatchSettings settings;
     settings.mode = mode;
-    for (int s = 0; s < AmpSimProcessor::numAmpSlots; ++s)
-    {
-        const auto f = ampSim.getSlotCapture (s);
-        settings.models[(size_t) s] = f.existsAsFile() ? f : juce::File();
-    }
+    settings.models = modelsToSearch();
     settings.cabs = builtInCabs();
+    // The pedals and the post compressor (Round 2) are searched with a take (only the take-aware score was measured
+    // choosing them), as the drive blocks run now.
+    settings.searchPedals = referenceIsTake();
+    settings.pedalOversampling = driveOversampling (ampSim);
+    settings.voltsAtFullScale = driveVolts (ampSim);
     settings.calibration = ampSim.getCaptureCalibration();
     // A play-along take of this section is lined up with it already: DTW only near that alignment.
     const auto isTake = referenceIsTake();
@@ -541,12 +581,16 @@ bool ToneMatchSession::apply()
     p.parameters.copyState();
     p.undoManager.beginNewTransaction ("Match tone");
 
-    // The amp: the slot, its Gain (the input trim) and its five tone knobs.
-    setPlain (p, AmpSimProcessor::slotParamId, (float) r.slot);
+    // The amp: the slot that holds the matched amp already, or the playing slot with the matched gain set loaded
+    // into it (undoably); its Gain (the input trim) and its five tone knobs.
+    const auto slot = applySlot();
+    setPlain (p, AmpSimProcessor::slotParamId, (float) slot);
     setPlain (p, "amp_bypass", 0.0f);
-    setPlain (p, AmpSimProcessor::ampParamId (r.slot, "input_trim"), (float) r.gainDb);
+    if (p.getSlotCapture (slot) != r.model)
+        p.undoManager.perform (new ModelChange (p, slot, r.model));
+    setPlain (p, AmpSimProcessor::ampParamId (slot, "input_trim"), (float) r.gainDb);
     for (size_t b = 0; b < ampsim::AmpTone::numBands; ++b)
-        setPlain (p, AmpSimProcessor::ampParamId (r.slot, juce::String (ampsim::AmpTone::bands[b].name).toLowerCase()), (float) r.tone[b]);
+        setPlain (p, AmpSimProcessor::ampParamId (slot, juce::String (ampsim::AmpTone::bands[b].name).toLowerCase()), (float) r.tone[b]);
 
     // The cab: the matched IR alone in close mic 1 (mic 2 and the room muted, no cuts, not bypassed).
     setPlain (p, "cab_bypass", 0.0f);
@@ -555,7 +599,7 @@ bool ToneMatchSession::apply()
     setPlain (p, AmpSimProcessor::cabParamId (AmpSimProcessor::roomMic, "mute"), 1.0f);
     setPlain (p, "cab_lowcut_on", 0.0f);
     setPlain (p, "cab_highcut_on", 0.0f);
-    p.undoManager.perform (new CabChange (p, r.slot, r.cab));
+    p.undoManager.perform (new CabChange (p, slot, r.cab));
 
     // The match EQ: the post EQ, parametric, the five fitted bands, no cuts; its section on.
     const juce::String eq = "eq_post";
@@ -573,15 +617,111 @@ bool ToneMatchSession::apply()
     setPlain (p, eq + "_lowcut_on", 0.0f);
     setPlain (p, eq + "_highcut_on", 0.0f);
 
-    // The pre effects that color the tone before the amp are switched off, so the match is heard as it
-    // was made (Sean, 2026-10-04: "switch them off"). The noise gate stays as it is: it only mutes
-    // between notes, so it doesn't change the tone that was matched (ASSUMPTIONS TM19).
-    for (const auto& fx : preEffectsApplyTurnsOff())
-        setPlain (p, fx.parameterId, 0.0f);
+    // The pre effects that color the tone before the amp are set as the match has them (Round 2; the decision log,
+    // 2026-10-07: they were switched off before the search tried them): the pre compressor, the boost, or the
+    // overdrive the match uses, at its fitted settings, the others off; the pre EQ off. The noise gate stays as it
+    // is: it only mutes between notes (ASSUMPTIONS TM19).
+    const auto& pedal = r.pedal;
+    using Kind = ampsim::tonematch::Pedal::Kind;
+    if (pedal.kind != Kind::none)
+        setPlain (p, "pre_fx_on", 1.0f);
+    setCompressor (p, "comp_pre", pedal.kind == Kind::compressor, pedal.compressor);
+    setPlain (p, "boost_on", pedal.kind == Kind::boost ? 1.0f : 0.0f);
+    if (pedal.kind == Kind::boost)
+    {
+        setPlain (p, "boost_mode", (float) (int) pedal.boost.mode);
+        setPlain (p, "boost_level", pedal.boost.levelDb);
+        setPlain (p, "boost_tilt", pedal.boost.tiltDb);
+    }
+    setPlain (p, "od_on", pedal.kind == Kind::overdrive ? 1.0f : 0.0f);
+    if (pedal.kind == Kind::overdrive)
+    {
+        setPlain (p, "od_mode", (float) (int) pedal.overdrive.mode);
+        setPlain (p, "od_drive", 100.0f * pedal.overdrive.drive);
+        setPlain (p, "od_tone", 100.0f * pedal.overdrive.tone);
+        setPlain (p, "od_level", pedal.overdrive.levelDb);
+        setPlain (p, "od_mix", 100.0f * pedal.overdrive.mix);
+        setPlain (p, "od_tight", 0.0f);
+    }
+    setPlain (p, "eq_pre_on", 0.0f);
+    // The post compressor, as the match has it (on with its fitted settings, or off). Its threshold is absolute: the
+    // search set it with the slot's Master at 0 dB, so it moves with the Master as it is now.
+    auto post = r.postCompressor.settings;
+    post.thresholdDb += masterNowDb (slot);
+    setCompressor (p, "comp_post", r.postCompressor.on, post);
 
     p.parameters.copyState();
     p.undoManager.beginNewTransaction();
     return true;
+}
+
+void ToneMatchSession::setCompressor (AmpSimProcessor& p, const juce::String& id, bool on, const ampsim::Compressor::Settings& c)
+{
+    setPlain (p, id + "_on", on ? 1.0f : 0.0f);
+    if (! on)
+        return;
+    const ampsim::Compressor::Settings defaults;
+    setPlain (p, id + "_mode", c.mode == ampsim::Compressor::Mode::pedal ? 1.0f : 0.0f);
+    setPlain (p, id + "_detector", c.detector == ampsim::Compressor::Detector::rms ? 1.0f : 0.0f);
+    setPlain (p, id + "_threshold", c.thresholdDb);
+    setPlain (p, id + "_ratio", c.ratio);
+    setPlain (p, id + "_knee", c.kneeDb);
+    setPlain (p, id + "_attack", c.attackMs);
+    setPlain (p, id + "_release", c.releaseMs);
+    setPlain (p, id + "_auto_release", c.autoRelease ? 1.0f : 0.0f);
+    setPlain (p, id + "_makeup", c.makeupDb);
+    setPlain (p, id + "_auto_makeup", c.autoMakeup ? 1.0f : 0.0f);
+    setPlain (p, id + "_mix", 100.0f * c.mix);
+    setPlain (p, id + "_sc_hpf", c.sidechainHighPass ? 1.0f : 0.0f);
+    setPlain (p, id + "_sc_freq", c.sidechainHz);
+    juce::ignoreUnused (defaults);
+}
+
+float ToneMatchSession::masterNowDb (int slot) const
+{
+    return ampSim.parameters.getRawParameterValue (AmpSimProcessor::ampParamId (slot, "output_trim"))->load();
+}
+
+int ToneMatchSession::applySlot() const
+{
+    if (! resultReady)
+        return 0;
+    for (int s = 0; s < AmpSimProcessor::numAmpSlots; ++s)
+        if (result.model != juce::File() && ampSim.getSlotCapture (s) == result.model)
+            return s;
+    return juce::jlimit (0, AmpSimProcessor::numAmpSlots - 1,
+                         juce::roundToInt (ampSim.parameters.getRawParameterValue (AmpSimProcessor::slotParamId)->load()));
+}
+
+std::vector<juce::File> ToneMatchSession::contentGainSets()
+{
+    // The built-ins first, in slot order (Glass, Ember, Monolith), then every other gain set in the content
+    // folder by name, so a new set joins the search by being there.
+    std::vector<juce::File> out;
+    for (int s = 0; s < AmpSimProcessor::numAmpSlots; ++s)
+        if (const auto f = presets::builtInCapture (s); f.existsAsFile())
+            out.push_back (f);
+    auto folders = platform::factoryContentFolder().getChildFile ("models").findChildFiles (juce::File::findDirectories, false);
+    std::sort (folders.begin(), folders.end(), [] (const juce::File& a, const juce::File& b) { return a.getFileName() < b.getFileName(); });
+    for (const auto& d : folders)
+        if (const auto f = d.getChildFile ("gainset.json"); f.existsAsFile() && std::find (out.begin(), out.end(), f) == out.end())
+            out.push_back (f);
+    return out;
+}
+
+std::vector<juce::File> ToneMatchSession::modelsToSearch() const
+{
+    auto out = contentGainSets();
+    for (int s = 0; s < AmpSimProcessor::numAmpSlots; ++s)
+        if (const auto f = ampSim.getSlotCapture (s); f.existsAsFile() && std::find (out.begin(), out.end(), f) == out.end())
+            out.push_back (f);
+    return out;
+}
+
+juce::String ToneMatchSession::modelName (const juce::File& model)
+{
+    // A gain set is named after its folder (content/models/Ember/gainset.json: "Ember"), a capture after its file.
+    return model.getFileName() == "gainset.json" ? model.getParentDirectory().getFileName() : model.getFileNameWithoutExtension();
 }
 
 const std::vector<ToneMatchSession::PreEffect>& ToneMatchSession::preEffectsApplyTurnsOff()
@@ -597,6 +737,22 @@ juce::StringArray ToneMatchSession::preEffectsOnNow() const
         if (auto* param = ampSim.parameters.getRawParameterValue (fx.parameterId); param != nullptr && param->load() >= 0.5f)
             on.add (fx.name);
     return on;
+}
+
+void ToneMatchSession::setResultForTests (MatchResult r)
+{
+    result = std::move (r);
+    result.ok = true;
+    // What the page's curve draws, flat if the test left it out.
+    const auto n = (size_t) ampsim::tonematch::numBands;
+    if (result.residual.size() != n)
+        result.residual.assign (n, 0.0);
+    if (result.eqTarget.size() != n)
+        result.eqTarget.assign (n, 0.0);
+    if (result.weights.size() != n)
+        result.weights.assign (n, 1.0);
+    resultReady = true;
+    cleanupInfo = {};
 }
 
 void ToneMatchSession::discard()
@@ -626,14 +782,52 @@ ampsim::tonematch::ToneSettings ToneMatchSession::matchedSettings() const
 {
     using namespace ampsim;
     const auto& r = result;
+    const auto slot = applySlot();
     tonematch::ToneSettings s;
-    s.model = ampSim.getSlotCapture (r.slot);
+    s.model = r.model;
     s.calibration = ampSim.getCaptureCalibration();
     s.ampOn = true;
-    s.gainDb = storedValue (AmpSimProcessor::ampParamId (r.slot, "input_trim"), r.gainDb);
-    s.masterDb = ampSim.parameters.getRawParameterValue (AmpSimProcessor::ampParamId (r.slot, "output_trim"))->load();
+    s.gainDb = storedValue (AmpSimProcessor::ampParamId (slot, "input_trim"), r.gainDb);
+    s.masterDb = masterNowDb (slot);
     for (size_t b = 0; b < AmpTone::numBands; ++b)
-        s.tone[b] = storedValue (AmpSimProcessor::ampParamId (r.slot, juce::String (AmpTone::bands[b].name).toLowerCase()), r.tone[b]);
+        s.tone[b] = storedValue (AmpSimProcessor::ampParamId (slot, juce::String (AmpTone::bands[b].name).toLowerCase()), r.tone[b]);
+
+    // The pedal and the post compressor as Apply writes them, read back as the processor reads them.
+    using Kind = tonematch::Pedal::Kind;
+    const auto snapComp = [this] (const juce::String& id, Compressor::Settings c) {
+        c.thresholdDb = storedValue (id + "_threshold", c.thresholdDb);
+        c.ratio = storedValue (id + "_ratio", c.ratio);
+        c.kneeDb = storedValue (id + "_knee", c.kneeDb);
+        c.attackMs = storedValue (id + "_attack", c.attackMs);
+        c.releaseMs = storedValue (id + "_release", c.releaseMs);
+        c.makeupDb = storedValue (id + "_makeup", c.makeupDb);
+        c.mix = storedValue (id + "_mix", 100.0f * c.mix) / 100.0f;
+        c.sidechainHz = storedValue (id + "_sc_freq", c.sidechainHz);
+        return c;
+    };
+    auto pedal = r.pedal;
+    if (pedal.kind == Kind::compressor)
+        pedal.compressor = snapComp ("comp_pre", pedal.compressor);
+    else if (pedal.kind == Kind::boost)
+    {
+        pedal.boost.levelDb = storedValue ("boost_level", pedal.boost.levelDb);
+        pedal.boost.tiltDb = storedValue ("boost_tilt", pedal.boost.tiltDb);
+    }
+    else if (pedal.kind == Kind::overdrive)
+    {
+        pedal.overdrive.drive = storedValue ("od_drive", 100.0f * pedal.overdrive.drive) / 100.0f;
+        pedal.overdrive.tone = storedValue ("od_tone", 100.0f * pedal.overdrive.tone) / 100.0f;
+        pedal.overdrive.levelDb = storedValue ("od_level", pedal.overdrive.levelDb);
+    }
+    if (pedal.kind != Kind::none)
+        s.pedals.push_back (pedal);
+    s.postCompressor.on = r.postCompressor.on;
+    if (r.postCompressor.on)
+    {
+        auto c = r.postCompressor.settings;
+        c.thresholdDb += s.masterDb;
+        s.postCompressor.settings = snapComp ("comp_post", c);
+    }
 
     // The post EQ as Apply leaves it: the current settings (its graphic sliders are kept, unused), then
     // parametric with the five bands and no cuts, read back the way EqualizerParameters::read() reads them.
@@ -677,6 +871,44 @@ ampsim::tonematch::ToneSettings ToneMatchSession::currentSettings() const
     eq.bind (p.parameters, "eq_post");
     s.postEqOn = raw ("post_fx_on") >= 0.5f && eq.isOn();
     s.postEq = eq.read();
+
+    // The pre compressor, the boost, and the overdrive when they're on (and their section), in chain order; the post
+    // compressor likewise.
+    using Kind = tonematch::Pedal::Kind;
+    if (raw ("pre_fx_on") >= 0.5f)
+    {
+        params::CompressorParameters comp;
+        comp.bind (p.parameters, "comp_pre");
+        if (comp.isOn())
+        {
+            tonematch::Pedal pedal;
+            pedal.kind = Kind::compressor;
+            pedal.compressor = comp.read();
+            s.pedals.push_back (pedal);
+        }
+        params::BoostParameters boost;
+        boost.bind (p.parameters);
+        if (boost.isOn())
+        {
+            tonematch::Pedal pedal;
+            pedal.kind = Kind::boost;
+            pedal.boost = boost.read (driveOversampling (p), driveVolts (p));
+            s.pedals.push_back (pedal);
+        }
+        params::OverdriveParameters od;
+        od.bind (p.parameters);
+        if (od.isOn())
+        {
+            tonematch::Pedal pedal;
+            pedal.kind = Kind::overdrive;
+            pedal.overdrive = od.read (driveOversampling (p), driveVolts (p));
+            s.pedals.push_back (pedal);
+        }
+    }
+    params::CompressorParameters post;
+    post.bind (p.parameters, "comp_post");
+    s.postCompressor.on = raw ("post_fx_on") >= 0.5f && post.isOn();
+    s.postCompressor.settings = post.read();
     return s;
 }
 
@@ -702,6 +934,26 @@ juce::String ToneMatchSession::currentFingerprint (const ampsim::tonematch::Tone
         f << "," << (int) b.type << "," << b.frequency << "," << b.gainDb << "," << b.q;
     f << "," << (int) s.postEq.lowCut.on << "," << s.postEq.lowCut.frequency << "," << (int) s.postEq.lowCut.slope;
     f << "," << (int) s.postEq.highCut.on << "," << s.postEq.highCut.frequency << "," << (int) s.postEq.highCut.slope;
+    const auto comp = [&f] (const ampsim::Compressor::Settings& c) {
+        f << ":" << (int) c.mode << (int) c.detector << "," << c.thresholdDb << "," << c.ratio << "," << c.kneeDb << "," << c.attackMs << ","
+          << c.releaseMs << "," << (int) c.autoRelease << "," << c.makeupDb << "," << (int) c.autoMakeup << "," << c.mix << ","
+          << (int) c.sidechainHighPass << "," << c.sidechainHz;
+    };
+    for (const auto& pd : s.pedals)
+    {
+        f << "|pedal" << (int) pd.kind;
+        if (pd.kind == ampsim::tonematch::Pedal::Kind::compressor)
+            comp (pd.compressor);
+        else if (pd.kind == ampsim::tonematch::Pedal::Kind::boost)
+            f << ":" << (int) pd.boost.mode << "," << pd.boost.levelDb << "," << pd.boost.tiltDb << "," << pd.boost.tightHz << "," << pd.boost.midDb << ","
+              << pd.boost.oversampling << "," << pd.boost.voltsAtFullScale;
+        else
+            f << ":" << (int) pd.overdrive.mode << "," << pd.overdrive.drive << "," << pd.overdrive.tone << "," << pd.overdrive.levelDb << ","
+              << pd.overdrive.mix << "," << pd.overdrive.tightHz << "," << pd.overdrive.oversampling << "," << pd.overdrive.voltsAtFullScale;
+    }
+    f << "|post" << (int) s.postCompressor.on;
+    if (s.postCompressor.on)
+        comp (s.postCompressor.settings);
     return f;
 }
 

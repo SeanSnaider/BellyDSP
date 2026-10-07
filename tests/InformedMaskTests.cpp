@@ -109,7 +109,7 @@ MatchSettings appSettings (Mode mode, double bandSeconds)
     s.mode = mode;
     static const char* names[] = { "Glass", "Ember", "Monolith" };
     for (int i = 0; i < 3; ++i)
-        s.models[(size_t) i] = platform::factoryContentFolder().getChildFile ("models").getChildFile (names[i]).getChildFile ("gainset.json");
+        s.models.push_back (platform::factoryContentFolder().getChildFile ("models").getChildFile (names[i]).getChildFile ("gainset.json"));
     s.cabs = builtInCabs();
     s.alignmentBandSeconds = mode == Mode::samePart ? bandSeconds : 0.0;
     return s;

@@ -79,7 +79,7 @@ MatchSettings settingsFor (Mode mode)
     MatchSettings s;
     s.mode = mode;
     for (int i = 0; i < 3; ++i)
-        s.models[(size_t) i] = model (i);
+        s.models.push_back (model (i));
     s.cabs = builtInCabs();
     return s;
 }

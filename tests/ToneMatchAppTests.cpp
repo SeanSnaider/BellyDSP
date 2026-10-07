@@ -213,8 +213,8 @@ public:
             const auto r = session.getResult(); // a copy: Discard clears the session's
             pngs.add (snap ("04_result"));
             const auto note = page.getApplyNote();
-            expectEquals (note, juce::String ("Apply sets these as normal settings, in one undo step, and switches off the pre effects: compressor, boost, overdrive, pre EQ (on now: compressor, boost, pre EQ). "
-                                              "The noise gate stays as it is."));
+            expectEquals (note, juce::String ("Apply sets these in one undo step: the compressors, boost, and overdrive as the match has them (it uses none), "
+                                              "the pre EQ off (on now: compressor, boost, pre EQ). The gate stays as it is."));
 
             page.apply();
             waitForLoads (p);
@@ -262,6 +262,110 @@ public:
             logMessage ("  -> one undo: " + undone + " (identical to before, the cab and every pre effect switch included; nothing left to undo); redo re-applied; Discard cleared the result");
             logMessage ("  -> the page's Apply note: \"" + note + "\"");
             logMessage ("  -> snapshots: tone_match/" + pngs.joinIntoString (", tone_match/"));
+        }
+
+        beginTest ("Apply with a pedal, a post compressor, and a gain set no slot holds (Round 2): the set loads into the playing slot, the pedal and the compressors are set, Match renders what Apply sets, one undo step puts it all back");
+        {
+            WithBuiltInCaptures builtIns;
+            AmpSimProcessor p;
+            waitForLoads (p);
+            p.prepareToPlay (fs, blockSize);
+            std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+            auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
+            ed.showPage (ui::PageId::toneMatch);
+            auto& page = ed.getToneMatchPage();
+            auto& session = page.getSession();
+            const auto glass = p.getSlotCapture (0);
+            // Slot 3 is emptied, and slot 1 (Glass) plays; the result is Monolith's gain set, which no slot holds now.
+            p.clearModel (2);
+            waitForLoads (p);
+            setParam (p, AmpSimProcessor::slotParamId, 0.0f);
+            setParam (p, "pre_fx_on", 0.0f);
+            setParam (p, "comp_pre_on", 1.0f);
+            setParam (p, "boost_on", 1.0f);
+            setParam (p, "comp_post_on", 0.0f);
+            setParam (p, AmpSimProcessor::ampParamId (0, "output_trim"), -3.0f);
+            p.parameters.copyState();
+            p.undoManager.beginNewTransaction();
+            p.undoManager.clearUndoHistory();
+            const auto ids = juce::StringArray { "pre_fx_on", "comp_pre_on", "boost_on", "od_on", "od_mode", "od_drive", "od_tone", "comp_post_on", "comp_post_threshold",
+                                                 "comp_post_ratio", "comp_post_detector", "comp_post_mix", "amp1_input_trim" };
+            auto values = [&] {
+                juce::StringArray v;
+                for (const auto& id : ids)
+                    v.add (id + "=" + juce::String (getParam (p, id), 2));
+                v.add ("slot1=" + p.getSlotCapture (0).getParentDirectory().getFileName());
+                return v.joinIntoString (", ");
+            };
+            const auto before = values();
+
+            ampsim::tonematch::MatchResult r;
+            r.mode = ampsim::tonematch::Mode::anything;
+            r.model = ToneMatchSession::contentGainSets()[2];
+            r.slot = 2;
+            r.gainDb = 4.5;
+            r.tone = { 1.0, -2.0, 0.5, 2.0, -1.0 };
+            r.cab = platform::factoryContentFolder().getChildFile ("irs/Modern 4x12/Modern 4x12, dynamic, 75 W, var. 1.wav");
+            r.eq[1] = { ampsim::Equalizer::BandType::peak, 1200.0f, -3.0f, 1.0f };
+            r.pedal.kind = ampsim::tonematch::Pedal::Kind::overdrive;
+            r.pedal.overdrive.mode = ampsim::Overdrive::Mode::distortion;
+            r.pedal.overdrive.drive = 0.3f;
+            r.pedal.overdrive.tone = 0.5f;
+            r.pedal.overdrive.unityTrim = true;
+            r.postCompressor.on = true;
+            auto& c = r.postCompressor.settings;
+            c.mode = ampsim::Compressor::Mode::studio;
+            c.detector = ampsim::Compressor::Detector::rms;
+            c.thresholdDb = -22.0f;
+            c.ratio = 3.0f;
+            c.attackMs = 10.0f;
+            c.releaseMs = 150.0f;
+            c.autoRelease = false;
+            c.autoMakeup = false;
+            c.makeupDb = 0.0f;
+            c.mix = 1.0f;
+            session.setResultForTests (r);
+            page.refresh();
+            expectEquals (session.applySlot(), 0, "the playing slot");
+            const auto note = page.getApplyNote();
+            expect (note.contains ("it uses overdrive"), note);
+            const auto text = page.getResultText();
+            expect (text.contains ("Monolith (loads into slot 1)") && text.contains ("Overdrive, Distortion") && text.contains ("post compressor -22.0 dB 3:1"), text);
+            const auto matched = session.matchedSettings();
+            ed.refresh();
+            const auto shot = shots.getChildFile ("31_result_pedal.png");
+            expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), shot));
+
+            page.apply();
+            waitForLoads (p);
+            expectEquals (p.getSlotCapture (0).getFullPathName(), r.model.getFullPathName());
+            expect (getParam (p, "pre_fx_on") > 0.5f && getParam (p, "od_on") > 0.5f && getParam (p, "comp_pre_on") < 0.5f && getParam (p, "boost_on") < 0.5f);
+            expectEquals ((int) getParam (p, "od_mode"), (int) ampsim::Overdrive::Mode::distortion);
+            expectWithinAbsoluteError (getParam (p, "od_drive"), 30.0f, 0.051f);
+            expect (getParam (p, "comp_post_on") > 0.5f);
+            expectWithinAbsoluteError (getParam (p, "comp_post_threshold"), -25.0f, 0.051f); // -22 dB with the Master at -3 dB
+            expectEquals ((int) getParam (p, "comp_post_detector"), 1);
+            // Match renders exactly what Apply set (the settings read back from the processor), the pedal and the post
+            // compressor included.
+            const auto di = guitarDI ((int) (3.0 * fs));
+            std::atomic<bool> noCancel { false };
+            auto current = session.currentSettings();
+            auto m = matched;
+            m.cabIR = current.cabIR;
+            const auto a = ampsim::tonematch::ToneMatcher::renderTone (m, di, noCancel), b = ampsim::tonematch::ToneMatcher::renderTone (current, di, noCancel);
+            expect (! a.empty() && a == b, "Match's render equals the applied settings' render, sample for sample");
+            expectEquals ((int) current.pedals.size(), 1);
+            expect (current.postCompressor.on);
+            const auto after = values();
+
+            expect (p.undoManager.canUndo());
+            p.undoManager.undo();
+            waitForLoads (p);
+            expectEquals (values(), before);
+            expectEquals (p.getSlotCapture (0).getFullPathName(), glass.getFullPathName());
+            expect (! p.undoManager.canUndo(), "one undo step");
+            logMessage ("  -> \"" + note + "\"; before: " + before + "; applied: " + after + "; Match and the applied settings render the same "
+                        + juce::String ((int) a.size()) + " samples; undone: identical to before");
         }
 
         beginTest ("cancelling from the page stops the match and says so, and the page can match again");

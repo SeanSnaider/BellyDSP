@@ -3,6 +3,8 @@
 
 #include "ToneMatchPage.h"
 
+#include "../BlockParameters.h"
+
 #include "dsp/GainSet.h"
 #include "tonematch/AudioFileInput.h"
 
@@ -1255,8 +1257,8 @@ void ToneMatchPage::updateResultText()
     // The amp by the name the head shows: a gain set's own name (its file is always gainset.json), else
     // the capture's file name. Gain as the head's knob shows it, 0 to 10: the trim's -24..+24 dB maps
     // linearly with 5 at 0 dB (4.8 dB per step, ASSUMPTIONS UH3).
-    const auto captureFile = ampSim.getSlotCapture (r.slot);
-    auto capture = captureFile.getFileNameWithoutExtension();
+    const auto captureFile = r.model;
+    auto capture = ToneMatchSession::modelName (captureFile);
     if (ampsim::GainSet set; ampsim::GainSet::isGainSet (captureFile))
         if (juce::String why; ampsim::GainSet::read (captureFile, set, why) && set.name.isNotEmpty())
             capture = set.name;
@@ -1265,7 +1267,17 @@ void ToneMatchPage::updateResultText()
         resultLabels.add (label);
         resultItems.push_back (std::move (items));
     };
-    add ("Amp", { capture + " (slot " + juce::String (r.slot + 1) + ")", "Gain " + juce::String (gainPosition, 1) });
+    const auto slot = session.applySlot();
+    const auto loads = ampSim.getSlotCapture (slot) != r.model;
+    add ("Amp", { capture + (loads ? " (loads into slot " : " (slot ") + juce::String (slot + 1) + ")", "Gain " + juce::String (gainPosition, 1) });
+    // The pedal in front and the post compressor after, on one row (the card has room for five).
+    juce::StringArray effects;
+    if (const auto pedal = pedalText (r.pedal); pedal.isNotEmpty())
+        effects.addArray (juce::StringArray::fromTokens (pedal, ";", ""));
+    if (r.postCompressor.on)
+        effects.add ("post compressor " + juce::String (r.postCompressor.settings.thresholdDb, 1) + " dB " + juce::String (r.postCompressor.settings.ratio, 0) + ":1");
+    if (! effects.isEmpty())
+        add ("Effects", effects);
     juce::StringArray tone;
     for (size_t b = 0; b < ampsim::AmpTone::numBands; ++b)
         tone.add (juce::String (ampsim::AmpTone::bands[b].name) + " " + signedDb (r.tone[b]));
@@ -1314,14 +1326,34 @@ juce::StringArray ToneMatchPage::packItems (const juce::Font& f, const juce::Str
     return lines;
 }
 
+juce::String ToneMatchPage::pedalText (const ampsim::tonematch::Pedal& p)
+{
+    using Kind = ampsim::tonematch::Pedal::Kind;
+    switch (p.kind)
+    {
+        case Kind::none: return {};
+        case Kind::boost: return "Boost, Clean;Level " + signedDb (p.boost.levelDb);
+        case Kind::compressor:
+            return "Compressor, Pedal;threshold " + juce::String (p.compressor.thresholdDb, 1) + " dB;" + juce::String (p.compressor.ratio, 0) + ":1;makeup "
+                   + juce::String (p.compressor.makeupDb, 1) + " dB";
+        case Kind::overdrive:
+            return "Overdrive, " + params::OverdriveParameters::modeNames()[(int) p.overdrive.mode] + ";Drive " + juce::String (juce::roundToInt (100.0f * p.overdrive.drive))
+                   + ";Tone " + juce::String (juce::roundToInt (100.0f * p.overdrive.tone)) + ";Level " + signedDb (p.overdrive.levelDb);
+    }
+    return {};
+}
+
 juce::String ToneMatchPage::getApplyNote() const
 {
-    juce::StringArray names;
-    for (const auto& fx : ToneMatchSession::preEffectsApplyTurnsOff())
-        names.add (fx.name);
+    // Since Round 2 Apply sets the pre effects the search tried (the compressor, the boost, the overdrive) as the
+    // match has them, and switches the pre EQ off (the decision log, 2026-10-07).
     const auto on = session.preEffectsOnNow();
-    return "Apply sets these as normal settings, in one undo step, and switches off the pre effects: " + names.joinIntoString (", ") + (on.isEmpty() ? " (none is on now)" : " (on now: " + on.joinIntoString (", ") + ")")
-           + ". The noise gate stays as it is.";
+    juce::String uses = "none";
+    if (session.hasResult())
+        if (const auto t = pedalText (session.getResult().pedal); t.isNotEmpty())
+            uses = t.upToFirstOccurrenceOf (",", false, false).toLowerCase();
+    return "Apply sets these in one undo step: the compressors, boost, and overdrive as the match has them (it uses " + uses
+           + "), the pre EQ off" + (on.isEmpty() ? juce::String() : " (on now: " + on.joinIntoString (", ") + ")") + ". The gate stays as it is.";
 }
 
 void ToneMatchPage::refresh()

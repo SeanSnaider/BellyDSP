@@ -149,7 +149,7 @@ public:
             MatchSettings s;
             s.mode = Mode::anything;
             for (int i = 0; i < 3; ++i)
-                s.models[(size_t) i] = gainSet (i);
+                s.models.push_back (gainSet (i));
             s.cabs = builtInCabs();
             s.takeIsLinedUp = true;
             const auto r = ToneMatcher::match (target, takeDi, s, noCancel);
@@ -164,6 +164,83 @@ public:
             logMessage ("  -> slot " + juce::String (r.slot + 1) + " at " + juce::String (r.gainDb, 1) + " dB, " + r.cab.getFileNameWithoutExtension() + ", "
                         + juce::String (r.notePairs) + " note pairs, S " + juce::String (r.takeScore.total, 4) + " (prototype "
                         + juce::String ((double) m["terms"]["total"], 4) + "), in " + juce::String (r.runtimeSeconds, 1) + " s");
+            // With the pedals and the post compressor in the search (prototypes/tone_match.py, pedal_variants and
+            // search_post_comp): the playing level, the variants, and the result.
+            const auto play = ToneMatcher::playingLevelDb (takeDi);
+            expectWithinAbsoluteError (play, (double) e["playing_level_db"], 1.0e-4);
+            const auto variants = ToneMatcher::pedalVariants (takeDi, 18.0, s);
+            const auto* pv = e["pedal_variants"].getArray();
+            expect (pv != nullptr && pv->size() == (int) variants.size());
+            int variantsMatching = 0;
+            for (int i = 0; pv != nullptr && i < pv->size() && i < (int) variants.size(); ++i)
+            {
+                const auto& ev = (*pv)[i][0];
+                const auto& [pedal, g] = variants[(size_t) i];
+                const auto kind = ev["kind"].toString();
+                bool same = std::abs (g - (double) (*pv)[i][1]) < 1.0e-9;
+                if (kind == "boost")
+                    same = same && pedal.kind == Pedal::Kind::boost && std::abs (pedal.boost.levelDb - (double) ev["level"]) < 1.0e-6;
+                else if (kind == "comp")
+                    same = same && pedal.kind == Pedal::Kind::compressor && std::abs (pedal.compressor.thresholdDb - (double) ev["threshold"]) < 1.0e-4
+                           && std::abs (pedal.compressor.makeupDb - (double) ev["makeup"]) < 1.0e-4;
+                else
+                {
+                    static const juce::StringArray modes { "mid", "distortion", "transparent", "fuzz" };
+                    same = same && pedal.kind == Pedal::Kind::overdrive && (int) pedal.overdrive.mode == modes.indexOf (kind)
+                           && std::abs (pedal.overdrive.drive - (double) ev["drive"]) < 1.0e-6;
+                }
+                variantsMatching += same ? 1 : 0;
+            }
+            expectEquals (variantsMatching, (int) variants.size());
+
+            s.searchPedals = true;
+            const auto fx = ToneMatcher::match (target, takeDi, s, noCancel);
+            expect (fx.ok && fx.takeScored, fx.error);
+            const auto& mf = e["match_fx"];
+            expectEquals (fx.slot, (int) mf["slot"]);
+            expectWithinAbsoluteError (fx.gainDb, (double) mf["gain"], 1.0e-9);
+            expectEquals (fx.cab.getFileName(), mf["cab"].toString());
+            const auto& ep = mf["pedal"];
+            juce::String pedalLine = "none";
+            if (ep.isObject())
+            {
+                const auto kind = ep["kind"].toString();
+                if (kind == "comp")
+                {
+                    expect (fx.pedal.kind == Pedal::Kind::compressor);
+                    expectWithinAbsoluteError ((double) fx.pedal.compressor.thresholdDb, (double) ep["threshold"], 1.0e-4);
+                    pedalLine = "pre compressor at " + juce::String (fx.pedal.compressor.thresholdDb, 1) + " dB";
+                }
+                else if (kind == "boost")
+                {
+                    expect (fx.pedal.kind == Pedal::Kind::boost);
+                    expectWithinAbsoluteError ((double) fx.pedal.boost.levelDb, (double) ep["level"], 1.0e-6);
+                    pedalLine = "boost +" + juce::String (fx.pedal.boost.levelDb, 0) + " dB";
+                }
+                else
+                {
+                    expect (fx.pedal.kind == Pedal::Kind::overdrive);
+                    expectWithinAbsoluteError ((double) fx.pedal.overdrive.drive, (double) ep["drive"], 1.0e-6);
+                    pedalLine = "overdrive " + kind + " " + juce::String (fx.pedal.overdrive.drive, 1);
+                }
+            }
+            else
+                expect (fx.pedal.kind == Pedal::Kind::none);
+            expect (fx.postCompressor.on == mf["post_comp"].isObject());
+            const auto pyScores = doubles (mf["post_comp_scores"]);
+            expectLessThan (worst (fx.postCompressorScores, pyScores), 0.02);
+            expectWithinAbsoluteError (fx.takeScore.total, (double) mf["terms"]["total"], 0.05);
+            juce::String scores;
+            for (size_t i = 0; i < fx.postCompressorScores.size(); ++i)
+                scores << juce::String (fx.postCompressorScores[i], 3) << " (" << juce::String (pyScores[i], 3) << ") ";
+            logMessage ("  -> the playing level " + juce::String (play, 4) + " dB (prototype " + juce::String ((double) e["playing_level_db"], 4) + "), "
+                        + juce::String (variantsMatching) + " of " + juce::String ((int) variants.size()) + " variants the prototype's; with pedals: slot "
+                        + juce::String (fx.slot + 1) + " at " + juce::String (fx.gainDb, 1) + " dB, " + fx.cab.getFileNameWithoutExtension() + ", " + pedalLine
+                        + ", post compressor " + (fx.postCompressor.on ? "on" : "off") + " (scores without, -4, -8 dB: " + scores + "), S "
+                        + juce::String (fx.takeScore.total, 4) + " (" + juce::String ((double) mf["terms"]["total"], 4) + "), " + juce::String (fx.renders)
+                        + " renders, " + juce::String (fx.runtimeSeconds, 1) + " s");
+            s.searchPedals = false;
+
             // Without the flag the old score decides, as before.
             s.takeIsLinedUp = false;
             const auto old = ToneMatcher::match (target, takeDi, s, noCancel);

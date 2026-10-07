@@ -1,4 +1,231 @@
 {
+ "playing_level_db": -18.40737697879904,
+ "pedal_variants": [
+  [
+   {
+    "kind": "mid",
+    "drive": 0.3,
+    "tone": 0.5,
+    "level": 0.0,
+    "tight": 20.0
+   },
+   18.0
+  ],
+  [
+   {
+    "kind": "mid",
+    "drive": 0.3,
+    "tone": 0.5,
+    "level": 0.0,
+    "tight": 20.0
+   },
+   12.0
+  ],
+  [
+   {
+    "kind": "mid",
+    "drive": 0.7,
+    "tone": 0.5,
+    "level": 0.0,
+    "tight": 20.0
+   },
+   18.0
+  ],
+  [
+   {
+    "kind": "mid",
+    "drive": 0.7,
+    "tone": 0.5,
+    "level": 0.0,
+    "tight": 20.0
+   },
+   12.0
+  ],
+  [
+   {
+    "kind": "distortion",
+    "drive": 0.3,
+    "tone": 0.5,
+    "level": 0.0,
+    "tight": 20.0
+   },
+   18.0
+  ],
+  [
+   {
+    "kind": "distortion",
+    "drive": 0.3,
+    "tone": 0.5,
+    "level": 0.0,
+    "tight": 20.0
+   },
+   12.0
+  ],
+  [
+   {
+    "kind": "distortion",
+    "drive": 0.7,
+    "tone": 0.5,
+    "level": 0.0,
+    "tight": 20.0
+   },
+   18.0
+  ],
+  [
+   {
+    "kind": "distortion",
+    "drive": 0.7,
+    "tone": 0.5,
+    "level": 0.0,
+    "tight": 20.0
+   },
+   12.0
+  ],
+  [
+   {
+    "kind": "transparent",
+    "drive": 0.3,
+    "tone": 0.5,
+    "level": 0.0,
+    "tight": 20.0
+   },
+   18.0
+  ],
+  [
+   {
+    "kind": "transparent",
+    "drive": 0.3,
+    "tone": 0.5,
+    "level": 0.0,
+    "tight": 20.0
+   },
+   12.0
+  ],
+  [
+   {
+    "kind": "transparent",
+    "drive": 0.7,
+    "tone": 0.5,
+    "level": 0.0,
+    "tight": 20.0
+   },
+   18.0
+  ],
+  [
+   {
+    "kind": "transparent",
+    "drive": 0.7,
+    "tone": 0.5,
+    "level": 0.0,
+    "tight": 20.0
+   },
+   12.0
+  ],
+  [
+   {
+    "kind": "fuzz",
+    "drive": 0.3,
+    "tone": 0.5,
+    "level": 0.0,
+    "tight": 20.0
+   },
+   18.0
+  ],
+  [
+   {
+    "kind": "fuzz",
+    "drive": 0.3,
+    "tone": 0.5,
+    "level": 0.0,
+    "tight": 20.0
+   },
+   12.0
+  ],
+  [
+   {
+    "kind": "fuzz",
+    "drive": 0.7,
+    "tone": 0.5,
+    "level": 0.0,
+    "tight": 20.0
+   },
+   18.0
+  ],
+  [
+   {
+    "kind": "fuzz",
+    "drive": 0.7,
+    "tone": 0.5,
+    "level": 0.0,
+    "tight": 20.0
+   },
+   12.0
+  ],
+  [
+   {
+    "kind": "boost",
+    "level": 6.0,
+    "tilt": 0.0
+   },
+   24.0
+  ],
+  [
+   {
+    "kind": "boost",
+    "level": 12.0,
+    "tilt": 0.0
+   },
+   24.0
+  ],
+  [
+   {
+    "kind": "comp",
+    "threshold": -24.4,
+    "ratio": 4.0,
+    "release": 200.0,
+    "makeup": 4.5
+   },
+   18.0
+  ],
+  [
+   {
+    "kind": "comp",
+    "threshold": -30.4,
+    "ratio": 4.0,
+    "release": 200.0,
+    "makeup": 9.0
+   },
+   18.0
+  ]
+ ],
+ "match_fx": {
+  "slot": 1,
+  "gain": -7.5,
+  "cab": "Vintage 4x12, supercardioid, lower.wav",
+  "terms": {
+   "spectral": 1.1517925168338277,
+   "flux": 0.06558240307549212,
+   "crest": 0.6027634914789832,
+   "attack": 1.6954118040400843,
+   "spread": 0.14995059293250135,
+   "erb": 1.0346912634178231,
+   "total": 34.89084945692424,
+   "best_without_pedal": 35.491046543248444
+  },
+  "pedal": {
+   "kind": "comp",
+   "threshold": -24.4,
+   "ratio": 4.0,
+   "release": 200.0,
+   "makeup": 4.5
+  },
+  "post_comp": null,
+  "post_comp_scores": [
+   24.075,
+   24.441,
+   24.383
+  ]
+ },
  "notes": {
   "o": [
    2403,

@@ -7,7 +7,10 @@
 #include "TakeScore.h"
 #include "ToneMatchAnalysis.h"
 
+#include "../dsp/Boost.h"
+#include "../dsp/Compressor.h"
 #include "../dsp/NamAmp.h"
+#include "../dsp/Overdrive.h"
 
 #include <juce_core/juce_core.h>
 
@@ -40,10 +43,38 @@ enum class Mode
     samePart  ///< the player played the same part: DTW-aligned, frame by frame
 };
 
+/// A pedal in front of the amp (Round 2: the search tries them; docs/TONE_MATCH.md, "Round 2: pedals"): the boost,
+/// the overdrive, or the pre compressor, with the settings the chain's block takes (as BoostParameters,
+/// OverdriveParameters, CompressorParameters read them).
+struct Pedal
+{
+    enum class Kind
+    {
+        none,
+        boost,
+        overdrive,
+        compressor
+    };
+    Kind kind = Kind::none;
+    Boost::Settings boost;
+    Overdrive::Settings overdrive;
+    Compressor::Settings compressor;
+    bool operator== (const Pedal&) const = default;
+};
+
+/// The post compressor (after the cab and the post EQ), when a match uses it.
+struct PostCompressor
+{
+    bool on = false;
+    Compressor::Settings settings;
+};
+
 struct MatchSettings
 {
     Mode mode = Mode::anything;
-    std::array<juce::File, 3> models;   ///< the slots' captures; an empty File leaves that slot out
+    /// The amps to choose from (gain sets or captures; the app: every gain set in the content folder, then the slots'
+    /// own captures). An empty File is skipped. MatchResult::slot indexes this list.
+    std::vector<juce::File> models;
     std::vector<juce::File> cabs;       ///< the cab IRs to choose from (the built-in 21 in the app)
     NamAmp::Calibration calibration;    ///< as the app loads its captures
     int threads = 0;                    ///< 0: the machine's cores minus one
@@ -61,6 +92,11 @@ struct MatchSettings
     /// score (TakeScore.h) among the old score's take::shortlist best, each fitted completely. False, or fewer than
     /// take::minNotes pairs: the old score decides.
     bool takeIsLinedUp = false;
+    /// Also try the app's pedals in front of the best amp and its post compressor (Round 2; ToneMatcher::pedalVariants,
+    /// searchPostCompressor). The post compressor needs the take-aware score (a take).
+    bool searchPedals = false;
+    int pedalOversampling = 4;                                   ///< as the processor sets the drive blocks
+    double voltsAtFullScale = drive::defaultVoltsAtFullScale;    ///< the interface's calibration, as the processor's
 };
 
 struct MatchResult
@@ -69,11 +105,15 @@ struct MatchResult
     juce::String error;
     Mode mode = Mode::anything;
 
-    int slot = 0;
+    int slot = 0;                       ///< the matched amp: an index into MatchSettings::models
+    juce::File model;                   ///< that amp's file
     double gainDb = 0.0;
     std::array<double, 5> tone {};
     juce::File cab;
     std::array<Equalizer::Band, Equalizer::numParametricBands> eq {};
+    Pedal pedal;                        ///< in front of the amp (none unless the pedal search found one better)
+    PostCompressor postCompressor;      ///< after the cab and the EQ
+    std::vector<double> postCompressorScores; ///< the take-aware score of the finished match without it and with each tried
 
     double spectralErrorDb = 0.0;        ///< after the tone, before the match EQ
     double spectralErrorAfterEqDb = 0.0; ///< after the match EQ
@@ -110,6 +150,8 @@ struct ToneSettings
 {
     juce::File model;                   ///< the slot's capture or gain set; empty: no amp
     NamAmp::Calibration calibration;    ///< as the app loads its captures
+    std::vector<Pedal> pedals;          ///< in front of the amp, in chain order (the pre compressor, the boost, the overdrive)
+    PostCompressor postCompressor;      ///< after the post EQ
     bool ampOn = true;                  ///< amp_bypass off
     float gainDb = 0.0f;                ///< the slot's Gain (amp*_input_trim)
     float masterDb = 0.0f;              ///< the slot's Master (amp*_output_trim)
@@ -133,7 +175,25 @@ public:
     /// chain plays with every effect off and no cab (and what ampsim_render --model --trim writes).
     /// Returns an empty vector if the capture won't load or the render was cancelled.
     static std::vector<float> renderAmp (const juce::File& model, const NamAmp::Calibration& calibration,
-                                         const std::vector<float>& di, double gainDb, const std::atomic<bool>& cancel);
+                                         const std::vector<float>& di, double gainDb, const std::atomic<bool>& cancel,
+                                         const Pedal& pedal = {});
+
+    /// The DI through a pedal alone (the chain's own block, mono, settings in before prepare()). The DI as it was
+    /// for Kind::none.
+    static std::vector<float> renderPedal (const Pedal& pedal, const std::vector<float>& di, const std::atomic<bool>& cancel);
+
+    /// The post compressor (the chain's block, settings in before prepare()) on x, in place. False if cancelled.
+    static bool compress (const Compressor::Settings& settings, std::vector<float>& x, const std::atomic<bool>& cancel);
+
+    /// The playing level of x: the 90th percentile of a 50 ms RMS (the mean square over [n - 1200, n + 1200)) over the
+    /// samples where it's above 1e-6, dB (-120 if none). Pedal and compressor thresholds are set from it.
+    static double playingLevelDb (const std::vector<float>& x);
+
+    /// The pedals tried in front of the best amp at its best Gain (prototypes/tone_match.py, pedal_variants): the
+    /// overdrive's four modes at Drive 0.3 and 0.7 (Tone 0.5, Level 0 dB, Tight off) each at the Gain and 6 dB under
+    /// it; the clean boost at +6 and +12 dB into Gain +24 when the Gain is +18 or more; the pre compressor (pedal mode,
+    /// peak, 4:1, 2 ms, 200 ms) 6 and 12 dB under the DI's playing level with makeup for three quarters of that.
+    static std::vector<std::pair<Pedal, double>> pedalVariants (const std::vector<float>& di, double gainDb, const MatchSettings& settings);
 
     /// The DI through `settings`: the chain's own amp block (AmpSection, the capture in its first slot, with
     /// the Gain, tone, and Master), then the cab IR by FFT convolution, then the post EQ block (Equalizer).
@@ -166,6 +226,7 @@ public:
         int slot = 0;
         double gainDb = 0.0;
         int cab = 0;
+        int pedal = -1; ///< an index into the search's pedal variants; -1: none
         Analysis analysis;
         std::vector<double> residual;
         std::array<double, 5> tone {};
