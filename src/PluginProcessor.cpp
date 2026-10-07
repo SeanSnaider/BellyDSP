@@ -422,21 +422,22 @@ void AmpSimProcessor::updateMatchCurve (bool force)
     const auto changed = matchCurveDirty || std::abs (wanted - matchCurveQueuedAmount) > 1.0e-6;
     const auto now = juce::Time::getMillisecondCounterHiRes();
 
-    // One design at a time, and amount changes at most every 40 ms (morphIntervalMs, as for a moving mic): a
-    // knob being dragged is designed for where it is now, the positions in between skipped. A new curve
-    // goes at once unless a design is still running (the next tick catches up).
-    if (! changed || matchCurveInFlight.load() || (! force && now - lastMatchCurveBuildMs < morphIntervalMs))
+    // A new curve is queued at once (the loader runs its jobs in order, so the newest curve always lands
+    // last, and isLoading() covers it). Amount changes wait for the last design to finish and come at most
+    // every 40 ms (morphIntervalMs, as for a moving mic): a knob being dragged is designed for where it is
+    // now, the positions in between skipped.
+    if (! changed || (! force && (matchCurveJobs.load() > 0 || now - lastMatchCurveBuildMs < morphIntervalMs)))
         return;
 
     matchCurveDirty = false;
     matchCurveQueuedAmount = wanted;
     lastMatchCurveBuildMs = now;
-    matchCurveInFlight = true;
+    ++matchCurveJobs;
     addLoaderJob ([this, curve = matchCurveData, wanted]
     {
         chain.matchCurve.setCurve (curve, wanted);
         ++matchCurveBuilds;
-        matchCurveInFlight = false;
+        --matchCurveJobs;
     });
 }
 

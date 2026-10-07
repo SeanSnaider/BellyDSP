@@ -436,13 +436,13 @@ private:
     std::atomic<float>* highCutSlope = nullptr;
 
     // The match curve. The curve itself and the amount last sent to the loader are the message thread's;
-    // matchCurvePresent (not flat) is read by the audio thread for the bypass; the loader clears
-    // matchCurveInFlight when its design is done.
+    // matchCurvePresent (not flat) is read by the audio thread for the bypass; matchCurveJobs counts the
+    // designs queued or running on the loader.
     std::atomic<float>* matchCurveOn = nullptr;
     std::atomic<float>* matchCurveAmount = nullptr;
     ampsim::MatchCurve::Curve matchCurveData;
-    std::atomic<bool> matchCurvePresent { false }, matchCurveInFlight { false };
-    std::atomic<int> matchCurveBuilds { 0 };
+    std::atomic<bool> matchCurvePresent { false };
+    std::atomic<int> matchCurveBuilds { 0 }, matchCurveJobs { 0 };
     bool matchCurveDirty = false;
     double matchCurveQueuedAmount = -1.0, lastMatchCurveBuildMs = 0.0;
     void updateMatchCurve (bool force);
