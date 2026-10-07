@@ -362,7 +362,7 @@ private:
 /// A segmented choice (the reference's .seg, the tuner's tunings): text options 16 px apart in 12 px
 /// ink-faint, the chosen one in ink with a 1 px emerald underline 4 px below. Hover lightens an option to
 /// ink-dim. A click, or the arrow keys when focused, chooses.
-class Segmented final : public juce::Component
+class Segmented final : public juce::Component, public juce::SettableTooltipClient
 {
 public:
     explicit Segmented (juce::StringArray options);

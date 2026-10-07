@@ -2,10 +2,11 @@
 // Copyright (C) 2026 Sean Snaider
 
 // Cleaning up the target with the take, in the app (docs/TONE_MATCH.md, "Cleaning up the target with your take"):
-// the page's "Clean up with my take" (on by default, disabled in Anything mode with the reason shown), a
-// play-along take matched with it on (the target the matcher compared is the cleaned one, exactly
-// informed::cleanUp's output, and the A/B gains Raw, the target before), with it off (the target as it was, no
-// Raw), cancel while it runs, and snapshots at 2x of the three states. The cleanup itself is golden-tested in
+// the page's "Clean up with my take" (Auto by default since Round 2, On, Off; disabled when the DI's notes don't
+// line up, with the reason shown), a play-along take matched in Anything (the default now) with Auto (no
+// separation: not tried; a separated target with bleed: the detector cleans it up; the cleaned target the matcher
+// compared is exactly informed::cleanUp's output, and the A/B gains Raw), On, and Off; cancel while it runs; and
+// snapshots at 2x. The cleanup itself is golden-tested in
 // InformedMaskTests.cpp.
 
 #include "BuiltInCaptures.h"
@@ -78,7 +79,7 @@ public:
 
     void runTest() override
     {
-        beginTest ("the page: a play-along take matched with \"Clean up with my take\" on (the default), off, and in Anything mode (disabled, the reason shown); the A/B's Raw; snapshots at 2x");
+        beginTest ("the page: \"Clean up with my take\" Auto (the default: not separated, separated with bleed, a DI that isn't a take), On, and Off after a play-along take in Anything; the A/B's Raw; snapshots at 2x");
         {
             WithBuiltInCaptures builtIns;
             AmpSimProcessor p;
@@ -111,8 +112,8 @@ public:
             session.setRange (0.0, 6.0);
             session.setCountInForTake (false);
             page.refresh();
-            expect (session.getCleanup(), "on by default");
-            expect (page.getCleanupSwitch().getToggleState());
+            expect (session.getCleanupChoice() == ToneMatchSession::Cleanup::automatic, "Auto by default");
+            expectEquals (page.getCleanupChoice().getSelected(), 0);
 
             const auto di = mono (fixtures().getChildFile ("di.wav"));
             page.toggleRecording();
@@ -134,29 +135,110 @@ public:
             session.poll();
             page.refresh();
             expect (session.getTake().valid && session.getTake().complete, session.getError());
-            expect (session.referenceIsTake() && session.getMode() == ToneMatchSession::Mode::samePart);
+            expect (session.referenceIsTake() && session.getMode() == ToneMatchSession::Mode::anything, "a take leaves the mode on Anything (Round 2)");
             expect (identical (session.getReference(), di), "the take is the DI, sample for sample (a round trip of 0)");
-            expect (session.cleanupApplies() && page.getCleanupSwitch().isEnabled());
-            expectEquals (page.getCleanupCaption(), juce::String ("Keeps your notes' harmonics, the rest 20 dB down"));
-
-            // On: the matcher compares the cleaned target, exactly what cleanUp makes of the section with the take.
-            juce::StringArray stages;
-            page.startMatch();
-            expect (session.isMatching());
-            while (session.isMatching() && ! session.waitForMatch (20))
-                stages.addIfNotAlreadyThere (session.getStage().upToFirstOccurrenceOf (":", false, false));
-            expect (session.hasResult(), session.getError());
-            const auto info = session.getCleanupInfo(); // a copy: the later matches replace it
-            expect (info.attempted && info.used && info.banded);
+            expect (session.cleanupApplies() && page.getCleanupChoice().isEnabled(), "a take lines up in Anything too");
+            expectEquals (page.getCleanupCaption(), juce::String ("Only when a separated stem has bleed to remove"));
             std::atomic<bool> noCancel { false };
             const auto expectedClean = im::cleanUp (session.targetSelection(), di, ampsim::tonematch::playAlongBandSeconds, noCancel);
-            expectEquals (info.pitched, expectedClean.pitched);
-            expect (session.waitForCompare (60000));
+
+            auto matchNow = [&] {
+                page.startMatch();
+                expect (session.isMatching());
+                expect (session.waitForMatch (180000));
+                expect (session.hasResult(), session.getError());
+                expect (session.waitForCompare (60000));
+                page.refresh();
+            };
+            auto summary = [&] {
+                const auto& r = session.getResult();
+                return juce::String (r.slot + 1) + " at " + juce::String (r.gainDb, 1) + " dB, " + r.cab.getFileNameWithoutExtension()
+                       + ", spectral error " + juce::String (r.spectralErrorAfterEqDb, 2) + " dB";
+            };
+            auto expectCleaned = [&] (const juce::String& what) {
+                const auto& info = session.getCleanupInfo();
+                expect (info.attempted && info.used && info.banded, what);
+                expectEquals (info.pitched, expectedClean.pitched);
+                expect (identical (session.getCompareAudio (ToneMatchSession::sourceTarget), expectedClean.output), what + ": Target is the cleaned-up target");
+                expect (identical (session.getCompareAudio (ToneMatchSession::sourceTargetRaw), session.targetSelection()), what + ": Raw is the section");
+                expect (session.hasRawTarget());
+                expectEquals (page.getSourceChoice().getNumOptions(), 4);
+            };
+            auto expectRaw = [&] (const juce::String& what) {
+                expect (! session.getCleanupInfo().used && ! session.hasRawTarget(), what);
+                expect (identical (session.getCompareAudio (ToneMatchSession::sourceTarget), session.targetSelection()), what);
+                expect (session.getCompareAudio (ToneMatchSession::sourceTargetRaw).empty());
+                expectEquals (page.getSourceChoice().getNumOptions(), 3);
+            };
+
+            // Auto, no separation: nothing to clean up (not even tried), the target as it is.
+            matchNow();
+            expect (! session.getCleanupInfo().attempted);
+            expectRaw ("auto, not separated");
+            expect (page.getCleanupText().isEmpty());
+            const auto autoSummary = summary();
+            snap ("26_cleanup_auto");
+
+            // Auto with separation on: a stand-in separator that returns the section as it is, so the target is the
+            // record in the band. The bleed detector runs after the raw match and finds the band: cleaned, matched again.
+            session.setSeparator ([] (const std::vector<float>& x, const std::atomic<bool>&, const ampsim::tonematch::ProgressFn&, juce::String&) { return x; });
+            session.setSeparate (true);
+            matchNow();
+            const auto bandInfo = session.getCleanupInfo();
+            expect (bandInfo.automatic && bandInfo.measuredBleed, bandInfo.skipped);
+            expectGreaterThan (bandInfo.excessDb, im::bleedExcessThresholdDb);
+            expectCleaned ("auto, separated, with bleed");
+            const auto autoBandText = page.getCleanupText();
+            expect (autoBandText.contains ("bleed"), autoBandText);
+            const auto autoBandSummary = summary();
+            snap ("27_cleanup_auto_bleed");
+
+            // Auto, separated, on the unmixed record (the same notes, nothing else): no bleed, so not cleaned up.
+            expect (session.setTargetFile (fixtures().getChildFile ("record.wav")));
+            session.setRange (0.0, 6.0);
+            session.setReferenceSignal (di, "the take");
+            matchNow();
+            const auto recordInfo = session.getCleanupInfo();
+            // The reference isn't a take of this target any more (another file), so the cleanup doesn't apply at all.
+            expect (! recordInfo.attempted && ! session.cleanupApplies());
+            const auto notTakeCaption = page.getCleanupCaption();
+            expect (notTakeCaption.startsWith ("Needs your notes lined up"), notTakeCaption);
+            expect (! page.getCleanupChoice().isEnabled());
+            snap ("28_cleanup_disabled");
+            // In Same part the notes line up (unbanded DTW), and Auto with separation always cleans up there.
+            page.getModeChoice().setSelected (0, juce::sendNotification);
             page.refresh();
-            expect (identical (session.getCompareAudio (ToneMatchSession::sourceTarget), expectedClean.output), "Target is the cleaned-up target");
-            expect (identical (session.getCompareAudio (ToneMatchSession::sourceTargetRaw), session.targetSelection()), "Raw is the section as it was");
-            expect (session.hasRawTarget());
-            expectEquals (page.getSourceChoice().getNumOptions(), 4);
+            expect (session.cleanupApplies() && page.getCleanupChoice().isEnabled());
+            matchNow();
+            expect (session.getCleanupInfo().used && ! session.getCleanupInfo().measuredBleed && ! session.getCleanupInfo().banded);
+
+            // Back to the band and a fresh take of it, Anything, separation off: On and Off are kept as chosen.
+            session.setSeparate (false);
+            page.getModeChoice().setSelected (1, juce::sendNotification);
+            expect (session.setTargetFile (fixtures().getChildFile ("target.wav")));
+            session.setRange (0.0, 6.0);
+            page.toggleRecording();
+            {
+                int64_t at = 0;
+                juce::AudioBuffer<float> buffer (2, blockSize);
+                juce::MidiBuffer midi;
+                for (int k = 0; k < (int) (6.3 * fs / blockSize); ++k)
+                {
+                    buffer.clear();
+                    for (int n = 0; n < blockSize; ++n, ++at)
+                        buffer.setSample (0, n, at < (int64_t) di.size() ? di[(size_t) at] : 0.0f);
+                    p.processBlock (buffer, midi);
+                    if (k % 8 == 0)
+                        session.poll();
+                }
+            }
+            session.poll();
+            expect (session.referenceIsTake() && session.getMode() == ToneMatchSession::Mode::anything);
+            page.getCleanupChoice().setSelected (1, juce::sendNotification);
+            expect (session.getCleanupChoice() == ToneMatchSession::Cleanup::on);
+            expectEquals (page.getCleanupCaption(), juce::String ("Keeps your notes' harmonics, the rest 20 dB down"));
+            matchNow();
+            expectCleaned ("on");
             const auto cleanupText = page.getCleanupText();
             expect (cleanupText.contains ("cleaned up with your take"), cleanupText);
             // Level match over all four.
@@ -178,53 +260,22 @@ public:
             page.togglePreview();
             run (p, session, 4800);
             expect (rms (rawOut) > 1.0e-3 && rms (cleanOut) > 1.0e-3);
-            const auto& r = session.getResult();
-            const auto onSummary = juce::String (r.slot + 1) + " at " + juce::String (r.gainDb, 1) + " dB, " + r.cab.getFileNameWithoutExtension()
-                                   + ", spectral error " + juce::String (r.spectralErrorAfterEqDb, 2) + " dB";
-            snap ("26_cleanup_on");
+            const auto onSummary = summary();
+            snap ("29_cleanup_on");
 
-            // Off: the target as it was, no Raw.
-            page.getCleanupSwitch().setToggleState (false, juce::sendNotification);
-            expect (! session.getCleanup());
-            page.startMatch();
-            expect (session.isMatching());
-            expect (session.waitForMatch (120000));
-            expect (session.hasResult(), session.getError());
-            expect (! session.getCleanupInfo().attempted && ! session.hasRawTarget());
-            expect (session.waitForCompare (60000));
-            page.refresh();
-            expect (identical (session.getCompareAudio (ToneMatchSession::sourceTarget), session.targetSelection()));
-            expect (session.getCompareAudio (ToneMatchSession::sourceTargetRaw).empty());
-            expectEquals (page.getSourceChoice().getNumOptions(), 3);
+            page.getCleanupChoice().setSelected (2, juce::sendNotification);
+            expect (session.getCleanupChoice() == ToneMatchSession::Cleanup::off);
+            matchNow();
+            expect (! session.getCleanupInfo().attempted);
+            expectRaw ("off");
             expect (! page.keyPressed (juce::KeyPress ('4')));
-            expect (page.getCleanupText().isEmpty());
-            const auto& r2 = session.getResult();
-            const auto offSummary = juce::String (r2.slot + 1) + " at " + juce::String (r2.gainDb, 1) + " dB, " + r2.cab.getFileNameWithoutExtension()
-                                    + ", spectral error " + juce::String (r2.spectralErrorAfterEqDb, 2) + " dB";
-            snap ("27_cleanup_off");
+            const auto offSummary = summary();
+            snap ("30_cleanup_off");
 
-            // Anything: disabled, and why; a match there doesn't try it even with the switch on.
-            page.getCleanupSwitch().setToggleState (true, juce::sendNotification);
-            page.getModeChoice().setSelected (1, juce::sendNotification);
-            page.refresh();
-            expect (! session.cleanupApplies() && ! page.getCleanupSwitch().isEnabled());
-            expect (page.getCleanupSwitch().getToggleState(), "the choice is kept for Same part");
-            const auto anythingCaption = page.getCleanupCaption();
-            expect (anythingCaption.startsWith ("Only in Same part"), anythingCaption);
-            page.startMatch();
-            expect (session.isMatching());
-            expect (session.waitForMatch (120000));
-            expect (session.hasResult() && ! session.getCleanupInfo().attempted && ! session.hasRawTarget());
-            expect (session.waitForCompare (60000));
-            snap ("28_cleanup_disabled");
-            page.getModeChoice().setSelected (0, juce::sendNotification);
-            page.refresh();
-            expect (page.getCleanupSwitch().isEnabled());
-
-            logMessage ("  -> on: stages " + stages.joinIntoString (" / ") + "; " + juce::String (info.pitched) + " notes, kept " + juce::String (info.keptDb, 1)
-                        + " dB of the target's energy, " + juce::String (info.seconds, 2) + " s; Target is cleanUp's output sample for sample, Raw the section; "
-                        + "\"" + cleanupText + "\"; matched slot " + onSummary + ". Off: slot " + offSummary + ". Anything: \"" + anythingCaption
-                        + "\"; " + shots.joinIntoString (", "));
+            logMessage ("  -> auto, not separated: slot " + autoSummary + ". Auto, separated (the band): bleed " + juce::String (bandInfo.excessDb, 2)
+                        + " dB over the tone's own, cleaned (" + juce::String (bandInfo.pitched) + " notes), \"" + autoBandText + "\", slot " + autoBandSummary
+                        + ". Not a take: \"" + notTakeCaption + "\". On: \"" + cleanupText + "\", slot " + onSummary + ". Off: slot " + offSummary + "; "
+                        + shots.joinIntoString (", "));
         }
 
         beginTest ("cancel while the cleanup runs (a minute of target and DI, unbanded): the match ends cancelled within half a second");
@@ -243,6 +294,7 @@ public:
             session.setRange (0.0, 60.0);
             session.setReferenceSignal (longDi, "long DI");
             session.setMode (ToneMatchSession::Mode::samePart);
+            session.setCleanup (true); // On: Auto wouldn't clean up an unseparated target
             // Slots need a capture for a match to start: the fixture capture in slot 1.
             p.loadModel (0, juce::File (AMPSIM_SOURCE_DIR).getChildFile ("tests/fixtures/tone_match/captures/Glass.nam"));
             for (int i = 0; i < 2000 && p.isLoading(); ++i)

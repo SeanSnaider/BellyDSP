@@ -843,17 +843,18 @@ ToneMatchPage::ToneMatchPage (AmpSimProcessor& p)
     };
     addAndMakeVisible (*modeChoice);
 
-    // Clean up with my take (docs/TONE_MATCH.md, "Cleaning up the target with your take"): on by default,
-    // only in Same part.
-    cleanupSwitch = std::make_unique<Switch> ("Clean up with my take");
-    cleanupSwitch->setToggleState (session.getCleanup(), juce::dontSendNotification);
-    cleanupSwitch->onClick = [this] {
-        session.setCleanup (cleanupSwitch->getToggleState());
+    // Clean up with my take (docs/TONE_MATCH.md, "Cleaning up the target with your take"): Auto by default (only
+    // where there's bleed to remove, Round 2), On, or Off; only when the DI's notes line up with the target's.
+    cleanupChoice = std::make_unique<Segmented> (juce::StringArray { "Auto", "On", "Off" });
+    cleanupChoice->setSelected ((int) session.getCleanupChoice());
+    cleanupChoice->onChange = [this] (int i) {
+        session.setCleanupChoice ((ToneMatchSession::Cleanup) i);
         repaint();
     };
-    cleanupSwitch->setTooltip ("Before matching, keep only the target's sound near the notes you played (their fundamentals and harmonics, "
-                               "found in your DI) and turn the rest down 20 dB: drums, bass, and other guitars between them. Same part only.");
-    addAndMakeVisible (*cleanupSwitch);
+    cleanupChoice->setTooltip ("Before matching, keep only the target's sound near the notes you played (their fundamentals and harmonics, "
+                               "found in your DI) and turn the rest down 20 dB: drums, bass, and other guitars between them. Auto does it only "
+                               "on a separated stem with bleed to remove; On always; Off never. Needs a play-along take of this section, or Same part.");
+    addAndMakeVisible (*cleanupChoice);
 
     separateSwitch = std::make_unique<Switch> ("Separate the guitar first");
     separateSwitch->onClick = [this] {
@@ -1076,6 +1077,19 @@ bool ToneMatchPage::keyPressed (const juce::KeyPress& key)
     return false;
 }
 
+juce::String ToneMatchPage::getCleanupCaption() const
+{
+    if (! session.cleanupApplies())
+        return session.whyNoCleanup();
+    switch (session.getCleanupChoice())
+    {
+        case ToneMatchSession::Cleanup::on: return "Keeps your notes' harmonics, the rest 20 dB down";
+        case ToneMatchSession::Cleanup::off: return "The target as it is";
+        case ToneMatchSession::Cleanup::automatic: break;
+    }
+    return "Only when a separated stem has bleed to remove";
+}
+
 juce::String ToneMatchPage::getCleanupText() const
 {
     if (! session.hasResult())
@@ -1084,8 +1098,9 @@ juce::String ToneMatchPage::getCleanupText() const
     if (! c.attempted)
         return {};
     if (! c.used)
-        return "Not cleaned up: " + c.skipped + ".";
-    return "Target is cleaned up with your take (" + juce::String (c.pitched) + " notes); Raw is before.";
+        return juce::String (c.automatic ? "Auto: not cleaned up, " : "Not cleaned up: ") + c.skipped + ".";
+    return "Target is cleaned up with your take (" + juce::String (c.pitched) + " notes"
+           + (c.measuredBleed ? juce::String ("; bleed ") + juce::String (c.excessDb, 1) + " dB" : juce::String()) + "); Raw is before.";
 }
 
 juce::String ToneMatchPage::getLoudnessText() const
@@ -1360,8 +1375,9 @@ void ToneMatchPage::refresh()
     discardButton->setEnabled (session.hasResult() && ! matching);
     modeChoice->setEnabled (! matching);
     separateSwitch->setEnabled (! matching);
-    cleanupSwitch->setToggleState (session.getCleanup(), juce::dontSendNotification);
-    cleanupSwitch->setEnabled (! matching && session.cleanupApplies());
+    separateSwitch->setToggleState (session.getSeparate(), juce::dontSendNotification);
+    cleanupChoice->setSelected ((int) session.getCleanupChoice(), juce::dontSendNotification);
+    cleanupChoice->setEnabled (! matching && session.cleanupApplies());
 
     if (session.hasResult() && resultText.isEmpty())
     {
@@ -1444,7 +1460,8 @@ void ToneMatchPage::resized()
         countInPlaySwitch->setBounds (switches.removeFromLeft (countInPlaySwitch->getPreferredWidth()).translated (-Switch::margin, 0));
         in.removeFromTop (2);
         auto cleanupRow = in.removeFromTop (Switch::preferredHeight);
-        cleanupSwitch->setBounds (cleanupRow.removeFromLeft (cleanupSwitch->getPreferredWidth()).translated (-Switch::margin, 0));
+        cleanupLabelArea = cleanupRow.removeFromLeft (140);
+        cleanupChoice->setBounds (cleanupRow.removeFromLeft (cleanupChoice->getPreferredWidth()).withSizeKeepingCentre (cleanupChoice->getPreferredWidth(), Segmented::preferredHeight));
         cleanupRow.removeFromLeft (space::m);
         cleanupCaptionArea = cleanupRow;
     }
@@ -1562,7 +1579,8 @@ void ToneMatchPage::paint (juce::Graphics& g)
         drawText (g, "Song level", songLevelLabelArea, Text::label, session.getTarget().empty() ? inkFaint : inkDim, juce::Justification::centredRight);
         drawText (g, (session.getSongLevelDb() > 0.0f ? "+" : "") + juce::String (session.getSongLevelDb(), 1) + " dB", songLevelValueArea, Text::caption,
                   session.getTarget().empty() ? inkFaint : inkDim, juce::Justification::centredRight);
-        // The cleanup's caption: what it does, or why it can't (Anything).
+        // The cleanup's label and caption: what the choice does, or why it can't run.
+        drawText (g, "Clean up with my take", cleanupLabelArea, Text::label, session.cleanupApplies() ? inkDim : inkFaint, juce::Justification::centredLeft);
         g.setFont (font (Text::caption));
         g.setColour (session.cleanupApplies() ? inkDim : inkFaint);
         g.drawFittedText (getCleanupCaption(), cleanupCaptionArea, juce::Justification::centredLeft, 2, 0.9f);
@@ -1587,7 +1605,7 @@ void ToneMatchPage::paint (juce::Graphics& g)
         const auto busy = session.isRecording();
         drawText (g, status, statusLineArea, Text::label, busy ? accent : (session.getReference().empty() ? inkFaint : ink));
         juce::String caption;
-        if (session.getMode() == Mode::samePart && session.referenceIsTake() && ! busy)
+        if (session.referenceIsTake() && ! busy)
         {
             const auto& t = session.getTake();
             const auto roundTrip = (t.latency.inputSamples + t.latency.outputSamples) / 48.0;
@@ -1599,7 +1617,7 @@ void ToneMatchPage::paint (juce::Graphics& g)
             else
                 caption = "Played along, lined up by " + juce::String ((double) t.alignSamples / 48.0, 1) + " ms (round trip " + juce::String (roundTrip, 1)
                           + ", offset " + (t.offsetMs > 0 ? "+" : "") + juce::String (t.offsetMs, 1) + ").";
-            caption << " Same part matches near that.";
+            caption << (session.getMode() == Mode::samePart ? " Same part matches near that." : " Anything compares the long-term sound.");
         }
         else if (session.getMode() == Mode::samePart)
             caption = "Same part: you played the target's part. The two are lined up and compared moment by moment.";

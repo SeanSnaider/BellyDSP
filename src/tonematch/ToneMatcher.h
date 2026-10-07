@@ -133,6 +133,11 @@ public:
     /// capture won't load or the render was cancelled. Any thread but the audio thread.
     static std::vector<float> renderTone (const ToneSettings& settings, const std::vector<float>& di, const std::atomic<bool>& cancel);
 
+    /// The settings a result plays the DI through as Apply would set them (the matched model, its Gain and tone,
+    /// the cab as close mic 1 plays it, the match EQ as the parametric post EQ, no cuts), for renderTone. Reads
+    /// the cab file. The values aren't snapped to the parameters' steps (ToneMatchSession::matchedSettings is).
+    static ToneSettings settingsFor (const MatchResult& result, const MatchSettings& settings);
+
     /// An IR file as a close mic plays it: read, capped, faded, and loudness-matched by the cab's own code
     /// (CabIR::loadFile), the first channel. Empty if it won't load.
     static std::vector<float> irAsPlayed (const juce::File& file);

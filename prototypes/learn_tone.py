@@ -56,6 +56,7 @@ Usage (uv reads the dependencies from the header above; the first run builds a 1
   uv run prototypes/learn_tone.py probe <a.nam> ...     # the feel probe on captures (relative to the first)
   uv run prototypes/learn_tone.py mask-study [--json out.json]   # the informed mask alone, and its variants
   uv run prototypes/learn_tone.py informed-golden       # the C++ informed mask's fixture (tests/fixtures/informed_mask)
+  uv run prototypes/learn_tone.py bleed-golden          # adds the bleed detector's values to it
 
 The synthetic study needs the Release build of ampsim_render (cmake --build build -j): the current
 matcher renders through it, and so does the export check. Renders are cached in
@@ -633,6 +634,22 @@ def write_pcm16(path, x):
     scale = 0.9 / float(np.max(np.abs(x)))
     wavfile.write(path, SR, np.round(np.clip(x * scale, -1.0, 1.0) * 32767.0).astype(np.int16))
     return scale
+
+
+def bleed_golden(args):
+    """The bleed detector's golden values (tests/InformedMaskTests.cpp), added to the informed mask's fixture's
+    expected.json from its files as they are: kept_db of the target (the record in the band, no separation) and of
+    oracle.wav (the hidden rig on the take: the same notes with no bleed, the detector's proxy); the same with the
+    unmixed record as the target (nothing to remove: under the threshold); and the separated high-gain case."""
+    out = pathlib.Path(args.out)
+    expected = json.loads((out / "expected.json").read_text())
+    for folder, key, tname in ((out, "bleed", "target"), (out, "bleed_record", "record"),
+                               (out / "separated_high_gain", "bleed_separated_high_gain", "target")):
+        di, target, proxy = (tm.read_wav(folder / f"{n}.wav")[1] for n in ("di", tname, "oracle"))
+        kt, kp = kept_db(target, di), kept_db(proxy, di)
+        expected[key] = dict(kept_target=kt, kept_proxy=kp, excess=kp - kt, threshold=BLEED_EXCESS_DB)
+        print(f"{key}: kept target {kt:.4f} dB, proxy {kp:.4f} dB, excess {kp - kt:+.4f} dB")
+    (out / "expected.json").write_text(json.dumps(expected, indent=1, default=float))
 
 
 def informed_golden(args):
@@ -1426,7 +1443,7 @@ def probe_files(args):
 
 
 def main():
-    if len(sys.argv) >= 2 and sys.argv[1] not in ("study", "probe", "report", "mask-study", "informed-golden", "-h", "--help") and pathlib.Path(sys.argv[1]).is_dir():
+    if len(sys.argv) >= 2 and sys.argv[1] not in ("study", "probe", "report", "mask-study", "informed-golden", "bleed-golden", "-h", "--help") and pathlib.Path(sys.argv[1]).is_dir():
         sys.argv.insert(1, "take")
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -1450,6 +1467,8 @@ def main():
     ms.add_argument("--json")
     gd = sub.add_parser("informed-golden", help="write the C++ informed mask's golden fixture")
     gd.add_argument("--out", default=str(REPO / "tests/fixtures/informed_mask"))
+    bg = sub.add_parser("bleed-golden", help="add the bleed detector's values to the informed mask's fixture")
+    bg.add_argument("--out", default=str(REPO / "tests/fixtures/informed_mask"))
     rp = sub.add_parser("report", help="the table and the gate from a study's --json")
     rp.add_argument("json")
     pr = sub.add_parser("probe", help="the feel probe on .nam files")
@@ -1464,6 +1483,8 @@ def main():
         mask_study(args)
     elif args.cmd == "informed-golden":
         informed_golden(args)
+    elif args.cmd == "bleed-golden":
+        bleed_golden(args)
     elif args.cmd == "report":
         report(args)
     else:

@@ -247,7 +247,7 @@ juce::String ToneMatchSession::whyNoCleanup() const
 {
     if (cleanupApplies())
         return {};
-    return "Only in Same part: in Anything your notes aren't the target's, so there's nothing to line up.";
+    return "Needs your notes lined up with the target's: a play-along take of this section, or Same part.";
 }
 
 bool ToneMatchSession::startMatch()
@@ -266,17 +266,29 @@ bool ToneMatchSession::startMatch()
     settings.cabs = builtInCabs();
     settings.calibration = ampSim.getCaptureCalibration();
     // A play-along take of this section is lined up with it already: DTW only near that alignment.
-    if (mode == Mode::samePart && referenceIsTake())
+    const auto isTake = referenceIsTake();
+    if (mode == Mode::samePart && isTake)
         settings.alignmentBandSeconds = ampsim::tonematch::playAlongBandSeconds;
     pendingSeparated = separate;
     pendingRangeStart = rangeStart;
     pendingRangeEnd = rangeEnd;
     pendingTargetVersion = targetVersion;
     pendingBand = settings.alignmentBandSeconds > 0.0;
-    // The cleanup with the take: in same part only (the notes line up). A take of this section is lined up
-    // already, so its DTW runs in the play-along band, as the match's does; any other same-part DI unbanded.
-    const auto doCleanup = cleanup && cleanupApplies();
-    const auto cleanupBand = settings.alignmentBandSeconds;
+    // The cleanup with the take, when its notes line up (cleanupApplies). A take of this section is lined up
+    // already, so its DTW runs in the play-along band; any other same-part DI unbanded. On: always. Auto (Round 2,
+    // docs/TONE_MATCH.md "The defaults"): only with separation on; in Same part then always, in Anything when the
+    // bleed detector finds more removed than the tone loses on its own. Off: never.
+    enum class Plan { none, always, ifBleed };
+    auto plan = Plan::none;
+    if (cleanupApplies())
+    {
+        if (cleanupChoice == Cleanup::on)
+            plan = Plan::always;
+        else if (cleanupChoice == Cleanup::automatic && separate)
+            plan = mode == Mode::samePart ? Plan::always : Plan::ifBleed;
+    }
+    const auto automatic = cleanupChoice == Cleanup::automatic;
+    const auto cleanupBand = isTake ? ampsim::tonematch::playAlongBandSeconds : 0.0;
 
     stopAndClearCompare();
     setTargetPlaying (false);
@@ -292,20 +304,37 @@ bool ToneMatchSession::startMatch()
     }
 
     worker = std::thread ([this, settings, targetCopy = targetSelection(), referenceCopy = reference, doSeparate = separate, sep = separator,
-                           doCleanup, cleanupBand] {
+                           plan, automatic, cleanupBand] {
         auto targetSignal = targetCopy;
         MatchResult r;
         CleanupInfo info;
+        info.automatic = automatic;
         std::vector<float> rawTarget;
-        // Progress: the separation half of it when on, the cleanup (about a second a minute) a twentieth.
+        // Progress: the separation half of it when on, the cleanup (about a second a minute) a twentieth; with the
+        // bleed detector, the raw match, the detector, and the cleaned match share the rest.
         const auto separationShare = doSeparate ? 0.5 : 0.0;
-        const auto cleanupShare = doCleanup ? 0.05 : 0.0;
+        const auto cleanupShare = plan != Plan::none ? 0.05 : 0.0;
         auto report = [this] (double from, double to) {
             return [this, from, to] (double f, const juce::String& s) {
                 progress = from + (to - from) * f;
                 const std::lock_guard<std::mutex> l (lock);
                 stage = s;
             };
+        };
+        const auto tooLittle = [&] (MatchResult& m) {
+            if (doSeparate && ! m.ok && ! m.cancelled && m.error.startsWith ("The target has too little playing"))
+                m.error = "The separated guitar has too little playing in it: the separation found almost no guitar in this section. "
+                          "Choose a section where the guitar plays, or switch separation off.";
+        };
+        const auto useCleaned = [&] (ampsim::tonematch::informed::Result& cleaned) {
+            info.onsets = cleaned.onsets;
+            info.notes = cleaned.notes;
+            info.pitched = cleaned.pitched;
+            info.keptDb = cleaned.keptDb;
+            info.seconds = cleaned.seconds;
+            info.used = true;
+            rawTarget = std::move (targetSignal);
+            targetSignal = std::move (cleaned.output);
         };
 
         if (doSeparate && sep != nullptr)
@@ -318,20 +347,15 @@ bool ToneMatchSession::startMatch()
                 r.error = r.cancelled ? "Cancelled" : "Separation failed: " + separationError;
             }
         }
-        // The cleanup (docs/TONE_MATCH.md, "Cleaning up the target with your take"): between the separation
-        // (or the section) and the match. If it finds no pitched notes in the DI, the match runs on the target
-        // as it is and the result says why.
-        if (! targetSignal.empty() && doCleanup && ! cancelFlag.load())
+        const auto matchFrom = separationShare + cleanupShare;
+        if (! targetSignal.empty() && plan == Plan::always && ! cancelFlag.load())
         {
+            // The cleanup (docs/TONE_MATCH.md, "Cleaning up the target with your take"): between the separation (or
+            // the section) and the match. If it finds no pitched notes in the DI, the match runs on the target as it
+            // is and the result says why.
             info.attempted = true;
             info.banded = cleanupBand > 0.0;
-            auto cleaned = informed::cleanUp (targetSignal, referenceCopy, cleanupBand, cancelFlag,
-                                              report (separationShare, separationShare + cleanupShare));
-            info.onsets = cleaned.onsets;
-            info.notes = cleaned.notes;
-            info.pitched = cleaned.pitched;
-            info.keptDb = cleaned.keptDb;
-            info.seconds = cleaned.seconds;
+            auto cleaned = informed::cleanUp (targetSignal, referenceCopy, cleanupBand, cancelFlag, report (separationShare, matchFrom));
             if (cleaned.cancelled)
             {
                 r.cancelled = true;
@@ -339,20 +363,52 @@ bool ToneMatchSession::startMatch()
                 targetSignal.clear();
             }
             else if (cleaned.ok)
-            {
-                info.used = true;
-                rawTarget = std::move (targetSignal);
-                targetSignal = std::move (cleaned.output);
-            }
+                useCleaned (cleaned);
             else
                 info.skipped = cleaned.error;
         }
-        if (! targetSignal.empty())
+        if (! targetSignal.empty() && plan == Plan::ifBleed)
         {
-            r = ToneMatcher::match (targetSignal, referenceCopy, settings, cancelFlag, report (separationShare + cleanupShare, 1.0));
-            if (doSeparate && ! r.ok && ! r.cancelled && r.error.startsWith ("The target has too little playing"))
-                r.error = "The separated guitar has too little playing in it: the separation found almost no guitar in this section. "
-                          "Choose a section where the guitar plays, or switch separation off.";
+            // Auto in Anything: the raw match, the take through its pick as a bleed-free stand-in, the detector, and
+            // only if it finds bleed, the cleaned target matched again.
+            const auto rawEnd = matchFrom + (1.0 - matchFrom) * 0.5;
+            r = ToneMatcher::match (targetSignal, referenceCopy, settings, cancelFlag, report (matchFrom, rawEnd));
+            tooLittle (r);
+            if (r.ok && ! cancelFlag.load())
+            {
+                info.attempted = true;
+                info.banded = cleanupBand > 0.0;
+                report (rawEnd, rawEnd + 0.05) (0.0, "Looking for bleed to clean up");
+                const auto proxy = ToneMatcher::renderTone (ToneMatcher::settingsFor (r, settings), referenceCopy, cancelFlag);
+                auto bleed = proxy.empty() ? informed::Bleed {} : informed::measureBleed (targetSignal, referenceCopy, proxy, cleanupBand, cancelFlag);
+                if (cancelFlag.load() || bleed.cancelled)
+                {
+                    r = {};
+                    r.cancelled = true;
+                    r.error = "Cancelled";
+                }
+                else if (! bleed.ok)
+                    info.skipped = proxy.empty() ? juce::String ("couldn't render your take through the match") : bleed.error;
+                else
+                {
+                    info.measuredBleed = true;
+                    info.excessDb = bleed.excessDb;
+                    if (bleed.excessDb > informed::bleedExcessThresholdDb)
+                    {
+                        useCleaned (bleed.cleanedTarget);
+                        r = ToneMatcher::match (targetSignal, referenceCopy, settings, cancelFlag, report (rawEnd + 0.05, 1.0));
+                        tooLittle (r);
+                    }
+                    else
+                        info.skipped = "no bleed to remove (" + juce::String (bleed.excessDb, 2) + " dB, under "
+                                       + juce::String (informed::bleedExcessThresholdDb, 2) + ")";
+                }
+            }
+        }
+        else if (! targetSignal.empty())
+        {
+            r = ToneMatcher::match (targetSignal, referenceCopy, settings, cancelFlag, report (matchFrom, 1.0));
+            tooLittle (r);
         }
 
         {
@@ -1180,7 +1236,8 @@ void ToneMatchSession::finishTake (bool complete)
     setReferenceSignal (std::vector<float> (take.raw.begin() + (std::ptrdiff_t) from, take.raw.begin() + (std::ptrdiff_t) to), "Play-along take");
     take.valid = true;
     ++takeNumber;
-    mode = Mode::samePart; // the notes line up now (switchable)
+    // The mode stays as it is: Anything is the default after a take too since Round 2 (tone_bench: Anything beat
+    // Same part on 38 of 50 cases); the take still lines up, so the cleanup can run in either.
 }
 
 bool ToneMatchSession::referenceIsTake() const

@@ -266,8 +266,10 @@ public:
             ed.refresh();
             expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), shot));
 
-            // A same-part match of this take: its DTW path goes into take.json.
-            expect (session.getMode() == ToneMatchSession::Mode::samePart);
+            // A same-part match of this take: its DTW path goes into take.json. (Anything is the default after a take
+            // since Round 2, so Same part is chosen here.)
+            expect (session.getMode() == ToneMatchSession::Mode::anything);
+            session.setMode (ToneMatchSession::Mode::samePart);
             expect (session.startMatch());
             expect (session.waitForMatch (120000));
             expect (session.hasResult(), session.getError());

@@ -24331,5 +24331,23 @@
    "stem": 5.055762980689828,
    "masked": 2.202910045652077
   }
+ },
+ "bleed": {
+  "kept_target": -3.4213562425927457,
+  "kept_proxy": -0.40952054081618866,
+  "excess": 3.011835701776557,
+  "threshold": 0.25
+ },
+ "bleed_separated_high_gain": {
+  "kept_target": -1.752337949069218,
+  "kept_proxy": -0.5144406403552334,
+  "excess": 1.2378973087139844,
+  "threshold": 0.25
+ },
+ "bleed_record": {
+  "kept_target": -0.41902452781534616,
+  "kept_proxy": -0.40952054081618866,
+  "excess": 0.009503986999157499,
+  "threshold": 0.25
  }
 }

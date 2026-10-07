@@ -367,6 +367,41 @@ public:
                         + "\"); a silent take: \"" + none.error + "\"");
         }
 
+        beginTest ("golden: the bleed detector (kept energy of the target and of the bleed-free proxy, and their difference) matches the prototype, and decides as it does");
+        {
+            // learn_tone.py bleed-golden: the proxy is oracle.wav (the hidden rig on the take); the targets are the
+            // record in the band, the unmixed record (nothing to remove), and the separated high-gain stem.
+            struct Case
+            {
+                const char* key;
+                juce::File folder;
+                const char* target;
+            };
+            const Case cases[] { { "bleed", fixtures(), "target.wav" },
+                                 { "bleed_record", fixtures(), "record.wav" },
+                                 { "bleed_separated_high_gain", fixtures().getChildFile ("separated_high_gain"), "target.wav" } };
+            for (const auto& c : cases)
+            {
+                const auto& g = e[c.key];
+                const auto cdi = readMono (c.folder.getChildFile ("di.wav"));
+                const auto ctarget = readMono (c.folder.getChildFile (c.target));
+                const auto proxy = readMono (c.folder.getChildFile ("oracle.wav"));
+                const auto b = im::measureBleed (ctarget, cdi, proxy, playAlongBandSeconds, noCancel);
+                expect (b.ok, b.error);
+                const auto dt = std::abs (b.keptTargetDb - (double) g["kept_target"]), dp = std::abs (b.keptProxyDb - (double) g["kept_proxy"]);
+                const auto dx = std::abs (b.excessDb - (double) g["excess"]);
+                expect (dt < 0.005 && dp < 0.005 && dx < 0.01, juce::String (c.key) + ": " + juce::String (dt, 6) + " " + juce::String (dp, 6));
+                expectEquals ((double) g["threshold"], im::bleedExcessThresholdDb);
+                expect ((b.excessDb > im::bleedExcessThresholdDb) == ((double) g["excess"] > (double) g["threshold"]), "the same decision");
+                logMessage (juce::String ("  -> ") + c.key + ": kept target " + juce::String (b.keptTargetDb, 4) + " dB (prototype "
+                            + juce::String ((double) g["kept_target"], 4) + "), proxy " + juce::String (b.keptProxyDb, 4) + " ("
+                            + juce::String ((double) g["kept_proxy"], 4) + "), excess " + juce::String (b.excessDb, 4) + " dB ("
+                            + juce::String ((double) g["excess"], 4) + "): " + (b.excessDb > im::bleedExcessThresholdDb ? "clean up" : "leave it"));
+            }
+            const auto silent = im::measureBleed (target, std::vector<float> (di.size(), 0.0f), target, playAlongBandSeconds, noCancel);
+            expect (! silent.ok && ! silent.cancelled && silent.error.isNotEmpty());
+        }
+
         beginTest ("end to end: the matcher (Same part, the 0.5 s band, the built-in gain sets) on the target with and without the cleanup, against the hidden rig on the take");
         {
             // Two targets: the record in the band with no separation (the fixture), and the study's high-gain case

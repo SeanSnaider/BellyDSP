@@ -159,4 +159,28 @@ struct Result
 Result cleanUp (const std::vector<float>& target, const std::vector<float>& take, double bandSeconds, const std::atomic<bool>& cancel,
                 const ProgressFn& progress = {}, const MaskSettings& settings = {});
 
+// ---- The bleed detector (docs/TONE_MATCH.md, "Round 2: the defaults"; prototypes/learn_tone.py, bleed_excess_db) --
+
+/// The cleanup helps only where there's something that isn't the lead to remove. How much the mask removes says
+/// little by itself (a clean record loses about 0.5 dB to it, a saturated one 5 to 10 dB: its energy between the
+/// harmonics), so it's compared with a stand-in for the same tone with no bleed: the take through the matcher's
+/// raw pick (the same notes, about the same distortion, nothing else in it), masked with the take's own notes:
+///     excess = kept(proxy) - kept(target)        (dB; kept = the masked energy over the energy, in dB)
+/// Calibrated on tone_bench's DEV cases (prototypes/tone_bench/bleed.py): with separation on and the excess over
+/// 0.25 dB, the cleanup is used.
+inline constexpr double bleedExcessThresholdDb = 0.25;
+
+struct Bleed
+{
+    bool ok = false, cancelled = false;
+    juce::String error;
+    double keptTargetDb = 0.0, keptProxyDb = 0.0, excessDb = 0.0;
+    Result cleanedTarget; ///< the target's cleanup (so a match that then uses it needn't run it again)
+};
+
+/// excess for this target, take, and proxy (all 48 kHz mono, lined up as cleanUp wants them). Fails if the take
+/// has no pitched notes (as cleanUp).
+Bleed measureBleed (const std::vector<float>& target, const std::vector<float>& take, const std::vector<float>& proxy, double bandSeconds,
+                    const std::atomic<bool>& cancel);
+
 } // namespace ampsim::tonematch::informed

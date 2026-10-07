@@ -394,7 +394,7 @@ public:
                 }
                 const auto expectedLag = run.trueRoundTrip - (int) expectedShift;
                 expectEquals (bestLag, expectedLag);
-                expect (session.referenceIsTake() && session.getMode() == ToneMatchSession::Mode::samePart);
+                expect (session.referenceIsTake() && session.getMode() == ToneMatchSession::Mode::anything, "a take leaves the mode as it was (Round 2)");
                 lines.add ("reported in " + juce::String (run.in) + " + out " + juce::String (run.out) + " + offset " + juce::String (run.offsetMs, 1)
                            + " ms: the take shifted by " + juce::String (t.alignSamples) + " samples (" + juce::String ((double) t.alignSamples / 48.0, 2)
                            + " ms); against a loopback with a " + juce::String (run.trueRoundTrip) + "-sample round trip the reference lags the section by "
@@ -547,8 +547,8 @@ public:
             page.refresh(); // as the page's timer does
             expect (! session.isRecording());
             expect (session.getTake().valid && session.getTake().complete);
-            expect (session.getMode() == ToneMatchSession::Mode::samePart);
-            expectEquals (page.getModeChoice().getSelected(), 0);
+            expect (session.getMode() == ToneMatchSession::Mode::anything, "Anything stays the default after a take (Round 2)");
+            expectEquals (page.getModeChoice().getSelected(), 1);
             expectEquals (page.getRecordButton().getButtonText(), juce::String ("Record"));
             expectWithinAbsoluteError (session.getReferenceSeconds(), 8.0, 1.0e-9);
             expect (session.referenceIsTake());

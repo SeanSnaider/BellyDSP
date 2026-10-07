@@ -141,6 +141,24 @@ std::vector<float> ToneMatcher::renderTone (const ToneSettings& settings, const 
     return out;
 }
 
+ToneSettings ToneMatcher::settingsFor (const MatchResult& r, const MatchSettings& settings)
+{
+    ToneSettings t;
+    t.model = settings.models[(size_t) juce::jlimit (0, 2, r.slot)];
+    t.calibration = settings.calibration;
+    t.gainDb = (float) r.gainDb;
+    for (size_t b = 0; b < 5; ++b)
+        t.tone[b] = (float) r.tone[b];
+    t.cabIR = irAsPlayed (r.cab);
+    t.postEqOn = true;
+    t.postEq.mode = Equalizer::Mode::parametric;
+    for (size_t b = 0; b < r.eq.size(); ++b)
+        t.postEq.bands[b] = r.eq[b];
+    t.postEq.lowCut.on = false;
+    t.postEq.highCut.on = false;
+    return t;
+}
+
 std::vector<float> ToneMatcher::irAsPlayed (const juce::File& file)
 {
     CabIR mic;

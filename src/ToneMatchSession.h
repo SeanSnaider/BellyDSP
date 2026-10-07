@@ -183,21 +183,35 @@ public:
     int getTakeNumber() const noexcept { return takeNumber; }
 
     // ---- Cleaning up the target with the take (docs/TONE_MATCH.md, "Cleaning up the target with your take") --
-    /// "Clean up with my take" (on by default): before the match, the target (the separated stem, or the
-    /// section) goes through the informed harmonic mask built from the DI's notes (tonematch/InformedMask.h),
-    /// on the match's worker. Used only when it applies.
-    void setCleanup (bool on) { cleanup = on; }
-    bool getCleanup() const noexcept { return cleanup; }
-    /// Same part: the DI plays the target's notes, so they line up (a play-along take of this section through
-    /// its known alignment and the 0.5 s band, any other same-part DI through unbanded DTW). In Anything mode
-    /// the notes differ and there's nothing to line up.
-    bool cleanupApplies() const noexcept { return mode == Mode::samePart; }
+    /// "Clean up with my take": before the match, the target (the separated stem, or the section) goes through the
+    /// informed harmonic mask built from the DI's notes (tonematch/InformedMask.h), on the match's worker. Auto (the
+    /// default since Round 2) uses it only where there's bleed to remove: in Anything, with separation on and the bleed
+    /// detector's excess over informed::bleedExcessThresholdDb (the raw match runs first, then the cleaned one); in Same
+    /// part, with separation on (tone_bench Round 1: it rescues Same part on a stem). On and Off are Sean's choice and
+    /// are kept as chosen.
+    enum class Cleanup
+    {
+        automatic = 0,
+        on = 1,
+        off = 2
+    };
+    void setCleanupChoice (Cleanup c) { cleanupChoice = c; }
+    Cleanup getCleanupChoice() const noexcept { return cleanupChoice; }
+    /// On or Off (a manual choice).
+    void setCleanup (bool on) { cleanupChoice = on ? Cleanup::on : Cleanup::off; }
+    /// The cleanup can run: the DI's notes line up with the target's (a play-along take of the section selected
+    /// now, in either mode, through its known alignment and the 0.5 s band; any other DI in Same part, through
+    /// unbanded DTW). Anything with a DI that isn't a take: the notes differ, nothing to line up.
+    bool cleanupApplies() const { return mode == Mode::samePart || referenceIsTake(); }
     /// Why it doesn't apply now, in words for the page (empty when it does).
     juce::String whyNoCleanup() const;
     /// What the last finished match's cleanup did.
     struct CleanupInfo
     {
         bool attempted = false, used = false, banded = false;
+        bool automatic = false;     ///< Auto decided (the choice was Auto)
+        bool measuredBleed = false; ///< the bleed detector ran (Auto, Anything, separated)
+        double excessDb = 0.0;      ///< its excess (dB), when measured
         juce::String skipped;  ///< why it wasn't used, when attempted but not used
         int onsets = 0, notes = 0, pitched = 0;
         double keptDb = 0.0, seconds = 0.0;
@@ -360,7 +374,7 @@ private:
     // and the A/B's Raw.
     std::vector<float> pendingTarget, pendingRawTarget, pendingReference;
     std::shared_ptr<const std::vector<float>> comparedTarget, comparedRawTarget, comparedReference;
-    bool cleanup = true;
+    Cleanup cleanupChoice = Cleanup::automatic;
     CleanupInfo cleanupInfo, pendingCleanup;
 
     // The comparison. The compare worker reads only what's copied for it and hands back through

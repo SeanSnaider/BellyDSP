@@ -671,4 +671,39 @@ Result cleanUp (const std::vector<float>& target, const std::vector<float>& take
     return r;
 }
 
+Bleed measureBleed (const std::vector<float>& target, const std::vector<float>& take, const std::vector<float>& proxy, double bandSeconds,
+                    const std::atomic<bool>& cancel)
+{
+    Bleed b;
+    b.cleanedTarget = cleanUp (target, take, bandSeconds, cancel);
+    if (b.cleanedTarget.cancelled || cancel.load())
+    {
+        b.cancelled = true;
+        b.error = "Cancelled";
+        return b;
+    }
+    if (! b.cleanedTarget.ok)
+    {
+        b.error = b.cleanedTarget.error;
+        return b;
+    }
+    const auto p = cleanUp (proxy, take, bandSeconds, cancel);
+    if (p.cancelled || cancel.load())
+    {
+        b.cancelled = true;
+        b.error = "Cancelled";
+        return b;
+    }
+    if (! p.ok)
+    {
+        b.error = p.error;
+        return b;
+    }
+    b.keptTargetDb = b.cleanedTarget.keptDb;
+    b.keptProxyDb = p.keptDb;
+    b.excessDb = b.keptProxyDb - b.keptTargetDb;
+    b.ok = true;
+    return b;
+}
+
 } // namespace ampsim::tonematch::informed
