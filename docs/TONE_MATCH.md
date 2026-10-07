@@ -6,10 +6,11 @@
 
 A song holds only the output of a rig (the amp, its cab, the mic, the studio's EQ and compression), mixed with drums, bass, vocals, and a mastering chain. Nothing in that recording says which amp made it, so **the real amp can't be recovered**. Tone match finds the closest *fingerprint* with what BellyDSP already has:
 
-- an amp slot (whichever capture each slot holds; the built-ins are Glass, Ember, Monolith),
+- an amp: every gain set in the content folder (the built-ins Glass, Ember, Monolith, and any set added there), and whichever capture each slot holds,
 - that slot's Gain (its input trim) and five tone knobs (Depth, Bass, Mid, Treble, Presence),
 - one of the 21 built-in cabs in close mic 1,
-- and a **match EQ**: the post EQ's five parametric bands, fitted to whatever difference is left, capped at +-12 dB.
+- and a **match EQ**: the post EQ's five parametric bands, fitted to whatever difference is left, capped at +-12 dB;
+- with a play-along take (Round 2, below): a pedal in front (the overdrive's four modes, the clean boost, or the pre compressor) and the post compressor, both only when they score better than none, and the **match curve** (the high-resolution correction after the cab) in place of the match EQ.
 
 It compares your playing (a DI recording) through those settings with the target and reports a closeness score. The score measures how close two sets of measurements came, not how it sounds. Only your ears can judge that.
 
@@ -19,15 +20,15 @@ What it can't do, as measured below: pin the Gain down within a few dB (a cranke
 
 1. Open it from the brand menu (top left, "BellyDSP"): **Match tone...**
 2. **Target.** Choose a file (WAV, AIFF, FLAC, MP3, M4A/AAC, and anything else macOS decodes; on Windows, what Media Foundation decodes) or drop one on the page. Drag in the waveform to choose 3 to 60 s where the lead guitar dominates (drag the edges or the middle to adjust; a click places 30 s). **Play** plays that section, looped, with your guitar on top, so you can hear (and learn) what you're about to match; see "Play along" below. If it's a whole song, switch on **Separate the guitar first**; the first time, it downloads the separation model (55 MB) into the BellyDSP data folder. If anything in the download or the separation fails, the Match card says what (the HTTP status, no response, a damaged download, out of memory) and `~/Library/Application Support/BellyDSP/separation-log.txt` has the details.
-3. **Your DI.** With a target loaded, **Record** is a play-along take: a count-in, then the section plays once while you play along and your clean DI records, lined up with the section, and it stops by itself at the section's end ("Play along" below). Without a target, Record records your DI on its own (up to a minute) until **Stop**. Or choose a DI file. Then the mode (Same part is chosen for you after a play-along take):
-   - **Same part**: you played the same part as the target (learn the lick, play it). The two are lined up in time and compared moment by moment. The more precise mode, on a dry or isolated target. With **Clean up with my take** (on by default) the target is first cleaned up with your notes ("Cleaning up the target with your take" below).
+3. **Your DI.** With a target loaded, **Record** is a play-along take: a count-in, then the section plays once while you play along and your clean DI records, lined up with the section, and it stops by itself at the section's end ("Play along" below). Without a target, Record records your DI on its own (up to a minute) until **Stop**. Or choose a DI file. Then the mode (Anything is the default, after a take too, since Round 2; a take's notes are still paired with the target's for the take-aware score in either mode):
+   - **Same part**: you played the same part as the target (learn the lick, play it). The two are lined up in time and compared moment by moment. The more precise mode, on a dry or isolated target. **Clean up with my take** (Auto, On, Off; Auto by default) cleans the target up with your notes first ("Cleaning up the target with your take" below); Auto does it only where there's bleed to remove (Round 2, "The defaults").
    - **Anything**: you played anything. Play the same kind of part (a lead for a lead, in a similar register), because the long-term spectrum depends on which notes are played. Use this one on a separated stem.
 4. **Match.** It takes a few seconds (plus about a minute per minute of audio when separating). Cancel stops it.
 5. **Result.** The amp, Gain, tone, cab, match EQ (bands low to high), the curve the EQ was fitted to, and the score. **Apply** sets them as normal settings in one undo step (Cmd-Z puts everything back, the cab and the pre effects included), so a preset saves them. **Discard** throws the result away.
 
 6. **Compare.** Once the result is in, the Match card plays three things, looped: **Target** (what was matched), **Match** (your DI through the result) and **Current** (your DI through what's set now). See "Comparing" below.
 
-What Apply changes (ASSUMPTIONS TM8, TM19): the amp slot, its Gain and tone, the cab (close mic 1, with mic 2 and the room muted, cuts off), the post EQ (on, parametric, the five bands, cuts off), and it switches off the pre effects that color the tone before the amp, the pre compressor, boost, overdrive, and pre EQ, so the match is heard as it was made. The noise gate stays as it is. The page says this above Apply, with which of them are on right now.
+What Apply changes (ASSUMPTIONS TM8, TM19, TM75): the amp (the slot that holds the matched amp, or the playing slot with the matched gain set loaded into it), its Gain and tone, the cab (close mic 1, with mic 2 and the room muted, cuts off), the post EQ (on, parametric, the five bands, cuts off) or, when the match has a match curve, the curve (on, at the match's amount) with the post EQ switched off and its bands left alone; the pre compressor, boost, and overdrive as the match has them (the one it uses at its fitted settings, the others off), the pre EQ off, and the post compressor as the match has it (its threshold moved with the slot's Master). So the match is heard as it was made. The noise gate stays as it is. All of it is one undo step. The page says this above Apply, with which pre effects are on right now.
 
 From the command line: `prototypes/tone_match.py match TARGET DI --mode same|anything` (the prototype, through `ampsim_render`), and `ampsim_separate song.wav guitar.wav` (the separation, with its timing and memory).
 
@@ -636,6 +637,97 @@ The optimizer needs no work (5 misses in 50).
 ### Limits of this round
 
 All of it is synthetic and judged by a metric we wrote: the facets and their weights are a reasoned guess at what matters, not a listening test. The gray-box voicings are still tanh-family models (if different ones), and only five NAM models are real captures of something. The guitars are Karplus-Strong. So the ranking of what limits the matcher is what to take from it, not the absolute numbers; whether the improvements it suggests sound closer is Sean's to judge.
+
+## tone_bench Round 2: making the matcher closer
+
+Sean, 2026-10-07: Round 2 of the plan above, every change gated on the benchmark (it must improve DEV's median combined score and not regress TEST's), with what passed ported to C++ and golden-tested against the prototype (ASSUMPTIONS TM71 to TM80). The configurations are `prototypes/tone_bench/matcher.py`'s; each was run with `run.py --split dev|test --config <name> --no-diagnose` into `build/tone_bench/<split>_r2_*`.
+
+### Results
+
+Combined score (0 is the hidden rig, about 1 a wrong rig), median with the mean in brackets; "vs before" is against the row above it, paired over the split's cases (better in, Wilcoxon signed-rank p).
+
+| Configuration (what it adds) | DEV | vs before | TEST | vs before | pooled 50 |
+|---|---|---|---|---|---|
+| `same_clean`: the app's default after a take until Round 2 (Same part, cleanup on) | 0.677 (0.636) | | 0.653 (0.681) | | 0.665 (0.681) |
+| `any_raw`: Anything, no cleanup (Round 1's best) | 0.497 (0.522) | | 0.586 (0.618) | | 0.516 (0.560) |
+| `any_auto` (1): Anything after a take, the cleanup only when there's bleed | 0.485 (0.522) | 3 of 6 changed better | 0.585 (0.602) | 4 of 5 changed better | 0.519 (0.554) |
+| `any_auto_take` (3): the take-aware score | 0.452 (0.501) | 18 of 30, p = 0.019 | 0.555 (0.583) | 12 of 20, p = 0.031 | 0.466 (0.534) |
+| `any_auto_take_fx` (2, 4): pedals and the post compressor in the search, the boost past +24 dB | 0.435 (0.494) | 12 of 30, p = 0.60 | 0.518 (0.580) | 5 of 20, p = 0.68 | 0.472 (0.528) |
+| `any_fx_curve` (5): the match curve at 50% instead of the match EQ | **0.422** (0.469) | 25 of 30, p = 0.0003 | **0.512** (0.574) | 9 of 20, p = 0.81 | **0.457** (0.511) |
+
+Against the old default (`same_clean`) the final configuration is better in 39 of 50 cases (p = 6.7e-8): DEV 0.677 to 0.422, TEST 0.653 to 0.512. Against Round 1's best (`any_raw`): DEV 0.497 to 0.422, TEST 0.586 to 0.512. The facets (pooled medians, `any_raw` to `any_fx_curve`): long-term ERB spectrum 2.47 to 2.05 dB, per note 3.13 to 2.76, feel 2.66 to 2.48, IMD 7.90 to 6.87; harmonics 11.6 to 12.7 and crest 0.31 to 0.42 got worse.
+
+By style (DEV, `any_auto_take_fx` to `any_fx_curve`): lead 0.535 to 0.505, high gain 0.520 to 0.508, the others within 0.004. TEST: clean 0.530 to 0.501, edge 0.640 to 0.612, lead 0.631 to 0.655 (worse). By production, the mixes gained most from the take-aware score (DEV 0.577 to 0.510).
+
+The app's matcher after a play-along take is now `any_fx_curve` (the session sets `takeIsLinedUp`, `searchPedals`, and `fitCurve` for a take of the section). A DI that isn't a take gets Round 1's matcher (the old score, the 5-band match EQ, no pedals), with the amps from the content folder.
+
+### 1. The defaults
+
+- **Anything after a take.** A take no longer switches the mode to Same part; Anything is the default everywhere, and Sean's choice stays.
+- **Clean up with my take: Auto, On, Off** (Auto by default). Auto cleans up only with separation on: in Same part always (Round 1: it rescues Same part on a stem, 0.695 against 0.787 on DEV), and in Anything when the **bleed detector** finds something to remove. The cleanup now runs in Anything too on a take of the section (its notes line up through the take's alignment, in the 0.5 s band).
+- **The bleed detector** (`learn_tone.bleed_excess_db`, `informed::measureBleed`). How much the mask removes says little by itself: a clean record loses 0.5 dB to it and a saturated one 5 to 10 dB (its energy between the harmonics). So it's compared with a stand-in for the same tone without bleed, the take through the raw match (same notes, about the same distortion, nothing else): excess = kept(proxy) - kept(target), in dB. With separation on and the excess over 0.25 dB, the cleaned target is matched again. Calibrated on DEV (`tone_bench/bleed.py`): the plateau runs from 0 to 0.3 dB; the excess alone (without the separation condition) was worse (0.505 at 0.4 dB), and separation alone 0.504. The picking-the-better-of-the-two oracle would reach 0.469 / 0.567, so the detector gets about a third of what's there. Golden test: the excess of three cases (the band, the unmixed record, a Demucs stem) within 1e-4 dB of the prototype's, the same decisions (3.01, 0.01, and 1.24 dB).
+
+The 0.52 target (pooled) is met by `any_auto` (0.519); the larger gains came from 3 and 5.
+
+### 3. The take-aware score (the objective)
+
+Round 1's diagnosis: the matcher's score preferred the wrong configuration in 45 of 50 cases, because its whole-signal distortion statistics move with how the notes were played. Tools built to change the score without re-running the benchmark for every idea:
+
+- **Candidate pools** (`tone_bench/pool.py`): per case, every built-in amp on a 4 dB Gain grid with the four cabs the matcher's own screen ranks best, the linear part fitted as the matcher fits it, each with its true score against the hidden rig (156 per case). An objective is judged by the true score of the configuration it ranks first. On DEV, the old score picks 0.471 (median), the pool's best is 0.395.
+- **Per-note measures** (`tone_bench/notefeat.py`): the take's notes paired with the target's (`learn_tone.align_notes`), and per note and per (amp, Gain) the ERB spectrum, level, an envelope profile, and a harmonicity profile (each band's share within its harmonics' lobes; linear-filter invariant).
+
+Tried on the pools (DEV medians; the old score 0.471): the loudness-weighted ERB distance alone 0.622, the per-note ERB spectrum 0.677 (with per-note velocity normalization, a Gain shift per note with a penalty: unchanged), harmonicity 0.589, the attack share 0.471, note-level spread 0.519; none of them alone beats the old score, because the linear fit makes every candidate's spectrum alike and the choice rests on the distortion terms. A weighted sum fitted on DEV (soft-min of the true score, nonnegative weights) reached 0.437, leave-one-out 0.447; rounded, with the terms that added nothing dropped (harmonicity, the per-note ERB spectrum, level spread and brightness movement of the old four), it is
+
+```
+S = E + 7.5 |d flux| + 4 |d crest| + 14 A + 2.5 |d spread| + 6.5 D_erb
+```
+
+E the old spectral error after the tone fit; flux and crest the old features (median frame-to-frame level change, median crest factor); A the per-note attack (the share of each note's first 300 ms in its first 15 ms, dB, the absolute difference between the target's note and the take's through the amp, weighted by the note's energy^0.3); spread the standard deviation of the paired notes' levels; D_erb the loudness-weighted ERB long-term spectral distance after the candidate's whole linear part (Glasberg and Moore's ERB scale, Zwicker's 0.23 power law over the PEAQ ear weighting and Terhardt's threshold, as the benchmark's lt_erb). Only the old score's 16 best candidates are fitted completely and scored this way (on the pools 16 equals all of them); fewer than 8 note pairs and the old score decides. On the pools: DEV 0.437, TEST 0.534 (the old score 0.585). In the matcher: the table above.
+
+Not done: a player's-guitar pre-amp EQ as a nuisance parameter (in the linear regime it can't be told from the rig's own EQ, and it would need renders per setting), and velocity-normalized comparison beyond the per-note Gain shift above (which changed nothing).
+
+C++: `src/tonematch/TakeScore.*`, used by `ToneMatcher::match` with `MatchSettings::takeIsLinedUp`. Golden test (`tests/ToneMatchTakeScoreTests.cpp` on `tests/fixtures/take_score`, written by `tone_match.py take-golden` from the informed mask's fixture): the 35 note pairs identical, the per-note attack and level, ERB spectrum and loudness weights within 1e-6, three candidates' terms within 1e-6, the whole search the prototype's amp, Gain, and cab with S within 3e-4.
+
+### 2 and 4. Pedals, the post compressor, and the gain range
+
+The pedal is a discrete choice tried in front of the best amp at its four best cabs (`pedal_variants`; 20 renders): the overdrive's four modes at Drive 0.3 and 0.7 (Tone 0.5, Level 0 dB with the app's unity trim, Tight off) at the amp's Gain and 6 dB under it; the clean boost at +6 and +12 dB into Gain +24 when the best Gain is +18 or more (item 4: the Gain knob ends at +24 dB); the pre compressor (pedal mode) 6 and 12 dB under the take's playing level, 4:1, with makeup for three quarters of its reduction. They join the candidates, so the shortlist and the take-aware score decide, and a pedal wins only when it scores better than none. Then the post compressor on the finished match: the take through everything as the chain plays it, compressed 4 and 8 dB under that render's playing level (3:1, 10 ms, 150 ms), each scored against none.
+
+Measured: DEV 0.452 to 0.435, TEST 0.555 to 0.518 (medians; means 0.501 to 0.494 and 0.583 to 0.580): it passes the gate, but weakly (better in 12 of 30 and 5 of 20; the medians move more than the cases do). On the 32 cases whose hidden rig has a pedal or a bus compressor the mean improved by 0.018 (DEV, 20 cases) and 0.007 (TEST, 12), far from Round 1's oracle estimate of 0.10: the search finds the pedal kind sometimes (the pedal compressor on both clean cases that have one, the distortion on crunch_03) and puts one where there's none about as often (the pre compressor on 7 DEV cases, 3 of them without one). The post compressor was chosen in 11 of 30 DEV cases and 2 of 20 TEST.
+
+The gain range (item 4, `tone_bench/gain_range.py`): driving the built-ins to +28, +32, and +36 dB with the input level on top of Gain +24 improves the pool's best in 7 of 30 DEV cases (the 10 whose best sat at +24: mean 0.488 to 0.462; all 30: median 0.395 to 0.381). The clean boost in the pedal variants does this in the app without touching the global input level (the boost is chosen in 2 of 30 DEV and 5 of 20 TEST). The rest of the gap at high gain is for the new gain sets, which the matcher now searches as soon as they're in `content/models`.
+
+C++: `ToneMatcher::pedalVariants`, `renderPedal` (the chain's own Boost, Overdrive, and Compressor blocks, with the processor's oversampling and calibration), `compress`, `playingLevelDb`, the post compressor stage. Golden: the playing level within 1e-4 dB, the 20 variants identical, the search with pedals the prototype's amp, Gain, cab, pedal (the pre compressor at -24.4 dB on the fixture), and post compressor decision, the three scores within 0.001. Apply (the decision log, 2026-10-07): it now sets the pre compressor, boost, and overdrive to the match's (on or off) instead of switching them off; tested with an overdrive and a post compressor, Match rendering what Apply set sample for sample, one undo step.
+
+### 5. The match curve
+
+The match curve block (`src/dsp/MatchCurve.*`, merged from `match-curve`) is fitted to what's left after the tone knobs (`fit_match_curve`, `ToneMatcher::fitMatchCurve`): the target's long-term power per analysis bin (5.9 Hz) against the winner's take render through its cab and tone, the difference smoothed by a 1/12-octave Gaussian, scaled toward 0 dB by the target's confidence, mean removed, capped at +-12 dB, 415 points from 40 Hz to 16 kHz. Measured on DEV (`tone_bench/curve_study.py` on the `any_fx_curve` run's settings):
+
+| How | DEV median (mean) |
+|---|---|
+| the 5-band match EQ (`any_auto_take_fx`) | 0.435 (0.494) |
+| the EQ at half its gains | 0.434 (0.480) |
+| the curve on top of the EQ | 0.461 (0.497) |
+| the curve instead of the EQ, 100% | 0.449 (0.488) |
+| the same, 75% | 0.430 (0.471) |
+| the same, 50% | **0.426** (0.468) |
+| 1/6-octave smoothing, 50% | 0.433 (0.472) |
+
+Fitted to another performance of the notes, the full correction also fits the playing; half of it transfers better (Round 1's pools showed the same for the EQ). So the curve replaces the match EQ, at 50%: the points are the whole fitted correction and the block's amount (Apply sets 50%) halves it in dB exactly, so Sean can turn it up. Benchmark: DEV 0.435 to 0.422 (25 of 30 better, p = 0.0003), TEST 0.518 to 0.512 (means 0.580 to 0.574).
+
+C++: `ToneMatcher::fitMatchCurve` (golden: 1245 points on three candidates within 2e-6 dB of the prototype's, the search with the curve the prototype's result and curve), `renderTone` convolving `MatchCurve::designFir` after the cab (Match and Current include it), Apply setting the curve (`MatchCurveChange`, undoable), `match_curve_on`, its amount, and the post EQ off with its bands left (ASSUMPTIONS MC9 done). The page draws the curve as it plays and lists its amount and largest cut and boost.
+
+### The amp list
+
+The matcher's amps are every gain set in `content/models` (the built-ins first in slot order, then the others by name), then the slots' own captures that aren't among them (`ToneMatchSession::contentGainSets`, `modelsToSearch`; the prototype and the benchmark the same, `common.GAIN_SETS`). A matched set no slot holds loads into the playing slot on Apply (`ModelChange`, in the same undo step). New sets cost about 7 renders each in the grid.
+
+### Time
+
+The C++ matcher with all of it on the 6 s fixture: 47 renders, 22 s with the test suite running beside it on this Mac (about twice the take-aware score alone); with a 30 s take expect about a minute. The take-aware score itself costs 16 complete fits.
+
+### What's left, and Round 3
+
+- **Remaining gap** (DEV medians): the matcher 0.422, the best configuration in its own search space by the true score (the pools) 0.395, the oracle in space 0.325 (Round 1's L3), with BellyDSP's pedal and compressor 0.252 (L4). TEST: 0.512 against the pools' best 0.527 (the matcher's refinements and the curve go past the pools' 4 dB grid and 5-band EQ), L3 0.358, L4 0.327. So the objective still leaves about 0.03 to 0.1 inside the space on DEV, and coverage (amps, cabs) the rest.
+- **Round 3, in order:** (1) the new gain sets (high gain and lead are the worst styles, and the oracle wanted more than +24 dB in a third of the cases); they join the search automatically, and the benchmark should be re-run when they land (the pools too, so the score's weights can be refitted on them). (2) Harmonics and crest got worse while the spectra improved: add a harmonic-distribution term measured on the take's sustained notes (the benchmark's harm facet has 0.1 weight but moved by 1.2) and refit the weights on pools that include pedal variants. (3) The pedal search is weak: refine the chosen pedal's Drive and Tone (two more renders each), and require a margin over no pedal, judged on pools with pedal variants rather than guessed. (4) Fit the curve's amount per match rather than a fixed 50% (for example from how much of the take's difference from the target is between notes). (5) Real takes: everything here is synthetic; TM.11 below.
 
 ## Not verified (only Sean can)
 
