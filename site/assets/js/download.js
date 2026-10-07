@@ -3,8 +3,8 @@
 //
 // The download page: works out which computer the visitor is on, puts that button first and makes it
 // the primary one (both stay visible), and points the buttons at the latest release's files from
-// data/releases.json. If the JSON is missing, or a release has no file for one system yet, that button
-// keeps its fallback link to the latest release on GitHub.
+// data/releases.json. If the JSON is missing, a button keeps its fallback link to the latest release on
+// GitHub; if the JSON just doesn't list a file yet, the button links straight to that version's file.
 "use strict";
 
 (function () {
@@ -71,6 +71,14 @@
       if (file && file.url) {
         button.href = file.url;
         meta.textContent = "Version " + latest.version + ", " + B.formatSize(file.size) + ", " + (key === "mac" ? ".dmg" : "installer");
+      } else if (latest && latest.tag) {
+        // Not in the data yet. The site's data is regenerated when a deploy runs, and the Windows installer
+        // is attached to a release after the Mac files (once its CI build is green), so the data can briefly
+        // miss it. The release's file names are fixed (tools/release/lib.sh), so link straight to the file
+        // for this version: a direct download, not the releases page (Sean, 2026-10-06).
+        var name = key === "mac" ? "BellyDSP-" + latest.version + ".dmg" : "BellyDSP-" + latest.version + "-windows-setup.exe";
+        button.href = data.releases_url + "/download/" + latest.tag + "/" + name;
+        meta.textContent = "Version " + latest.version + ", " + (key === "mac" ? ".dmg" : "installer");
       } else {
         button.href = data.latest_url;
         meta.textContent = latest ? "Not in version " + latest.version + " yet: see GitHub" : "No release yet: see GitHub";
