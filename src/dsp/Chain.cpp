@@ -39,6 +39,9 @@ Chain::Chain()
     // level; the processor switches it on from output_limit_on, which is on by default.
     setBypassed (Slot::limiter, true);
 
+    // The match curve too: the processor switches it on from match_curve_on (with a curve and an amount above 0).
+    setBypassed (Slot::matchCurve, true);
+
     // The amp too: bypassed, its captures keep their history current, so switching it back on is
     // seamless (the processor's amp_bypass).
     for (auto slot : { Slot::gateA, Slot::boost, Slot::overdrive, Slot::amp })
@@ -123,6 +126,7 @@ const Block& Chain::blockFor (Slot slot) const
         case Slot::amp:            return amp;
         case Slot::gateB:          return gateB;
         case Slot::cab:            return cab;
+        case Slot::matchCurve:     return matchCurve;
         case Slot::postEq:         return postEq;
         case Slot::postCompressor: return postCompressor;
         case Slot::harmonizer:     return harmonizer;
@@ -338,6 +342,8 @@ void Chain::process (juce::dsp::AudioBlock<float> io)
         stereoCopied = true;
     }
 
+    // The match curve corrects the amp-plus-cab sound, before the post effects (as tone match renders it).
+    runBlock (Slot::matchCurve, io, context, stereoCopied);
     runSection (Section::post, io, context, stereoCopied);
     runBlock (Slot::outputGain, io, context, stereoCopied);
     runBlock (Slot::preview, io, context, stereoCopied); // returns at once unless tone match is comparing

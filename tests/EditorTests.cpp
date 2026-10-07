@@ -307,6 +307,61 @@ public:
                         + "\" (its marker dimmed and fixed); with IRs in both: \"Load a pack to move mics\"");
         }
 
+        beginTest ("cab page: the match curve's line and view under the speaker: empty, then a curve drawn as it plays (amount, on and off)");
+        {
+            AmpSimProcessor p;
+            p.prepareToPlay (fs, blockSize);
+            std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+            auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
+            ed.showPage (ui::PageId::cab);
+            auto& cab = ed.getCabView();
+            ed.refresh();
+            expect (cab.getMatchCurveDrawnDb().empty(), "no curve: the view says so");
+            expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f)
+                                 .getClippedImage (editor->getLocalArea (&cab, cab.getMatchCurveViewBounds()).expanded (24, 48).withTrimmedBottom (24) * 2),
+                             proofDir().getChildFile ("editor_cab_match_curve_empty_crop.png")));
+
+            // A curve as tone match would set it: broad moves of a few dB, a dip at 400 Hz, presence at 3 kHz.
+            std::vector<ampsim::MatchCurve::Point> points;
+            for (double f = 20.0; f <= 20000.0; f *= std::pow (2.0, 1.0 / 12.0))
+            {
+                const auto o = std::log2 (f / 1000.0);
+                points.push_back ({ f, 3.0 * std::sin (o * 1.7) - 6.0 * std::exp (-0.5 * std::pow ((o + 1.3) / 0.25, 2.0)) + 7.0 * std::exp (-0.5 * std::pow ((o - 1.6) / 0.3, 2.0)) });
+            }
+            p.setMatchCurve (ampsim::MatchCurve::Curve::fromPoints (points));
+            setParam (p, "match_curve_on", 1.0f);
+            waitForLoads (p);
+            ed.refresh();
+            const auto full = cab.getMatchCurveDrawnDb();
+            expectEquals ((int) full.size(), 160);
+            expect (cab.isMatchCurveDrawnOn());
+            const auto peak = *std::max_element (full.begin(), full.end());
+            expectGreaterThan (peak, 5.0f);
+
+            // The view sits under the speaker's readout, inside the page, as wide as the speaker.
+            const auto bounds = cab.getMatchCurveViewBounds();
+            expect (cab.getLocalBounds().contains (bounds), bounds.toString());
+            expectEquals (bounds.getWidth(), 380);
+            const auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f);
+            expect (savePng (image, proofDir().getChildFile ("editor_cab_match_curve.png")));
+            const auto crop = image.getClippedImage (editor->getLocalArea (&cab, bounds).expanded (24, 48).withTrimmedBottom (24) * 2);
+            expect (savePng (crop, proofDir().getChildFile ("editor_cab_match_curve_crop.png")));
+
+            // Half the amount draws half the dB; off dims it.
+            setParam (p, "match_curve_amount", 50.0f);
+            setParam (p, "match_curve_on", 0.0f);
+            ed.refresh();
+            const auto half = cab.getMatchCurveDrawnDb();
+            double worst = 0.0;
+            for (size_t i = 0; i < half.size(); ++i)
+                worst = std::max (worst, (double) std::abs (half[i] - 0.5f * full[i]));
+            expectLessThan (worst, 1.0e-4);
+            expect (! cab.isMatchCurveDrawnOn());
+            expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), proofDir().getChildFile ("editor_cab_match_curve_off.png")));
+            logMessage ("  -> empty, then the curve drawn at 160 points (peak " + juce::String (peak, 1) + " dB); at 50% it draws half the dB (within "
+                        + juce::String (worst) + "); off draws it dimmed; view " + bounds.toString());
+        }
+
         beginTest ("cab page: the built-in IRs come first, one entry each under a heading per cab (never a pack); names fit; the list scrolls; a pick saves as factory:irs/...");
         {
             // The real bundled content: the build copies content/ next to the test binary, the same files

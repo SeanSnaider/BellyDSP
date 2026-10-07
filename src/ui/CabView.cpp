@@ -4,6 +4,8 @@
 #include "CabView.h"
 #include "LookAndFeel.h"
 
+#include <cmath>
+
 #include <algorithm>
 #include <map>
 
@@ -43,6 +45,109 @@ juce::String CabView::zoneFor (float r)
     // The reference's zones, as fractions of the speaker's radius.
     return r < 0.20f ? "Cap" : r < 0.32f ? "Cap edge" : r < 0.80f ? "Cone" : "Cone edge";
 }
+
+// ---- The match curve's view -------------------------------------------------------------------------
+
+/// The match curve as it plays: MatchCurve::targetDb at the current amount, on a log axis from 20 Hz to
+/// 20 kHz, with faint lines at 100 Hz, 1 kHz, and 10 kHz and at 0 dB. The scale fits the curve in 3 dB
+/// steps, +-6 dB at least and +-15 (the curve's clamp) at most, and says which in the corner. Read
+/// only: tone match sets the curve. Recomputed only when the curve or the amount changes.
+class CabView::MatchCurveView final : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    static constexpr int numPoints = 160;
+    static constexpr double loHz = 20.0, hiHz = 20000.0;
+
+    void set (const ampsim::MatchCurve::Curve& newCurve, float amount, bool isOn)
+    {
+        if (newCurve == curve && std::abs (amount - shownAmount) < 1.0e-4f && isOn == on)
+            return;
+        curve = newCurve;
+        shownAmount = amount;
+        on = isOn;
+        drawnDb.clear();
+        rangeDb = 6.0f;
+        if (! curve.isFlat())
+        {
+            std::vector<double> freqs;
+            for (int i = 0; i < numPoints; ++i)
+                freqs.push_back (loHz * std::pow (hiHz / loHz, (double) i / (numPoints - 1)));
+            for (auto v : ampsim::MatchCurve::targetDb (curve, amount / 100.0, freqs))
+                drawnDb.push_back ((float) v);
+            float peak = 0.0f;
+            for (auto v : drawnDb)
+                peak = std::max (peak, std::abs (v));
+            rangeDb = juce::jlimit (6.0f, (float) ampsim::MatchCurve::maxDb, 3.0f * std::ceil (peak / 3.0f));
+        }
+        repaint();
+    }
+
+    const std::vector<float>& getDrawnDb() const noexcept { return drawnDb; }
+    bool isOn() const noexcept { return on; }
+    float getRangeDb() const noexcept { return rangeDb; }
+
+    void paint (juce::Graphics& g) override
+    {
+        const auto area = getLocalBounds().toFloat().reduced (0.5f);
+        g.setColour (line1);
+        g.drawRoundedRectangle (area, radiusMini, 1.0f);
+
+        // No curve: just the frame and what sets one.
+        if (drawnDb.empty())
+        {
+            g.setFont (font (Text::label));
+            g.setColour (inkFaint);
+            g.drawText ("No curve yet: tone match sets one", area, juce::Justification::centred, false);
+            return;
+        }
+
+        const auto xFor = [&] (double hz) { return area.getX() + area.getWidth() * (float) (std::log (hz / loHz) / std::log (hiHz / loHz)); };
+        const auto yFor = [&] (float db) { return area.getCentreY() - (area.getHeight() * 0.5f - 4.0f) * db / rangeDb; };
+
+        // The grid: decades and 0 dB, with the decades' labels in the corner they leave free.
+        g.setFont (geist (Weight::regular, 10.0f));
+        for (const auto& [hz, label] : { std::pair<double, const char*> { 100.0, "100" }, { 1000.0, "1k" }, { 10000.0, "10k" } })
+        {
+            const auto x = xFor (hz);
+            g.setColour (line1);
+            g.fillRect (juce::Rectangle<float> (x, area.getY() + 1.0f, 1.0f, area.getHeight() - 2.0f));
+            g.setColour (inkFaint);
+            g.drawText (label, juce::Rectangle<float> (x + 3.0f, area.getBottom() - 13.0f, 30.0f, 12.0f), juce::Justification::centredLeft, false);
+        }
+        g.setColour (line2);
+        g.fillRect (juce::Rectangle<float> (area.getX() + 1.0f, area.getCentreY(), area.getWidth() - 2.0f, 1.0f));
+        g.setColour (inkFaint);
+        g.drawText (juce::String::fromUTF8 ("\xc2\xb1") + juce::String (juce::roundToInt (rangeDb)) + " dB", area.reduced (5.0f, 2.0f).withHeight (12.0f),
+                    juce::Justification::centredRight, false);
+
+        juce::Path line;
+        for (int i = 0; i < (int) drawnDb.size(); ++i)
+        {
+            const auto x = area.getX() + area.getWidth() * (float) i / (float) (drawnDb.size() - 1);
+            const auto y = yFor (drawnDb[(size_t) i]);
+            if (i == 0)
+                line.startNewSubPath (x, y);
+            else
+                line.lineTo (x, y);
+        }
+        auto fill = line;
+        fill.lineTo (area.getRight(), area.getCentreY());
+        fill.lineTo (area.getX(), area.getCentreY());
+        fill.closeSubPath();
+
+        const auto alpha = on ? 1.0f : offAlpha;
+        g.setColour (accentDim.withMultipliedAlpha (alpha));
+        g.fillPath (fill);
+        g.setColour (accent.withMultipliedAlpha (alpha));
+        g.strokePath (line, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
+
+private:
+    ampsim::MatchCurve::Curve curve;
+    float shownAmount = -1.0f, rangeDb = 6.0f;
+    bool on = false;
+    std::vector<float> drawnDb;
+};
 
 // ---- The library list ----------------------------------------------------------------------------
 
@@ -422,6 +527,16 @@ CabView::CabView (AmpSimProcessor& p) : ControlGroup (p)
     align = &addSwitch ("cab_align", "Auto-align mics A and B");
     align->setTooltip ("Lines the two close mics up in time (and polarity), measured from their IRs");
 
+    matchView = std::make_unique<MatchCurveView>();
+    matchView->setTooltip ("The match curve: a fine correction after the cab, set by tone match");
+    addAndMakeVisible (*matchView);
+    matchOn = &addSwitch ("match_curve_on", "On");
+    matchOn->setTooltip ("The match curve on or off");
+    matchAmount = &addField ("match_curve_amount", "%");
+    matchAmount->setFormatter ([] (float v) { return juce::String (juce::roundToInt (v)) + "%"; });
+    matchAmount->setTooltip ("How much of the curve applies: its dB times this");
+    matchAmountLabel = &addLabel ("Amount", Text::caption, inkFaint);
+
     rescan();
     refresh();
 }
@@ -664,7 +779,14 @@ void CabView::refresh()
         repaint();
     }
     speaker->repaint();
+
+    matchView->set (ampSim.getMatchCurve(), state.getRawParameterValue ("match_curve_amount")->load(),
+                    state.getRawParameterValue ("match_curve_on")->load() >= 0.5f);
 }
+
+juce::Rectangle<int> CabView::getMatchCurveViewBounds() const { return matchView->getBounds(); }
+std::vector<float> CabView::getMatchCurveDrawnDb() const { return matchView->getDrawnDb(); }
+bool CabView::isMatchCurveDrawnOn() const { return matchView->isOn(); }
 
 void CabView::pageShown()
 {
@@ -680,6 +802,7 @@ void CabView::paint (juce::Graphics& g)
     g.drawText ("Cabinet", leftColumn.withHeight (16), juce::Justification::centredLeft, false);
     g.drawText ("Microphones", rightColumn.withHeight (16), juce::Justification::centredLeft, false);
     g.drawText ("Room mic", roomHeading, juce::Justification::centredLeft, false);
+    g.drawText ("Match curve", matchHeading, juce::Justification::centredLeft, false);
 
     // The mics' tags (an 8 px dot and the name, 14 px medium) and the line under each mic.
     for (int m = 0; m < 2; ++m)
@@ -754,6 +877,24 @@ void CabView::resized()
     const auto contentHeight = (int) speakerSize + 16 + 16;
     speaker->setBounds (juce::Rectangle<int> ((int) speakerSize, (int) speakerSize)
                             .withCentre ({ centreColumn.getCentreX(), centreColumn.getY() + (centreColumn.getHeight() - contentHeight) / 2 + (int) speakerSize / 2 }));
+
+    // At the foot of the centre column, as wide as the speaker: the match curve's line (its heading, Amount,
+    // and switch), then its view.
+    {
+        constexpr int viewHeight = 58;
+        const auto width = juce::jmin ((int) speakerSize, centreColumn.getWidth());
+        auto strip = juce::Rectangle<int> (width, 22 + 8 + viewHeight).withCentre ({ centreColumn.getCentreX(), 0 }).withBottomY (centreColumn.getBottom());
+        auto row = strip.removeFromTop (22);
+        strip.removeFromTop (8);
+        matchView->setBounds (strip);
+        matchHeading = row.withWidth (120).withSizeKeepingCentre (120, 16);
+        matchOn->setBounds (row.getRight() - matchOn->getPreferredWidth() + Switch::margin, row.getCentreY() - Switch::preferredHeight / 2,
+                            matchOn->getPreferredWidth(), Switch::preferredHeight);
+        auto left = row.withRight (matchOn->getX() - 12);
+        matchAmount->setBounds (left.removeFromRight (56));
+        left.removeFromRight (4);
+        matchAmountLabel->setBounds (left.removeFromRight (juce::roundToInt (textWidth (font (Text::caption), "Amount")) + 4));
+    }
 
     // Right: the heading, then each mic (tag 17, 12, knobs 74, 10, the switches 16, 8, the fields 22,
     // 18, a line, 18), the cuts, the room and the alignment.

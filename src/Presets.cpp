@@ -271,6 +271,10 @@ juce::var capture (AmpSimProcessor& processor, const juce::String& name)
     root->setProperty ("cab_assign", assigned);
     root->setProperty ("cab_follow", processor.isCabFollowing());
 
+    // The match curve's points (only when there is one: a preset without them has none).
+    if (const auto curve = processor.getMatchCurve(); ! curve.isFlat())
+        root->setProperty ("match_curve", curve.toVar());
+
     root->setProperty ("midi", processor.getMidiMap().toVar());
     root->setProperty ("scenes", processor.getScenes().toVar());
 
@@ -395,6 +399,15 @@ ApplyResult apply (AmpSimProcessor& processor, const juce::var& saved)
     }
     processor.parameters.state.setProperty (AmpSimProcessor::cabFollowKey, (bool) preset.getProperty ("cab_follow", true), nullptr);
     processor.markCabFollowed();
+
+    // The match curve belongs to the preset: one without a "match_curve" (every preset saved before it
+    // existed) has none. Points that aren't [hz, dB] pairs are dropped.
+    {
+        const auto curvePoints = preset.getProperty ("match_curve", {});
+        if (! curvePoints.isVoid() && ! curvePoints.isArray())
+            result.warnings.add ("The match curve isn't a list of points; skipped");
+        processor.setMatchCurve (ampsim::MatchCurve::Curve::fromVar (curvePoints));
+    }
 
     // MIDI mappings: a preset without any (made before mappings existed) leaves the current ones alone.
     if (preset.hasProperty ("midi"))

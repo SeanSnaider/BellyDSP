@@ -160,6 +160,12 @@ public:
                 return m;
             };
 
+            // The match curve (dsp/MatchCurve.h): two curves as tone match would set them.
+            const auto curveA = ampsim::MatchCurve::Curve::fromPoints ({ { 80.0, 3.0 }, { 400.0, -6.0 }, { 2500.0, 5.0 }, { 8000.0, -4.0 } });
+            const auto curveB = ampsim::MatchCurve::Curve::fromPoints ({ { 120.0, -4.0 }, { 900.0, 4.0 }, { 5000.0, -8.0 }, { 12000.0, 2.0 } });
+            const auto matchBuildsBefore = p.getMatchCurveBuildCount();
+            int matchCurveBlocks = 0;
+
             for (size_t start = 0; start + blockSize <= input.size(); start += blockSize, ++blocks)
             {
                 // What a player does mid-song. These are the message thread's side, outside the measurement.
@@ -350,6 +356,24 @@ public:
                 if (blocks == 2611)
                     firstRecording = p.getDiRecorder().getRecording();
 
+                // The match curve: a curve set (tone match's Apply) and switched on, its amount dragged (the timer
+                // rebuilds the FIR), a new curve swapped in while it plays, off and on, amount 0 and back, the curve
+                // cleared mid-stream and set again.
+                switch (blocks)
+                {
+                    case 500: p.setMatchCurve (curveA); setParam (p, "match_curve_on", 1.0f); break;
+                    case 760: p.setMatchCurve (curveB); break;
+                    case 820: setParam (p, "match_curve_on", 0.0f); break;
+                    case 850: setParam (p, "match_curve_on", 1.0f); break;
+                    case 900: setParam (p, "match_curve_amount", 0.0f); break;
+                    case 940: setParam (p, "match_curve_amount", 80.0f); break;
+                    case 4500: p.clearMatchCurve(); break;
+                    case 4600: p.setMatchCurve (curveA); break;
+                    default: break;
+                }
+                if (blocks >= 520 && blocks < 700)
+                    setParam (p, "match_curve_amount", 100.0f - 70.0f * (float) (blocks - 520) / 180.0f);
+
                 // The Gain knobs (BUILD_PLAN "Amp gain"): a drag across every step of slot 3's gain set (Monolith),
                 // a jump between steps as a scene makes, a drag down Ember's set, and a drag on slot 1's single
                 // capture (its loudness-compensated trim, per sample while it moves).
@@ -396,6 +420,7 @@ public:
                     maxTotalModels = std::max (maxTotalModels, models);
                 }
                 previewBlocks += preview.isActive() ? 1 : 0;
+                matchCurveBlocks += p.getChain().isFullyBypassed (ampsim::Chain::Slot::matchCurve) ? 0 : 1;
                 countInBlocks += preview.getCountInRemaining() > 0 ? 1 : 0;
                 takeBlocks += session.isPlayingAlong() ? 1 : 0;
 
@@ -486,6 +511,12 @@ public:
             expect (takeExact, "the take must be the input from one sample on, in order");
             expectGreaterThan (countInBlocks, 150, "the count-ins must have played during the measurement");
             expect (! session.isPlayingAlong());
+            for (int i = 0; i < 2000 && p.isLoading(); ++i) // the last design may still be on the loader
+                juce::Thread::sleep (2);
+            const auto matchBuilds = p.getMatchCurveBuildCount() - matchBuildsBefore;
+            expectGreaterThan (matchBuilds, 4, "the match curve must have been designed for its curves and amounts during the measurement");
+            expectGreaterThan (matchCurveBlocks, 3000, "the match curve must have played during the measurement");
+            expect (p.getChain().matchCurve.hasFir() && p.getChain().matchCurve.getCurve() == curveA, "the last curve must have reached the block");
             expectEquals (total.allocations, 0L);
             expectEquals (total.frees, 0L);
             expectEquals (total.blockingLocks, 0L);
@@ -515,6 +546,8 @@ public:
             logMessage ("  -> gain sets across the slots: " + juce::String (setSlotSwitches) + " footswitch switches with the Gains between steps, " + juce::String (heldBlendBlocks)
                         + " slot-buffers holding a blend while fading out, at most " + juce::String (maxTotalModels)
                         + " step models running in one buffer across the three slots");
+            logMessage ("  -> the match curve: two curves, swapped and cleared mid-stream, off and on, its amount dragged from 100 to 30% and to 0 and back ("
+                        + juce::String (matchBuilds) + " FIR designs handed over, " + juce::String (matchCurveBlocks) + " blocks playing it)");
             logMessage ("  -> audio thread: " + describe (total));
         }
     }

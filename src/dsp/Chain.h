@@ -17,6 +17,7 @@
 #include "Harmonizer.h"
 #include "Multivoicer.h"
 #include "LinkedGates.h"
+#include "MatchCurve.h"
 #include "OutputLimiter.h"
 #include "Overdrive.h"
 #include "PreviewPlayer.h"
@@ -33,8 +34,8 @@ namespace ampsim
 /// bypass, and runs the two reorderable sections. It never special-cases a block (BUILD_PLAN "Block
 /// design", decisions 2 to 6).
 ///
-///   input gain ─► PRE FX (mono, reorderable) ─► amp ─► Gate B ─► cab (mono to stereo) ─► POST FX
-///   (stereo, reorderable) ─► output level ─► tone match's A/B player ─► output safety limiter
+///   input gain ─► PRE FX (mono, reorderable) ─► amp ─► Gate B ─► cab (mono to stereo) ─► match curve
+///   ─► POST FX (stereo, reorderable) ─► output level ─► tone match's A/B player ─► output safety limiter
 ///
 /// Blocks are typed members (decision 6), so the processor can call block-specific setters. The
 /// generic logic reaches them through blockFor(). A section's order is an array of slots, changed by
@@ -55,6 +56,7 @@ public:
     AmpSection amp;
     GateB gateB { gateA }; // follows Gate A when linked (LinkedGates.h)
     Cab cab;
+    MatchCurve matchCurve; // tone match's high-resolution correction of the amp-plus-cab sound (MatchCurve.h)
     Equalizer postEq { true };
     Compressor postCompressor { true };
     Harmonizer harmonizer;
@@ -78,6 +80,7 @@ public:
         amp,
         gateB,
         cab,
+        matchCurve,
         postEq,
         postCompressor,
         harmonizer,
@@ -116,7 +119,7 @@ public:
     void process (juce::dsp::AudioBlock<float> io);
 
     /// Audio thread, once per buffer before process(). Bypass crossfades over 10 ms (decision 4).
-    /// Effects (the pre and post FX) and the output limiter start bypassed; the amp, cab, and gains start on.
+    /// Effects (the pre and post FX), the match curve, and the output limiter start bypassed; the amp, cab, and gains start on.
     void setBypassed (Slot slot, bool shouldBeBypassed);
 
     /// Audio thread, for tests: whether the slot is fully bypassed and being skipped.

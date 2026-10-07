@@ -88,6 +88,8 @@ AmpSimProcessor::AmpSimProcessor()
     highCutOn = raw ("cab_highcut_on");
     highCutFreq = raw ("cab_highcut_freq");
     highCutSlope = raw ("cab_highcut_slope");
+    matchCurveOn = raw ("match_curve_on");
+    matchCurveAmount = raw ("match_curve_amount");
 
     markCabFollowed();
 
@@ -230,6 +232,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout AmpSimProcessor::createParam
     layout.add (std::make_unique<Float> (juce::ParameterID { "cab_highcut_freq", 1 }, "Cab High Cut Frequency", skewed (2000.0f, 20000.0f, 8000.0f), 8000.0f, hz));
     layout.add (std::make_unique<Choice> (juce::ParameterID { "cab_highcut_slope", 1 }, "Cab High Cut Slope", juce::StringArray { "12 dB/oct", "24 dB/oct" }, 0));
 
+    // The match curve after the cab (dsp/MatchCurve.h): its switch, and how much of the curve applies (the
+    // curve's dB times the amount, exactly). The curve itself is data in the state, not a parameter.
+    layout.add (std::make_unique<Bool> (juce::ParameterID { "match_curve_on", 1 }, "Match Curve", false));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "match_curve_amount", 1 }, "Match Curve Amount",
+                                         juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f), 100.0f,
+                                         juce::AudioParameterFloatAttributes().withLabel ("%")));
+
     // Effects. Compressors start off (style presets switch them on); EQs start on, and flat they
     // pass the signal through bit for bit.
     params::GateParameters::addTo (layout, "gate_a", "Gate A");
@@ -274,6 +283,7 @@ void AmpSimProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     applyEffectParameters();
     chain.setBypassed (ampsim::Chain::Slot::limiter, limiterOn->load() < 0.5f);
     chain.limiter.setCeilingDb (limiterCeiling->load());
+    applyMatchCurveBypass();
 
     chain.prepare (sampleRate, preparedBlockSize);
     setLatencySamples (chain.latencySamples());
@@ -371,6 +381,64 @@ void AmpSimProcessor::applyCabParameters()
     cuts.highCutHz = value (highCutFreq);
     cuts.highCutSlope = value (highCutSlope) >= 0.5f ? ampsim::Cab::Slope::db24 : ampsim::Cab::Slope::db12;
     chain.cab.setCuts (cuts);
+}
+
+void AmpSimProcessor::applyMatchCurveBypass()
+{
+    // The match curve plays when it's on, has a curve, and its amount is above 0; otherwise it's bypassed
+    // (the chain's 10 ms fade, and then not called at all: bit for bit the signal without it). It's a fixed
+    // block after the cab, so the post section's switch doesn't touch it. Its amount reaches the FIR through
+    // the timer's rebuilds (updateMatchCurve).
+    const auto on = matchCurveOn->load (std::memory_order_relaxed) >= 0.5f;
+    const auto amount = matchCurveAmount->load (std::memory_order_relaxed);
+    chain.setBypassed (ampsim::Chain::Slot::matchCurve, ! (on && amount > 0.0f && matchCurvePresent.load (std::memory_order_relaxed)));
+}
+
+void AmpSimProcessor::setMatchCurve (const ampsim::MatchCurve::Curve& curve)
+{
+    const auto wasFlat = matchCurveData.isFlat();
+    matchCurveData = curve;
+    matchCurvePresent = ! curve.isFlat();
+    if (curve.isFlat())
+        parameters.state.removeProperty (matchCurveKey, nullptr); // no curve: nothing in the state
+    else
+        parameters.state.setProperty (matchCurveKey, juce::JSON::toString (curve.toVar(), true), nullptr);
+
+    // From no curve to no curve (a fresh start, a state or preset without one) there's nothing to design.
+    if (wasFlat && curve.isFlat())
+        return;
+    matchCurveDirty = true;
+    updateMatchCurve (true);
+}
+
+void AmpSimProcessor::updateMatchCurve (bool force)
+{
+    // The FIR is designed at the amount the knob is at, so 50% is exactly half the curve's dB. At 0 the
+    // block is bypassed and there's nothing to hear; the FIR is then kept at 1% (never 0), so turning the
+    // amount up from 0 starts from almost no correction and crossfades up, never from a stale full one.
+    if (matchCurveData.isFlat() && ! matchCurveDirty)
+        return; // no curve: the amount has nothing to scale
+    const auto wanted = std::max (0.01, (double) matchCurveAmount->load() / 100.0);
+    const auto changed = matchCurveDirty || std::abs (wanted - matchCurveQueuedAmount) > 1.0e-6;
+    const auto now = juce::Time::getMillisecondCounterHiRes();
+
+    // A new curve is queued at once (the loader runs its jobs in order, so the newest curve always lands
+    // last, and isLoading() covers it). Amount changes wait for the last design to finish and come at most
+    // every 40 ms (morphIntervalMs, as for a moving mic): a knob being dragged is designed for where it is
+    // now, the positions in between skipped.
+    if (! changed || (! force && (matchCurveJobs.load() > 0 || now - lastMatchCurveBuildMs < morphIntervalMs)))
+        return;
+
+    matchCurveDirty = false;
+    matchCurveQueuedAmount = wanted;
+    lastMatchCurveBuildMs = now;
+    ++matchCurveJobs;
+    addLoaderJob ([this, curve = matchCurveData, wanted]
+    {
+        chain.matchCurve.setCurve (curve, wanted);
+        ++matchCurveBuilds;
+        --matchCurveJobs;
+    });
 }
 
 void AmpSimProcessor::applyEffectParameters()
@@ -665,6 +733,7 @@ void AmpSimProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     chain.setBypassed (ampsim::Chain::Slot::limiter, limiterOn->load (std::memory_order_relaxed) < 0.5f);
     chain.limiter.setCeilingDb (limiterCeiling->load (std::memory_order_relaxed));
     chain.setBypassed (ampsim::Chain::Slot::cab, cabBypass->load (std::memory_order_relaxed) >= 0.5f);
+    applyMatchCurveBypass();
 
     // The amp's bypass crossfades the amp section out to its own input with the chain's 10 ms bypass
     // fade. The three captures keep running on a copy of that input meanwhile (Chain: keepRunning), so
@@ -902,6 +971,9 @@ void AmpSimProcessor::setStateInformation (const void* data, int sizeInBytes)
         else
             startCabRequest (m, "Saved IR is missing: " + path, true);
     }
+
+    // The match curve (a state saved before it existed has none).
+    setMatchCurve (ampsim::MatchCurve::Curve::fromVar (juce::JSON::parse (state.getProperty (matchCurveKey).toString())));
 }
 
 void AmpSimProcessor::loadModel (int slot, const juce::File& file)
@@ -1169,6 +1241,10 @@ void AmpSimProcessor::timerCallback()
         chain.amp.slot (s).model.collectGarbage();
 
     chain.cab.collectGarbage();
+    chain.matchCurve.collectGarbage();
+
+    // The match curve's amount moved (or a design was skipped while another ran): design it again.
+    updateMatchCurve (false);
 
     // Footswitches and pedals mapped to parameters (and MIDI learn).
     // The scene CC picks a scene by its value (0 is scene 1); it takes precedence over any mapping.
