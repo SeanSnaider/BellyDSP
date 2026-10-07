@@ -20,7 +20,7 @@ What it can't do, as measured below: pin the Gain down within a few dB (a cranke
 1. Open it from the brand menu (top left, "BellyDSP"): **Match tone...**
 2. **Target.** Choose a file (WAV, AIFF, FLAC, MP3, M4A/AAC, and anything else macOS decodes; on Windows, what Media Foundation decodes) or drop one on the page. Drag in the waveform to choose 3 to 60 s where the lead guitar dominates (drag the edges or the middle to adjust; a click places 30 s). **Play** plays that section, looped, with your guitar on top, so you can hear (and learn) what you're about to match; see "Play along" below. If it's a whole song, switch on **Separate the guitar first**; the first time, it downloads the separation model (55 MB) into the BellyDSP data folder. If anything in the download or the separation fails, the Match card says what (the HTTP status, no response, a damaged download, out of memory) and `~/Library/Application Support/BellyDSP/separation-log.txt` has the details.
 3. **Your DI.** With a target loaded, **Record** is a play-along take: a count-in, then the section plays once while you play along and your clean DI records, lined up with the section, and it stops by itself at the section's end ("Play along" below). Without a target, Record records your DI on its own (up to a minute) until **Stop**. Or choose a DI file. Then the mode (Same part is chosen for you after a play-along take):
-   - **Same part**: you played the same part as the target (learn the lick, play it). The two are lined up in time and compared moment by moment. The more precise mode, on a dry or isolated target.
+   - **Same part**: you played the same part as the target (learn the lick, play it). The two are lined up in time and compared moment by moment. The more precise mode, on a dry or isolated target. With **Clean up with my take** (on by default) the target is first cleaned up with your notes ("Cleaning up the target with your take" below).
    - **Anything**: you played anything. Play the same kind of part (a lead for a lead, in a similar register), because the long-term spectrum depends on which notes are played. Use this one on a separated stem.
 4. **Match.** It takes a few seconds (plus about a minute per minute of audio when separating). Cancel stops it.
 5. **Result.** The amp, Gain, tone, cab, match EQ (bands low to high), the curve the EQ was fitted to, and the score. **Apply** sets them as normal settings in one undo step (Cmd-Z puts everything back, the cab and the pre effects included), so a preset saves them. **Discard** throws the result away.
@@ -37,7 +37,8 @@ Sean's feedback on the first version: "hard to compare". So the page plays the s
 
 **The sources.**
 
-- **Target**: what was matched, the separated guitar stem when "Separate the guitar first" was on, otherwise the selected section of the file.
+- **Target**: what was matched, the separated guitar stem when "Separate the guitar first" was on, otherwise the selected section of the file; cleaned up with your take when that was used.
+- **Raw** (only when the cleanup was used): the target before the cleanup, on the target's clock (the player's source 5).
 - **Match**: the DI the match used, rendered through what Apply would set (the slot, its Gain and tone, the cab in close mic 1, the match EQ as the post EQ, the pre effects off). The values are the ones the parameters will hold, so the render equals what Apply produces bit for bit (tested: `renderTone` on the settings read back from the processor after Apply gives the identical 432,000 samples).
 - **Current**: the same DI through what's set now. It re-renders by itself when the slot, its knobs, its capture, close mic 1's IR, the amp or cab bypass, or the post EQ change and then stay still for 300 ms. After Apply it equals Match (tested).
 
@@ -45,7 +46,7 @@ Both renders run on the session's worker through `ToneMatcher::renderTone`: the 
 
 **Playing.** A preview player sits at the very end of the chain, after the output level and before the output limiter (so nothing it plays can clip the output). It's a chain block that's idle unless comparing, and idle it returns without touching the audio, so the live path is bit-identical to before (tested over 3 s of the riff, before a preview and from 50 ms after it). It adds no latency. The audio thread only reads buffers that were built and filled elsewhere and handed over with a `Handoff` (old ones handed back to be freed off the audio thread), and atomics for play, the source, the loops, and the levels. It's in the real-time safety test, which stays at 0 allocations, 0 frees, 0 blocking locks: material handed over, played for 408 buffers through its loop's wraps, switched three times, its loops moved, new material swapped in mid-play, stopped.
 
-- **Play/Stop** (Space), **Target / Match / Current** (1, 2, 3), from anywhere on the page. Leaving the page stops it.
+- **Play/Stop** (Space), **Target / Match / Current** (1, 2, 3), and **Raw** (4) after a cleaned-up match, from anywhere on the page. Leaving the page stops it.
 - **The loop** is the strip under the buttons: the matched section, the loop on it, and the playhead. Drag to set it, drag its edges or middle, double-click for the whole section (the default).
 - **Mute my guitar while comparing** (on): the live guitar fades out over 20 ms while previewing and back after Stop, so the comparison isn't polluted. Off, you can play along.
 - **Level match** (on): every source brought to the same BS.1770 loudness (that of the Current render, the level your rig plays at), so the comparison is about tone, not volume. Each source's own loudness is shown under its name. Measured through the processor, one loop of each: -19.29, -19.36, and -19.37 LUFS, a spread of 0.076 LU.
@@ -95,6 +96,65 @@ Measured (`tempo_estimate.py --study`): exact on the synthetic band (120.0 for 1
 (Off the truth: |j - (i + shift)| over the target's playing frames, a frame being 43 ms.) On these cases the band changed nothing: unconstrained DTW already finds a take at the same tempo, and the band's matches, paths, and scores are identical. What the band buys is a bound: the path can't wander further than 0.5 s from where the take was recorded, which a repetitive riff or a missed bar could otherwise tempt it to; the synthetic leads don't test that. A take recorded against another range (or another file) isn't lined up with what's selected now, so it gets the unbanded DTW.
 
 **Not verified (only Sean can).** Whether a take lines up on his interface: the reported latencies at 128 samples on the Scarlett Solo (macOS) and over ASIO on Windows, and whether the offset is needed; how the count-in and the song feel to play along with, the click's sound and level; and whether the tempo suggestion is right on his songs (PROGRESS TM.7).
+
+## Cleaning up the target with your take
+
+Sean, 2026-10-06: "build the cleanup", the informed mask from the learning prototype (below, "Informed separation (task 3)"), in the app (ASSUMPTIONS TM50 to TM56). When you played the target's part, your DI says which notes the lead plays and when. A single note through any amp, cab, and mic has its energy at the harmonics of its fundamental, h f0, so on the target's spectrogram the cleanup keeps what lies near those and turns everything else down 20 dB: the drums, the bass, another guitar between the lead's harmonics, Demucs's bleed. What sits right on top of a harmonic stays.
+
+**Where it applies.** Only in **Same part**: a play-along take of the section (lined up by the round trip, so the notes are searched within the 0.5 s band) or any other same-part DI (unbanded DTW). In Anything mode your notes aren't the target's, so there's nothing to line up: the switch is disabled and its caption says so. It runs on the match's worker between the separation (or the section, with separation off) and the analysis, so everything the matcher measures comes from the cleaned target.
+
+**The option.** **Clean up with my take**, in the Target card under the separation switch, on by default (whenever it applies). After a match the Match card says "Target is cleaned up with your take (35 notes); Raw is before." and the closeness line ends "target cleaned up". If your DI has no notes with a clear pitch, the match runs on the target as it was and the line says why. In the A/B, **Target** plays what was matched (the cleaned target), and a fourth source, **Raw** (key 4), plays the target before the cleanup, on the same clock, so a switch between the two keeps the exact sample. Guitar only, the play-along's stem, and Save take's `stem.wav` stay the separated stem as Demucs left it.
+
+### How it works
+
+1. **Your notes.** Onset strength in the DI: the spectral flux of a 1024-point (symmetric Hann) STFT every 120 samples (2.5 ms), each bin's rise in log(|X| + 1e-4 max |X|) since the frame before, positive parts summed from 100 Hz to 10 kHz (Bello et al. 2005). Peaks over a moving threshold (the median over +-100 ms plus a tenth of the flux's 99th percentile), at least 45 ms apart, each refined to the sample where a 1 ms RMS envelope rises fastest (e[n] - e[n - 48], within +-10 ms).
+2. **Their pitches.** McLeod's method (`PitchDetector`, the harmonizer's settings: the DI low-passed at 3 kHz and decimated to 12 kHz, 110 Hz to 1.4 kHz) every 10 ms from 20 ms after each onset to the next one, the median of the readings with clarity 0.9 or more.
+3. **Their places in the target.** Chroma DTW between the target and tanh(10 x) of the DI (tone match's own `align`; the plain distortion makes the DI's partials look like a distorted guitar's) maps each onset to the target's clock; then the note's own onset is found within +-60 ms: the flux over the bins within 3% (plus 0.6 bins) of its first 12 harmonics, times a 30 ms Gaussian around the DTW estimate, minus the flux's own lag measured on the DI (-336 samples on the fixture: a frame's time is its centre, so the flux peaks early). A note spans from its onset to the next one in the target.
+4. **The pitch as the record plays it.** The DI's f0 times 2^(c/1200) for c = -60 to +60 cents in 5-cent steps, the c whose first 8 harmonics hold the most magnitude in the note's 16384-point spectrum: the record may be tuned differently from your guitar.
+5. **The mask**, on a 4096-point STFT (11.7 Hz bins, so the harmonics of a low E separate) with hop 512:
+
+   ```
+   M(k, f) = max( 0.1, max over the notes n sounding in frame k, and h = 1 .. 40 with h f0_n <= 0.45 fs, of
+                  exp(-1/2 ((f - h f0_n) / sigma_h)^2) ),      sigma_h = max(h f0_n (2^(35/1200) - 1), 1.5 bins)
+   ```
+
+   The 35 cents are the prototype's (ASSUMPTIONS TM47); the 1.5-bin minimum keeps a low partial's lobe from being narrower than the Hann window's own main lobe can resolve. A note sounds in frame k when the frame's 4096-sample window overlaps its span. The floor of 0.1 (-20 dB) is there because a distorted guitar has real energy between and below its harmonics: with no floor, the mask applied to the clean record alone moved its long-term spectrum by 11 to 23 dB in the prototype's study.
+6. **Smooth by construction, and a little more.** Musical noise, the warbling tones of spectral subtraction and Wiener masks, comes from per-bin, per-frame gain decisions that jump at random. This mask makes none: in frequency it's a sum of smooth Gaussian lobes, and in time it's constant over each note, changing only at note boundaries, where the union over the window's overlap and the 85 ms window itself cross-fade it. On top of that, each bin is averaged over 5 frames (53 ms) and floored again: measured in the prototype (`learn_tone.py mask-study`), +0.02 to +0.08 dB SI-SDR on all four study cases and an unchanged spectral distance, so it's in.
+7. **The inverse STFT.** Each frame (periodic Hann w) times its mask, inverse FFT, windowed by w again and overlap-added, divided by the sum of the squared windows (the least-squares inverse STFT, Griffin and Lim 1984; scipy's `istft`). At hop N/8 the squared periodic Hann windows add to a constant (3, the constant-overlap-add condition for w^2, which holds for any hop of N/4 or less), so an unmasked frame comes back exactly; dividing by the actual sum keeps the first and last samples exact too. Measured: an all-ones mask returns the input at 337 dB SNR (double precision), the floor alone 0.1 x the input at 317 dB.
+
+`src/tonematch/InformedMask.*` is the port of `prototypes/learn_tone.py` (`align_notes`, `informed_mask`), written to make the same floating-point decisions (scipy's frame times, numpy's symmetric Hann, medfilt's zero padding, find_peaks' plateau and distance rules). It runs on the double-precision FFT (`FftDouble`).
+
+### Measured
+
+Golden test against the prototype (`tests/InformedMaskTests.cpp` on `tests/fixtures/informed_mask`, written by `uv run prototypes/learn_tone.py informed-golden`: 6 s of the crunch rig's record in the band with drums, bass, and a rhythm guitar, no separation, and the take of the same notes, 1% slower, 15 ms jitter, other velocities, a darker pick):
+
+| What | Tolerance | Result |
+|---|---|---|
+| The take's flux peaks | identical | 37 of 37 identical |
+| Onsets (refined to the sample) | within 1 sample | 37 of 37 sample-exact (36 within 10 ms of the 36 true ones; one extra) |
+| The flux lag | identical | -336 samples |
+| Each note's pitch from the DI | 0.5 cent | 0.0000 cents worst |
+| DTW path (0.5 s band) | same length and checksum | 147 steps, same checksum |
+| Target onsets, notes | within 1 sample | all sample-exact, 35 notes |
+| Pitches refined in the target | 0.5 cent | 0.0000 cents worst |
+| The mask: every frame's sum over the 2049 bins | 1e-5 relative | 1e-8 (raw and smoothed) |
+| The mask: 11 whole frames, bin by bin | 1e-5 | 1e-7 |
+| The output against the prototype's | 60 dB SNR | 83.2 dB (the prototype's file is 16-bit) |
+
+Against the unmixed record, on that fixture: SI-SDR -0.73 dB for the mix, 8.47 dB cleaned (the prototype's 8.47), the spectral distance 7.48 dB to 2.98. Time: 0.11 to 0.14 s for 6 s, 1.14 s for a minute (364 notes) on this Mac; Cancel returned 0.7 ms after the flag in the standalone test (a minute, cancelled 100 ms in) and 13 to 15 ms after it through the session; the only stretch that can't be interrupted is the target's analysis for DTW (tone match's `Analysis::of`).
+
+**End to end** (the test's last group): the matcher as the app runs it (Same part, the 0.5 s band, the built-in gain sets, the 21 cabs), its result rendered on the take and compared with the hidden rig on the take (the prototype's spectral distance; lower is closer):
+
+| Target | Cleanup off | Cleanup on | For information: Anything on the cleaned target |
+|---|---|---|---|
+| The record in the band, no separation (the fixture) | 8.18 dB (Monolith +22.5, Modern 4x12 blend) | **3.57 dB** (Glass +22.5, Modern 4x12 supercardioid) | 3.15 dB |
+| The study's high-gain case separated by Demucs (its first 6 s) | 5.89 dB (Monolith +22.5) | **3.62 dB** (Ember +16.5) | 1.97 dB |
+
+The cleanup lowered the distance in both cases (the test requires it). The prototype's whole-study numbers (four rigs, 24 s each): SI-SDR from 1.4 to 3.0 dB (Demucs alone) to 4.8 to 8.8 dB, the spectral distance to the record from 4.7 to 5.5 dB to 1.4 to 2.2, and the matcher's Same part mode from 6.7 to 9.5 dB to 3.1 to 5.0. Unbanded DTW (a same-part DI that isn't a take) found the same notes on three of the four and cost 0.6 dB SI-SDR on the one with a delay and a room (4.16 against 4.79).
+
+One thing the numbers say that the brief didn't ask: on a cleaned target, the matcher's **Anything** mode lands closer than Same part (3.15 against 3.57, 1.97 against 3.62 here; 1.9 to 2.1 against 3.1 to 5.0 in the study). A likely reason (not tested): Same part's frame-by-frame comparison still trips on what's left of the bleed, and the long-term statistics average it out. The cleanup needs the notes to line up; the matcher doesn't. Matching a take in Anything mode with the cleanup still on (through the take's alignment) would be a small change in the session if Sean wants it (ASSUMPTIONS TM55); as built, Anything means "my notes aren't the target's", and the cleanup stays off there.
+
+**Not verified (only Sean can).** How a cleaned target sounds (Raw against Target in the A/B), and whether matching it sounds closer on a real song (PROGRESS TM.9). Real leads bend, slide, and add vibrato, which move the harmonics within a note; the mask follows one pitch per note (35 cents wide), so a wide bend is turned down where it leaves the lobe. A record tuned more than 60 cents off your guitar isn't caught. Ghost notes and fast runs the onset detector misses aren't kept.
 
 ## How it works
 
@@ -267,6 +327,8 @@ Reproduce: `uv run --python 3.11 --with demucs --with numpy --with scipy python 
 
 The comparison's tests are `tests/ToneMatchCompareTests.cpp` (snapshots `build/proof/tone_match/10_compare_rendering.png` to `14_compare_same_part.png`) and the real-time safety test. Play along's are `tests/ToneMatchPlayAlongTests.cpp` (the count-in, play once, the fake device's take, the latency compensation, the stop, the live path, the tempo estimate, Guitar only, and the page: snapshots `20_play_target.png`, `21_count_in.png`, `22_recording.png`, `23_take_done.png`, `24_play_guitar_only.png`), the band in `ToneMatchTests.cpp`, and the real-time safety test (the song and its guitar with a count-in, looped, switched, restarted, stopped, and a whole take through the session: 0 allocations, 0 frees, 0 blocking locks).
 
+The cleanup's are `tests/InformedMaskTests.cpp` (golden against the prototype, the STFT round trip, cancel, the end-to-end effect on the matcher) and `tests/ToneMatchCleanupTests.cpp` (the page: on, off, and disabled in Anything; Target is the cleanup's output sample for sample and Raw the section; level match over the four; cancel during the cleanup; snapshots `26_cleanup_on.png`, `27_cleanup_off.png`, `28_cleanup_disabled.png`), and the real-time safety test plays the Raw source too.
+
 Other tests (`tests/ToneMatchTests.cpp`, `ToneMatchAppTests.cpp`, `ToneMatchSeparationTests.cpp`): the search on synthetic cases with known settings in C++ (every match better than the defaults); cancel; decoding WAV, AIFF, FLAC, M4A, and MP3; the DI recorder (sample-exact, and inside the real-time safety test, which stays at 0 allocations, 0 frees, 0 blocking locks); Apply as one undo step, with redo and Discard; the page, with snapshots in `build/proof/tone_match/`; the separation installer's size and SHA-256 checks and cancel; the C++ separation against Python's Demucs on the same 10 s clip (20.8 dB SDR; Python against its own reruns, which draw a different random shift, 19.0 to 31.3 dB); a silent stretch (finite, silent stem); simulated out of memory (retried with one worker, then reported); the worker rule; the log's cap; Apply switching the pre effects off and undo restoring each switch; and the result lines breaking only between items.
 
 Two groups need a flag, so the default suite stays offline. `AMPSIM_HTTP_TESTS=1` runs the installer against `tests/model_server.py` (through uv), which redirects like Hugging Face, to another host name with a long percent-escaped query it refuses to accept changed, and misbehaves on purpose: a connection dropped at 20 MB, two 503s, a 25 s wait for the first byte, a 404, a flipped byte. Then the page's whole flow from an empty model folder on `tests/fixtures/tone_match/song_44k.mp3` (20 s of the synthetic song, 44.1 kHz stereo, LAME through lameenc), from 7.3 s. `AMPSIM_NETWORK_TESTS=1` runs the page's whole flow against the real URL (any song with `AMPSIM_SONG`, `AMPSIM_SONG_DI`, `AMPSIM_SONG_START`, `AMPSIM_SONG_SECONDS`).
@@ -416,7 +478,7 @@ The take's pitches (McLeod's method on the DI, per note, then refined within +-6
 
 (the 2nd column: precision and recall of the take's onsets; the 3rd: how far the target's onsets land from the truth, median and 90th percentile.) Separation quality rises by 3 to 6 dB SI-SDR and the spectral distance to the record falls from about 5 dB to about 2 in every case, and every method's feel was better on the masked stem than on the bare one (and its spectral distance, except the learned capture's on crunch): the matcher's Anything mode went from 4.3 to 5.5 dB spectral to 1.9 to 2.1, feel from 6.3 to 7.3 to 3.7 to 5.0. Applied straight to the mix, without Demucs, it reached 8.0 dB SI-SDR and 3.3 dB spectral on high_gain (the mix: -1.8 dB and 6.3).
 
-It stays in the prototype for now (the brief: unless it's clearly a win; it is, on synthetic songs). Into C++ it would go as a step between the separation and the match, on the session's worker, only when the reference is a play-along take of the section: onsets in the DI (an STFT flux, which `TempoEstimate` already computes), the notes' pitches from `PitchDetector` (the harmonizer's McLeod settings), the onset refinement against the stem, the mask and its inverse STFT with JUCE's FFT. Its golden test would be this prototype's mask on the fixtures. Unverified on real records: a real lead's bends and vibrato move the harmonics within a note, which a per-note pitch doesn't follow (a per-frame pitch track would), and a record tuned differently from Sean's guitar is caught only within +-60 cents.
+Since 2026-10-06 it's in the app: "Cleaning up the target with your take" above. Unverified on real records: a real lead's bends and vibrato move the harmonics within a note, which a per-note pitch doesn't follow (a per-frame pitch track would), and a record tuned differently from Sean's guitar is caught only within +-60 cents.
 
 ### Save take, and a benchmark of real takes
 
@@ -462,7 +524,7 @@ How any of it sounds: the learned captures, the matcher's results here, the mask
 - How a match sounds, on anything. Every number here is a measurement on synthetic guitars.
 - How the comparison sounds and feels: whether the switches and the loop are click-free to his ears, whether equal loudness by BS.1770 sounds equally loud on his material, and whether same part's alignment keeps a switch on the same note (PROGRESS TM.6).
 - Real songs: Demucs on real mixes, real lead tones, real DIs (PROGRESS TM.1 to TM.3).
-- The learning prototype and the informed mask on real takes (PROGRESS TM.8).
+- The learning prototype and the informed mask on real takes (PROGRESS TM.8), and the cleanup in the app on a real song (TM.9).
 
 ## Sources
 
@@ -478,3 +540,4 @@ How any of it sounds: the learned captures, the matcher's results here, the mask
 - Yamamoto, Song, Kim, "Parallel WaveGAN", ICASSP 2020 (the multi-resolution STFT loss); Steinmetz and Reiss, "auraloss: Audio focused loss functions in PyTorch", DMRN+15, 2020.
 - McLeod and Wyvill, "A Smarter Way to Find Pitch", ICMC 2005.
 - Le Roux, Wisdom, Erdogan, Hershey, "SDR - half-baked or well done?", ICASSP 2019 (SI-SDR).
+- Griffin and Lim, "Signal estimation from modified short-time Fourier transform", IEEE TASSP 32(2), 1984 (the least-squares inverse STFT).
