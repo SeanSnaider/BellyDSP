@@ -182,6 +182,28 @@ public:
     /// Goes up with every finished take (the page's Save take uses it to tell a new take from a saved one).
     int getTakeNumber() const noexcept { return takeNumber; }
 
+    // ---- Cleaning up the target with the take (docs/TONE_MATCH.md, "Cleaning up the target with your take") --
+    /// "Clean up with my take" (on by default): before the match, the target (the separated stem, or the
+    /// section) goes through the informed harmonic mask built from the DI's notes (tonematch/InformedMask.h),
+    /// on the match's worker. Used only when it applies.
+    void setCleanup (bool on) { cleanup = on; }
+    bool getCleanup() const noexcept { return cleanup; }
+    /// Same part: the DI plays the target's notes, so they line up (a play-along take of this section through
+    /// its known alignment and the 0.5 s band, any other same-part DI through unbanded DTW). In Anything mode
+    /// the notes differ and there's nothing to line up.
+    bool cleanupApplies() const noexcept { return mode == Mode::samePart; }
+    /// Why it doesn't apply now, in words for the page (empty when it does).
+    juce::String whyNoCleanup() const;
+    /// What the last finished match's cleanup did.
+    struct CleanupInfo
+    {
+        bool attempted = false, used = false, banded = false;
+        juce::String skipped;  ///< why it wasn't used, when attempted but not used
+        int onsets = 0, notes = 0, pitched = 0;
+        double keptDb = 0.0, seconds = 0.0;
+    };
+    const CleanupInfo& getCleanupInfo() const noexcept { return cleanupInfo; }
+
     // ---- Matching ----------------------------------------------------------------------------------------
     /// Empty when a match can start; otherwise what's missing, in words for the page.
     juce::String whyCantMatch() const;
@@ -231,12 +253,18 @@ public:
     // match finishes, and the current one again whenever the settings it depends on change.
     enum Source
     {
-        sourceTarget = 0,
+        sourceTarget = 0,  ///< what was matched: the cleaned-up target when the cleanup was used
         sourceMatch = 1,
         sourceCurrent = 2,
-        numSources = 3
+        numSources = 3,    ///< the three that are always there
+        sourceTargetRaw = 3, ///< the target before the cleanup (only when the cleanup was used): "Raw"
+        numAllSources = 4
     };
     static juce::String sourceName (int source);
+    /// The cleanup was used, so the raw target is there to compare too.
+    bool hasRawTarget() const noexcept { return cleanupInfo.used && comparedRawTarget != nullptr; }
+    /// A source's index in the processor's PreviewPlayer.
+    static int playerSource (int source) noexcept { return source == sourceTargetRaw ? ampsim::PreviewPlayer::sourceTargetRaw : source; }
 
     /// The settings the Match source plays: the result as Apply writes it (the values as the parameters
     /// store them), with the matched slot's Master as it is now. The cab IR is left empty (the worker reads it).
@@ -327,9 +355,13 @@ private:
     juce::String stage;
     MatchResult pending, result;
     bool resultReady = false;
-    // What the finished match compared (the target after separation, and the DI), for the comparison.
-    std::vector<float> pendingTarget, pendingReference;
-    std::shared_ptr<const std::vector<float>> comparedTarget, comparedReference;
+    // What the finished match compared (the target after separation and the cleanup, and the DI), for the
+    // comparison; and the target before the cleanup (the separated stem, or the section): Guitar only, stem.wav,
+    // and the A/B's Raw.
+    std::vector<float> pendingTarget, pendingRawTarget, pendingReference;
+    std::shared_ptr<const std::vector<float>> comparedTarget, comparedRawTarget, comparedReference;
+    bool cleanup = true;
+    CleanupInfo cleanupInfo, pendingCleanup;
 
     // The comparison. The compare worker reads only what's copied for it and hands back through
     // `compareFinished` (picked up by poll()).
@@ -354,8 +386,8 @@ private:
     float previewLevelDb = 0.0f;
     double loopStart = 0.0, loopEnd = 0.0;
     std::pair<int64_t, int64_t> diLoop { 0, 0 };
-    std::array<double, numSources> loudness {};
-    std::array<float, numSources> matchGainDb {};
+    std::array<double, numAllSources> loudness {};
+    std::array<float, numAllSources> matchGainDb {};
     std::unique_ptr<ampsim::PreviewPlayer::Material> material; // what the player has (the newest published), message thread
 
     // Hearing the target and playing along.

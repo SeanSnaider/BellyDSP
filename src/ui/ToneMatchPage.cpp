@@ -40,7 +40,7 @@ void drawWrapped (juce::Graphics& g, const juce::String& s, juce::Rectangle<int>
     g.drawFittedText (s, area, juce::Justification::topLeft, 4, 1.0f);
 }
 
-constexpr int waveformHeight = 84;
+constexpr int waveformHeight = 72; // 84 until the cleanup switch took a row (ASSUMPTIONS TM53)
 
 const char* const honestNote =
     "A song only holds the rig's output, mixed with everything else, so the real amp can't be recovered. "
@@ -838,9 +838,22 @@ ToneMatchPage::ToneMatchPage (AmpSimProcessor& p)
     modeChoice->setSelected (1);
     modeChoice->onChange = [this] (int i) {
         session.setMode (i == 0 ? Mode::samePart : Mode::anything);
+        refresh(); // the cleanup's switch follows the mode
         repaint();
     };
     addAndMakeVisible (*modeChoice);
+
+    // Clean up with my take (docs/TONE_MATCH.md, "Cleaning up the target with your take"): on by default,
+    // only in Same part.
+    cleanupSwitch = std::make_unique<Switch> ("Clean up with my take");
+    cleanupSwitch->setToggleState (session.getCleanup(), juce::dontSendNotification);
+    cleanupSwitch->onClick = [this] {
+        session.setCleanup (cleanupSwitch->getToggleState());
+        repaint();
+    };
+    cleanupSwitch->setTooltip ("Before matching, keep only the target's sound near the notes you played (their fundamentals and harmonics, "
+                               "found in your DI) and turn the rest down 20 dB: drums, bass, and other guitars between them. Same part only.");
+    addAndMakeVisible (*cleanupSwitch);
 
     separateSwitch = std::make_unique<Switch> ("Separate the guitar first");
     separateSwitch->onClick = [this] {
@@ -864,9 +877,7 @@ ToneMatchPage::ToneMatchPage (AmpSimProcessor& p)
     // The comparison (A/B): the sources, Play, the loop, the level match, the live mute, the level.
     playButton = &addButton ("Play", [this] { togglePreview(); });
     playButton->setTooltip ("Play or stop the comparison, looped (Space)");
-    sourceChoice = std::make_unique<Segmented> (juce::StringArray { "Target", "Match", "Current" });
-    sourceChoice->onChange = [this] (int i) { selectSource (i); };
-    addChildComponent (*sourceChoice);
+    rebuildSourceChoice (false);
     loopStrip = std::make_unique<LoopStrip> (session);
     loopStrip->setTooltip ("The loop: drag to set it, drag its edges or middle to adjust, double-click for the whole section");
     loopStrip->onChanged = [this] { repaint (compareArea); };
@@ -1014,10 +1025,33 @@ void ToneMatchPage::toggleTargetPlay()
     waveform->repaint();
 }
 
+void ToneMatchPage::rebuildSourceChoice (bool withRaw)
+{
+    // Target, Match, Current, and Raw (the target before the cleanup) when the cleanup was used.
+    if (sourceChoice != nullptr && sourceChoiceHasRaw == withRaw)
+        return;
+    const auto visible = sourceChoice != nullptr && sourceChoice->isVisible();
+    const auto enabled = sourceChoice == nullptr || sourceChoice->isEnabled();
+    const auto bounds = sourceChoice != nullptr ? sourceChoice->getBounds() : juce::Rectangle<int>();
+    if (sourceChoice != nullptr)
+        removeChildComponent (sourceChoice.get());
+    juce::StringArray names { "Target", "Match", "Current" };
+    if (withRaw)
+        names.add ("Raw");
+    sourceChoice = std::make_unique<Segmented> (names);
+    sourceChoice->onChange = [this] (int i) { selectSource (i); };
+    addChildComponent (*sourceChoice);
+    sourceChoice->setVisible (visible);
+    sourceChoice->setEnabled (enabled);
+    sourceChoiceHasRaw = withRaw;
+    if (! bounds.isEmpty())
+        sourceChoice->setBounds (bounds.withWidth (sourceChoice->getPreferredWidth()));
+}
+
 void ToneMatchPage::selectSource (int source)
 {
     session.setPreviewSource (source);
-    sourceChoice->setSelected (source, juce::dontSendNotification);
+    sourceChoice->setSelected (session.getPreviewSource(), juce::dontSendNotification);
     repaint (compareArea);
 }
 
@@ -1034,7 +1068,7 @@ bool ToneMatchPage::keyPressed (const juce::KeyPress& key)
     auto c = (int) key.getTextCharacter();
     if (c == 0)
         c = key.getKeyCode();
-    if (c >= '1' && c <= '3')
+    if (c >= '1' && c <= (session.hasRawTarget() ? '4' : '3'))
     {
         selectSource ((int) (c - '1'));
         return true;
@@ -1042,10 +1076,22 @@ bool ToneMatchPage::keyPressed (const juce::KeyPress& key)
     return false;
 }
 
+juce::String ToneMatchPage::getCleanupText() const
+{
+    if (! session.hasResult())
+        return {};
+    const auto& c = session.getCleanupInfo();
+    if (! c.attempted)
+        return {};
+    if (! c.used)
+        return "Not cleaned up: " + c.skipped + ".";
+    return "Target is cleaned up with your take (" + juce::String (c.pitched) + " notes); Raw is before.";
+}
+
 juce::String ToneMatchPage::getLoudnessText() const
 {
     juce::StringArray parts;
-    for (int s = 0; s < ToneMatchSession::numSources; ++s)
+    for (int s = 0; s < (session.hasRawTarget() ? ToneMatchSession::numAllSources : ToneMatchSession::numSources); ++s)
     {
         const auto l = session.getLoudness (s);
         parts.add (ToneMatchSession::sourceName (s) + " " + (std::isfinite (l) ? juce::String (l, 1) : juce::String ("-")));
@@ -1314,6 +1360,8 @@ void ToneMatchPage::refresh()
     discardButton->setEnabled (session.hasResult() && ! matching);
     modeChoice->setEnabled (! matching);
     separateSwitch->setEnabled (! matching);
+    cleanupSwitch->setToggleState (session.getCleanup(), juce::dontSendNotification);
+    cleanupSwitch->setEnabled (! matching && session.cleanupApplies());
 
     if (session.hasResult() && resultText.isEmpty())
     {
@@ -1326,6 +1374,7 @@ void ToneMatchPage::refresh()
     // The comparison: shown with a result, usable once its renders are in.
     const auto comparing = session.hasResult();
     const auto ready = session.isCompareReady();
+    rebuildSourceChoice (session.hasRawTarget());
     for (auto* c : std::initializer_list<juce::Component*> { playButton, sourceChoice.get(), loopStrip.get(), levelMatchSwitch.get(), muteSwitch.get(), levelBar.get() })
     {
         c->setVisible (comparing);
@@ -1393,6 +1442,11 @@ void ToneMatchPage::resized()
         separateSwitch->setBounds (switches.removeFromLeft (separateSwitch->getPreferredWidth()).translated (-Switch::margin, 0));
         switches.removeFromLeft (space::xl);
         countInPlaySwitch->setBounds (switches.removeFromLeft (countInPlaySwitch->getPreferredWidth()).translated (-Switch::margin, 0));
+        in.removeFromTop (2);
+        auto cleanupRow = in.removeFromTop (Switch::preferredHeight);
+        cleanupSwitch->setBounds (cleanupRow.removeFromLeft (cleanupSwitch->getPreferredWidth()).translated (-Switch::margin, 0));
+        cleanupRow.removeFromLeft (space::m);
+        cleanupCaptionArea = cleanupRow;
     }
 
     // Your DI: Record and Choose file, the status, the mode and what it means, then the count-in (on, beats;
@@ -1508,18 +1562,23 @@ void ToneMatchPage::paint (juce::Graphics& g)
         drawText (g, "Song level", songLevelLabelArea, Text::label, session.getTarget().empty() ? inkFaint : inkDim, juce::Justification::centredRight);
         drawText (g, (session.getSongLevelDb() > 0.0f ? "+" : "") + juce::String (session.getSongLevelDb(), 1) + " dB", songLevelValueArea, Text::caption,
                   session.getTarget().empty() ? inkFaint : inkDim, juce::Justification::centredRight);
-        in.removeFromTop (space::s + waveformHeight + space::s + controlHeight + space::s + Switch::preferredHeight + 6);
-        juce::String hint = "Pick a section where the lead guitar dominates; the rest of the mix changes what's measured.";
+        // The cleanup's caption: what it does, or why it can't (Anything).
+        g.setFont (font (Text::caption));
+        g.setColour (session.cleanupApplies() ? inkDim : inkFaint);
+        g.drawFittedText (getCleanupCaption(), cleanupCaptionArea, juce::Justification::centredLeft, 2, 0.9f);
+
+        in.removeFromTop (space::s + waveformHeight + space::s + controlHeight + space::s + 2 * Switch::preferredHeight + 2 + 4);
+        juce::String hint = "Pick a section where the lead guitar dominates.";
         if (session.hasSeparator())
         {
-            hint << " Separation (Demucs) keeps every guitar, not just the lead, and takes about a minute per minute of audio.";
+            hint << " Separation (Demucs) keeps every guitar and takes about a minute per minute of audio.";
             if (! separator->isInstalled())
                 hint << " The first time, it downloads the model (" << juce::String (juce::roundToInt ((double) ampsim::tonematch::GuitarSeparator::weightsBytes / 1.0e6))
                      << " MB) from its author's page.";
         }
         g.setFont (font (Text::caption));
         g.setColour (inkFaint);
-        g.drawFittedText (hint, in, juce::Justification::topLeft, 3, 0.9f);
+        g.drawFittedText (hint, in, juce::Justification::topLeft, 2, 0.9f);
     }
 
     // Your DI: what's recorded or chosen (or the take's progress), and what the mode means.
@@ -1571,8 +1630,12 @@ void ToneMatchPage::paint (juce::Graphics& g)
             else if (session.isCurrentStale())
                 shown << " Current follows your settings once they stop moving.";
             else
+            {
+                if (const auto cleanupText = getCleanupText(); cleanupText.isNotEmpty())
+                    shown << " " << cleanupText;
                 shown << (session.isAligned() ? " Same part: your DI is lined up with the target in time."
                                               : " Anything: the target loops the range, your DI its whole take.");
+            }
         }
         g.setFont (font (Text::caption));
         g.setColour (session.getError().isNotEmpty() ? ink : inkDim);
@@ -1583,7 +1646,7 @@ void ToneMatchPage::paint (juce::Graphics& g)
         {
             // Under each source, its loudness as it is (before the level match).
             g.setFont (tabular (font (Text::caption)));
-            for (int s = 0; s < ToneMatchSession::numSources; ++s)
+            for (int s = 0; s < (session.hasRawTarget() ? ToneMatchSession::numAllSources : ToneMatchSession::numSources); ++s)
             {
                 const auto l = session.getLoudness (s);
                 const auto option = sourceChoice->optionArea (s).toNearestInt().translated (sourceChoice->getX(), 0);
@@ -1614,8 +1677,11 @@ void ToneMatchPage::paint (juce::Graphics& g)
         g.setFont (tabular (geist (Weight::light, 30.0f)));
         g.setColour (ink);
         g.drawText (juce::String (juce::roundToInt (r.closeness)), big.removeFromLeft (52), juce::Justification::centredLeft, false);
-        drawText (g, "closeness out of 100  (spectral error " + juce::String (r.spectralErrorAfterEqDb, 1) + " dB, distortion distance "
-                         + juce::String (r.distortion, 1) + ", " + (r.mode == Mode::samePart ? "same part" : "anything") + ")",
+        // With the cleanup used, the line says so (and "distortion distance" shortens to fit).
+        const auto cleaned = session.getCleanupInfo().used;
+        drawText (g, "closeness out of 100  (spectral error " + juce::String (r.spectralErrorAfterEqDb, 1) + " dB, " + (cleaned ? "distortion " : "distortion distance ")
+                         + juce::String (r.distortion, 1) + ", " + (r.mode == Mode::samePart ? "same part" : "anything")
+                         + (cleaned ? ", target cleaned up" : "") + ")",
                   big, Text::label, inkDim);
         in.removeFromTop (space::s);
         // The settings, one line each, broken only between items (packItems), continuation lines indented.

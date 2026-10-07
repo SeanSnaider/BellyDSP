@@ -15,7 +15,7 @@
 namespace ampsim
 {
 
-/// Tone match's player (docs/TONE_MATCH.md, "Comparing" and "Play along"): plays one of five prepared
+/// Tone match's player (docs/TONE_MATCH.md, "Comparing" and "Play along"): plays one of six prepared
 /// sources at the very end of the chain, after the output level and before the output limiter. Stereo (the
 /// mono source in both channels), zero latency.
 ///
@@ -24,6 +24,8 @@ namespace ampsim
 ///   source 2  the current settings: the same DI through what's set now (A/B)
 ///   source 3  the song: the selected section of the target file (the Target card's Play, play along)
 ///   source 4  the guitar only: the separated stem of that section, once a separated match has made one
+///   source 5  the target as it was before the cleanup with the take (A/B; "Cleaning up the target with your
+///             take"): on the target's clock, so a switch from source 0 keeps the exact sample
 ///
 /// The audio lives in a Material, built and filled off the audio thread and handed over through a Handoff
 /// (the old one is handed back, once no voice reads it, to be freed elsewhere). Everything else (play,
@@ -48,7 +50,7 @@ namespace ampsim
 /// The block in which a start's first sample sounds reports its index (songStartedAt()), so the processor
 /// can start tone match's DI recorder on the same sample.
 ///
-/// Positions. Sources keep their own clocks: clock 0 is the target's, clock 1 the DI's (the match and the
+/// Positions. Sources keep their own clocks: clock 0 is the target's (sources 0 and 5), clock 1 the DI's (the match and the
 /// current renders share it, so switching between them keeps the exact sample), clock 2 the song section's
 /// (the song and its stem share it). Between clocks 0 and 1, an aligned Material (tone match's same-part
 /// mode) maps a position through the DTW path the matcher found: two monotone tables, the other clock's
@@ -62,7 +64,8 @@ namespace ampsim
 class PreviewPlayer final : public Block
 {
 public:
-    static constexpr int numSources = 5;
+    static constexpr int numSources = 6;
+    static constexpr int sourceTargetRaw = 5;
     static constexpr int numClocks = 3;
     static constexpr int maxVoices = 4;
     static constexpr int maxCountInBeats = 8;
@@ -75,7 +78,7 @@ public:
     struct Material
     {
         std::array<std::shared_ptr<const std::vector<float>>, numSources> audio; ///< 48 kHz mono; null or empty: silence
-        std::array<int, numSources> clock { 0, 1, 1, 2, 2 };                      ///< the target's clock, the DI's, the song's
+        std::array<int, numSources> clock { 0, 1, 1, 2, 2, 0 };                   ///< the target's clock, the DI's, the song's
         /// The count-in's clicks: the first beat's (accented) and the others'. Null: silent clicks.
         std::shared_ptr<const std::vector<float>> clickAccent, click;
 

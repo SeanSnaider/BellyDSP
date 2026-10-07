@@ -7,6 +7,7 @@
 #include "platform/AppInfo.h"
 #include "dsp/Loudness.h"
 #include "tonematch/AudioFileInput.h"
+#include "tonematch/InformedMask.h"
 #include "tonematch/TempoEstimate.h"
 
 #include <cmath>
@@ -242,6 +243,13 @@ juce::String ToneMatchSession::whyCantMatch() const
     return {};
 }
 
+juce::String ToneMatchSession::whyNoCleanup() const
+{
+    if (cleanupApplies())
+        return {};
+    return "Only in Same part: in Anything your notes aren't the target's, so there's nothing to line up.";
+}
+
 bool ToneMatchSession::startMatch()
 {
     if (whyCantMatch().isNotEmpty())
@@ -265,6 +273,10 @@ bool ToneMatchSession::startMatch()
     pendingRangeEnd = rangeEnd;
     pendingTargetVersion = targetVersion;
     pendingBand = settings.alignmentBandSeconds > 0.0;
+    // The cleanup with the take: in same part only (the notes line up). A take of this section is lined up
+    // already, so its DTW runs in the play-along band, as the match's does; any other same-part DI unbanded.
+    const auto doCleanup = cleanup && cleanupApplies();
+    const auto cleanupBand = settings.alignmentBandSeconds;
 
     stopAndClearCompare();
     setTargetPlaying (false);
@@ -279,10 +291,15 @@ bool ToneMatchSession::startMatch()
         stage = separate ? "Starting the separation" : "Starting";
     }
 
-    worker = std::thread ([this, settings, targetCopy = targetSelection(), referenceCopy = reference, doSeparate = separate, sep = separator] {
+    worker = std::thread ([this, settings, targetCopy = targetSelection(), referenceCopy = reference, doSeparate = separate, sep = separator,
+                           doCleanup, cleanupBand] {
         auto targetSignal = targetCopy;
         MatchResult r;
+        CleanupInfo info;
+        std::vector<float> rawTarget;
+        // Progress: the separation half of it when on, the cleanup (about a second a minute) a twentieth.
         const auto separationShare = doSeparate ? 0.5 : 0.0;
+        const auto cleanupShare = doCleanup ? 0.05 : 0.0;
         auto report = [this] (double from, double to) {
             return [this, from, to] (double f, const juce::String& s) {
                 progress = from + (to - from) * f;
@@ -301,9 +318,38 @@ bool ToneMatchSession::startMatch()
                 r.error = r.cancelled ? "Cancelled" : "Separation failed: " + separationError;
             }
         }
+        // The cleanup (docs/TONE_MATCH.md, "Cleaning up the target with your take"): between the separation
+        // (or the section) and the match. If it finds no pitched notes in the DI, the match runs on the target
+        // as it is and the result says why.
+        if (! targetSignal.empty() && doCleanup && ! cancelFlag.load())
+        {
+            info.attempted = true;
+            info.banded = cleanupBand > 0.0;
+            auto cleaned = informed::cleanUp (targetSignal, referenceCopy, cleanupBand, cancelFlag,
+                                              report (separationShare, separationShare + cleanupShare));
+            info.onsets = cleaned.onsets;
+            info.notes = cleaned.notes;
+            info.pitched = cleaned.pitched;
+            info.keptDb = cleaned.keptDb;
+            info.seconds = cleaned.seconds;
+            if (cleaned.cancelled)
+            {
+                r.cancelled = true;
+                r.error = "Cancelled";
+                targetSignal.clear();
+            }
+            else if (cleaned.ok)
+            {
+                info.used = true;
+                rawTarget = std::move (targetSignal);
+                targetSignal = std::move (cleaned.output);
+            }
+            else
+                info.skipped = cleaned.error;
+        }
         if (! targetSignal.empty())
         {
-            r = ToneMatcher::match (targetSignal, referenceCopy, settings, cancelFlag, report (separationShare, 1.0));
+            r = ToneMatcher::match (targetSignal, referenceCopy, settings, cancelFlag, report (separationShare + cleanupShare, 1.0));
             if (doSeparate && ! r.ok && ! r.cancelled && r.error.startsWith ("The target has too little playing"))
                 r.error = "The separated guitar has too little playing in it: the separation found almost no guitar in this section. "
                           "Choose a section where the guitar plays, or switch separation off.";
@@ -312,8 +358,10 @@ bool ToneMatchSession::startMatch()
         {
             const std::lock_guard<std::mutex> l (lock);
             pending = std::move (r);
+            pendingRawTarget = info.used ? std::move (rawTarget) : targetSignal;
             pendingTarget = std::move (targetSignal);
             pendingReference = referenceCopy;
+            pendingCleanup = info;
         }
         finished = true;
     });
@@ -394,6 +442,10 @@ void ToneMatchSession::poll()
                 result = pending;
                 resultReady = true;
                 comparedTarget = std::make_shared<const std::vector<float>> (std::move (pendingTarget));
+                comparedRawTarget = std::make_shared<const std::vector<float>> (std::move (pendingRawTarget));
+                cleanupInfo = pendingCleanup;
+                if (previewSource == sourceTargetRaw && ! hasRawTarget())
+                    previewSource = sourceTarget;
                 comparedReference = std::make_shared<const std::vector<float>> (std::move (pendingReference));
                 matchedSeparated = pendingSeparated;
                 matchedRangeStart = pendingRangeStart;
@@ -500,7 +552,7 @@ void ToneMatchSession::discard()
 
 juce::String ToneMatchSession::sourceName (int source)
 {
-    return source == sourceTarget ? "Target" : source == sourceMatch ? "Match" : "Current";
+    return source == sourceTarget ? "Target" : source == sourceMatch ? "Match" : source == sourceTargetRaw ? "Raw" : "Current";
 }
 
 float ToneMatchSession::storedValue (const juce::String& parameterId, double value) const
@@ -741,6 +793,7 @@ void ToneMatchSession::pollCompare()
             m->audio[0] = comparedTarget;
             m->audio[1] = matchAudio;
             m->audio[2] = currentAudio;
+            m->audio[(size_t) ampsim::PreviewPlayer::sourceTargetRaw] = hasRawTarget() ? comparedRawTarget : nullptr;
             m->aligned = false;
             m->diAtTarget.clear();
             m->targetAtDi.clear();
@@ -815,6 +868,7 @@ void ToneMatchSession::stopAndClearCompare()
     matchSpectrum.clear();
     renderedFingerprint.clear();
     material->audio[0] = material->audio[1] = material->audio[2] = nullptr;
+    material->audio[(size_t) ampsim::PreviewPlayer::sourceTargetRaw] = nullptr;
     material->aligned = false;
     material->diAtTarget.clear();
     material->targetAtDi.clear();
@@ -825,7 +879,9 @@ void ToneMatchSession::stopAndClearCompare()
 const std::vector<float>& ToneMatchSession::getCompareAudio (int source) const
 {
     static const std::vector<float> none;
-    const auto& p = source == sourceTarget ? comparedTarget : source == sourceMatch ? matchAudio : currentAudio;
+    if (source == sourceTargetRaw && ! hasRawTarget())
+        return none;
+    const auto& p = source == sourceTarget ? comparedTarget : source == sourceMatch ? matchAudio : source == sourceTargetRaw ? comparedRawTarget : currentAudio;
     return p != nullptr ? *p : none;
 }
 
@@ -841,7 +897,7 @@ void ToneMatchSession::setPreviewPlaying (bool shouldPlay)
         player.setCountIn (0, 1.0);
         player.setMuteLive (muteLive);
         player.setLevelDb (previewLevelDb);
-        player.setSource (previewSource);
+        player.setSource (playerSource (previewSource));
         if (! was)
             player.startFresh();
     }
@@ -851,9 +907,9 @@ void ToneMatchSession::setPreviewPlaying (bool shouldPlay)
 
 void ToneMatchSession::setPreviewSource (int source)
 {
-    previewSource = juce::jlimit (0, numSources - 1, source);
+    previewSource = source == sourceTargetRaw && hasRawTarget() ? sourceTargetRaw : juce::jlimit (0, numSources - 1, source);
     if (previewPlaying)
-        ampSim.getPreviewPlayer().setSource (previewSource);
+        ampSim.getPreviewPlayer().setSource (playerSource (previewSource));
 }
 
 void ToneMatchSession::setLevelMatch (bool on)
@@ -913,10 +969,11 @@ void ToneMatchSession::updateLevels()
     // there first. Integrated loudness scales exactly with gain (both gates are relative, or far below), so
     // equal targets give equal loudness.
     const auto a = (int64_t) std::llround (loopStart * 48000.0), b = (int64_t) std::llround (loopEnd * 48000.0);
-    for (int s = 0; s < numSources; ++s)
+    for (int s = 0; s < numAllSources; ++s)
     {
         const auto& audio = getCompareAudio (s);
-        const auto from = s == sourceTarget ? a : diLoop.first, to = s == sourceTarget ? b : diLoop.second;
+        const auto onTargetClock = s == sourceTarget || s == sourceTargetRaw;
+        const auto from = onTargetClock ? a : diLoop.first, to = onTargetClock ? b : diLoop.second;
         const auto lo = juce::jlimit ((int64_t) 0, (int64_t) audio.size(), from), hi = juce::jlimit (lo, (int64_t) audio.size(), to);
         loudness[(size_t) s] = hi > lo ? ampsim::loudness::integratedMono (audio.data() + lo, (int) (hi - lo), 48000.0)
                                        : -std::numeric_limits<double>::infinity();
@@ -928,11 +985,11 @@ void ToneMatchSession::updateLevels()
             reference = loudness[(size_t) s];
             break;
         }
-    for (int s = 0; s < numSources; ++s)
+    for (int s = 0; s < numAllSources; ++s)
     {
         const auto l = loudness[(size_t) s];
         matchGainDb[(size_t) s] = levelMatch && std::isfinite (l) && std::isfinite (reference) ? (float) juce::jlimit (-40.0, 40.0, reference - l) : 0.0f;
-        ampSim.getPreviewPlayer().setSourceGainDb (s, matchGainDb[(size_t) s]);
+        ampSim.getPreviewPlayer().setSourceGainDb (playerSource (s), matchGainDb[(size_t) s]);
     }
 }
 
@@ -940,7 +997,7 @@ void ToneMatchSession::updateLevels()
 
 bool ToneMatchSession::hasGuitarStem() const
 {
-    return matchedSeparated && comparedTarget != nullptr && ! comparedTarget->empty() && matchedTargetVersion == targetVersion
+    return matchedSeparated && comparedRawTarget != nullptr && ! comparedRawTarget->empty() && matchedTargetVersion == targetVersion
            && sameSeconds (matchedRangeStart, rangeStart) && sameSeconds (matchedRangeEnd, rangeEnd);
 }
 
@@ -1005,7 +1062,7 @@ void ToneMatchSession::refreshSongMaterial()
     // minute), and its separated guitar when a separated match made one of exactly this section.
     material->audio[3] = std::make_shared<const std::vector<float>> (targetSelection());
     songStem = hasGuitarStem();
-    material->audio[4] = songStem ? comparedTarget : nullptr;
+    material->audio[4] = songStem ? comparedRawTarget : nullptr; // the stem as separated, not cleaned up
     songRangeStart = rangeStart;
     songRangeEnd = rangeEnd;
     songTargetVersion = targetVersion;
@@ -1188,7 +1245,7 @@ juce::File ToneMatchSession::saveTake (const juce::File& parent)
     bool ok = writeMonoWav (folder.getChildFile ("target.wav"), targetSelection()) && writeMonoWav (folder.getChildFile ("di_raw.wav"), take.raw)
               && writeMonoWav (folder.getChildFile ("di.wav"), reference);
     if (ok && stem)
-        ok = writeMonoWav (folder.getChildFile ("stem.wav"), *comparedTarget);
+        ok = writeMonoWav (folder.getChildFile ("stem.wav"), *comparedRawTarget);
 
     // How the take was lined up (docs/TONE_MATCH.md, "Lining it up"), and the match's DTW path if a same-part
     // match of exactly this take exists (the path is against the winning slot's render at Gain 0, in analysis

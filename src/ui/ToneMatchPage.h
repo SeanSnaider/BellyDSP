@@ -130,9 +130,18 @@ public:
     /// The line under the sources: each one's loudness as it is (LUFS).
     juce::String getLoudnessText() const;
 
+    // ---- Cleaning up the target with the take (docs/TONE_MATCH.md) -----------------------------------------
+    /// "Clean up with my take", in the Target card: on by default, disabled in Anything mode (the caption says why).
+    Switch& getCleanupSwitch() noexcept { return *cleanupSwitch; }
+    /// What the last match's cleanup did, as the Match card's status line says it (empty if it wasn't tried).
+    juce::String getCleanupText() const;
+    /// The cleanup's caption beside its switch: what it does, or why it can't now.
+    juce::String getCleanupCaption() const { return session.cleanupApplies() ? juce::String ("Keeps your notes' harmonics, the rest 20 dB down") : session.whyNoCleanup(); }
+
 private:
     void timerCallback() override;
     void targetChanged();
+    void rebuildSourceChoice (bool withRaw);
     void updateResultText();
 
     // Declared before the session, so it outlives the session's worker (which may be using it).
@@ -156,7 +165,9 @@ private:
     juce::File takesFolder { ToneMatchSession::defaultTakesFolder() }, lastSavedTake;
     int savedTakeNumber = -1; // the session's take number Save take last wrote
     juce::Rectangle<int> sectionTextArea, songLevelLabelArea, songLevelValueArea, statusLineArea, modeCaptionArea;
-    std::unique_ptr<Switch> separateSwitch;
+    std::unique_ptr<Switch> separateSwitch, cleanupSwitch;
+    juce::Rectangle<int> cleanupCaptionArea;
+    bool sourceChoiceHasRaw = false;
     juce::TextButton *targetButton = nullptr, *referenceButton = nullptr, *recordButton = nullptr, *matchButton = nullptr,
                      *cancelButton = nullptr, *applyButton = nullptr, *discardButton = nullptr, *closeButton = nullptr;
     std::unique_ptr<juce::FileChooser> chooser;

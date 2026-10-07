@@ -562,6 +562,7 @@ target_sources(ampsim_tests PRIVATE
     tests/ToneMatchPlayAlongTests.cpp
     tests/ToneMatchSaveTakeTests.cpp
     tests/InformedMaskTests.cpp
+    tests/ToneMatchCleanupTests.cpp
     tests/AudioDeviceTests.cpp
     tools/capture/CaptureEngine.cpp
     src/PluginProcessor.cpp

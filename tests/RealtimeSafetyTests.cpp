@@ -122,7 +122,7 @@ public:
             };
 
             // Tone match's A/B player (docs/TONE_MATCH.md, "Comparing"): material built on this (the message)
-            // thread, handed over, played, switched between its three sources, its loops moved, new material
+            // thread, handed over, played, switched between its sources (the raw target too), its loops moved, new material
             // swapped in while it plays, the live mute switched off, and stopped.
             auto& preview = p.getPreviewPlayer();
             const auto material = [] (double f)
@@ -130,6 +130,8 @@ public:
                 auto m = std::make_unique<ampsim::PreviewPlayer::Material>();
                 for (size_t s = 0; s < 3; ++s)
                     m->audio[s] = std::make_shared<const std::vector<float>> (sine (f * (double) (s + 2) / 2.0, 0.1, 96000));
+                // The target before the cleanup with the take (source 5, the target's clock).
+                m->audio[ampsim::PreviewPlayer::sourceTargetRaw] = std::make_shared<const std::vector<float>> (sine (f * 3.0, 0.1, 96000));
                 return m;
             };
             int previewBlocks = 0;
@@ -311,6 +313,8 @@ public:
                     case 3060: preview.setSource (0); preview.setPlaying (true); break;
                     case 3120: preview.setSource (1); break;
                     case 3180: preview.setSource (2); break;
+                    case 3205: preview.setSource (ampsim::PreviewPlayer::sourceTargetRaw); break; // the raw target
+                    case 3225: preview.setSource (0); break;                                     // and back, same clock
                     case 3240: preview.setLoop (0, 12000, 40000); preview.setLoop (1, 6000, 30000); break;
                     case 3300: preview.setMaterial (material (330.0)); break;                // swapped in mid-play
                     case 3360: preview.setSource (0); preview.setLevelDb (-6.0f); preview.setSourceGainDb (0, -3.0f); break;

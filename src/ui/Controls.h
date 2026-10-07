@@ -371,6 +371,7 @@ public:
 
     void setSelected (int index, juce::NotificationType notification = juce::dontSendNotification);
     int getSelected() const noexcept { return selected; }
+    int getNumOptions() const noexcept { return options.size(); }
     int getPreferredWidth() const;
     static constexpr int preferredHeight = 21;
 
