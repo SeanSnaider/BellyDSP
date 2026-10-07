@@ -17,6 +17,9 @@ class AmpSimProcessor;
 ///     "cab": { "mic1": <file>, "mic2": <file>, "room": <file> }, an IR file, or a pack folder for a close mic
 ///     "cab_assign": [ <file>, <file>, <file> ],                  each amp slot's cab for "Follow amp choice" (optional)
 ///     "cab_follow": true,                                        whether switching slots loads it (optional, default true)
+///     "match_curve": [ [ 20.0, 0.0 ], [ 21.2, 0.4 ], ... ],      the match curve's points, [hz, dB] (optional: none
+///                                                                if absent; added 2026-10-07 within format 2,
+///                                                                since an older build just ignores the key)
 ///
 ///     <file> = { "path": "models/High gain/Lead.nam", "hash": "fnv1a64:0123456789abcdef", "size": 123456 }
 ///     The path is relative to the library root ("models/" or "irs/", under ~/Library/Application Support/

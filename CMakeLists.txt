@@ -178,6 +178,7 @@ set(AMPSIM_DSP_SOURCES
     src/dsp/Cab.cpp
     src/dsp/CabPack.cpp
     src/dsp/MinimumPhase.cpp
+    src/dsp/MatchCurve.cpp
     src/dsp/FftDouble.cpp
     src/dsp/Loudness.cpp
     src/dsp/ReferenceSignals.cpp
@@ -525,6 +526,7 @@ target_sources(ampsim_tests PRIVATE
     tests/CabPackTests.cpp
     tests/CompressorTests.cpp
     tests/EqualizerTests.cpp
+    tests/MatchCurveTests.cpp
     tests/PrimitivesTests.cpp
     tests/DelayTests.cpp
     tests/ChorusTests.cpp

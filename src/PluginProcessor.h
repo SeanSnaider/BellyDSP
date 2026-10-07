@@ -307,6 +307,21 @@ public:
     /// Empty without one.
     std::vector<float> getCloseMicIR (int mic) const { return chain.cab.closeMic (mic).getLoadedIR(); }
 
+    /// The match curve (dsp/MatchCurve.h; BUILD_PLAN "Match curve"): tone match's high-resolution correction
+    /// after the cab. Message thread. The curve is non-automatable data, saved in the state (matchCurveKey)
+    /// and in presets ("match_curve"), like the IR paths; `match_curve_on` and `match_curve_amount` are its
+    /// parameters. Setting a curve designs its FIR on the loader thread (counted in isLoading()) and the
+    /// audio thread crossfades to it over 50 ms. A flat or empty curve means none. Amount changes rebuild the
+    /// FIR at the new amount from the timer (at most every 40 ms, like a moving mic), so every amount is the
+    /// curve's dB scaled exactly; amount 0, off, or no curve bypass the block (bit for bit).
+    void setMatchCurve (const ampsim::MatchCurve::Curve& curve);
+    void clearMatchCurve() { setMatchCurve ({}); }
+    ampsim::MatchCurve::Curve getMatchCurve() const { return matchCurveData; }
+    static inline const juce::Identifier matchCurveKey { "matchCurve" };
+
+    /// For tests: how many times the match curve's FIR has been designed (curve changes and amount rebuilds).
+    int getMatchCurveBuildCount() const noexcept { return matchCurveBuilds.load(); }
+
     /// For tests: the DSP chain. Only touch it from the thread that calls processBlock().
     ampsim::Chain& getChain() noexcept { return chain; }
 
@@ -419,6 +434,19 @@ private:
     std::atomic<float>* highCutOn = nullptr;
     std::atomic<float>* highCutFreq = nullptr;
     std::atomic<float>* highCutSlope = nullptr;
+
+    // The match curve. The curve itself and the amount last sent to the loader are the message thread's;
+    // matchCurvePresent (not flat) is read by the audio thread for the bypass; the loader clears
+    // matchCurveInFlight when its design is done.
+    std::atomic<float>* matchCurveOn = nullptr;
+    std::atomic<float>* matchCurveAmount = nullptr;
+    ampsim::MatchCurve::Curve matchCurveData;
+    std::atomic<bool> matchCurvePresent { false }, matchCurveInFlight { false };
+    std::atomic<int> matchCurveBuilds { 0 };
+    bool matchCurveDirty = false;
+    double matchCurveQueuedAmount = -1.0, lastMatchCurveBuildMs = 0.0;
+    void updateMatchCurve (bool force);
+    void applyMatchCurveBypass();
 
     int lastSlotParameter = -1;              // audio thread: the slot parameter value last acted on
     int lastFollowedSlot = -1;               // message thread: the slot whose cab "Follow amp choice" last applied
