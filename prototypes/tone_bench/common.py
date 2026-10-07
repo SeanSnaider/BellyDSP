@@ -31,6 +31,11 @@ SR = 48000
 RENDER = REPO / "build/ampsim_render_artefacts/Release/ampsim_render"
 OUT = REPO / "build/tone_bench"
 CACHE = pathlib.Path(os.environ.get("TONE_BENCH_CACHE", OUT / "cache"))
+# The built-in gain sets first (in slot order), then every other gain set in the content folder by name, as the app
+# searches them (ToneMatchSession::contentGainSets): a new set joins the matcher (and the oracle) by being there.
+_BUILT_IN = ["Glass", "Ember", "Monolith"]
+_OTHERS = sorted(p.parent.name for p in (REPO / "content/models").glob("*/gainset.json") if p.parent.name not in _BUILT_IN)
+tm.AMPS = _BUILT_IN + _OTHERS
 GAIN_SETS = [REPO / "content/models" / a / "gainset.json" for a in tm.AMPS]
 IRS = REPO / "content/irs"
 NAM_EXAMPLES = REPO / "third_party/NeuralAmpModelerCore/example_models"

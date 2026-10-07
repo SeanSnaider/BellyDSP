@@ -140,8 +140,8 @@ def search_builtin(ev, ref, rig, cabs, pedal=None, comp=None, comp_level=None, f
         return results[key]
 
     # The amp renders first, in parallel (each is its own ampsim_render process; cached).
-    tm.render_many([(x, slot, g) for slot in range(3) for g in GAINS], workers=render_workers)
-    for slot in range(3):
+    tm.render_many([(x, slot, g) for slot in range(len(tm.MODEL_FILES)) for g in GAINS], workers=render_workers)
+    for slot in range(len(tm.MODEL_FILES)):
         for g in GAINS:
             candidate(slot, g)
     for step in (2.0, 1.0):

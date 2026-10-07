@@ -1249,13 +1249,13 @@ def match(target_x, di_x, mode="anything", log=print, workers=8, band_seconds=No
         return renders[key]
 
     # 1. The coarse grid: every slot at every 6 dB Gain step, rendered in parallel.
-    jobs = [(di_x, s, g) for s in range(3) for g in GAIN_GRID]
+    jobs = [(di_x, s, g) for s in range(len(MODEL_FILES)) for g in GAIN_GRID]
     for (x, s, g), y in zip(jobs, render_many(jobs, workers)):
         renders[(s, round(g, 3), None)] = y
     log(f"  rendered {len(jobs)} grid points in {time.time() - t0:.1f} s")
 
     if mode == "same":
-        for s in range(3):
+        for s in range(len(MODEL_FILES)):
             p, c = align(target.analysis.power, stft_power(amp(s, 0.0)), band_frames(band_seconds))
             paths[s] = p
             log(f"  aligned against {AMPS[s]}: {len(p)} steps, mean chroma distance {c:.3f}")
@@ -1281,14 +1281,14 @@ def match(target_x, di_x, mode="anything", log=print, workers=8, band_seconds=No
         return out
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
-        list(pool.map(lambda sg: evaluate(*sg), [(s, g) for s in range(3) for g in GAIN_GRID]))
+        list(pool.map(lambda sg: evaluate(*sg), [(s, g) for s in range(len(MODEL_FILES)) for g in GAIN_GRID]))
     log(f"  scored {len(cands)} (slot, Gain, cab) candidates by {time.time() - t0:.1f} s")
 
     # 2. Coarse to fine on Gain, for the best slots, keeping each slot's best cabs.
     def best_for(slot):
         return min((c for c in cands.values() if c.slot == slot), key=Candidate.total)
 
-    slot_order = sorted(range(3), key=lambda s: best_for(s).total())
+    slot_order = sorted(range(len(MODEL_FILES)), key=lambda s: best_for(s).total())
     for s in slot_order[:REFINE_SLOTS]:
         cabs = sorted({str(c.cab) for c in cands.values() if c.slot == s},
                       key=lambda cb: min(c.total() for c in cands.values() if c.slot == s and str(c.cab) == cb))[:CABS_PER_AMP]
