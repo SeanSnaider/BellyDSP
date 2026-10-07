@@ -98,6 +98,25 @@ def harmonicity(x, starts, lengths, f0s):
     return out, pw
 
 
+ENV_EDGES_MS = [0, 15, 40, 90, 170, 300]
+
+
+def envelope_profile(x, starts, lengths):
+    """Per note, the share of its energy in each of the windows ENV_EDGES_MS after its onset (dB, the note's
+    energy over its first 300 ms or its length as the reference): the attack and how the note holds. No linear
+    filter moves energy between these windows by much (the cab's IR is a few ms), so it's an amp measure; how
+    hard a note is picked moves it too, which is why Lt and Ld are kept beside it."""
+    out = np.full((len(starts), len(ENV_EDGES_MS) - 1), -60.0)
+    for k, (o, n) in enumerate(zip(starts, lengths)):
+        seg = x[o:o + n] ** 2
+        tot = seg.sum() + 1e-30
+        for w in range(len(ENV_EDGES_MS) - 1):
+            a, b = int(ENV_EDGES_MS[w] * SR / 1000), int(ENV_EDGES_MS[w + 1] * SR / 1000)
+            if a < n:
+                out[k, w] = 10 * np.log10(seg[a:min(b, n)].sum() / tot + 1e-6)
+    return out
+
+
 def ltas(x):
     p = mx.power_frames(x)
     lvl = 10 * np.log10(np.maximum(p.sum(axis=1), 1e-20))
@@ -124,7 +143,7 @@ def pairs(take, target):
 def extract(a):
     spec, split = a
     out = pl.POOL / f"{spec['id']}.notes.npz"
-    if out.exists() and "HT" in np.load(out).files:
+    if out.exists() and "ET" in np.load(out).files:
         return spec["id"]
     pool = json.loads((pl.POOL / f"{spec['id']}.json").read_text())
     data = cs.build(spec, None)
@@ -138,6 +157,7 @@ def extract(a):
     HT, PT = harmonicity(target, t, L, f0)
     HN = np.zeros((3, len(pl.GAINS), len(o), len(HB_BINS)))
     FN = np.zeros((3, len(pl.GAINS), 4))
+    EN = np.zeros((3, len(pl.GAINS), len(o), len(ENV_EDGES_MS) - 1))
     for s in range(3):
         for gi, g in enumerate(pl.GAINS):
             y = tm.render(take, s, g)
@@ -145,9 +165,11 @@ def extract(a):
             LN[s, gi] = ltas(y)
             HN[s, gi], _ = harmonicity(y, o, L, f0)
             FN[s, gi] = tm.Analysis(y).features()
+            EN[s, gi] = envelope_profile(y, o, L)
     H = np.array([linear_bands(c["tone"], c["eq"], c["cab"]) for c in pool["candidates"]])
     np.savez_compressed(out, T=T, N=N, Lt=Lt, Ln=Ln, Ld=Ld, H=H, LT=ltas(target), LN=LN, f0=f0, L=L,
-                        HT=HT, PT=PT, HN=HN, FN=FN, FT=tm.Analysis(target).features(), o=o, t=t)
+                        HT=HT, PT=PT, HN=HN, FN=FN, FT=tm.Analysis(target).features(), o=o, t=t,
+                        ET=envelope_profile(target, t, L), EN=EN, ED=envelope_profile(take, o, L))
     print(f"  {spec['id']}: {len(o)} notes", flush=True)
     return spec["id"]
 

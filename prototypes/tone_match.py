@@ -917,10 +917,171 @@ def fit_match_eq(residual, w):
     return decode(p), sm
 
 
-def match(target_x, di_x, mode="anything", log=print, workers=8, band_seconds=None):
+# =====================================================================================================
+# Round 2: the take-aware score (docs/TONE_MATCH.md, "Round 2: the objective")
+# =====================================================================================================
+#
+# tone_bench Round 1 found the score above prefers the wrong configuration: given another performance of the same
+# notes it fits the playing (how hard, how bright) as much as the rig. Its four distortion statistics are taken
+# over the whole signal, so they move with the player's dynamics. A play-along take plays the target's notes, so
+# the two can be compared note by note (learn_tone.align_notes pairs them: the take's onsets, chroma DTW in the
+# play-along band, each onset found again in the target), and on the benchmark's own perceptual scale. Five
+# measures were tried on candidate pools with known true scores (prototypes/tone_bench/pool.py, notefeat.py; per
+# case 156 configurations, each scored against the hidden rig); the weights were fitted on DEV's 30 cases (leave
+# one out: 0.471 -> 0.447 median) and rounded; harmonicity (the share of each band within its harmonics' lobes)
+# and the per-note ERB spectrum added nothing and were dropped. The score of a candidate, every term in dB:
+#
+#     S = E + 7.5 |d flux| + 4 |d crest| + 14 A + 2.5 |d spread| + 6.5 D_erb
+#
+#   E        the spectral error after the linear tone fit (as before: Candidate.spectral)
+#   flux     the median frame-to-frame level change (Analysis.flux), crest the median crest factor (Analysis.crest)
+#   A        the attack: per note pair, the share of the note's energy (its first 300 ms, or up to the next note)
+#            within its first 15 ms, in dB, the absolute difference between the target's note and the candidate's
+#            (the take through the amp), averaged with each note's loudness (energy^0.3) as its weight. How much a
+#            note's onset stands out over what follows is what compression changes, and it barely depends on the
+#            linear part (the cab's IR is a few ms)
+#   spread   the standard deviation of the paired notes' levels (dB): the target's against the candidate's
+#   D_erb    the loudness-weighted long-term spectral distance on the ERB scale (tone_bench's lt_erb: one band per
+#            ERB, 50 Hz to 15 kHz, each band weighted by its share of the target's specific loudness, Zwicker's
+#            0.23 power law over the PEAQ ear weighting and Terhardt's threshold), after the candidate's whole
+#            linear part (cab, polished tone, match EQ)
+#
+# Only the 16 best candidates by the old score are fitted and scored this way (the shortlist: on the pools, 16 is
+# as good as all of them, 0.437 against 0.437 median on DEV), and the best by S wins. Without paired notes (a DI
+# that isn't a take, fewer than 8 pairs) the old score decides, as before.
+
+TAKE_SHORTLIST = 16
+TAKE_MIN_NOTES = 8
+TAKE_WEIGHTS = dict(flux=7.5, crest=4.0, attack=14.0, spread=2.5, erb=6.5)
+NOTE_MAX = int(0.3 * SR)
+ATTACK_SAMPLES = int(0.015 * SR)
+
+ERB_FFT, ERB_HOP = 4096, 1024
+ERB_WINDOW = np.hanning(ERB_FFT)               # symmetric, as tone_bench's metrics
+ERB_FREQS = np.fft.rfftfreq(ERB_FFT, 1.0 / SR)
+
+
+def erb_number(f):
+    """Glasberg and Moore (1990): E(f) = 21.4 log10(1 + 0.00437 f)."""
+    return 21.4 * np.log10(1.0 + 0.00437 * np.asarray(f, dtype=float))
+
+
+def erb_hz(e):
+    return (10.0 ** (np.asarray(e, dtype=float) / 21.4) - 1.0) / 0.00437
+
+
+ERB_CENTRES = erb_hz(np.arange(erb_number(50.0), erb_number(15000.0) + 1e-9, 1.0))
+
+
+def _erb_matrix():
+    e, ec = erb_number(ERB_FREQS), erb_number(ERB_CENTRES)
+    m = np.zeros((len(ERB_FREQS), len(ERB_CENTRES)))
+    for b, c in enumerate(ec):
+        idx = np.nonzero(np.abs(e - c) <= 0.5)[0]
+        if len(idx) == 0:
+            idx = [int(np.argmin(np.abs(e - c)))]
+        m[idx, b] = 1.0 / len(idx)
+    return m
+
+
+ERB_MATRIX = _erb_matrix()
+_fk = ERB_CENTRES / 1000.0
+OUTER_EAR_DB = -2.184 * _fk ** -0.8 + 6.5 * np.exp(-0.6 * (_fk - 3.3) ** 2) - 0.001 * _fk ** 3.6   # PEAQ (ITU-R BS.1387)
+THRESHOLD_DB = 3.64 * _fk ** -0.8 - 6.5 * np.exp(-0.6 * (_fk - 3.3) ** 2) + 0.001 * _fk ** 4       # Terhardt (1979)
+
+
+def erb_ltas_bins(x):
+    """The long-term power per bin of the 4096-point STFT (symmetric Hann, hop 1024), over the frames whose level
+    is within 30 dB of its 95th percentile."""
+    x = np.asarray(x, dtype=np.float64)
+    if len(x) < ERB_FFT:
+        x = np.concatenate([x, np.zeros(ERB_FFT - len(x))])
+    k = 1 + (len(x) - ERB_FFT) // ERB_HOP
+    fr = np.lib.stride_tricks.as_strided(x, shape=(k, ERB_FFT), strides=(x.strides[0] * ERB_HOP, x.strides[0]))
+    spec = np.fft.rfft(fr * ERB_WINDOW, axis=1)
+    p = spec.real ** 2 + spec.imag ** 2
+    lvl = db(p.sum(axis=1))
+    act = lvl > percentile(lvl, 95) - ACTIVE_RANGE_DB
+    return p[act].mean(axis=0)
+
+
+def loudness_weights(band_db):
+    """Each ERB band's share of the specific loudness (sum 1), the reference's loudest band at 85 dB SPL:
+    N'_b = max(0, 10^(0.023 (L_b + A_b + P - T_b)) - 1)."""
+    p = 85.0 - np.max(band_db + OUTER_EAR_DB)
+    n = np.maximum(0.0, 10.0 ** (0.023 * (band_db + OUTER_EAR_DB + p - THRESHOLD_DB)) - 1.0)
+    return n / max(float(np.sum(n)), 1e-12)
+
+
+def loudness_distance(ref_db, m_db, w):
+    """sqrt(sum_b w_b (d_b - dbar)^2), d = ref - m, dbar = sum_b w_b d_b (sum w = 1): the level removed."""
+    d = ref_db - m_db
+    dbar = float(np.sum(w * d))
+    return float(math.sqrt(np.sum(w * (d - dbar) ** 2)))
+
+
+def linear_power_on(f, tone, eq):
+    """|H|^2 of the tone bands and the match EQ at frequencies f."""
+    h = np.ones(len(f))
+    for (kind, fc, q), g in zip(TONE_BANDS, tone):
+        if g != 0.0:
+            h = h * np.abs(svf_response(kind, fc, q, g, f)) ** 2
+    for kind, fc, g, q in (eq or []):
+        if g != 0.0:
+            h = h * np.abs(svf_response(kind, fc, q, g, f)) ** 2
+    return h
+
+
+def note_measures(x, starts, lengths):
+    """Per note: the attack (the share of its energy in its first 15 ms, dB) and its level (dB)."""
+    att, lev = np.zeros(len(starts)), np.zeros(len(starts))
+    for k, (o, n) in enumerate(zip(starts, lengths)):
+        e = np.square(np.asarray(x[o:o + n], dtype=np.float64))
+        tot = float(np.sum(e)) + 1e-30
+        att[k] = 10.0 * math.log10(float(np.sum(e[:ATTACK_SAMPLES])) / tot + 1e-6)
+        lev[k] = 10.0 * math.log10(tot / max(1, n) + 1e-20)
+    return att, lev
+
+
+class TakeNotes:
+    """The paired notes of a play-along take and the target (learn_tone.align_notes' output), measured on the
+    target once."""
+
+    def __init__(self, target_x, notes):
+        o = np.array([n["o"] for n in notes], dtype=int)
+        t = np.array([n["t"] for n in notes], dtype=int)
+        L = np.array([min(n["L"], NOTE_MAX) for n in notes], dtype=int)
+        keep = L >= 2048
+        self.o, self.t, self.L = o[keep], t[keep], L[keep]
+        self.attack, self.level = note_measures(target_x, self.t, self.L)
+        self.weight = (10.0 ** (self.level / 10.0)) ** 0.3
+        self.erb_db = db(erb_ltas_bins(target_x) @ ERB_MATRIX)
+        self.erb_weights = loudness_weights(self.erb_db)
+
+    def usable(self):
+        return len(self.o) >= TAKE_MIN_NOTES
+
+
+def take_score(tn, target_analysis, amp_render, cand_y, tone, eq, spectral):
+    """S (the comment above) of one candidate: amp_render the take through the amp, cand_y the same through the
+    cab, tone and eq its fitted linear part, spectral its old spectral error. Returns (S, its terms)."""
+    ca = Analysis(cand_y)
+    att, lev = note_measures(amp_render, tn.o, tn.L)
+    attack = float(np.sum(tn.weight * np.abs(tn.attack - att)) / np.sum(tn.weight))
+    spread = abs(float(np.std(tn.level)) - float(np.std(lev)))
+    erb = loudness_distance(tn.erb_db, db((erb_ltas_bins(cand_y) * linear_power_on(ERB_FREQS, tone, eq)) @ ERB_MATRIX), tn.erb_weights)
+    terms = dict(spectral=spectral, flux=abs(target_analysis.flux - ca.flux), crest=abs(target_analysis.crest - ca.crest),
+                 attack=attack, spread=spread, erb=erb)
+    return spectral + sum(TAKE_WEIGHTS[k] * terms[k] for k in TAKE_WEIGHTS), terms
+
+
+def match(target_x, di_x, mode="anything", log=print, workers=8, band_seconds=None, take_notes=None):
     """Find slot, Gain, tone, cab, and match EQ for di_x to sound like target_x. Returns a dict.
     band_seconds (same part): the DI was recorded playing along, lined up with the target; DTW stays
-    within this far of that alignment (band_limits). None: unconstrained."""
+    within this far of that alignment (band_limits). None: unconstrained.
+    take_notes: the DI is a play-along take of the target and these are its notes paired with the target's
+    (learn_tone.align_notes): the winner is chosen by the take-aware score (take_score) among the old score's best
+    TAKE_SHORTLIST. None (or too few pairs): the old score decides."""
     t0 = time.time()
     target = Target(target_x)
     renders, paths, cands = {}, {}, {}
@@ -985,13 +1146,31 @@ def match(target_x, di_x, mode="anything", log=print, workers=8, band_seconds=No
     log(f"  refined Gain by {time.time() - t0:.1f} s ({len(renders)} renders)")
 
     ranked = sorted(cands.values(), key=Candidate.total)
-    best = ranked[0]
     w = target.analysis.weights
-    best.tone, best.spectral = fit_tone(best.residual, w, polish=True)
 
-    # 3. The match EQ, on what the tone knobs couldn't fit.
-    residual = best.residual - tone_db(best.tone, COARSE_CENTRES)
-    eq, eq_target = fit_match_eq(residual, w)
+    def finish(c):
+        """The candidate's polished tone and match EQ: (tone, spectral after the tone, residual, eq, eq target)."""
+        tone, spectral = fit_tone(c.residual, w, polish=True)
+        residual = c.residual - tone_db(tone, COARSE_CENTRES)
+        eq, eq_target = fit_match_eq(residual, w)
+        return tone, spectral, residual, eq, eq_target
+
+    take_terms = None
+    tn = TakeNotes(target_x, take_notes) if take_notes else None
+    if tn is not None and tn.usable():
+        # 3. The take-aware score on the shortlist (each fitted completely), the best by it wins.
+        scored = []
+        for c in ranked[:TAKE_SHORTLIST]:
+            fin = finish(c)
+            sc, terms = take_score(tn, target.analysis, amp(c.slot, c.gain), c.y, fin[0], fin[3], c.spectral)
+            scored.append((sc, c, fin, terms))
+        sc, best, fin, take_terms = min(scored, key=lambda s: s[0])
+        ranked = [best] + [s[1] for s in sorted(scored, key=lambda s: s[0]) if s[1] is not best]
+        log(f"  take-aware score on {len(scored)} shortlisted ({len(tn.o)} note pairs): {AMPS[best.slot]} {best.gain:+.1f} at {sc:.2f}")
+    else:
+        best = ranked[0]
+        fin = finish(best)
+    best.tone, best.spectral, residual, eq, eq_target = fin
     after_eq = weighted_rms_centred(residual - eq_db(eq, COARSE_CENTRES), w)
     elapsed = time.time() - t0
 
@@ -1007,6 +1186,7 @@ def match(target_x, di_x, mode="anything", log=print, workers=8, band_seconds=No
         "runner_up": [(AMPS[c.slot], c.gain, c.cab.name, round(c.total(), 2)) for c in ranked[1:4]],
         "eq_target": eq_target.tolist(), "residual": residual.tolist(),
         "path": paths[best.slot].tolist() if mode == "same" else [],
+        "take_terms": take_terms,
     }
     return result
 
