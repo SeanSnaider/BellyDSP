@@ -14,7 +14,10 @@ Configurations:
   same_clean   Same part, cleaned up with the take: the app's default after a play-along take
   same_raw     Same part, the cleanup off
   any_clean    Anything, on the target cleaned up with the take (ASSUMPTIONS TM55's proposal; not in the app)
-  any_raw      Anything, as the app runs it
+  any_raw      Anything, as the app ran it before Round 2
+  any_auto     Anything, the cleanup only when the bleed detector says so (learn_tone.bleed_excess_db: separation
+               on and the excess above BLEED_EXCESS_DB): the app's default after a take since Round 2
+  same_auto    Same part, the cleanup whenever the target was separated (Round 1: it rescues Same part there)
 The DI the matcher gets is always the take (B). Its search is the split's searchable IRs (rigs.HELD_OUT).
 """
 
@@ -29,6 +32,8 @@ CONFIGS = {
     "same_raw": dict(mode="same", cleanup=False),
     "any_clean": dict(mode="anything", cleanup=True),
     "any_raw": dict(mode="anything", cleanup=False),
+    "any_auto": dict(mode="anything", cleanup="auto"),
+    "same_auto": dict(mode="same", cleanup="auto"),
 }
 
 
@@ -45,14 +50,35 @@ def use_split(split):
     tm.CAB_FILES = rigs.searchable_irs(split)
 
 
-def run(target, take, config, split, workers=4):
+def run(target, take, config, split, workers=4, separated=False):
+    """The matcher in this configuration. separated: the target is a separated stem (the app's "Separate the
+    guitar first"), which the auto cleanup needs to know."""
     use_split(split)
     c = CONFIGS[config]
     t = target
     notes = None
+    band = tm.PLAY_ALONG_BAND_SECONDS if c["mode"] == "same" else None
+    if c["cleanup"] == "auto":
+        if not separated:
+            r = tm.match(target, take, c["mode"], log=lambda *a: None, workers=workers, band_seconds=band)
+            r["notes"], r["bleed_excess_db"] = None, None
+            return r, target
+        if c["mode"] == "same":
+            t, notes = cleanup(target, take)
+            r = tm.match(t, take, c["mode"], log=lambda *a: None, workers=workers, band_seconds=band)
+            r["notes"], r["bleed_excess_db"] = notes, None
+            return r, t
+        r = tm.match(target, take, c["mode"], log=lambda *a: None, workers=workers, band_seconds=band)
+        excess = lt.bleed_excess_db(target, take, render_settings(take, result_settings(r)))
+        r["bleed_excess_db"], r["notes"] = excess, None
+        if excess <= lt.BLEED_EXCESS_DB:
+            return r, target
+        t, notes = cleanup(target, take)
+        r = tm.match(t, take, c["mode"], log=lambda *a: None, workers=workers, band_seconds=band)
+        r["notes"], r["bleed_excess_db"] = notes, excess
+        return r, t
     if c["cleanup"]:
         t, notes = cleanup(target, take)
-    band = tm.PLAY_ALONG_BAND_SECONDS if c["mode"] == "same" else None
     r = tm.match(t, take, c["mode"], log=lambda *a: None, workers=workers, band_seconds=band)
     r["notes"] = notes
     return r, t

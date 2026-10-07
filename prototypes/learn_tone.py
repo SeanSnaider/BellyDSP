@@ -567,6 +567,34 @@ def informed_mask(target, notes, harmonics=40, floor=0.1, time_smooth=0, return_
     return (y, mask, np.array(refined)) if return_mask else y
 
 
+# The bleed detector (docs/TONE_MATCH.md, "Round 2: defaults"). The cleanup helps only where there's something
+# that isn't the lead to remove: on a target that's already clean, a saturated amp's energy between its
+# harmonics, a chord's other notes, and a bend that leaves its lobe go too, and the matcher fits what's left
+# (tone_bench Round 1: worse in 33 of 50 cases on average). How much the mask removes says little by itself,
+# because a clean record loses 0.5 dB to it and a saturated one 5 to 10 dB. So the detector compares it with a
+# stand-in for the same tone without any bleed: the take through the matcher's raw pick (the same notes, about
+# the same distortion, nothing else in it), masked with the take's own notes. The excess,
+#     excess = kept(proxy) - kept(target)      (dB; kept = 10 log10 of the masked energy over the energy)
+# is what the mask takes from the target beyond what this kind of tone loses on its own. Calibrated on DEV
+# (bleed.py): with separation on and excess above 0.25 dB the cleanup is used (DEV 0.497 -> 0.485 median, TEST
+# 0.586 -> 0.585, means 0.522 -> 0.522 and 0.618 -> 0.602; the plateau runs from 0 to 0.3 dB).
+BLEED_EXCESS_DB = 0.25
+
+
+def kept_db(x, take, band_seconds=tm.PLAY_ALONG_BAND_SECONDS):
+    """10 log10 of the energy the app's cleanup keeps of x (the take's notes placed in x within the band)."""
+    notes = align_notes(take, x, band_seconds=band_seconds)
+    if not any(n["f0"] > 0 for n in notes):
+        return 0.0
+    y = informed_mask(x, notes, time_smooth=APP_TIME_SMOOTH)
+    return float(10.0 * np.log10(max(np.sum(np.square(y)), 1e-30) / max(np.sum(np.square(x)), 1e-30)))
+
+
+def bleed_excess_db(target, take, proxy, band_seconds=tm.PLAY_ALONG_BAND_SECONDS):
+    """excess = kept(proxy) - kept(target), dB (the comment above): proxy is the take through the raw pick."""
+    return kept_db(proxy, take, band_seconds) - kept_db(target, take, band_seconds)
+
+
 def mask_study(args):
     """The informed mask alone, on the study's separated stems (Demucs, cached by the study): separation
     quality against the unmixed record (SI-SDR, and the matcher's long-term spectral distance) for the stem
