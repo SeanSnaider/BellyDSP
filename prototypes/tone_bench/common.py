@@ -49,9 +49,11 @@ TONE_ORDER = ["clean", "overdrive", "crunch", "hi_gain", "fuzz"]
 
 
 def use_all_amps():
-    """Every built-in gain set in content/models available to the ORACLE (run.py --amps all): the three slot
-    defaults stay slots 0 to 2 (the matcher still searches only those, range(3) in tone_match.py), and the
-    others follow in the app's order (presets::builtInGainSets: by tone type, then name). Returns the names."""
+    """Every built-in gain set in content/models, reordered as the capture menu lists them (run.py --amps all): the
+    three slot defaults stay slots 0 to 2 and the others follow by tone type, then name (presets::builtInGainSets).
+    Since the merge of amp-coverage the default list above already holds every set (by name), and the matcher
+    searches all of them either way (tone_match.py's range(len(MODEL_FILES))); this only changes the order, which
+    the oracle's coverage report (coverage.md) was written against. Returns the names."""
     extra = []
     for js in sorted((REPO / "content/models").glob("*/gainset.json")):
         name = js.parent.name

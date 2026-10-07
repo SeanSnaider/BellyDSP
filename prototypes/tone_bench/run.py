@@ -522,7 +522,7 @@ def main():
     ap.add_argument("--estimates", action="store_true", help="the Round 2 what-ifs (estimates.py) on the saved cases, then the report")
     ap.add_argument("--out")
     ap.add_argument("--amps", choices=["defaults", "all"], default="defaults",
-                    help="the amps the ORACLE may use: the three slot defaults, or every built-in gain set (the matcher searches the three either way)")
+                    help="the amp order: content/models by name (defaults), or the capture menu's order (all); both hold every built-in gain set, and the matcher and the oracle search them all")
     ap.add_argument("--oracle-only", action="store_true",
                     help="with --from: the saved cases' oracle configurations and estimates again (with --amps), then coverage.md")
     ap.add_argument("--from", dest="from_dir", help="a saved run's folder (e.g. build/tone_bench/dev_current)")
