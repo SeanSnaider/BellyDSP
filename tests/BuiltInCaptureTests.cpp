@@ -341,7 +341,7 @@ public:
                     for (juce::PopupMenu::MenuItemIterator it (*list); it.next();)
                         if (it.getItem().text.startsWith (sets[i].name + ": "))
                             pick = &it.getItem();
-                expect (pick != nullptr && pick->isEnabled && ! pick->isTicked, sets[i].name);
+                expect (pick != nullptr && pick->isEnabled && ! pick->isTicked, sets[i].name + ": the menu item"); 
                 if (pick != nullptr && pick->action)
                     pick->action();
                 waitForLoads (p);
@@ -353,13 +353,14 @@ public:
                 expectEquals (amp.getModelText(), sets[i].name + " (built in, gain set)");
                 expectEquals (headerOf (ed.captureMenu (slot)), header);
                 expect (header.startsWith (juce::String (ui::materialName (ui::materialFor (slot)))), header);
-                expect (rms (out.left) > 1.0e-3, sets[i].name);
-                const auto* again = subMenuOf (ed.captureMenu (slot));
+                expect (rms (out.left) > 1.0e-3, sets[i].name + ": plays, rms " + juce::String (rms (out.left)));
+                const auto menuAfter = ed.captureMenu (slot); // kept alive: the submenu pointer points into it
+                const auto* again = subMenuOf (menuAfter);
                 bool nowTicked = false;
                 if (again != nullptr)
                     for (juce::PopupMenu::MenuItemIterator it (*again); it.next();)
                         nowTicked = nowTicked || (it.getItem().isTicked && it.getItem().text.startsWith (sets[i].name + ": "));
-                expect (nowTicked, sets[i].name);
+                expect (nowTicked, sets[i].name + ": ticked after");
                 const auto png = proofDir().getChildFile ("default_captures/editor_amp_builtin_" + sets[i].name.toLowerCase() + ".png");
                 expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), png));
                 rows.add (sets[i].name + " in slot " + juce::String (slot + 1) + " (" + header + "): \"" + amp.getVoiceText() + "  Model " + amp.getModelText() + "\"");
