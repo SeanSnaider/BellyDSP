@@ -45,6 +45,7 @@ Usage (Python through uv, see docs/TONE_MATCH.md):
   uv run --python 3.11 --with demucs --with numpy --with scipy --with lameenc python prototypes/tone_match.py golden \
       tests/fixtures/tone_match --separation
   uv run --python 3.11 --with demucs --with numpy --with scipy python prototypes/tone_match.py study --separation
+  uv run --with numpy --with scipy python prototypes/tone_match.py take-golden   # tests/fixtures/take_score
 
 The renders need the Release build of ampsim_render (cmake --build build -j). They're cached by content
 in $TMPDIR/bellydsp_tone_match_cache (or $TONE_MATCH_CACHE).
@@ -368,16 +369,40 @@ def eq_arg(bands):
     return ",".join(f"{EQ_CODES[k]}:{f:.2f}:{g:.2f}:{q:.3f}" for k, f, g, q in bands)
 
 
-def render(x, slot, gain_db, tone=(0.0,) * 5, cab=None, eq=None, cache=True):
+def pedal_args(p):
+    """ampsim_render's arguments for a pedal in front of the amp (Round 2's search; the same format as
+    tone_bench/rigs.pedal_args): {"kind": "boost", level, tilt} (the boost's Clean mode), {"kind": "comp",
+    threshold, ratio, release, makeup} (the pre compressor in pedal mode, peak detector, 2 ms attack), or
+    {"kind": one of OD_MODES, drive, tone, level, tight} (the overdrive with the app's unity trim)."""
+    if p is None:
+        return []
+    if p["kind"] == "boost":
+        return ["--boost", "clean", "--boost-level", f"{p['level']:.2f}", "--boost-tilt", f"{p['tilt']:.2f}"]
+    if p["kind"] == "comp":
+        return ["--pre-comp", f"pedal:peak:{p['threshold']:.1f}:{p['ratio']:.2f}:2:{p['release']:.0f}:{p['makeup']:.2f}:1"]
+    return ["--od", f"{p['kind']}:{p['drive']:.3f}:{p['tone']:.3f}:{p['level']:.2f}:{p.get('tight', 20.0):.0f}"]
+
+
+def post_comp_args(c):
+    """The post compressor (studio mode, RMS detector, after the cab and the post EQ): {threshold, ratio, attack,
+    release}, as tone_bench/rigs.post_comp."""
+    if c is None:
+        return []
+    return ["--post-comp", f"studio:rms:{c['threshold']:.2f}:{c['ratio']:.2f}:{c['attack']:.1f}:{c['release']:.0f}:0:1"]
+
+
+def render(x, slot, gain_db, tone=(0.0,) * 5, cab=None, eq=None, cache=True, pedal=None, post_comp=None):
     """x through slot `slot` at Gain `gain_db`, with tone, cab (a path, or None for none), and the post
-    EQ (list of bands, or None for off). Returns the left output channel. Renders are cached on disk by
-    content, since the study reuses them."""
-    args = ["--model", str(MODEL_FILES[slot]), "--trim", f"{gain_db:.3f}",
-            "--tone", ",".join(f"{t:.3f}" for t in tone)]
+    EQ (list of bands, or None for off); a pedal in front (pedal_args) and the post compressor (post_comp_args)
+    if given. Returns the left output channel. Renders are cached on disk by content, since the study reuses
+    them."""
+    args = pedal_args(pedal) + ["--model", str(MODEL_FILES[slot]), "--trim", f"{gain_db:.3f}",
+                                "--tone", ",".join(f"{t:.3f}" for t in tone)]
     if cab is not None:
         args += ["--ir", str(cab)]
     if eq is not None:
         args += ["--post-eq", eq_arg(eq)]
+    args += post_comp_args(post_comp)
     key = hashlib.sha1((signal_key(x) + "|" + "|".join(args)).encode()).hexdigest()[:20]
     out = CACHE / (key + ".npy")
     if cache and out.exists():
@@ -396,9 +421,9 @@ def render(x, slot, gain_db, tone=(0.0,) * 5, cab=None, eq=None, cache=True):
 
 
 def render_many(jobs, workers=8):
-    """jobs: list of (x, slot, gain). Renders in parallel (each is its own process)."""
+    """jobs: list of (x, slot, gain) or (x, slot, gain, pedal). Renders in parallel (each is its own process)."""
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
-        return list(pool.map(lambda j: render(*j), jobs))
+        return list(pool.map(lambda j: render(j[0], j[1], j[2], pedal=j[3] if len(j) > 3 else None), jobs))
 
 
 _cab_cache = {}
@@ -1075,27 +1100,98 @@ def take_score(tn, target_analysis, amp_render, cand_y, tone, eq, spectral):
     return spectral + sum(TAKE_WEIGHTS[k] * terms[k] for k in TAKE_WEIGHTS), terms
 
 
-def match(target_x, di_x, mode="anything", log=print, workers=8, band_seconds=None, take_notes=None):
+# ---- Round 2: the pedals and the post compressor in the search (docs/TONE_MATCH.md, "Round 2: pedals") -------
+#
+# tone_bench's oracle with BellyDSP's own pedal and compressor gained 0.10 on the 32 cases whose hidden rig has
+# one. The search space is discrete (which pedal) and continuous (its knobs), and every pedal changes what the amp
+# is fed, so each needs new amp renders. So it's searched only in front of the best amp found without one, at that
+# amp's four best cabs, on a coarse grid (pedal_variants): the overdrive's four modes at Drive 0.3 and 0.7 (Tone
+# 0.5, Level 0 dB with the app's unity trim, Tight off), each at the amp's Gain and 6 dB under it (a drive pedal
+# adds its own gain); the clean boost at +6 and +12 dB into Gain +24 when the amp's best Gain is +18 or more (the
+# Gain knob ends at +24; Round 1's oracle wanted more in 17 of 50 cases); the pre compressor (pedal mode) 6 and 12
+# dB under the take's playing level, 4:1, with makeup for three quarters of its reduction. 20 renders. They join the
+# candidates, and the shortlist and the take-aware score decide among all of them, so a pedal wins only if it
+# scores better than none.
+
+OD_MODES = ["mid", "distortion", "transparent", "fuzz"]
+
+
+def pedal_key(p):
+    return None if p is None else json.dumps(p, sort_keys=True)
+
+
+def playing_level_db(x):
+    """The playing level: the 90th percentile of a 50 ms RMS over the samples above -120 dBFS (dB)."""
+    e = np.sqrt(np.convolve(np.square(np.asarray(x, dtype=np.float64)), np.ones(2400) / 2400.0, mode="same"))
+    e = e[e > 1e-6]
+    return float(20.0 * np.log10(percentile(e, 90))) if len(e) else -120.0
+
+
+def pedal_variants(di_x, gain):
+    """(pedal, Gain) pairs to try in front of the best amp at its best Gain (the comment above)."""
+    out = []
+    for mode in OD_MODES:
+        for drive in (0.3, 0.7):
+            p = dict(kind=mode, drive=drive, tone=0.5, level=0.0, tight=20.0)
+            out += [(p, gain), (p, max(GAIN_RANGE[0], gain - 6.0))]
+    if gain >= 18.0:
+        out += [(dict(kind="boost", level=lv, tilt=0.0), GAIN_RANGE[1]) for lv in (6.0, 12.0)]
+    play = playing_level_db(di_x)
+    for below in (6.0, 12.0):
+        out.append((dict(kind="comp", threshold=round(play - below, 1), ratio=4.0, release=200.0, makeup=round(0.75 * below, 2)), gain))
+    return out
+
+
+# The post compressor (the chain's, after the cab and the post EQ) on the finished match: the take through
+# everything, then through the compressor at 4 and 8 dB under that render's playing level, 3:1, 10 ms attack, 150
+# ms release (a bus compressor's settings), each scored with the take-aware score on the whole render, against the
+# same score of the render without it. The threshold is absolute (the compressor's input level is what the chain
+# plays), so it's set from the render as ampsim_render plays it, which is what Apply sets in the app.
+POST_COMP_BELOW = (4.0, 8.0)
+
+
+def full_take_score(tn, target_analysis, y, mode="anything"):
+    """take_score's S for a finished render (its linear part already in it)."""
+    ya = Analysis(y)
+    spectral = weighted_rms_centred(smooth_bands(target_analysis.ltas - ya.ltas), target_analysis.weights)
+    return take_score(tn, target_analysis, y, y, [0.0] * 5, [], spectral)[0]
+
+
+def search_post_comp(di_x, target, tn, best, eq, workers):
+    base = render(di_x, best.slot, best.gain, tone=best.tone, cab=best.cab, eq=eq, pedal=getattr(best, "pedal", None))
+    play = playing_level_db(base)
+    comps = [dict(threshold=round(play - b, 2), ratio=3.0, attack=10.0, release=150.0) for b in POST_COMP_BELOW]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+        ys = list(pool.map(lambda c: render(di_x, best.slot, best.gain, tone=best.tone, cab=best.cab, eq=eq,
+                                            pedal=getattr(best, "pedal", None), post_comp=c), comps))
+    scores = [full_take_score(tn, target.analysis, base)] + [full_take_score(tn, target.analysis, y) for y in ys]
+    k = int(np.argmin(scores))
+    return (None if k == 0 else comps[k - 1]), [round(v, 3) for v in scores]
+
+
+def match(target_x, di_x, mode="anything", log=print, workers=8, band_seconds=None, take_notes=None, pedals=False):
     """Find slot, Gain, tone, cab, and match EQ for di_x to sound like target_x. Returns a dict.
     band_seconds (same part): the DI was recorded playing along, lined up with the target; DTW stays
     within this far of that alignment (band_limits). None: unconstrained.
     take_notes: the DI is a play-along take of the target and these are its notes paired with the target's
     (learn_tone.align_notes): the winner is chosen by the take-aware score (take_score) among the old score's best
-    TAKE_SHORTLIST. None (or too few pairs): the old score decides."""
+    TAKE_SHORTLIST. None (or too few pairs): the old score decides.
+    pedals: also search the app's pedals in front of the amp and its post compressor (search_pedals, the
+    comment above it)."""
     t0 = time.time()
     target = Target(target_x)
     renders, paths, cands = {}, {}, {}
 
-    def amp(slot, gain):
-        key = (slot, round(gain, 3))
+    def amp(slot, gain, pedal=None):
+        key = (slot, round(gain, 3), pedal_key(pedal))
         if key not in renders:
-            renders[key] = render(di_x, slot, gain)
+            renders[key] = render(di_x, slot, gain, pedal=pedal)
         return renders[key]
 
     # 1. The coarse grid: every slot at every 6 dB Gain step, rendered in parallel.
     jobs = [(di_x, s, g) for s in range(3) for g in GAIN_GRID]
     for (x, s, g), y in zip(jobs, render_many(jobs, workers)):
-        renders[(s, round(g, 3))] = y
+        renders[(s, round(g, 3), None)] = y
     log(f"  rendered {len(jobs)} grid points in {time.time() - t0:.1f} s")
 
     if mode == "same":
@@ -1104,8 +1200,8 @@ def match(target_x, di_x, mode="anything", log=print, workers=8, band_seconds=No
             paths[s] = p
             log(f"  aligned against {AMPS[s]}: {len(p)} steps, mean chroma distance {c:.3f}")
 
-    def evaluate(slot, gain, cabs=None):
-        y = amp(slot, gain)
+    def evaluate(slot, gain, cabs=None, pedal=None):
+        y = amp(slot, gain, pedal)
         if cabs is None:
             ya = Analysis(y)
             if mode == "same":
@@ -1117,9 +1213,10 @@ def match(target_x, di_x, mode="anything", log=print, workers=8, band_seconds=No
             cabs = screen_cabs(ya, ref, target.analysis.weights, CABS_PER_AMP)
         out = []
         for cab in cabs:
-            key = (slot, round(gain, 3), str(cab))
+            key = (slot, round(gain, 3), str(cab), pedal_key(pedal))
             if key not in cands:
                 cands[key] = Candidate(slot, gain, cab, y, target, mode, paths.get(slot))
+                cands[key].pedal = pedal
             out.append(cands[key])
         return out
 
@@ -1140,10 +1237,23 @@ def match(target_x, di_x, mode="anything", log=print, workers=8, band_seconds=No
             g0 = best_for(s).gain
             gains = [g for g in (g0 - step, g0 + step) if GAIN_RANGE[0] <= g <= GAIN_RANGE[1]]
             for y, g in zip(render_many([(di_x, s, g) for g in gains], workers), gains):
-                renders[(s, round(g, 3))] = y
+                renders[(s, round(g, 3), None)] = y
             for g in gains:
                 evaluate(s, g, cabs)
     log(f"  refined Gain by {time.time() - t0:.1f} s ({len(renders)} renders)")
+
+    if pedals:
+        # 2b. The pedals in front of the best amp, at its best cabs (search_pedals).
+        s0 = min(cands.values(), key=Candidate.total)
+        cabs = sorted({str(c.cab) for c in cands.values() if c.slot == s0.slot},
+                      key=lambda cb: min(c.total() for c in cands.values() if c.slot == s0.slot and str(c.cab) == cb))[:CABS_PER_AMP]
+        cabs = [pathlib.Path(c) for c in cabs]
+        variants = pedal_variants(di_x, s0.gain)
+        for y, (p, g) in zip(render_many([(di_x, s0.slot, g, p) for p, g in variants], workers), variants):
+            renders[(s0.slot, round(g, 3), pedal_key(p))] = y
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+            list(pool.map(lambda pg: evaluate(s0.slot, pg[1], cabs, pg[0]), variants))
+        log(f"  {len(variants)} pedal variants in front of {AMPS[s0.slot]} by {time.time() - t0:.1f} s")
 
     ranked = sorted(cands.values(), key=Candidate.total)
     w = target.analysis.weights
@@ -1162,9 +1272,12 @@ def match(target_x, di_x, mode="anything", log=print, workers=8, band_seconds=No
         scored = []
         for c in ranked[:TAKE_SHORTLIST]:
             fin = finish(c)
-            sc, terms = take_score(tn, target.analysis, amp(c.slot, c.gain), c.y, fin[0], fin[3], c.spectral)
+            sc, terms = take_score(tn, target.analysis, amp(c.slot, c.gain, getattr(c, "pedal", None)), c.y, fin[0], fin[3], c.spectral)
             scored.append((sc, c, fin, terms))
         sc, best, fin, take_terms = min(scored, key=lambda s: s[0])
+        take_terms = dict(take_terms, total=sc)
+        plain = [x[0] for x in scored if getattr(x[1], "pedal", None) is None]
+        take_terms["best_without_pedal"] = min(plain) if plain else None
         ranked = [best] + [s[1] for s in sorted(scored, key=lambda s: s[0]) if s[1] is not best]
         log(f"  take-aware score on {len(scored)} shortlisted ({len(tn.o)} note pairs): {AMPS[best.slot]} {best.gain:+.1f} at {sc:.2f}")
     else:
@@ -1172,6 +1285,12 @@ def match(target_x, di_x, mode="anything", log=print, workers=8, band_seconds=No
         fin = finish(best)
     best.tone, best.spectral, residual, eq, eq_target = fin
     after_eq = weighted_rms_centred(residual - eq_db(eq, COARSE_CENTRES), w)
+
+    comp, comp_scores = None, None
+    if pedals and tn is not None and tn.usable() and mode == "anything":
+        # 4. The post compressor, on the finished match (search_post_comp).
+        comp, comp_scores = search_post_comp(di_x, target, tn, best, eq, workers)
+        log(f"  post compressor: {comp} ({comp_scores})")
     elapsed = time.time() - t0
 
     result = {
@@ -1187,6 +1306,7 @@ def match(target_x, di_x, mode="anything", log=print, workers=8, band_seconds=No
         "eq_target": eq_target.tolist(), "residual": residual.tolist(),
         "path": paths[best.slot].tolist() if mode == "same" else [],
         "take_terms": take_terms,
+        "pedal": getattr(best, "pedal", None), "post_comp": comp, "post_comp_scores": comp_scores,
     }
     return result
 
@@ -1623,6 +1743,47 @@ def match_files(args):
     print(f"verified through the chain: spectral error {spectral:.2f} dB, distortion distance {nl:.2f}")
 
 
+TAKE_GOLDEN_CANDIDATES = [
+    # (slot, Gain, cab, tone, match EQ): fixed linear parts, so the score's terms are tested on their own.
+    (1, 0.0, "Vintage 4x12/Vintage 4x12, dynamic, upper, var. 2.wav", [0.0] * 5, []),
+    (2, 6.0, "Modern 4x12/Modern 4x12, dynamic, 75 W, var. 1.wav", [2.0, -1.0, -3.0, 1.5, 0.5],
+     [("lowShelf", 120.0, 2.0, SHELF_Q), ("peak", 900.0, -3.0, 1.2), ("highShelf", 6000.0, -2.5, SHELF_Q)]),
+    (0, 12.0, "Modern 4x12/Modern 4x12, supercardioid, dark 60 W.wav", [-1.0, 0.5, 2.0, -2.0, 3.0], [("peak", 2500.0, 4.0, 2.0)]),
+]
+
+
+def take_golden(args):
+    """The C++ take-aware score's fixture (tests/ToneMatchTakeScoreTests.cpp): on the informed mask's fixture (the
+    crunch rig's record, unmixed, and the player's take of its notes), the paired notes, the target's measures, the
+    terms of three fixed candidates (the built-in gain sets through ampsim_render, the cab by FFT convolution), and
+    the whole search with the take-aware score (anything mode, the gain sets, the built-in cabs)."""
+    import learn_tone as lt
+    global MODEL_FILES
+    MODEL_FILES = [REPO / "content/models" / a / "gainset.json" for a in AMPS]
+    fx = REPO / "tests/fixtures/informed_mask"
+    _, target = read_wav(fx / "record.wav")
+    _, take = read_wav(fx / "di.wav")
+    notes = lt.align_notes(take, target, band_seconds=PLAY_ALONG_BAND_SECONDS)
+    tn = TakeNotes(target, notes)
+    ta = Analysis(target)
+    cands = []
+    for slot, gain, cab, tone, eq in TAKE_GOLDEN_CANDIDATES:
+        y = render(take, slot, gain)
+        _, ir = read_wav(REPO / "content/irs" / cab)
+        ir = (ir[:, 0] if ir.ndim == 2 else ir)[:SR]
+        cy = sps.fftconvolve(y, ir)[: len(y)]
+        sc, terms = take_score(tn, ta, y, cy, tone, eq, 1.0)
+        cands.append(dict(slot=slot, gain=gain, cab=cab, tone=tone, eq=[list(b) for b in eq], spectral=1.0, total=sc, terms=terms))
+    r = match(target, take, "anything", log=print, workers=8, take_notes=notes)
+    out = dict(notes=dict(o=tn.o.tolist(), t=tn.t.tolist(), L=tn.L.tolist()), attack=tn.attack.tolist(), level=tn.level.tolist(),
+               erb_centres=ERB_CENTRES.tolist(), erb_db=tn.erb_db.tolist(), erb_weights=tn.erb_weights.tolist(), candidates=cands,
+               match=dict(slot=r["slot"], gain=r["gain_db"], cab=r["cab"], terms=r["take_terms"], tone=r["tone_db"], eq=[list(b) for b in r["eq"]]))
+    d = pathlib.Path(args.dir)
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "expected.json").write_text(json.dumps(out, indent=1, default=float))
+    print(f"wrote {d / 'expected.json'}: {len(tn.o)} note pairs; match {AMPS[r['slot']]} {r['gain_db']:+.1f}, {r['cab']}, S {r['take_terms']['total']:.4f}")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -1641,6 +1802,8 @@ def main():
     gd = sub.add_parser("golden", help="write the C++ golden fixtures")
     gd.add_argument("dir")
     gd.add_argument("--separation", action="store_true", help="also the Demucs pair (needs --with demucs)")
+    tg = sub.add_parser("take-golden", help="write the C++ take-aware score's fixture")
+    tg.add_argument("dir", nargs="?", default=str(REPO / "tests/fixtures/take_score"))
     args = ap.parse_args()
     if args.cmd == "features":
         feature_study(args)
@@ -1652,6 +1815,8 @@ def main():
         study(args)
     elif args.cmd == "playalong":
         play_along(args)
+    elif args.cmd == "take-golden":
+        take_golden(args)
 
 
 if __name__ == "__main__":

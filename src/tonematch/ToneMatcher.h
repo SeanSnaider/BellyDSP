@@ -4,6 +4,7 @@
 #pragma once
 
 #include "Progress.h"
+#include "TakeScore.h"
 #include "ToneMatchAnalysis.h"
 
 #include "../dsp/NamAmp.h"
@@ -55,6 +56,11 @@ struct MatchSettings
     /// trims it so its sample 0 is the target's), so DTW only searches this far either side of that
     /// alignment (align's band; playAlongBandSeconds). 0: unconstrained, as for a take played on its own.
     double alignmentBandSeconds = 0.0;
+    /// The reference is a play-along take of the target, lined up with it (either mode; Round 2): its notes are
+    /// paired with the target's (informed::alignNotes in the 0.5 s band) and the winner is chosen by the take-aware
+    /// score (TakeScore.h) among the old score's take::shortlist best, each fitted completely. False, or fewer than
+    /// take::minNotes pairs: the old score decides.
+    bool takeIsLinedUp = false;
 };
 
 struct MatchResult
@@ -79,6 +85,9 @@ struct MatchResult
     std::vector<double> weights;         ///< each band's weight in the fit (perceptual times confidence)
     double runtimeSeconds = 0.0;
     int renders = 0, candidates = 0;
+    bool takeScored = false;            ///< the take-aware score chose the winner
+    int notePairs = 0;                  ///< the note pairs it compared
+    take::Score takeScore;              ///< the winner's terms
 
     struct RunnerUp
     {

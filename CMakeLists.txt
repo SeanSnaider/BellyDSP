@@ -223,6 +223,7 @@ set(AMPSIM_TONEMATCH_SOURCES
     src/tonematch/ToneMatcher.cpp
     src/tonematch/TempoEstimate.cpp
     src/tonematch/InformedMask.cpp
+    src/tonematch/TakeScore.cpp
     src/tonematch/AudioFileInput.cpp
     src/tonematch/GuitarSeparator.cpp)
 
@@ -562,6 +563,7 @@ target_sources(ampsim_tests PRIVATE
     tests/ToneMatchPlayAlongTests.cpp
     tests/ToneMatchSaveTakeTests.cpp
     tests/InformedMaskTests.cpp
+    tests/ToneMatchTakeScoreTests.cpp
     tests/ToneMatchCleanupTests.cpp
     tests/AudioDeviceTests.cpp
     tools/capture/CaptureEngine.cpp

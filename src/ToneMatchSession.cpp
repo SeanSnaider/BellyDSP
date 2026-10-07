@@ -269,6 +269,8 @@ bool ToneMatchSession::startMatch()
     const auto isTake = referenceIsTake();
     if (mode == Mode::samePart && isTake)
         settings.alignmentBandSeconds = ampsim::tonematch::playAlongBandSeconds;
+    // A take plays the target's notes: the take-aware score (Round 2) picks the winner, in either mode.
+    settings.takeIsLinedUp = isTake;
     pendingSeparated = separate;
     pendingRangeStart = rangeStart;
     pendingRangeEnd = rangeEnd;

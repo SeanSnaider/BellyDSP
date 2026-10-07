@@ -128,7 +128,8 @@ def evaluate_case(spec, specs, split, configs, diagnose, workers):
         band = tm.PLAY_ALONG_BAND_SECONDS if mode == "same" else None
         row["configs"][cfg] = dict(facets=f, settings=s, label=describe(s), closeness=r["closeness"], notes=r["notes"], bleed_excess_db=r.get("bleed_excess_db"),
                                    objective=mt.objective(used, take, mode, band, s["slot"], s["gain"], s["cab"]),
-                                   matcher_spectral_after_eq=r["spectral_error_after_eq_db"], matcher_distortion=r["distortion_distance"])
+                                   matcher_spectral_after_eq=r["spectral_error_after_eq_db"], matcher_distortion=r["distortion_distance"],
+                                   take_terms=r.get("take_terms"), post_comp_scores=r.get("post_comp_scores"))
         targets[cfg] = used
         if cfg == configs[0]:
             # The linear shortcut (oracle.apply_linear) against the real render, on this result: same signal?

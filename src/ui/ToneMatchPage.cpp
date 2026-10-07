@@ -1697,9 +1697,10 @@ void ToneMatchPage::paint (juce::Graphics& g)
         g.drawText (juce::String (juce::roundToInt (r.closeness)), big.removeFromLeft (52), juce::Justification::centredLeft, false);
         // With the cleanup used, the line says so (and "distortion distance" shortens to fit).
         const auto cleaned = session.getCleanupInfo().used;
-        drawText (g, "closeness out of 100  (spectral error " + juce::String (r.spectralErrorAfterEqDb, 1) + " dB, " + (cleaned ? "distortion " : "distortion distance ")
+        const auto shortText = cleaned || r.takeScored;
+        drawText (g, "closeness out of 100  (spectral error " + juce::String (r.spectralErrorAfterEqDb, 1) + " dB, " + (shortText ? "distortion " : "distortion distance ")
                          + juce::String (r.distortion, 1) + ", " + (r.mode == Mode::samePart ? "same part" : "anything")
-                         + (cleaned ? ", target cleaned up" : "") + ")",
+                         + (r.takeScored ? ", note by note" : "") + (cleaned ? ", cleaned up" : "") + ")",
                   big, Text::label, inkDim);
         in.removeFromTop (space::s);
         // The settings, one line each, broken only between items (packItems), continuation lines indented.

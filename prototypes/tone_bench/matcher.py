@@ -20,6 +20,8 @@ Configurations:
   same_auto    Same part, the cleanup whenever the target was separated (Round 1: it rescues Same part there)
   any_auto_take  any_auto with the take-aware score (tone_match.take_score: the take's notes paired with the
                target's, Round 2 step 3)
+  any_auto_take_fx  any_auto_take with the pedals and the post compressor in the search (tone_match.pedal_variants,
+               search_post_comp; Round 2 step 2)
 The DI the matcher gets is always the take (B). Its search is the split's searchable IRs (rigs.HELD_OUT).
 """
 
@@ -37,6 +39,7 @@ CONFIGS = {
     "any_auto": dict(mode="anything", cleanup="auto"),
     "same_auto": dict(mode="same", cleanup="auto"),
     "any_auto_take": dict(mode="anything", cleanup="auto", score="take"),
+    "any_auto_take_fx": dict(mode="anything", cleanup="auto", score="take", pedals=True),
 }
 
 
@@ -62,7 +65,8 @@ def run(target, take, config, split, workers=4, separated=False):
 
     def match(t):
         notes = lt.align_notes(take, t, band_seconds=tm.PLAY_ALONG_BAND_SECONDS) if c.get("score") == "take" else None
-        return tm.match(t, take, c["mode"], log=lambda *a: None, workers=workers, band_seconds=band, take_notes=notes)
+        return tm.match(t, take, c["mode"], log=lambda *a: None, workers=workers, band_seconds=band, take_notes=notes,
+                        pedals=c.get("pedals", False))
 
     t, notes, excess = target, None, None
     if c["cleanup"] == "auto":
@@ -84,13 +88,16 @@ def run(target, take, config, split, workers=4, separated=False):
 
 def result_settings(r):
     cab = next(p for p in rigs.ALL_IRS if p.name == r["cab"])
-    return dict(slot=r["slot"], gain=r["gain_db"], tone=list(r["tone_db"]), cab=str(cab), eq=[list(b) for b in r["eq"]])
+    return dict(slot=r["slot"], gain=r["gain_db"], tone=list(r["tone_db"]), cab=str(cab), eq=[list(b) for b in r["eq"]],
+                pedal=r.get("pedal"), post_comp=r.get("post_comp"))
 
 
 def render_settings(x, s, pedal=None, comp=None):
     """x through BellyDSP with these settings (the matcher's result format), exactly as the app renders
     them (ampsim_render: the gain set, its Gain and tone, the cab IR as close mic 1, the post EQ), with
     BellyDSP's own pedal in front and its post compressor after if asked (the oracle's)."""
+    pedal = pedal if pedal is not None else s.get("pedal")
+    comp = comp if comp is not None else s.get("post_comp")
     y = rigs.pedal_out(x, pedal)
     y = tm.render(y, s["slot"], s["gain"], tone=s["tone"], cab=s["cab"], eq=[tuple(b) for b in s["eq"]] if s["eq"] else None)
     if comp:

@@ -6,11 +6,13 @@
 #include "../dsp/AmpSection.h"
 #include "../dsp/CabIR.h"
 #include "../dsp/Equalizer.h"
+#include "InformedMask.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_dsp/juce_dsp.h>
 
 #include <map>
+#include <numeric>
 #include <mutex>
 #include <set>
 #include <thread>
@@ -523,20 +525,83 @@ MatchResult ToneMatcher::match (const std::vector<float>& targetSignal, const st
         }
     }
 
-    // 4. The best candidate: polish its tone, fit the match EQ.
+    // 4. The best candidate: polish its tone, fit the match EQ. With a play-along take, the old score's shortlist
+    //    is fitted completely and the take-aware score (TakeScore.h) picks among it.
     report (0.93, "Fitting the match EQ");
     std::vector<const Candidate*> ranked;
     for (const auto& [k, c] : candidates)
         ranked.push_back (&c);
     std::stable_sort (ranked.begin(), ranked.end(), [] (const Candidate* a, const Candidate* b) { return a->total() < b->total(); });
-    const auto& best = *ranked.front();
 
-    std::tie (result.tone, result.spectralErrorDb) = fitTone (best.residual, target.weights, true);
-    const auto tone = toneDb (result.tone);
-    result.residual.resize ((size_t) numBands);
-    for (size_t b = 0; b < (size_t) numBands; ++b)
-        result.residual[b] = best.residual[b] - tone[b];
-    std::tie (result.eq, result.eqTarget) = fitMatchEq (result.residual, target.weights);
+    struct Finished
+    {
+        std::array<double, 5> tone {};
+        double spectral = 0.0;
+        std::vector<double> residual, eqTarget;
+        std::array<Equalizer::Band, Equalizer::numParametricBands> eq {};
+        take::Score score;
+    };
+    const auto finish = [&] (const Candidate& c) {
+        Finished f;
+        std::tie (f.tone, f.spectral) = fitTone (c.residual, target.weights, true);
+        const auto tone = toneDb (f.tone);
+        f.residual.resize ((size_t) numBands);
+        for (size_t b = 0; b < (size_t) numBands; ++b)
+            f.residual[b] = c.residual[b] - tone[b];
+        std::tie (f.eq, f.eqTarget) = fitMatchEq (f.residual, target.weights);
+        return f;
+    };
+
+    take::TakeNotes takeNotes;
+    if (settings.takeIsLinedUp)
+    {
+        report (0.94, "Pairing your notes with the target's");
+        const auto bandFrames = (int) std::ceil (playAlongBandSeconds * sampleRate / hop);
+        takeNotes = take::TakeNotes::of (targetSignal, informed::alignNotes (reference, targetSignal, bandFrames, cancel));
+        if (cancelled())
+            return result;
+    }
+    const Candidate* chosen = ranked.front();
+    Finished fin;
+    if (takeNotes.usable())
+    {
+        const auto count = juce::jmin (take::shortlist, (int) ranked.size());
+        std::vector<Finished> fins ((size_t) count);
+        parallelFor (count, threads, [&] (int i, int) {
+            if (cancel.load())
+                return;
+            const auto& c = *ranked[(size_t) i];
+            fins[(size_t) i] = finish (c);
+            const auto& amp = renders.at (key (c.slot, c.gainDb));
+            fins[(size_t) i].score = take::score (takeNotes, target, amp, convolve (amp, irs[(size_t) c.cab]), fins[(size_t) i].tone, &fins[(size_t) i].eq,
+                                                  c.spectral);
+        });
+        if (cancelled())
+            return result;
+        std::vector<int> order ((size_t) count);
+        std::iota (order.begin(), order.end(), 0);
+        std::stable_sort (order.begin(), order.end(), [&] (int a, int b) { return fins[(size_t) a].score.total < fins[(size_t) b].score.total; });
+        std::vector<const Candidate*> reranked;
+        for (auto i : order)
+            reranked.push_back (ranked[(size_t) i]);
+        for (size_t i = (size_t) count; i < ranked.size(); ++i)
+            reranked.push_back (ranked[i]);
+        chosen = reranked.front();
+        fin = std::move (fins[(size_t) order.front()]);
+        ranked = std::move (reranked);
+        result.takeScored = true;
+        result.notePairs = (int) takeNotes.takeOnsets.size();
+        result.takeScore = fin.score;
+    }
+    else
+        fin = finish (*chosen);
+    const auto& best = *chosen;
+
+    result.tone = fin.tone;
+    result.spectralErrorDb = fin.spectral;
+    result.residual = fin.residual;
+    result.eq = fin.eq;
+    result.eqTarget = fin.eqTarget;
     const auto eqCurve = eqDb (result.eq);
     std::vector<double> after ((size_t) numBands);
     for (size_t b = 0; b < (size_t) numBands; ++b)
