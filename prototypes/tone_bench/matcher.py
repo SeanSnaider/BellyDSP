@@ -91,6 +91,41 @@ def run(target, take, config, split, workers=4, separated=False):
     return r, t
 
 
+def run_all_amps(target, take, config, split, workers=4):
+    """The matcher over every built-in amp loaded (run.py --amps all), WITHOUT changing tone_match.py, whose
+    search is three slots (range(3)): match() is run on the amps three at a time (the three slot defaults,
+    then the others in order, the last triple padded with the first amp), each run's pick is scored by the
+    matcher's own objective (objective(), the same Candidate.total() match() ranks by, on the same target),
+    and the best pick wins, its slot given as an index into the full list. Close to what a match() searching
+    all eight at once would choose; it refines the best REFINE_SLOTS amps of every triple rather than of all
+    eight, so it searches slightly more. Returns (result, target used, objective of the pick)."""
+    use_split(split)
+    full_amps, full_files = list(tm.AMPS), list(tm.MODEL_FILES)
+    c = CONFIGS[config]
+    t, notes = (cleanup(target, take) if c["cleanup"] else (target, None))
+    band = tm.PLAY_ALONG_BAND_SECONDS if c["mode"] == "same" else None
+    order = list(range(len(full_files)))
+    triples = [order[i:i + 3] for i in range(0, len(order), 3)]
+    triples[-1] = (triples[-1] + order)[:3]
+    best = None
+    try:
+        for tri in triples:
+            tm.AMPS = [full_amps[i] for i in tri]
+            tm.MODEL_FILES = [full_files[i] for i in tri]
+            r = tm.match(t, take, c["mode"], log=lambda *a: None, workers=workers, band_seconds=band)
+            r["slot"] = tri[r["slot"]]
+            r["amp"] = full_amps[r["slot"]]
+            tm.AMPS, tm.MODEL_FILES = full_amps, full_files
+            cab = next(p for p in rigs.ALL_IRS if p.name == r["cab"])
+            score = objective(t, take, c["mode"], band, r["slot"], r["gain_db"], cab)
+            if best is None or score < best[2]:
+                best = (r, t, score)
+    finally:
+        tm.AMPS, tm.MODEL_FILES = full_amps, full_files
+    best[0]["notes"] = notes
+    return best
+
+
 def result_settings(r):
     cab = next(p for p in rigs.ALL_IRS if p.name == r["cab"])
     return dict(slot=r["slot"], gain=r["gain_db"], tone=list(r["tone_db"]), cab=str(cab), eq=[list(b) for b in r["eq"]],

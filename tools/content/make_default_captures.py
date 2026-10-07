@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Sean Snaider
 
-"""Makes the three built-in gain sets (content/models/Glass/, Ember/, Monolith/): stand-ins trained from
-BellyDSP's own gray-box reference amp, prototypes/amp_sim.py, until Sean's own captures replace them
-(docs/CAPTURING.md, "Replacing a built-in capture").
+"""Makes the built-in gain sets (content/models/<Amp>/): stand-ins trained from BellyDSP's own gray-box
+reference amps until Sean's own captures replace them (docs/CAPTURING.md, "Replacing a built-in capture").
+The three slot defaults, Glass, Ember, and Monolith, come from prototypes/amp_sim.py's clean, crunch, and lead
+channels; the five more amps a slot can load, Forge, Basalt, Comet, Quartz, and Lantern (2026-10-07,
+BUILD_PLAN "More built-in amps"), from prototypes/amp_voicings.py.
 
 A capture is a snapshot of an amp at ONE gain setting, so a gain knob can't be faked by turning the input up:
 past what the capture was trained on, the model extrapolates (docs/ASSUMPTIONS.md AG1). Each built-in amp is
@@ -19,6 +21,7 @@ therefore a GAIN SET: five captures of the same gray-box channel at its own gain
     ... --heldout-only               # the held-out comparison of the .nam files already in content/models
     ... --package-only               # rewrite the gainset.json files, the manifest entries, and the presets' refs
     ... --measure                    # the gain sets in the app's engine: loudness, crest, distortion per position
+    ... --latency-only               # the trainer's latency measurement on each step's render (to pin one per amp)
 
 Needs NAM's input file (tools/fetch_nam_input.sh), the built tools (cmake --build build -j; ampsim_render
 runs Monolith's boost, plays the trained models, and does the --measure renders), and the test suite's DIs
@@ -76,6 +79,7 @@ from scipy.signal import coherence, welch
 REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "prototypes"))
 import amp_sim  # noqa: E402  (the gray-box reference amp)
+import amp_voicings  # noqa: E402  (its five newer channels)
 
 INPUT = REPO / "build-deps/nam/input.wav"
 RENDER = REPO / "build/ampsim_render_artefacts/Release/ampsim_render"
@@ -92,8 +96,9 @@ ROUND_TRIP = 100           # samples of simulated latency (makes the linear-phas
 INPUT_LEVEL_DBU = 12.0     # metadata: the input file's 0 dBFS is the interface's default full scale (DS47)
 STEPS = [0.0, 2.5, 5.0, 7.5, 10.0]  # the gain knob positions each set is captured at
 
-# The three amps, in slot order. Knobs are amp_sim's 0-10. The gain knob is the step; its taper is the
-# channel's (amp_sim.CHANNELS[...]["gain_taper_db"], found by --voice with these other knobs). NL_RANGE is
+# The amps: the three slot defaults in slot order (DEFAULT_SLOTS), then the five more. Knobs are 0-10. The gain knob is the step; its taper is the
+# channel's (amp_sim.CHANNELS or amp_voicings.CHANNELS [...]["gain_taper_db"], found by --voice with these
+# other knobs). NL_RANGE is
 # the nonlinear energy ratio (dB) at gain 0 and gain 10 that --voice aims for.
 #
 # latency: the round trip the trainer removes, pinned per amp (train_capture --latency). Left to the trainer,
@@ -114,7 +119,36 @@ AMPS = {
     "Monolith": dict(channel="lead", tone_type="hi_gain", boost_db=6.0, epochs=200, latency=96, nl_range=(-9.0, -4.3),
                      description="Tight high gain to a saturated lead",
                      knobs=dict(bass=4.0, mid=6.0, treble=6.0, master=2.0)),
+    # The five more (prototypes/amp_voicings.py, where each circuit is described and how it differs from the
+    # built-ins and from tone_bench's hidden voicings). Not slot defaults: a slot loads one from the capture
+    # menu's built-in list, keeping its head. Their NL ranges cover what tone_bench found the three don't reach:
+    # high gain and lead from -11 or -9 dB to just under each voicing's NL ceiling (-4.5 to -5.1: every voicing,
+    # Monolith too, flattens out around there on this DI and more drive stops raising NL; aiming at the ceiling
+    # itself put step 10's drive at +30 dB, ASSUMPTIONS AG23), and a power-amp breakup from the edge (-27) to
+    # crunch (-9). voicing: the manifest's words for it. latency: pinned from --latency-only (AG24).
+    # epochs_by_step: the high-gain and lead tops at 200, their ESR at 100 being clearly worse (AG25).
+    "Forge": dict(channel="forge", tone_type="hi_gain", boost_db=None, epochs=100, epochs_by_step={10.0: 200}, latency=91, nl_range=(-11.0, -4.9),
+                  description="Tight modern high gain", voicing="a tight modern high gain (a steep low cut and an upper-mid push before hard-clipping stages)",
+                  knobs=dict(bass=5.0, mid=5.0, treble=5.0, master=5.0)),
+    "Basalt": dict(channel="basalt", tone_type="hi_gain", boost_db=None, epochs=100, epochs_by_step={10.0: 200}, latency=88, nl_range=(-11.0, -5.1),
+                   description="Fat high gain with sag", voicing="a fat high gain (the lows into smooth arctangent stages, a cathode follower, power-amp sag)",
+                   knobs=dict(bass=5.0, mid=5.0, treble=5.0, master=5.0)),
+    "Comet": dict(channel="comet", tone_type="hi_gain", boost_db=None, epochs=100, epochs_by_step={10.0: 200}, latency=90, nl_range=(-9.0, -4.5),
+                  description="Saturated lead, mids forward", voicing="a saturated lead with pushed mids and a two-section power-amp sag (softer attack, long sustain)",
+                  knobs=dict(bass=5.0, mid=5.0, treble=5.0, master=5.0)),
+    "Quartz": dict(channel="quartz", tone_type="hi_gain", boost_db=None, epochs=100, epochs_by_step={10.0: 200}, latency=91, nl_range=(-9.0, -4.7),
+                   description="Saturated lead, scooped and bright", voicing="a scooped, bright saturated lead (the tone stack before the gain, symmetric cubic clippers)",
+                   knobs=dict(bass=5.0, mid=5.0, treble=5.0, master=5.0)),
+    "Lantern": dict(channel="lantern", tone_type="crunch", boost_db=None, epochs=100, latency=89, nl_range=(-27.0, -9.0),
+                    description="Power-amp breakup, edge to crunch", voicing="a power-amp-driven edge of breakup to crunch (the gain drives a push-pull output pair with sag)",
+                    knobs=dict(bass=5.0, mid=5.0, treble=5.0, master=5.0)),
 }
+DEFAULT_SLOTS = ["Glass", "Ember", "Monolith"]  # the amp slots' own sets, in slot order (presets::builtInCaptureName)
+
+
+def model_of(channel):
+    """The gray-box module a channel lives in: amp_sim (clean, crunch, lead) or amp_voicings (the five more)."""
+    return amp_voicings if channel in amp_voicings.CHANNELS else amp_sim
 
 
 def run(cmd):
@@ -192,7 +226,7 @@ def gray_box(x, spec, gain=None, drive_db=None):
     """The gray-box amp on an (already boosted, for Monolith) signal, amp only, at a gain knob position or a
     direct drive."""
     knobs = dict(spec["knobs"], gain=5.0 if gain is None else gain)
-    y = amp_sim.amp(INPUT_SCALE * x, 48000, spec["channel"], cab=False, drive_db=drive_db, **knobs)
+    y = model_of(spec["channel"]).amp(INPUT_SCALE * x, 48000, spec["channel"], cab=False, drive_db=drive_db, **knobs)
     # The output transformer's coupling: the power amp's tanh is symmetric, but the preamp's biased stages
     # make the waveform asymmetric, so its output carries an offset that follows the playing (measured
     # without this: -33 dBFS of DC over the file for Monolith). amp_sim's own DC blocker, at r = 0.998:
@@ -224,7 +258,7 @@ def voice(name, spec, work):
         y = gray_box(x, spec, drive_db=drive)
         taper.append(drive)
         print(f"  gain {gain:4g}: drive {drive:+6.1f} dB -> NL {nl_ratio_db(di, y):6.1f} dB, crest {crest_db(y):5.1f} dB", flush=True)
-    print(f'  gain_taper_db={taper}  (prototypes/amp_sim.py, CHANNELS["{spec["channel"]}"])')
+    print(f'  gain_taper_db={taper}  (prototypes/{model_of(spec["channel"]).__name__}.py, CHANNELS["{spec["channel"]}"])')
     return taper
 
 
@@ -244,7 +278,22 @@ def render_capture(name, spec, gain, work):
     return out, stats
 
 
+def trainer_latency(output_wav):
+    """The pinned trainer's own latency measurement (nam.train.core._analyze_latency on the input file's blips,
+    the value it would use without --latency) for one step's render."""
+    version = next(l.split("=", 1)[1].strip() for l in (REPO / "tools/deps.conf").read_text().splitlines()
+                   if l.startswith("NAM_TRAINER_VERSION="))
+    code = ("import sys; from nam.train import core; v, _ = core._detect_input_version(sys.argv[1]); "
+            "r = core._analyze_latency(None, v, sys.argv[1], sys.argv[2], silent=True); "
+            "print('LATENCY', r.calibration.recommended)")
+    out = run(["uv", "run", "--quiet", "--python", "3.12", "--with", f"neural-amp-modeler=={version}", "python", "-c", code,
+               INPUT, output_wav])
+    return int(next(l.split()[1] for l in out.splitlines() if l.startswith("LATENCY")))
+
+
 def train(name, spec, gain, output_wav, work, epochs):
+    if spec["latency"] is None:
+        raise SystemExit(f"{name}: no pinned latency yet; run --latency-only --only {name} and put the most common value in AMPS")
     label = step_name(name, gain)
     log = run([REPO / "tools/train_capture.sh", "--input", INPUT, "--output", output_wav, "--name", label,
                "--modeled-by", "BellyDSP", "--tone-type", spec["tone_type"], "--gear-type", "amp",
@@ -299,7 +348,8 @@ def fnv1a64(path):
 
 def settings_text(spec, gain):
     k = spec["knobs"]
-    text = (f'{spec["channel"]} channel, gain {gain:g} (first stage {amp_sim.gain_drive_db(spec["channel"], gain):+.1f} dB), '
+    stage = "power section" if spec["channel"] == "lantern" else "first stage"
+    text = (f'{spec["channel"]} channel, gain {gain:g} ({stage} {model_of(spec["channel"]).gain_drive_db(spec["channel"], gain):+.1f} dB), '
             f'bass {k["bass"]:g}, mid {k["mid"]:g}, treble {k["treble"]:g}, master {k["master"]:g}')
     if spec["boost_db"] is not None:
         text = f'the app\'s Screamer boost (TS808 at minimum drive, tone noon, level +{spec["boost_db"]:g} dB) into the ' + text
@@ -327,7 +377,7 @@ def update_manifest(results):
     manifest = json.loads(manifest_path.read_text())
     others = [f for f in manifest["files"] if not f["path"].startswith("models/")]
     entries = []
-    for slot, (name, spec) in enumerate(AMPS.items()):
+    for name, spec in AMPS.items():
         for gain in STEPS:
             if not step_file(name, gain).exists():
                 continue  # not trained yet (the build refuses unlisted content, and listed content that's missing)
@@ -337,15 +387,18 @@ def update_manifest(results):
             entries.append({
                 "path": f"models/{name}/{step_name(name, gain)}.nam",
                 "title": f"{step_name(name, gain)} ({spec['tone_type'].replace('hi_gain', 'high gain')}, amp only)",
-                "description": f"Built-in gain set for amp slot {slot + 1}, step {STEPS.index(gain) + 1} of {len(STEPS)}",
+                "description": (f"Built-in gain set for amp slot {DEFAULT_SLOTS.index(name) + 1}" if name in DEFAULT_SLOTS
+                                else "Built-in gain set (loads into any amp slot)") + f", step {STEPS.index(gain) + 1} of {len(STEPS)}",
                 "author": "Sean Snaider",
                 "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
                 "license": "CC BY 4.0",
                 "license_file": "licenses/CC-BY-4.0.txt",
-                "notes": ("Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, " + settings_text(spec, gain)
+                "notes": (("Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, " if name in DEFAULT_SLOTS else
+                           f"A stand-in trained from BellyDSP's own gray-box model, {spec['voicing']} (prototypes/amp_voicings.py, ")
+                          + settings_text(spec, gain)
                           + f"; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, {epochs} epochs"
                           + (f", validation ESR {esr:.4f}" if esr is not None else "")
-                          + "; a stand-in until Sean's own captures"),
+                          + ("; a stand-in until Sean's own captures" if name in DEFAULT_SLOTS else "")),
             })
     manifest["files"] = sorted(others + entries, key=lambda f: f["path"])
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
@@ -354,7 +407,7 @@ def update_manifest(results):
 
 def update_factory_presets():
     refs = []
-    for name in AMPS:  # slot order: Glass, Ember, Monolith
+    for name in DEFAULT_SLOTS:  # slot order: Glass, Ember, Monolith (the five more aren't in any slot)
         f = MODELS / name / "gainset.json"
         refs.append({"path": f"factory:models/{name}/gainset.json", "hash": fnv1a64(f), "size": f.stat().st_size})
     for preset in sorted(PRESETS.glob("*.json")):
@@ -407,6 +460,7 @@ def main():
     p.add_argument("--heldout-only", action="store_true")
     p.add_argument("--package-only", action="store_true", help="gainset.json, the manifest, and the presets' refs")
     p.add_argument("--measure", action="store_true", help="the sets in the app's engine, per Gain position")
+    p.add_argument("--latency-only", action="store_true", help="render each step and print the trainer's latency measurement")
     p.add_argument("--measure-legacy", metavar="DIR", help="the same for old single captures <DIR>/<Amp>.nam, Gain = trim")
     p.add_argument("--render", metavar="PATH", help="another ampsim_render for --measure / --measure-legacy (e.g. an older build's)")
     args = p.parse_args()
@@ -421,6 +475,17 @@ def main():
     if args.render:
         global RENDER
         RENDER = pathlib.Path(args.render)
+    if args.latency_only:
+        for name in names:
+            work = work_root / name
+            work.mkdir(parents=True, exist_ok=True)
+            found = []
+            for gain in args.steps or STEPS:
+                output_wav, _ = render_capture(name, AMPS[name], gain, work)
+                found.append(trainer_latency(output_wav))
+                print(f"  {step_name(name, gain)}: the trainer measures {found[-1]} samples", flush=True)
+            print(f"{name}: latencies {found}; most common {max(set(found), key=found.count)}")
+        return
     if args.measure or args.measure_legacy:
         measure(work_root, names, args.measure_legacy)
         return
@@ -451,7 +516,7 @@ def main():
                     output_wav, entry["render"] = render_capture(name, spec, gain, work)
                     print(f"  rendered in {time.time() - started:.0f} s", flush=True)
                     if not args.render_only:
-                        summary = train(name, spec, gain, output_wav, work, args.epochs or spec["epochs"])
+                        summary = train(name, spec, gain, output_wav, work, args.epochs or spec.get("epochs_by_step", {}).get(gain, spec["epochs"]))
                         entry["training"] = {k: summary[k] for k in ("epochs", "seconds", "validation_esr", "latency_samples", "device")}
                         entry["nam_bytes"] = step_file(name, gain).stat().st_size
                 if not args.render_only and step_file(name, gain).exists():
@@ -465,7 +530,7 @@ def main():
         if all(step_file(name, g).exists() for g in STEPS):
             write_gainset(name, AMPS[name])
     update_manifest(load_results())
-    if all((MODELS / name / "gainset.json").exists() for name in AMPS):
+    if all((MODELS / name / "gainset.json").exists() for name in DEFAULT_SLOTS):
         update_factory_presets()
 
 

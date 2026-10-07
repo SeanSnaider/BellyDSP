@@ -56,6 +56,62 @@ double crestDb (const std::vector<float>& x, size_t skip = 4800)
     return toDb (peak) - toDb (rms (x.data() + skip, x.size() - skip));
 }
 
+/// The nonlinear energy ratio (tools/content/make_default_captures.py, nl_ratio_db; ASSUMPTIONS AG2): with the
+/// magnitude-squared coherence C(f) = |Pxy|^2 / (Pxx Pyy) between the DI x and the output y (Welch's method as
+/// scipy.signal.coherence does it: 4096-point periodic Hann segments, half overlapping, each segment's mean
+/// removed), C(f) Pyy(f) is the part of y's power at f that a linear time-invariant filter of x can predict, so
+///     NL = sum (1 - C) Pyy / sum Pyy,   60 Hz < f < 12 kHz,
+/// in dB, is the share no linear filter explains: about -37 dB for a clean amp on the tests' DI, -4 for a
+/// saturated one. Only the ratios matter, so the spectra's scaling is left out.
+double nlRatioDb (const std::vector<float>& x, const std::vector<float>& y)
+{
+    constexpr int order = 12, n = 1 << order;
+    juce::dsp::FFT fft (order);
+    std::vector<double> pxx (n / 2 + 1), pyy (n / 2 + 1);
+    std::vector<std::complex<double>> pxy (n / 2 + 1);
+    std::vector<float> window ((size_t) n);
+    for (int i = 0; i < n; ++i)
+        window[(size_t) i] = (float) (0.5 - 0.5 * std::cos (juce::MathConstants<double>::twoPi * i / n));
+    std::vector<std::complex<float>> a ((size_t) n), b ((size_t) n), fa ((size_t) n), fb ((size_t) n);
+    const auto length = std::min (x.size(), y.size());
+    for (size_t start = 0; start + (size_t) n <= length; start += (size_t) n / 2)
+    {
+        double mx = 0.0, my = 0.0;
+        for (size_t i = 0; i < (size_t) n; ++i)
+        {
+            mx += x[start + i];
+            my += y[start + i];
+        }
+        mx /= n;
+        my /= n;
+        for (size_t i = 0; i < (size_t) n; ++i)
+        {
+            a[i] = { (float) ((x[start + i] - mx) * window[i]), 0.0f };
+            b[i] = { (float) ((y[start + i] - my) * window[i]), 0.0f };
+        }
+        fft.perform (a.data(), fa.data(), false);
+        fft.perform (b.data(), fb.data(), false);
+        for (size_t k = 0; k <= (size_t) n / 2; ++k)
+        {
+            const std::complex<double> xa (fa[k].real(), fa[k].imag()), yb (fb[k].real(), fb[k].imag());
+            pxx[k] += std::norm (xa);
+            pyy[k] += std::norm (yb);
+            pxy[k] += std::conj (xa) * yb;
+        }
+    }
+    double unexplained = 0.0, total = 0.0;
+    for (size_t k = 0; k <= (size_t) n / 2; ++k)
+    {
+        const auto f = (double) k * fs / n;
+        if (f <= 60.0 || f >= 12000.0 || pxx[k] <= 0.0 || pyy[k] <= 0.0)
+            continue;
+        const auto c = std::norm (pxy[k]) / (pxx[k] * pyy[k]);
+        unexplained += (1.0 - c) * pyy[k];
+        total += pyy[k];
+    }
+    return 10.0 * std::log10 (std::max (unexplained, 1.0e-30) / std::max (total, 1.0e-30));
+}
+
 /// A slot's capture engine on its own: `before` runs before each 128-sample buffer (set the Gain there).
 std::vector<float> run (NamAmp& amp, const std::vector<float>& input, const std::function<void (size_t block)>& before = {})
 {
@@ -220,20 +276,36 @@ public:
         }
 
         // The built-in gain sets (content/models/<Amp>/gainset.json, next to this binary).
+        // sets are the three slot defaults; allSets every built-in amp (the five more since 2026-10-07 among them).
         std::array<juce::File, 3> sets;
         for (int s = 0; s < 3; ++s)
             sets[(size_t) s] = presets::builtInCapture (s);
+        const auto builtIns = presets::builtInGainSets();
+        std::vector<juce::File> allSets;
+        std::vector<juce::String> allNames;
+        for (const auto& b : builtIns)
+        {
+            allSets.push_back (b.file);
+            allNames.push_back (b.name);
+        }
 
         beginTest ("the built-in gain sets: five steps each, with metadata and CC BY 4.0 manifest entries");
         {
             const auto manifest = juce::JSON::parse (juce::File (AMPSIM_SOURCE_DIR).getChildFile ("content/manifest.json").loadFileAsString());
             juce::StringArray lines;
+            expectEquals ((int) allSets.size(), 8);
             for (int s = 0; s < 3; ++s)
             {
                 expectEquals (presets::builtInCapturePath (s), "factory:models/" + juce::String (names[(size_t) s]) + "/gainset.json");
+                expect (allSets[(size_t) s] == sets[(size_t) s], allNames[(size_t) s]);
+            }
+            for (size_t s = 0; s < allSets.size(); ++s)
+            {
+                const auto source = s < 3 ? juce::String ("prototypes/amp_sim.py") : juce::String ("prototypes/amp_voicings.py");
+                expectEquals (allSets[s].getParentDirectory().getFileName(), allNames[s]);
                 ampsim::GainSet set;
                 juce::String error;
-                expect (ampsim::GainSet::read (sets[(size_t) s], set, error), error);
+                expect (ampsim::GainSet::read (allSets[s], set, error), error);
                 expectEquals ((int) set.steps.size(), 5);
                 juce::StringArray gains;
                 for (const auto& step : set.steps)
@@ -246,9 +318,9 @@ public:
                     bool listed = false;
                     if (const auto* files = manifest["files"].getArray())
                         for (const auto& f : *files)
-                            if (f["path"].toString() == "models/" + juce::String (names[(size_t) s]) + "/" + step.file.getFileName())
+                            if (f["path"].toString() == "models/" + allNames[s] + "/" + step.file.getFileName())
                                 listed = f["license"].toString() == "CC BY 4.0" && f["author"].toString() == "Sean Snaider"
-                                         && f["notes"].toString().contains ("prototypes/amp_sim.py") && f["notes"].toString().contains ("stand-in");
+                                         && f["notes"].toString().contains (source) && f["notes"].toString().contains ("stand-in");
                     expect (listed, step.file.getFileName());
                 }
                 expect (gains == juce::StringArray { "0", "2.5", "5", "7.5", "10" }, gains.joinIntoString (", "));
@@ -257,19 +329,19 @@ public:
             logMessage ("  -> " + lines.joinIntoString ("; "));
         }
 
-        beginTest ("the built-in gain sets in the engine: Gain changes the saturation, the loudness holds, and the blend's correlation and level");
+        beginTest ("the built-in gain sets in the engine: Gain changes the saturation (the nonlinear energy ratio rises step by step), the loudness holds, and the blend's correlation and level");
         {
             const auto input = guitarDI ((int) (6.0 * fs));
-            for (int s = 0; s < 3; ++s)
+            for (size_t s = 0; s < allSets.size(); ++s)
             {
                 NamAmp::LoadResult r;
                 juce::StringArray rows;
-                std::vector<double> loud, crest;
+                std::vector<double> loud, crest, nl;
                 for (int i = 0; i <= 8; ++i)
                 {
                     const auto position = 1.25f * (float) i;
                     NamAmp amp;
-                    r = amp.loadModel (sets[(size_t) s], true);
+                    r = amp.loadModel (allSets[s], true);
                     amp.setGain (position);
                     amp.prepare (fs, blockSize);
                     int maxRunning = 0;
@@ -278,19 +350,25 @@ public:
                     expectEquals (maxRunning, i % 2 == 0 ? 1 : 2, "one model on a step, two between");
                     loud.push_back (lufs (out));
                     crest.push_back (crestDb (out));
-                    rows.add ("Gain " + positionText (position) + ": " + juce::String (loud.back(), 1) + " LUFS, crest " + juce::String (crest.back(), 1) + " dB, "
+                    nl.push_back (nlRatioDb (input, out));
+                    rows.add ("Gain " + positionText (position) + ": " + juce::String (loud.back(), 1) + " LUFS, crest " + juce::String (crest.back(), 1) + " dB, NL " + juce::String (nl.back(), 1) + " dB, "
                               + juce::String (maxRunning) + (maxRunning == 1 ? " model" : " models"));
                 }
                 expect (r.ok && r.isGainSet, r.message);
                 const auto spread = *std::max_element (loud.begin(), loud.end()) - *std::min_element (loud.begin(), loud.end());
-                expectLessThan (spread, 1.5, names[(size_t) s]);
-                expectGreaterThan (crest.front() - crest.back(), 1.0, "Gain 0 must be clearly cleaner than Gain 10");
+                expectLessThan (spread, 1.5, allNames[s]);
+                // Gain 0 clearly cleaner than Gain 10, and each step more distorted than the one before it (the sets
+                // were voiced in equal NL steps, AG2; 0.3 dB of slack for what the models add). Crest factor isn't the
+                // test: a set with power-amp sag (Comet) keeps its crest nearly flat while it saturates.
+                expectGreaterThan (nl.back() - nl.front(), 3.0, allNames[s] + ": Gain 0 must be clearly cleaner than Gain 10");
+                for (size_t k = 2; k < nl.size(); k += 2)
+                    expectGreaterThan (nl[k] - nl[k - 2], -0.3, allNames[s] + " step " + juce::String ((int) k / 2));
 
                 // The blend's level without its correction, from the steps' own renders: the dip of a plain linear
                 // crossfade halfway between steps, against the measured correlation's prediction 10 log10((1 + rho) / 2).
                 std::vector<std::vector<float>> stepOut;
                 for (const auto g : r.stepGains)
-                    stepOut.push_back (renderAt (sets[(size_t) s], (float) g, input));
+                    stepOut.push_back (renderAt (allSets[s], (float) g, input));
                 juce::StringArray blend;
                 for (size_t k = 0; k + 1 < stepOut.size(); ++k)
                 {
@@ -305,8 +383,8 @@ public:
                     blend.add (positionText ((float) r.stepGains[k]) + "-" + positionText ((float) r.stepGains[k + 1]) + ": rho " + juce::String (r.stepCorrelation[k], 3)
                                + ", linear dip " + juce::String (dip, 2) + " LU (predicted " + juce::String (predicted, 2) + "), corrected " + juce::String (corrected, 2) + " LU");
                 }
-                logMessage ("  -> " + juce::String (names[(size_t) s]) + ": " + rows.joinIntoString ("; "));
-                logMessage ("  -> " + juce::String (names[(size_t) s]) + " blend: " + blend.joinIntoString ("; ") + "; loudness spread over Gain " + juce::String (spread, 2) + " LU");
+                logMessage ("  -> " + allNames[s] + ": " + rows.joinIntoString ("; "));
+                logMessage ("  -> " + allNames[s] + " blend: " + blend.joinIntoString ("; ") + "; loudness spread over Gain " + juce::String (spread, 2) + " LU");
             }
         }
 
@@ -366,10 +444,10 @@ public:
                 return (float) (5.0 + 4.0 * std::sin (juce::MathConstants<double>::twoPi * (t - 5.5) / 1.5));
             };
 
-            for (int s = 0; s < 3; ++s)
+            for (size_t s = 0; s < allSets.size(); ++s)
             {
                 NamAmp amp;
-                const auto r = amp.loadModel (sets[(size_t) s], true);
+                const auto r = amp.loadModel (allSets[s], true);
                 amp.setGain (0.0f);
                 amp.prepare (fs, blockSize);
                 std::vector<float> positions;
@@ -395,7 +473,7 @@ public:
                 // with the same positions and the same law.
                 std::vector<std::vector<float>> stepOut;
                 for (const auto g : r.stepGains)
-                    stepOut.push_back (renderAt (sets[(size_t) s], (float) g, input));
+                    stepOut.push_back (renderAt (allSets[s], (float) g, input));
                 std::vector<float> reference (out.size());
                 for (size_t n = 0; n < out.size(); ++n)
                 {
@@ -410,7 +488,7 @@ public:
                 }
                 const auto peak = std::max (std::abs (*std::max_element (out.begin(), out.end())), std::abs (*std::min_element (out.begin(), out.end())));
                 const auto difference = maxAbsDifference (out, reference);
-                expectLessThan (difference, 1.0e-5 * (double) peak, names[(size_t) s]);
+                expectLessThan (difference, 1.0e-5 * (double) peak, allNames[s]);
                 expectLessOrEqual (maxRunning, NamAmp::maxRunningSteps);
 
                 // Clicks: the largest sample-to-sample step of the sweep against the largest of any step played alone.
@@ -431,12 +509,12 @@ public:
 
                 juce::AudioBuffer<float> wav (1, (int) out.size());
                 wav.copyFrom (0, 0, out.data(), (int) out.size());
-                expect (writeWav (proof.getChildFile (juce::String (names[(size_t) s]).toLowerCase() + "_gain_sweep_amp_only.wav"), wav));
-                logMessage ("  -> " + juce::String (names[(size_t) s]) + ": live sweep vs the always-running blend: max difference " + dB (toDb (difference / peak))
+                expect (writeWav (proof.getChildFile (allNames[s].toLowerCase() + "_gain_sweep_amp_only.wav"), wav));
+                logMessage ("  -> " + allNames[s] + ": live sweep vs the always-running blend: max difference " + dB (toDb (difference / peak))
                             + " of the peak; buffers with 1/2/3 models running: " + juce::String (runningBlocks[1]) + "/" + juce::String (runningBlocks[2]) + "/"
                             + juce::String (runningBlocks[3]) + " (max " + juce::String (maxRunning) + "); largest sample step " + juce::String (sweepStep, 4) + " vs "
                             + juce::String (staticStep, 4) + " for the steps alone (" + juce::String (sweepStep / staticStep, 3) + "x); longest wait for a warm-up "
-                            + juce::String (1000.0 * longestWait / fs, 1) + " ms; amp_gain/" + juce::String (names[(size_t) s]).toLowerCase() + "_gain_sweep_amp_only.wav");
+                            + juce::String (1000.0 * longestWait / fs, 1) + " ms; amp_gain/" + allNames[s].toLowerCase() + "_gain_sweep_amp_only.wav");
             }
         }
 

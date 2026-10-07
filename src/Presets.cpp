@@ -4,8 +4,10 @@
 #include "Presets.h"
 #include "BinaryData.h"
 #include "PluginProcessor.h"
+#include "dsp/GainSet.h"
 #include "platform/AppInfo.h"
 
+#include <algorithm>
 #include <map>
 
 namespace presets
@@ -485,6 +487,36 @@ bool isSavedAbsolutePath (const juce::String& path)
 juce::File builtInCapture (int slot)
 {
     return resolvePath (builtInCapturePath (slot));
+}
+
+std::vector<BuiltInAmp> builtInGainSets()
+{
+    std::vector<BuiltInAmp> sets;
+    const auto folder = libraryRoot ("factory").getChildFile ("models");
+    for (const auto& dir : folder.findChildFiles (juce::File::findDirectories, false))
+    {
+        ampsim::GainSet set;
+        juce::String error;
+        const auto json = dir.getChildFile (ampsim::GainSet::conventionalFileName);
+        if (json.existsAsFile() && ampsim::GainSet::read (json, set, error))
+            sets.push_back ({ set.name.isNotEmpty() ? set.name : dir.getFileName(), set.description, set.toneType, json });
+    }
+    // The slot defaults first in slot order, then by tone type, then name.
+    const auto rank = [] (const BuiltInAmp& a)
+    {
+        for (int slot = 0; slot < 3; ++slot)
+            if (a.file == builtInCapture (slot))
+                return slot;
+        static const juce::StringArray tones { "clean", "overdrive", "crunch", "hi_gain", "fuzz" };
+        const auto t = tones.indexOf (a.toneType);
+        return 3 + (t < 0 ? tones.size() : t);
+    };
+    std::sort (sets.begin(), sets.end(), [&] (const BuiltInAmp& a, const BuiltInAmp& b)
+    {
+        const auto ra = rank (a), rb = rank (b);
+        return ra != rb ? ra < rb : a.name.compareNatural (b.name) < 0;
+    });
+    return sets;
 }
 
 bool isBundled (const juce::File& file)

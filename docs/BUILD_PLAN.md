@@ -171,6 +171,34 @@ Sean's play test: "the gain generally just makes things louder", "the clipping i
 
 **Factory presets** set every amp knob of every slot they play, and scenes hold an amp's Gain (and Middle) where two scenes share an amp (AG12).
 
+#### More built-in amps (2026-10-07)
+
+tone_bench Round 1 (TONE_MATCH.md) found 45% of the matcher's error is amp and cab coverage: the oracle's Gain sat at +24 dB in 17 of 50 cases, it picked Ember at full gain for most high-gain and lead records, and the amp-only swap error was 0.29 on high gain and lead against 0.11 on clean. So five more built-in amps, each a five-step gain set trained exactly like the first three (`make_default_captures.py`; AG20 to AG29):
+
+| Amp | Voicing | Range (NL, dB) | How it differs |
+|---|---|---|---|
+| **Forge** | Tight modern high gain | -11 to -4.9 | A 4th-order low cut (100 and 180 Hz) and +7 dB at 1.4 kHz before any clipping; one soft stage, then two hard-clipping ones (algebraic sigmoid, k = 8); an active contour (a 500 Hz cut) after; a stiff power amp, no sag |
+| **Basalt** | Fat high gain with sag | -11 to -5.1 | Only a 30 Hz high-pass and +5 dB below 140 Hz into the clippers, 20 Hz couplings; three biased arctangent stages (the smoothest clipper); a cathode follower squashing the positive swing into its own FMV stack; 20 ms power-amp sag; a 70 Hz resonance |
+| **Comet** | Saturated lead, mids forward | -9 to -4.5 | +6 dB at 850 Hz and a 5.5 kHz roll-off before the gain; three biased soft stages with an envelope squash before the last; a mid-forward active stack; the power amp driven into a two-section supply sag (1 ms and 30 ms) for a softer attack and the sustain |
+| **Quartz** | Saturated lead, scooped and bright | -9 to -4.7 | The tone stack first (its own FMV values, a steep low cut), then a 6 dB cut at 550 Hz and a +5 dB treble shelf, all before the gain; three SYMMETRIC cubic clippers (odd harmonics only); a scoop and a low lift after; 10 ms sag |
+| **Lantern** | Power-amp breakup, edge to crunch | -27 to -9 | One nearly clean preamp stage; the Gain drives the power section: a phase inverter that clips late, then a class AB output pair modelled per half (softplus conduction, saturating, 8% mismatched) under a 15 ms rail sag; an output transformer's band limits |
+
+The sources are `prototypes/amp_voicings.py` (amp_sim.py's three channels are untouched). Every voicing differs from the built-ins (1 to 3 non-inverting tanh stages, the FMV stack after them, a plain tanh power amp) and from tone_bench's hidden ones (inverting triode stages with blocking, their own FMV values or a Baxandall, one push-pull model with a crossover term and a single sag). Checked by `prototypes/tone_bench/distinct.py`: each step of each built-in against every hidden gray-box voicing driven to the same NL, by the shape of the long-term spectrum and the harmonic profile of a sine (AG22).
+
+**Tapers and training.** Each set's taper (the drive at Gain 0, 2.5, 5, 7.5, 10, found by `--voice` so NL steps evenly): Forge -33.8, -31.9, -29.3, -25.1, -10.3 dB; Basalt -26.4, -23.5, -19.9, -14.4, +1.7; Comet -30.0, -27.9, -24.8, -19.6, +1.1; Quartz -25.1, -23.2, -20.7, -16.4, -1.8 (first stage); Lantern -8.8, -4.3, -0.4, +4.0, +10.1 (power section). The high-gain and lead tops stop just under each voicing's NL ceiling: every voicing, Monolith too, flattens out at -4.4 to -5.1 dB on the tests' DI (AG23), so they reach that region by other kinds of distortion, not by more of it. Standard WaveNet, the pinned trainer, latency pinned per amp (Forge 91, Basalt 88, Comet 90, Quartz 91, Lantern 89; AG24), 100 epochs, 200 for the four high-gain and lead tops (AG25). Validation ESR per step (gain 0 / 2.5 / 5 / 7.5 / 10), then held out (the tests' DI through our engine against the gray-box source):
+
+| Amp | Validation ESR | Held-out ESR |
+|---|---|---|
+| Forge | 0.0003 / 0.0003 / 0.0004 / 0.0007 / 0.0008 | 0.0006 / 0.0006 / 0.0007 / 0.0010 / 0.0027 |
+| Basalt | 0.0004 / 0.0006 / 0.0007 / 0.0011 / 0.0022 | 0.0012 / 0.0017 / 0.0029 / 0.0051 / 0.0100 |
+| Comet | 0.0007 / 0.0008 / 0.0010 / 0.0013 / 0.0028 | 0.0009 / 0.0013 / 0.0017 / 0.0028 / 0.0085 |
+| Quartz | 0.0006 / 0.0006 / 0.0005 / 0.0006 / 0.0009 | 0.0013 / 0.0013 / 0.0024 / 0.0038 / 0.0077 |
+| Lantern | 0.0002 / 0.0004 / 0.0003 / 0.0003 / 0.0004 | 0.0005 / 0.0012 / 0.0013 / 0.0011 / 0.0017 |
+
+In the app's engine (`make_default_captures.py --measure`, loudness-normalized, the tests' 8 s DI; THD of a 110 Hz sine at -12 dBFS), Gain 0 / 5 / 10: Forge NL -11.0 / -8.0 / -4.9 dB, crest 7.1 / 6.0 / 4.5 dB, THD 0.9 / 1.9 / 28.4% (its 4th-order low cut takes most of a 110 Hz sine away before the clippers); Basalt NL -10.9 / -8.0 / -5.1, crest 8.5 / 6.8 / 6.0, THD 29.8 / 33.5 / 36.7%; Comet NL -8.9 / -6.7 / -4.4, crest 5.5 / 5.0 / 5.1 (the sag holds it nearly flat), THD 12.9 / 17.6 / 14.2%; Quartz NL -8.9 / -6.7 / -4.6, crest 5.3 / 4.8 / 4.4, THD 5.0 / 16.6 / 40.7%; Lantern NL -28.2 / -17.9 / -9.1, crest 15.0 / 12.1 / 7.8, THD 2.2 / 7.0 / 31.7%. Monolith for comparison: NL -9.1 / -6.7 / -4.4, crest 7.0 / 4.3 / 3.1. Every set holds its loudness within 0.09 LU across Gain, neighbouring steps correlate 0.938 to 0.999, and the live sweep matches the always-running blend within -134.8 dB of the peak (`AmpGainTests`). The five sets add 7.3 MB to the bundle (about 1.46 MB each); `content/models` is 11.7 MB in all.
+
+**In the app.** They aren't slot defaults: the three slots keep Glass, Ember, and Monolith and their heads. The capture menu (right-click at the grille or the model's name) has a **Built-in amps** submenu listing every built-in set, the one playing ticked; choosing one loads it into that slot, which keeps its head and shows the set's name in the info row ("Forge (built in, gain set)"). The list is read from the content folder (`presets::builtInGainSets`), slot defaults first, then by tone type and name, so a set added to `content/models` appears without a code change. Tone match's search is unchanged (another round makes its amp list come from the content folder); tone_bench's oracle can use them (`run.py --amps all`).
+
 ### Pre FX
 
 | Block | Controls | Notes |

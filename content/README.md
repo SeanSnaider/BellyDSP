@@ -17,7 +17,12 @@ the app opens.
   amp (`prototypes/amp_sim.py`, amp only, each channel at five positions of its gain knob; settings in each
   manifest entry), until Sean's own captures replace them under the same names (`docs/CAPTURING.md`,
   "Replacing a built-in capture"). They replaced the single `Glass.nam`, `Ember.nam`, and `Monolith.nam`
-  on 2026-10-04; presets and saved states that name those load the sets. Licensed under **CC BY 4.0** (Creative
+  on 2026-10-04; presets and saved states that name those load the sets. Five more built-in amps, also gain
+  sets, sit beside them (2026-10-07): `Forge/` (tight modern high gain), `Basalt/` (fat high gain with sag),
+  `Comet/` (saturated lead, mids forward), `Quartz/` (saturated lead, scooped and bright), and `Lantern/`
+  (power-amp breakup, edge to crunch). They aren't any slot's default: an amp's right-click menu lists every
+  built-in set under "Built-in amps" and loads one into that slot, which keeps its head. Stand-ins trained
+  the same way from `prototypes/amp_voicings.py` (BUILD_PLAN "More built-in amps"). All of them are licensed under **CC BY 4.0** (Creative
   Commons Attribution 4.0 International, `licenses/CC-BY-4.0.txt`, the official legal code from
   creativecommons.org) with the attribution "Sean Snaider": anyone may share and adapt them, including
   commercially, as long as they credit him.
