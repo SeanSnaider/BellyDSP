@@ -5,6 +5,7 @@
 #include "BuiltInCaptures.h"
 #include "MidiMap.h"
 #include "PluginProcessor.h"
+#include "Presets.h"
 #include "TestHelpers.h"
 #include "ToneMatchSession.h"
 #include "platform/AppInfo.h"
@@ -86,6 +87,13 @@ public:
             const auto a1 = exampleModel ("wavenet_a1_standard.nam");
             const auto lstm = exampleModel ("lstm.nam");
             const auto small = exampleModel ("wavenet.nam");
+            // One of the built-in amps beyond the slot defaults (BUILD_PLAN "More built-in amps"), as the capture
+            // menu's "Built-in amps" loads it.
+            juce::File forgeSet;
+            for (const auto& b : presets::builtInGainSets())
+                if (b.name == "Forge")
+                    forgeSet = b.file;
+            expect (forgeSet.existsAsFile(), "Forge's gain set");
 
             // As in the app: the processor starts on the built-in captures (Glass, Ember, Monolith), and slot 1
             // gets an example capture on top before playing starts.
@@ -300,7 +308,8 @@ public:
                     case 1600: setParam (p, "output_gain", -6.0f); break;
                     case 2000: p.loadModel (0, a1); break;                                  // switch the capture back
                     case 1150: p.useBuiltInCapture (1); break;                              // the menu's "Use the built-in capture": Ember back in slot 2
-                    case 3700: p.clearModel (2); break;                                     // Monolith cleared from slot 3
+                    case 3212: p.loadModel (2, forgeSet); break;                            // the capture menu's "Built-in amps": Forge into slot 3
+                    case 3700: p.clearModel (2); break;                                     // then slot 3 cleared
                     // Tone match: the DI recorder records from block 400 to block 2609 (the page's Record and Stop).
                     case 400:  p.getDiRecorder().start(); break;
                     case 2610: p.getDiRecorder().stop(); break;
@@ -491,7 +500,7 @@ public:
             expectEquals (total.blockingLocks, 0L);
 
             logMessage ("  -> " + juce::String (blocks) + " blocks (" + juce::String (blocks * blockSize / fs, 1)
-                        + " s of audio), starting on the built-in captures: 4 capture loads, one of them Ember put back by \"Use the built-in capture\", and Monolith cleared ("
+                        + " s of audio), starting on the built-in captures: 5 capture loads, one of them Ember put back by \"Use the built-in capture\" and one Forge from \"Built-in amps\" into slot 3, which was then cleared ("
                         + juce::String (modelFadeBlocks) + " blocks mid-crossfade), "
                         "3 slot switches from the GUI and the footswitch (" + juce::String (slotSwitchBlocks)
                         + " blocks mid-crossfade), 3 IR loads into the three cab mics plus an IR swap and a built-in 1 s IR from the app's content folder, auto alignment, 6 cab mic changes, cuts on, off, re-sloped and swept, "

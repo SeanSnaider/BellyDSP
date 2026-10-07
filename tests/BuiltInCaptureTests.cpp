@@ -276,6 +276,98 @@ public:
                         + elsewhere.getFullPathName() + "\" loads from this one's content folder");
         }
 
+        beginTest ("the capture menu's \"Built-in amps\" lists every built-in gain set and loads any of them into any slot, which keeps its head and shows the set's name");
+        {
+            WithBuiltInCaptures builtIns;
+            AmpSimProcessor p;
+            waitForLoads (p);
+            p.prepareToPlay (fs, blockSize);
+            std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+            auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
+            ed.showPage (ui::PageId::amp);
+            auto& amp = ed.getAmpView();
+
+            // The list: the slot defaults in slot order, then the others by tone type, then name.
+            const auto sets = presets::builtInGainSets();
+            juce::StringArray listed;
+            for (const auto& s : sets)
+                listed.add (s.name);
+            expect (listed == juce::StringArray { "Glass", "Ember", "Monolith", "Lantern", "Basalt", "Comet", "Forge", "Quartz" }, listed.joinIntoString (", "));
+            for (const auto& s : sets)
+                expect (s.file.existsAsFile() && presets::isBundled (s.file) && s.description.isNotEmpty(), s.name);
+
+            const auto subMenuOf = [] (const juce::PopupMenu& menu) -> const juce::PopupMenu*
+            {
+                for (juce::PopupMenu::MenuItemIterator it (menu); it.next();)
+                    if (it.getItem().text == "Built-in amps")
+                        return it.getItem().subMenu.get();
+                return nullptr;
+            };
+            const auto headerOf = [] (const juce::PopupMenu& menu)
+            {
+                for (juce::PopupMenu::MenuItemIterator it (menu); it.next();)
+                    if (it.getItem().isSectionHeader)
+                        return it.getItem().text;
+                return juce::String();
+            };
+
+            // On a fresh start slot 2 plays Ember: the submenu lists all eight, Ember ticked.
+            const auto menu = ed.captureMenu (1);
+            const auto* sub = subMenuOf (menu);
+            expect (sub != nullptr);
+            juce::StringArray items, ticked;
+            if (sub != nullptr)
+                for (juce::PopupMenu::MenuItemIterator it (*sub); it.next();)
+                {
+                    items.add (it.getItem().text);
+                    if (it.getItem().isTicked)
+                        ticked.add (it.getItem().text);
+                }
+            expectEquals (items.size(), (int) sets.size());
+            expect (ticked.size() == 1 && ticked[0].startsWith ("Ember: "), ticked.joinIntoString (", "));
+
+            // Each of the five more, into slots 1, 2, 3, 1, 2 from that slot's menu: it plays, the info row shows
+            // its name, and the slot keeps its head (the menu's header still names the slot's material).
+            juce::StringArray rows;
+            const auto input = guitarDI ((int) (1.0 * fs));
+            proofDir().getChildFile ("default_captures").createDirectory();
+            for (size_t i = 3; i < sets.size(); ++i)
+            {
+                const auto slot = (int) (i - 3) % 3;
+                const auto slotMenu = ed.captureMenu (slot);
+                const auto header = headerOf (slotMenu);
+                const juce::PopupMenu::Item* pick = nullptr;
+                if (const auto* list = subMenuOf (slotMenu))
+                    for (juce::PopupMenu::MenuItemIterator it (*list); it.next();)
+                        if (it.getItem().text.startsWith (sets[i].name + ": "))
+                            pick = &it.getItem();
+                expect (pick != nullptr && pick->isEnabled && ! pick->isTicked, sets[i].name);
+                if (pick != nullptr && pick->action)
+                    pick->action();
+                waitForLoads (p);
+                expectEquals (modelPath (p, slot), sets[i].file.getFullPathName());
+                expect (! p.getStatus().modelError[(size_t) slot], p.getStatus().model[(size_t) slot]);
+                setParam (p, AmpSimProcessor::slotParamId, (float) slot);
+                const auto out = play (p, input);
+                ed.refresh();
+                expectEquals (amp.getModelText(), sets[i].name + " (built in, gain set)");
+                expectEquals (headerOf (ed.captureMenu (slot)), header);
+                expect (header.startsWith (juce::String (ui::materialName (ui::materialFor (slot)))), header);
+                expect (rms (out.left) > 1.0e-3, sets[i].name);
+                const auto* again = subMenuOf (ed.captureMenu (slot));
+                bool nowTicked = false;
+                if (again != nullptr)
+                    for (juce::PopupMenu::MenuItemIterator it (*again); it.next();)
+                        nowTicked = nowTicked || (it.getItem().isTicked && it.getItem().text.startsWith (sets[i].name + ": "));
+                expect (nowTicked, sets[i].name);
+                const auto png = proofDir().getChildFile ("default_captures/editor_amp_builtin_" + sets[i].name.toLowerCase() + ".png");
+                expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), png));
+                rows.add (sets[i].name + " in slot " + juce::String (slot + 1) + " (" + header + "): \"" + amp.getVoiceText() + "  Model " + amp.getModelText() + "\"");
+            }
+            logMessage ("  -> Built-in amps: " + items.joinIntoString (" | ") + "; loaded from the menu: " + rows.joinIntoString ("; ")
+                        + "; snapshots in default_captures/editor_amp_builtin_*.png");
+        }
+
         beginTest ("factory presets: renamed, and each loads the built-in captures and its bundled cab with no warnings");
         {
             const auto factory = presets::factoryPresets();

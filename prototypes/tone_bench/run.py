@@ -185,6 +185,105 @@ def worker(args):
     return row
 
 
+def oracle_worker(a):
+    """--oracle-only: a saved case (from --from) with its oracle configurations and estimates computed again
+    with the amps now available (--amps all: every built-in gain set). The matcher's results, the anchors, and
+    the ladder are kept as they were (the matcher still searches the three slot defaults); the case's earlier
+    oracle and estimates are kept as oracle_before and estimates_before."""
+    import estimates
+    spec, src, dst, split, workers = a
+    if dst.exists():
+        return json.loads(dst.read_text())
+    t0 = time.time()
+    row = json.loads(src.read_text())
+    data = cs.build(spec, separate)
+    perf = data["perf"]
+    ev, lay = mx.eval_signal(perf["c"], perf["c_onsets"])
+    tone_ev, full_ev = reference_for(spec, ev)
+    ref = mx.Reference(tone_ev, full_ev, lay)
+    cabs = rigs.searchable_irs(split)
+    pre = rigs.tone_rig(ev, spec, stages=("pedal", "amp", "cab", "eq"))
+    comp_level = 10 * np.log10(np.mean(mx.seg(pre, lay, "c") ** 2) + 1e-20)
+    ors = orc.all_oracles(ev, ref, spec, cabs, comp_level, workers)
+    row["oracle_before"] = row.get("oracle")
+    row["oracle"] = {k: dict(facets=v[0], settings=v[1], label=describe(v[1])) for k, v in ors.items()}
+    row["oracle_amps"] = list(tm.AMPS)
+    row["estimates_before"] = row.get("estimates")
+    row["estimates"] = estimates.estimate_case(row, split)
+    row["oracle_seconds"] = round(time.time() - t0, 1)
+    dst.write_text(json.dumps(row, indent=1, default=float))
+    print(f"  {spec['id']}: oracle again in {row['oracle_seconds']} s: space {row['oracle_before']['space']['facets']['combined']:.3f} -> "
+          f"{row['oracle']['space']['facets']['combined']:.3f} ({row['oracle']['space']['label']}), amp only "
+          f"{row['oracle_before']['amp_only']['facets']['combined']:.3f} -> {row['oracle']['amp_only']['facets']['combined']:.3f}", flush=True)
+    return row
+
+
+def coverage_report(rows, split, out_dir):
+    """--oracle-only's report: what the amps now available change in the oracle configurations and the error
+    decomposition (docs/TONE_MATCH.md, "Diagnosis"), against the saved run's."""
+    recombine(rows)
+    for r in rows:
+        for v in (r.get("oracle_before") or {}).values():
+            if isinstance(v.get("facets"), dict) and all(k in v["facets"] for k in mx.FACETS):
+                v["facets"]["combined"] = mx.combined(v["facets"])
+    m = lambda v: float(np.mean(v)) if v else float("nan")
+    get = lambda r, which, o: r[which][o]["facets"]["combined"]
+    lines = [f"# tone_bench coverage: {split.upper()}, the oracle with {', '.join(rows[0]['oracle_amps'])}", "",
+             f"{len(rows)} cases. Before: the saved run's oracle (the three slot defaults); after: every built-in gain set. "
+             "The matcher's results and the ladder are the saved run's (it still searches the three).", ""]
+    groups = {"all": rows}
+    for r in rows:
+        groups.setdefault(r["style"], []).append(r)
+    lines += ["| Group | n | L3 space before | after | L4 full before | after | amp only before | after | amp-only change |", "|---|---|---|---|---|---|---|---|---|"]
+    for g in ["all", "clean", "edge", "crunch", "high_gain", "lead"]:
+        rs = groups.get(g, [])
+        if not rs:
+            continue
+        cells = []
+        for o in ("space", "full", "amp_only"):
+            cells += [fmt(m([get(r, "oracle_before", o) for r in rs])), fmt(m([get(r, "oracle", o) for r in rs]))]
+        d = m([get(r, "oracle", "amp_only") - get(r, "oracle_before", "amp_only") for r in rs])
+        lines.append(f"| {g} | {len(rs)} | " + " | ".join(cells) + f" | {fmt(d)} |")
+    lines += ["", "Means (combined score). Medians, all cases: "
+              + ", ".join(f"{o} {fmt(med([get(r, 'oracle_before', o) for r in rows]))} -> {fmt(med([get(r, 'oracle', o) for r in rows]))}"
+                          for o in ("space", "full", "amp_only")), ""]
+    # The decomposition's last share: what's left at L4 (amp and cab coverage), before and after.
+    for cfg in ("same_clean", "any_clean"):
+        if cfg not in rows[0]["configs"]:
+            continue
+        l0 = m([r["configs"][cfg]["facets"]["combined"] for r in rows])
+        before, after = m([get(r, "oracle_before", "full") for r in rows]), m([get(r, "oracle", "full") for r in rows])
+        sp_b, sp_a = m([get(r, "oracle_before", "space") for r in rows]), m([get(r, "oracle", "space") for r in rows])
+        lines.append(f"- {cfg}: L0 {fmt(l0)}; left at L4 (amp and cab coverage) {fmt(before)} ({100 * before / l0:.0f}% of L0) -> {fmt(after)} "
+                     f"({100 * after / l0:.0f}%); L3 {fmt(sp_b)} -> {fmt(sp_a)}")
+    lines.append("")
+    # What the oracle picks now.
+    picks = {}
+    for o in ("space", "amp_only"):
+        for r in rows:
+            name = r["oracle_amps"][r["oracle"][o]["settings"]["slot"]]
+            picks.setdefault(o, {}).setdefault(name, 0)
+            picks[o][name] += 1
+    for o, counts in picks.items():
+        lines.append(f"- the oracle's {o} amp: " + ", ".join(f"{k} {v}" for k, v in sorted(counts.items(), key=lambda kv: -kv[1])))
+    top_b = sum(r["oracle_before"]["space"]["settings"]["gain"] >= 23.0 for r in rows)
+    top_a = sum(r["oracle"]["space"]["settings"]["gain"] >= 23.0 for r in rows)
+    lines += [f"- the in-space Gain at the top (+23 to 24 dB): {top_b} of {len(rows)} before, {top_a} after", ""]
+    lines += ["| Case | style | hidden amp | space before | after | amp only before | after |", "|---|---|---|---|---|---|---|"]
+    for r in rows:
+        lines.append(f"| {r['id']} | {r['style']} | {r['amp']} | {fmt(get(r, 'oracle_before', 'space'))} ({r['oracle_before']['space']['label']}) | "
+                     f"{fmt(get(r, 'oracle', 'space'))} ({r['oracle']['space']['label']}) | {fmt(get(r, 'oracle_before', 'amp_only'))} "
+                     f"({r['oracle_before']['amp_only']['label']}) | {fmt(get(r, 'oracle', 'amp_only'))} ({r['oracle']['amp_only']['label']}) |")
+    if all(r.get("estimates") and r.get("estimates_before") for r in rows):
+        lines += ["", "| Estimate | before | after (means) |", "|---|---|---|"]
+        for k in ("hires_pick", "hires_space", "hires_cab"):
+            lines.append(f"| {k} | {fmt(m([r['estimates_before'][k]['combined'] for r in rows]))} | {fmt(m([r['estimates'][k]['combined'] for r in rows]))} |")
+    lines.append("")
+    (out_dir / "coverage.md").write_text("\n".join(lines))
+    print("\n".join(lines))
+    print(f"wrote {out_dir / 'coverage.md'}")
+
+
 def estimate_worker(a):
     import estimates
     path, split = a
@@ -394,7 +493,16 @@ def main():
     ap.add_argument("--report", action="store_true")
     ap.add_argument("--estimates", action="store_true", help="the Round 2 what-ifs (estimates.py) on the saved cases, then the report")
     ap.add_argument("--out")
+    ap.add_argument("--amps", choices=["defaults", "all"], default="defaults",
+                    help="the amps the ORACLE may use: the three slot defaults, or every built-in gain set (the matcher searches the three either way)")
+    ap.add_argument("--oracle-only", action="store_true",
+                    help="with --from: the saved cases' oracle configurations and estimates again (with --amps), then coverage.md")
+    ap.add_argument("--from", dest="from_dir", help="a saved run's folder (e.g. build/tone_bench/dev_current)")
     args = ap.parse_args()
+    if args.amps == "all":
+        os.environ["TONE_BENCH_AMPS"] = "all"   # for the worker processes, which import common afresh
+        from common import use_all_amps
+        use_all_amps()
 
     if args.make_cases:
         specs = cs.make_specs()
@@ -431,6 +539,17 @@ def main():
         print("medians:", {k: round(float(np.median(v)), 2) for k, v in vals.items()})
         return
 
+    if args.oracle_only:
+        src_dir = pathlib.Path(args.from_dir) / "cases"
+        jobs = [(s, src_dir / f"{s['id']}.json", out_dir / "cases" / f"{s['id']}.json", args.split, args.render_workers)
+                for s in chosen if (src_dir / f"{s['id']}.json").exists()]
+        for spec in [j[0] for j in jobs]:
+            if spec["production"] == "mix":
+                cs.build(spec, separate)       # the stems first, one at a time (cached by the saved run, usually)
+        with concurrent.futures.ProcessPoolExecutor(max_workers=args.workers) as pool:
+            rows = list(pool.map(oracle_worker, jobs))
+        coverage_report(rows, args.split, out_dir)
+        return
     if args.estimates:
         paths = [out_dir / "cases" / f"{s['id']}.json" for s in chosen]
         with concurrent.futures.ProcessPoolExecutor(max_workers=args.workers) as pool:

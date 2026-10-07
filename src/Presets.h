@@ -5,6 +5,8 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include <vector>
+
 class AmpSimProcessor;
 
 /// Presets (BUILD_PLAN "Presets and scenes"): one JSON file per preset.
@@ -133,6 +135,19 @@ juce::String currentFactoryPresetName (const juce::String& name);
 juce::String builtInCaptureName (int slot);
 juce::String builtInCapturePath (int slot); ///< "factory:models/Glass/gainset.json", as a preset refers to it
 juce::File builtInCapture (int slot);       ///< that file in the app's content folder
+
+/// Every gain set that ships with the app (content/models/<Amp>/gainset.json): the three slot defaults first,
+/// in slot order (Glass, Ember, Monolith), then the others (Forge, Basalt, Comet, Quartz, Lantern since
+/// 2026-10-07; BUILD_PLAN "More built-in amps") by tone type (clean, overdrive, crunch, high gain, fuzz, as
+/// in NAM's metadata), then name. Read from the folder, so a set added to content/models shows up without a
+/// code change. Any slot can load any of them and keeps its head (the capture menu's "Built-in amps").
+/// Message thread (it reads each JSON).
+struct BuiltInAmp
+{
+    juce::String name, description, toneType;
+    juce::File file; ///< its gainset.json
+};
+std::vector<BuiltInAmp> builtInGainSets();
 
 /// The built-in captures used to be single files ("factory:models/Glass.nam"). For a reference to one of those
 /// (that factory path, or a saved absolute path ending in content/models/Glass.nam), the gain set that replaced

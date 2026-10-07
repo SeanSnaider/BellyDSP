@@ -27,8 +27,8 @@ crossover term and a single-time-constant sag). The benchmark only means somethi
            drive them hardest; one soft first stage, then two HARD-clipping stages (the algebraic sigmoid at
            k = 8, nearly a hard clip with a rounded knee); an active contour after the preamp (a 500 Hz cut);
            a stiff power amp with no sag.
-  basalt   Fat high gain. The lows pushed INTO the clippers (+3 dB shelf at 140 Hz, 20 Hz couplings), three
-           arctangent stages (the smoothest of the sigmoids: its harmonics fall off slowest in level and it
+  basalt   Fat high gain. The lows pushed INTO the clippers (+5 dB shelf at 140 Hz, 20 Hz couplings), three
+           biased arctangent stages (the smoothest of the sigmoids: its harmonics fall off slowest in level and it
            never flattens hard), a cathode follower that squashes only the positive swing before the tone
            stack (a passive FMV with our own values, the fattest of them), a power amp with 20 ms sag.
   comet    Saturated lead, pushed mids. +6 dB at 850 Hz and a 5.5 kHz roll-off before the gain, three
@@ -193,10 +193,10 @@ def _forge(x, fs, g, bass, mid, treble, master):
 
 
 def _basalt(x, fs, g, bass, mid, treble, master):
-    # Pre-distortion voicing: a gentle 45 Hz high-pass, the lows pushed (+3 dB below 140 Hz), a broad +3 dB at
+    # Pre-distortion voicing: only a 30 Hz high-pass, the lows pushed (+5 dB below 140 Hz), a broad +3 dB at
     # 650 Hz (Q 0.6).
-    x = filt(x, "highpass", 45.0, fs, q=0.707)
-    x = filt(x, "lowshelf", 140.0, fs, gain_db=3.0)
+    x = filt(x, "highpass", 30.0, fs, q=0.707)
+    x = filt(x, "lowshelf", 140.0, fs, gain_db=5.0)
     x = filt(x, "peak", 650.0, fs, q=0.6, gain_db=3.0)
     f = fs * OS
     u = resample_poly(x, OS, 1)
@@ -209,15 +209,16 @@ def _basalt(x, fs, g, bass, mid, treble, master):
     # compresses, y = u / (1 + 0.6 u) for u > 0; the negative swing passes.
     u = np.where(u > 0.0, u / (1.0 + 0.6 * np.maximum(u, 0.0)), u)
     u = 4.0 * fmv(u, f, "basalt", bass, mid, treble)        # the recovery stage after the passive stack's loss
-    # Stage 3: symmetric arctangent.
-    u = one_pole_lp(atan_clip(2.5 * u), 6000.0, f)
+    # Stage 3: an arctangent biased hard (0.4), so its asymmetry, and its even harmonics, survive even when the
+    # power amp saturates (a symmetric last stage made the top step converge on tone_bench's hg_fat: distinct.py).
+    u = one_pole_lp(biased(atan_clip, 2.5 * u, 0.4), 6000.0, f)
     # The power amp with sag: the clipping level r droops with the recent output power (20 ms),
     # r = 1 / (1 + 0.5 e), y = r atan_clip(w / r): a harder-driven chord clips lower and compresses.
     w = 1.5 * master_mult(master) * u
     r = 1.0 / (1.0 + 0.5 * envelope(w, 20.0, f))
     u = r * atan_clip(w / r)
     y = resample_poly(u, 1, OS)
-    y = filt(y, "peak", 85.0, fs, q=1.0, gain_db=3.0)      # resonance (the speaker's impedance peak, fed back)
+    y = filt(y, "peak", 70.0, fs, q=0.8, gain_db=4.0)      # resonance (the speaker's impedance peak, fed back)
     return one_pole_hp(y, 30.0, fs)
 
 
@@ -322,7 +323,7 @@ TAPER_KNOBS = amp_sim.TAPER_KNOBS
 # section's; for the others, the first stage's.
 CHANNELS = {
     "forge": dict(fn=_forge, gain_taper_db=[-33.8, -31.9, -29.3, -25.1, -10.3]),
-    "basalt": dict(fn=_basalt, gain_taper_db=[-26.9, -24.3, -20.8, -15.5, 1.0]),
+    "basalt": dict(fn=_basalt, gain_taper_db=[-26.4, -23.5, -19.9, -14.4, 1.7]),
     "comet": dict(fn=_comet, gain_taper_db=[-30.0, -27.9, -24.8, -19.6, 1.1]),
     "quartz": dict(fn=_quartz, gain_taper_db=[-25.1, -23.2, -20.7, -16.4, -1.8]),
     "lantern": dict(fn=_lantern, gain_taper_db=[-8.8, -4.3, -0.4, 4.0, 10.1]),

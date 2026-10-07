@@ -642,6 +642,19 @@ juce::PopupMenu AmpSimEditor::captureMenu (int slot)
         if (safe != nullptr)
             safe->ampSim.useBuiltInCapture (slot);
     });
+    // Every built-in amp (each a gain set), for any slot: the slot keeps its head and shows the set's name.
+    // The one playing is ticked.
+    juce::PopupMenu builtIns;
+    for (const auto& amp : presets::builtInGainSets())
+    {
+        const auto setFile = amp.file;
+        builtIns.addItem (amp.name + (amp.description.isNotEmpty() ? ": " + amp.description : juce::String()), true, file == setFile, [safe, slot, setFile]
+        {
+            if (safe != nullptr)
+                safe->ampSim.loadModel (slot, setFile);
+        });
+    }
+    menu.addSubMenu ("Built-in amps", builtIns, builtIns.getNumItems() > 0);
     menu.addItem ("Clear the slot (the DI passes through)", file != juce::File(), false, [safe, slot]
     {
         if (safe != nullptr)

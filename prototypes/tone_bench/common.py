@@ -40,6 +40,30 @@ NAM_EXAMPLES = REPO / "third_party/NeuralAmpModelerCore/example_models"
 tm.MODEL_FILES = GAIN_SETS
 tm.CACHE = CACHE / "matcher_renders"
 
+TONE_ORDER = ["clean", "overdrive", "crunch", "hi_gain", "fuzz"]
+
+
+def use_all_amps():
+    """Every built-in gain set in content/models available to the ORACLE (run.py --amps all): the three slot
+    defaults stay slots 0 to 2 (the matcher still searches only those, range(3) in tone_match.py), and the
+    others follow in the app's order (presets::builtInGainSets: by tone type, then name). Returns the names."""
+    extra = []
+    for js in sorted((REPO / "content/models").glob("*/gainset.json")):
+        name = js.parent.name
+        if name in tm.AMPS[:3]:
+            continue
+        tone = json.loads(js.read_text()).get("tone_type", "")
+        extra.append((TONE_ORDER.index(tone) if tone in TONE_ORDER else len(TONE_ORDER), name, js))
+    extra.sort()
+    tm.AMPS = list(tm.AMPS[:3]) + [n for _, n, _ in extra]
+    tm.MODEL_FILES = list(GAIN_SETS[:3]) + [js for _, _, js in extra]
+    return tm.AMPS
+
+
+# The worker processes import this module afresh, so the choice travels in the environment (run.py --amps).
+if os.environ.get("TONE_BENCH_AMPS") == "all":
+    use_all_amps()
+
 
 def key_of(*parts):
     h = hashlib.sha1()
