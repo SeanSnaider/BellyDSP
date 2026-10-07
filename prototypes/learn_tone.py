@@ -54,6 +54,8 @@ Usage (uv reads the dependencies from the header above; the first run builds a 1
   uv run prototypes/learn_tone.py <take folder>         # a take saved by the app's Match tone page, Save take
   uv run prototypes/learn_tone.py study [--quick] [--cases high_gain,crunch] [--json out.json]
   uv run prototypes/learn_tone.py probe <a.nam> ...     # the feel probe on captures (relative to the first)
+  uv run prototypes/learn_tone.py mask-study [--json out.json]   # the informed mask alone, and its variants
+  uv run prototypes/learn_tone.py informed-golden       # the C++ informed mask's fixture (tests/fixtures/informed_mask)
 
 The synthetic study needs the Release build of ampsim_render (cmake --build build -j): the current
 matcher renders through it, and so does the export check. Renders are cached in
@@ -433,7 +435,7 @@ def harmonic_bins(f0, freqs, harmonics=12, tolerance=0.03):
     return bins
 
 
-def align_notes(di, target, f0=None, onsets=None, band_seconds=tm.PLAY_ALONG_BAND_SECONDS, search_s=0.06, prior_s=0.03):
+def align_notes(di, target, f0=None, onsets=None, band_seconds=tm.PLAY_ALONG_BAND_SECONDS, search_s=0.06, prior_s=0.03, debug=None):
     """The take's notes and their partners in the target. Returns a list of notes, each a dict with the
     take's onset o and next onset, the target's onset t and next onset, the pitch f0, and the length L
     both have before either one's next note (the stretch the loss compares).
@@ -445,7 +447,8 @@ def align_notes(di, target, f0=None, onsets=None, band_seconds=tm.PLAY_ALONG_BAN
        the notes more than 0.7 s off; banded, 61 ms. Each take frame's mean partner, linearly interpolated, puts the onset in the target.
     3. The fine one: the target's onset strength over the bins near this note's first 12 harmonics, times
        a Gaussian prior (30 ms) around the DTW estimate, maximized within +-60 ms, minus the flux's own lag
-       measured on the DI (flux_lag). Onsets are kept in order, at least 20 ms apart."""
+       measured on the DI (flux_lag). Onsets are kept in order, at least 20 ms apart.
+    debug: a dict to fill with the intermediate values (the golden fixture for the C++ port)."""
     if onsets is None:
         onsets = detect_onsets(di)
     ends = np.append(onsets[1:], min(len(di), onsets[-1] + int(1.0 * SR)))
@@ -479,6 +482,8 @@ def align_notes(di, target, f0=None, onsets=None, band_seconds=tm.PLAY_ALONG_BAN
     for k in range(1, len(t_on)):
         t_on[k] = max(t_on[k], t_on[k - 1] + int(0.02 * SR))
     t_next = np.append(t_on[1:], min(len(target), t_on[-1] + int(1.0 * SR)))
+    if debug is not None:
+        debug.update(onsets=onsets, ends=ends, f0=f0, path=path, est=est, lag=lag, t_on=t_on, t_next=t_next)
     notes = []
     for k in range(len(onsets)):
         L = int(min(ends[k] - onsets[k], t_next[k] - t_on[k]))
@@ -493,6 +498,9 @@ def align_notes(di, target, f0=None, onsets=None, band_seconds=tm.PLAY_ALONG_BAN
 
 MASK_FFT, MASK_HOP = 4096, 512
 MASK_CENTS = 35.0
+# The app's mask (src/tonematch/InformedMask.*) also smooths along time over 5 frames (time_smooth 2): measured by
+# mask_study, +0.02 to +0.08 dB SI-SDR on all four cases, spectral distance unchanged. The study ran without it.
+APP_TIME_SMOOTH = 2
 
 
 def refine_pitch_in_target(target, note, freqs):
@@ -513,7 +521,7 @@ def refine_pitch_in_target(target, note, freqs):
     return note["f0"] * 2.0 ** (best_c / 1200.0)
 
 
-def informed_mask(target, notes, harmonics=40, floor=0.1):
+def informed_mask(target, notes, harmonics=40, floor=0.1, time_smooth=0, return_mask=False):
     """Keeps the target's energy near the played notes' harmonics: a soft mask on the STFT (4096 points,
     hop 512), M(t, f) = max over the notes sounding in frame t and their harmonics h of
         exp(-1/2 ((f - h f0) / sigma_h)^2),  sigma_h = max(h f0 (2^(35/1200) - 1), 1.5 bins),
@@ -524,13 +532,20 @@ def informed_mask(target, notes, harmonics=40, floor=0.1):
     STFT (overlap-add). A monophonic note through any distortion has only harmonics of its f0, so this
     keeps the lead and its distortion and drops the drums, the bass, and the other guitar between them
     (what's on top of a harmonic stays). Frames with no note are silenced. The notes' pitches come from the
-    take (McLeod), each refined against the target (refine_pitch_in_target)."""
+    take (McLeod), each refined against the target (refine_pitch_in_target).
+
+    time_smooth (frames, default 0: the mask as the study ran it): a variant that also smooths the mask along
+    time, a moving average over 2 time_smooth + 1 frames of each bin, floored again. mask_study measures it
+    (docs/TONE_MATCH.md, "Cleaning up the target with your take"). return_mask: also return the mask
+    (bins x frames) and the refined pitches."""
     f, t, Z = sps.stft(target, SR, nperseg=MASK_FFT, noverlap=MASK_FFT - MASK_HOP, boundary="zeros", padded=True)
     freqs = f
     mask = np.full(Z.shape, floor)
     bin_hz = SR / MASK_FFT
+    refined = []
     for note in notes:
         f0 = refine_pitch_in_target(target, note, freqs)
+        refined.append(f0)
         if f0 <= 0:
             continue
         start, end = note["t"], note["t_next"]
@@ -544,8 +559,125 @@ def informed_mask(target, notes, harmonics=40, floor=0.1):
             sigma = max(fh * (2.0 ** (MASK_CENTS / 1200.0) - 1.0), 1.5 * bin_hz)
             m = np.maximum(m, np.exp(-0.5 * ((freqs - fh) / sigma) ** 2))
         mask[:, cols] = np.maximum(mask[:, cols], m[:, None])
+    if time_smooth > 0:
+        k = np.ones(2 * time_smooth + 1) / (2 * time_smooth + 1)
+        mask = np.maximum(floor, np.apply_along_axis(lambda r: np.convolve(r, k, mode="same"), 1, mask))
     _, y = sps.istft(Z * mask, SR, nperseg=MASK_FFT, noverlap=MASK_FFT - MASK_HOP, boundary=True)
-    return np.concatenate([y, np.zeros(max(0, len(target) - len(y)))])[: len(target)]
+    y = np.concatenate([y, np.zeros(max(0, len(target) - len(y)))])[: len(target)]
+    return (y, mask, np.array(refined)) if return_mask else y
+
+
+def mask_study(args):
+    """The informed mask alone, on the study's separated stems (Demucs, cached by the study): separation
+    quality against the unmixed record (SI-SDR, and the matcher's long-term spectral distance) for the stem
+    as Demucs left it, the mask as the study ran it (the play-along band), the same with unbanded DTW (a
+    same-part DI that isn't a take of the section), and with the mask also smoothed along time over 3 and
+    5 frames (informed_mask's time_smooth). Prints a table; --json writes the rows."""
+    rows = []
+    cases = args.cases.split(",") if args.cases else list(RIGS)
+    for name in cases:
+        seed = 300 + sorted(RIGS).index(name)
+        sig = case_signals(name, seed)
+        record = rig_fx(name, rig_dry(name, sig["a"]), seed)
+        stem = separate(mix_song(record, seed))
+        onsets = detect_onsets(sig["b"])
+        banded = align_notes(sig["b"], stem, onsets=onsets)
+        unbanded = align_notes(sig["b"], stem, onsets=onsets, band_seconds=None)
+        variants = [("Demucs alone", None, {}), ("mask (study)", banded, {}), ("mask, unbanded DTW", unbanded, {}),
+                    ("mask, time-smoothed 3 frames", banded, dict(time_smooth=1)),
+                    ("mask, time-smoothed 5 frames", banded, dict(time_smooth=2))]
+        for label, notes, kw in variants:
+            y = stem if notes is None else informed_mask(stem, notes, **kw)
+            row = dict(case=name, variant=label, si_sdr=si_sdr(record, y), spectral=spectral_distance(record, y)[0],
+                       notes=0 if notes is None else len(notes))
+            rows.append(row)
+            print(f"| {name} | {label} | {row['notes']} | {row['si_sdr']:.2f} | {row['spectral']:.2f} |", flush=True)
+    if args.json:
+        pathlib.Path(args.json).write_text(json.dumps(rows, indent=1, default=float))
+
+
+GOLDEN_SECONDS = 6.0
+
+
+def write_pcm16(path, x):
+    """x scaled to a 0.9 peak as 16-bit PCM (the fixtures stay small); returns the scale."""
+    from scipy.io import wavfile
+    scale = 0.9 / float(np.max(np.abs(x)))
+    wavfile.write(path, SR, np.round(np.clip(x * scale, -1.0, 1.0) * 32767.0).astype(np.int16))
+    return scale
+
+
+def informed_golden(args):
+    """The golden fixture for the C++ informed mask (src/tonematch/InformedMask.*; tests/InformedMaskTests.cpp):
+    6 s of the crunch rig's record (lead_a, the target's guitarist) in the band (drums, bass, the rhythm
+    guitar; mix_song), and the player's take of the same notes (1% slower, 15 ms jitter, his own velocities,
+    a darker pick), as 16-bit WAVs; then everything computed on the files as read back, as the C++ reads
+    them: the take's flux peaks and onsets, the flux lag, each note's pitch, the DTW estimates within the
+    play-along band, the target onsets, the notes, the refined pitches, the mask (every frame's sum over the
+    bins and a few whole frames), and the masked output (masked.wav, at the scale given). Also the record
+    and the hidden rig on the take (oracle.wav: the ground truth for the end-to-end test), and the
+    separation measures against the record."""
+    out = pathlib.Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    seed = 321
+    n = int(GOLDEN_SECONDS * SR)
+    a, _, _ = perform(["lead_a"], seed)
+    b, b_on, _ = perform(["lead_a"], seed + 1000, tempo=0.99, jitter_ms=15.0, contour_scale=0.8, velocity_sd_db=2.5,
+                         brightness_shift=-0.08)
+    record = rig_dry("crunch", a)
+    mix = mix_song(record, seed)[:n]
+    b = b[:n]
+    files = {}
+    for name, x in [("di", b), ("target", mix), ("record", record[:n])]:
+        files[name] = write_pcm16(out / f"{name}.wav", x)
+    di = tm.read_wav(out / "di.wav")[1]
+    target = tm.read_wav(out / "target.wav")[1]
+    rec = tm.read_wav(out / "record.wav")[1]
+    files["oracle"] = write_pcm16(out / "oracle.wav", rig_dry("crunch", di)[:n])
+
+    peaks = flux_peaks(di)
+    debug = {}
+    notes = align_notes(di, target, band_seconds=tm.PLAY_ALONG_BAND_SECONDS, debug=debug)
+    masked, mask, refined = informed_mask(target, notes, time_smooth=APP_TIME_SMOOTH, return_mask=True)
+    _, raw_mask, _ = informed_mask(target, notes, return_mask=True)
+    files["masked"] = write_pcm16(out / "masked.wav", masked)
+    sample_frames = sorted({int(round((nt["t"] + nt["L"] / 2) / MASK_HOP)) for nt in notes[1::4]} | {2, mask.shape[1] - 3})
+    truth = b_on[b_on < n]
+    expected = dict(
+        seconds=GOLDEN_SECONDS, scales=files,
+        flux_peaks=peaks.tolist(), onsets=debug["onsets"].tolist(), truth_onsets=truth.tolist(), ends=debug["ends"].tolist(),
+        flux_lag=int(debug["lag"]), f0=debug["f0"].tolist(),
+        path_length=len(debug["path"]), path_checksum=int(np.sum(debug["path"][:, 0] * 7 + debug["path"][:, 1] * 13)),
+        est=debug["est"].tolist(), t_on=debug["t_on"].tolist(), t_next=debug["t_next"].tolist(),
+        notes=[dict(o=nt["o"], t=nt["t"], L=nt["L"], f0=nt["f0"], t_next=nt["t_next"]) for nt in notes],
+        refined_f0=refined.tolist(), mask_frames=mask.shape[1], mask_bins=mask.shape[0],
+        time_smooth=APP_TIME_SMOOTH, mask_frame_sums=[round(float(v), 6) for v in mask.sum(axis=0)],
+        raw_mask_frame_sums=[round(float(v), 6) for v in raw_mask.sum(axis=0)],
+        mask_columns={str(f): [round(float(v), 7) for v in mask[:, f]] for f in sample_frames},
+        si_sdr=dict(mix=si_sdr(rec, target), masked=si_sdr(rec, masked)),
+        spectral=dict(mix=spectral_distance(rec, target)[0], masked=spectral_distance(rec, masked)[0]),
+        onset_report=onset_report(debug["onsets"], truth))
+    # A case from the synthetic study itself, for the end-to-end test: the high-gain rig's record in the band,
+    # separated by Demucs (the study's cached stem), its first 6 s; the take (B) and the hidden rig on it.
+    seed = 300 + sorted(RIGS).index("high_gain")
+    sig = case_signals("high_gain", seed)
+    record_hg = rig_fx("high_gain", rig_dry("high_gain", sig["a"]), seed)
+    stem = separate(mix_song(record_hg, seed))
+    case = out / "separated_high_gain"
+    case.mkdir(exist_ok=True)
+    scales = {name: write_pcm16(case / f"{name}.wav", x[:n])
+              for name, x in [("di", sig["b"]), ("target", stem), ("record", record_hg)]}
+    di_hg = tm.read_wav(case / "di.wav")[1]
+    scales["oracle"] = write_pcm16(case / "oracle.wav", rig_dry("high_gain", di_hg)[:n])
+    rec_hg, tgt_hg = tm.read_wav(case / "record.wav")[1], tm.read_wav(case / "target.wav")[1]
+    masked_hg = informed_mask(tgt_hg, align_notes(di_hg, tgt_hg, band_seconds=tm.PLAY_ALONG_BAND_SECONDS), time_smooth=APP_TIME_SMOOTH)
+    expected["separated_high_gain"] = dict(scales=scales, si_sdr=dict(stem=si_sdr(rec_hg, tgt_hg), masked=si_sdr(rec_hg, masked_hg)),
+                                           spectral=dict(stem=spectral_distance(rec_hg, tgt_hg)[0], masked=spectral_distance(rec_hg, masked_hg)[0]))
+    (out / "expected.json").write_text(json.dumps(expected, indent=1, default=float))
+    print(f"separated_high_gain: SI-SDR {expected['separated_high_gain']['si_sdr']}, spectral {expected['separated_high_gain']['spectral']}")
+    print(f"wrote {out}: {len(debug['onsets'])} onsets (truth {len(truth)}), {len(notes)} notes, mask {mask.shape}, "
+          f"SI-SDR mix {expected['si_sdr']['mix']:.2f} -> masked {expected['si_sdr']['masked']:.2f} dB, spectral distance "
+          f"{expected['spectral']['mix']:.2f} -> {expected['spectral']['masked']:.2f} dB")
 
 
 # =====================================================================================================
@@ -1266,7 +1398,7 @@ def probe_files(args):
 
 
 def main():
-    if len(sys.argv) >= 2 and sys.argv[1] not in ("study", "probe", "report", "-h", "--help") and pathlib.Path(sys.argv[1]).is_dir():
+    if len(sys.argv) >= 2 and sys.argv[1] not in ("study", "probe", "report", "mask-study", "informed-golden", "-h", "--help") and pathlib.Path(sys.argv[1]).is_dir():
         sys.argv.insert(1, "take")
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -1285,6 +1417,11 @@ def main():
     tk.add_argument("--full-song", action="store_true", help="train on the section even if a stem exists")
     tk.add_argument("--mask", action="store_true", help="apply the informed harmonic mask to the target first")
     tk.add_argument("--latent", type=float, default=None, help="latent velocity weight (e.g. 0.02)")
+    ms = sub.add_parser("mask-study", help="the informed mask alone on the study's separated stems, and its variants")
+    ms.add_argument("--cases", help="comma-separated: " + ",".join(RIGS))
+    ms.add_argument("--json")
+    gd = sub.add_parser("informed-golden", help="write the C++ informed mask's golden fixture")
+    gd.add_argument("--out", default=str(REPO / "tests/fixtures/informed_mask"))
     rp = sub.add_parser("report", help="the table and the gate from a study's --json")
     rp.add_argument("json")
     pr = sub.add_parser("probe", help="the feel probe on .nam files")
@@ -1295,6 +1432,10 @@ def main():
         study(args)
     elif args.cmd == "take":
         take_folder(args)
+    elif args.cmd == "mask-study":
+        mask_study(args)
+    elif args.cmd == "informed-golden":
+        informed_golden(args)
     elif args.cmd == "report":
         report(args)
     else:
