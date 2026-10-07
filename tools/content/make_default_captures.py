@@ -396,7 +396,7 @@ def update_manifest(results):
                           + settings_text(spec, gain)
                           + f"; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, {epochs} epochs"
                           + (f", validation ESR {esr:.4f}" if esr is not None else "")
-                          + "; a stand-in until Sean's own captures"),
+                          + ("; a stand-in until Sean's own captures" if name in DEFAULT_SLOTS else "")),
             })
     manifest["files"] = sorted(others + entries, key=lambda f: f["path"])
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")

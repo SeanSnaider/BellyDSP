@@ -214,6 +214,106 @@
       "notes": "Original: handbook patch 4 (48 kHz folder). Renamed. Handbook p. 3: \"LICENSED 2022 UNDER: [CC0 Public Domain badge] CC0 (aka CC Zero) is a public dedication tool, which allows creators to give up their copyright and put their works into the worldwide public domain. CC0 allows reusers to distribute, remix, adapt, and build upon the material in any medium or format, with no conditions.\""
     },
     {
+      "path": "models/Basalt/Basalt, gain 0.nam",
+      "title": "Basalt, gain 0 (high gain, amp only)",
+      "description": "Built-in gain set (loads into any amp slot), step 1 of 5",
+      "author": "Sean Snaider",
+      "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
+      "license": "CC BY 4.0",
+      "license_file": "licenses/CC-BY-4.0.txt",
+      "notes": "A stand-in trained from BellyDSP's own gray-box model, a fat high gain (the lows into smooth arctangent stages, a cathode follower, power-amp sag) (prototypes/amp_voicings.py, basalt channel, gain 0 (first stage -26.4 dB), bass 5, mid 5, treble 5, master 5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0004"
+    },
+    {
+      "path": "models/Basalt/Basalt, gain 10.nam",
+      "title": "Basalt, gain 10 (high gain, amp only)",
+      "description": "Built-in gain set (loads into any amp slot), step 5 of 5",
+      "author": "Sean Snaider",
+      "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
+      "license": "CC BY 4.0",
+      "license_file": "licenses/CC-BY-4.0.txt",
+      "notes": "A stand-in trained from BellyDSP's own gray-box model, a fat high gain (the lows into smooth arctangent stages, a cathode follower, power-amp sag) (prototypes/amp_voicings.py, basalt channel, gain 10 (first stage +1.7 dB), bass 5, mid 5, treble 5, master 5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 200 epochs, validation ESR 0.0022"
+    },
+    {
+      "path": "models/Basalt/Basalt, gain 2.5.nam",
+      "title": "Basalt, gain 2.5 (high gain, amp only)",
+      "description": "Built-in gain set (loads into any amp slot), step 2 of 5",
+      "author": "Sean Snaider",
+      "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
+      "license": "CC BY 4.0",
+      "license_file": "licenses/CC-BY-4.0.txt",
+      "notes": "A stand-in trained from BellyDSP's own gray-box model, a fat high gain (the lows into smooth arctangent stages, a cathode follower, power-amp sag) (prototypes/amp_voicings.py, basalt channel, gain 2.5 (first stage -23.5 dB), bass 5, mid 5, treble 5, master 5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0006"
+    },
+    {
+      "path": "models/Basalt/Basalt, gain 5.nam",
+      "title": "Basalt, gain 5 (high gain, amp only)",
+      "description": "Built-in gain set (loads into any amp slot), step 3 of 5",
+      "author": "Sean Snaider",
+      "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
+      "license": "CC BY 4.0",
+      "license_file": "licenses/CC-BY-4.0.txt",
+      "notes": "A stand-in trained from BellyDSP's own gray-box model, a fat high gain (the lows into smooth arctangent stages, a cathode follower, power-amp sag) (prototypes/amp_voicings.py, basalt channel, gain 5 (first stage -19.9 dB), bass 5, mid 5, treble 5, master 5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0007"
+    },
+    {
+      "path": "models/Basalt/Basalt, gain 7.5.nam",
+      "title": "Basalt, gain 7.5 (high gain, amp only)",
+      "description": "Built-in gain set (loads into any amp slot), step 4 of 5",
+      "author": "Sean Snaider",
+      "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
+      "license": "CC BY 4.0",
+      "license_file": "licenses/CC-BY-4.0.txt",
+      "notes": "A stand-in trained from BellyDSP's own gray-box model, a fat high gain (the lows into smooth arctangent stages, a cathode follower, power-amp sag) (prototypes/amp_voicings.py, basalt channel, gain 7.5 (first stage -14.4 dB), bass 5, mid 5, treble 5, master 5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0011"
+    },
+    {
+      "path": "models/Comet/Comet, gain 0.nam",
+      "title": "Comet, gain 0 (high gain, amp only)",
+      "description": "Built-in gain set (loads into any amp slot), step 1 of 5",
+      "author": "Sean Snaider",
+      "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
+      "license": "CC BY 4.0",
+      "license_file": "licenses/CC-BY-4.0.txt",
+      "notes": "A stand-in trained from BellyDSP's own gray-box model, a saturated lead with pushed mids and a two-section power-amp sag (softer attack, long sustain) (prototypes/amp_voicings.py, comet channel, gain 0 (first stage -30.0 dB), bass 5, mid 5, treble 5, master 5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0007"
+    },
+    {
+      "path": "models/Comet/Comet, gain 10.nam",
+      "title": "Comet, gain 10 (high gain, amp only)",
+      "description": "Built-in gain set (loads into any amp slot), step 5 of 5",
+      "author": "Sean Snaider",
+      "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
+      "license": "CC BY 4.0",
+      "license_file": "licenses/CC-BY-4.0.txt",
+      "notes": "A stand-in trained from BellyDSP's own gray-box model, a saturated lead with pushed mids and a two-section power-amp sag (softer attack, long sustain) (prototypes/amp_voicings.py, comet channel, gain 10 (first stage +1.1 dB), bass 5, mid 5, treble 5, master 5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 200 epochs, validation ESR 0.0028"
+    },
+    {
+      "path": "models/Comet/Comet, gain 2.5.nam",
+      "title": "Comet, gain 2.5 (high gain, amp only)",
+      "description": "Built-in gain set (loads into any amp slot), step 2 of 5",
+      "author": "Sean Snaider",
+      "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
+      "license": "CC BY 4.0",
+      "license_file": "licenses/CC-BY-4.0.txt",
+      "notes": "A stand-in trained from BellyDSP's own gray-box model, a saturated lead with pushed mids and a two-section power-amp sag (softer attack, long sustain) (prototypes/amp_voicings.py, comet channel, gain 2.5 (first stage -27.9 dB), bass 5, mid 5, treble 5, master 5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0008"
+    },
+    {
+      "path": "models/Comet/Comet, gain 5.nam",
+      "title": "Comet, gain 5 (high gain, amp only)",
+      "description": "Built-in gain set (loads into any amp slot), step 3 of 5",
+      "author": "Sean Snaider",
+      "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
+      "license": "CC BY 4.0",
+      "license_file": "licenses/CC-BY-4.0.txt",
+      "notes": "A stand-in trained from BellyDSP's own gray-box model, a saturated lead with pushed mids and a two-section power-amp sag (softer attack, long sustain) (prototypes/amp_voicings.py, comet channel, gain 5 (first stage -24.8 dB), bass 5, mid 5, treble 5, master 5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0010"
+    },
+    {
+      "path": "models/Comet/Comet, gain 7.5.nam",
+      "title": "Comet, gain 7.5 (high gain, amp only)",
+      "description": "Built-in gain set (loads into any amp slot), step 4 of 5",
+      "author": "Sean Snaider",
+      "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
+      "license": "CC BY 4.0",
+      "license_file": "licenses/CC-BY-4.0.txt",
+      "notes": "A stand-in trained from BellyDSP's own gray-box model, a saturated lead with pushed mids and a two-section power-amp sag (softer attack, long sustain) (prototypes/amp_voicings.py, comet channel, gain 7.5 (first stage -19.6 dB), bass 5, mid 5, treble 5, master 5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0013"
+    },
+    {
       "path": "models/Ember/Ember, gain 0.nam",
       "title": "Ember, gain 0 (crunch, amp only)",
       "description": "Built-in gain set for amp slot 2, step 1 of 5",
@@ -221,7 +321,7 @@
       "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
       "license": "CC BY 4.0",
       "license_file": "licenses/CC-BY-4.0.txt",
-      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, crunch channel, gain 0 (first stage -15.8 dB), bass 5, mid 6, treble 5, master 3.5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0001; a stand-in until Sean's own captures"
+      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, crunch channel, gain 0 (first stage -15.8 dB), bass 5, mid 6, treble 5, master 3.5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs; a stand-in until Sean's own captures"
     },
     {
       "path": "models/Ember/Ember, gain 10.nam",
@@ -231,7 +331,7 @@
       "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
       "license": "CC BY 4.0",
       "license_file": "licenses/CC-BY-4.0.txt",
-      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, crunch channel, gain 10 (first stage +0.5 dB), bass 5, mid 6, treble 5, master 3.5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0006; a stand-in until Sean's own captures"
+      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, crunch channel, gain 10 (first stage +0.5 dB), bass 5, mid 6, treble 5, master 3.5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs; a stand-in until Sean's own captures"
     },
     {
       "path": "models/Ember/Ember, gain 2.5.nam",
@@ -241,7 +341,7 @@
       "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
       "license": "CC BY 4.0",
       "license_file": "licenses/CC-BY-4.0.txt",
-      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, crunch channel, gain 2.5 (first stage -13.3 dB), bass 5, mid 6, treble 5, master 3.5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0002; a stand-in until Sean's own captures"
+      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, crunch channel, gain 2.5 (first stage -13.3 dB), bass 5, mid 6, treble 5, master 3.5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs; a stand-in until Sean's own captures"
     },
     {
       "path": "models/Ember/Ember, gain 5.nam",
@@ -251,7 +351,7 @@
       "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
       "license": "CC BY 4.0",
       "license_file": "licenses/CC-BY-4.0.txt",
-      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, crunch channel, gain 5 (first stage -10.3 dB), bass 5, mid 6, treble 5, master 3.5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0002; a stand-in until Sean's own captures"
+      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, crunch channel, gain 5 (first stage -10.3 dB), bass 5, mid 6, treble 5, master 3.5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs; a stand-in until Sean's own captures"
     },
     {
       "path": "models/Ember/Ember, gain 7.5.nam",
@@ -261,7 +361,57 @@
       "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
       "license": "CC BY 4.0",
       "license_file": "licenses/CC-BY-4.0.txt",
-      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, crunch channel, gain 7.5 (first stage -6.2 dB), bass 5, mid 6, treble 5, master 3.5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0003; a stand-in until Sean's own captures"
+      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, crunch channel, gain 7.5 (first stage -6.2 dB), bass 5, mid 6, treble 5, master 3.5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs; a stand-in until Sean's own captures"
+    },
+    {
+      "path": "models/Forge/Forge, gain 0.nam",
+      "title": "Forge, gain 0 (high gain, amp only)",
+      "description": "Built-in gain set (loads into any amp slot), step 1 of 5",
+      "author": "Sean Snaider",
+      "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
+      "license": "CC BY 4.0",
+      "license_file": "licenses/CC-BY-4.0.txt",
+      "notes": "A stand-in trained from BellyDSP's own gray-box model, a tight modern high gain (a steep low cut and an upper-mid push before hard-clipping stages) (prototypes/amp_voicings.py, forge channel, gain 0 (first stage -33.8 dB), bass 5, mid 5, treble 5, master 5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0003"
+    },
+    {
+      "path": "models/Forge/Forge, gain 10.nam",
+      "title": "Forge, gain 10 (high gain, amp only)",
+      "description": "Built-in gain set (loads into any amp slot), step 5 of 5",
+      "author": "Sean Snaider",
+      "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
+      "license": "CC BY 4.0",
+      "license_file": "licenses/CC-BY-4.0.txt",
+      "notes": "A stand-in trained from BellyDSP's own gray-box model, a tight modern high gain (a steep low cut and an upper-mid push before hard-clipping stages) (prototypes/amp_voicings.py, forge channel, gain 10 (first stage -10.3 dB), bass 5, mid 5, treble 5, master 5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 200 epochs, validation ESR 0.0008"
+    },
+    {
+      "path": "models/Forge/Forge, gain 2.5.nam",
+      "title": "Forge, gain 2.5 (high gain, amp only)",
+      "description": "Built-in gain set (loads into any amp slot), step 2 of 5",
+      "author": "Sean Snaider",
+      "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
+      "license": "CC BY 4.0",
+      "license_file": "licenses/CC-BY-4.0.txt",
+      "notes": "A stand-in trained from BellyDSP's own gray-box model, a tight modern high gain (a steep low cut and an upper-mid push before hard-clipping stages) (prototypes/amp_voicings.py, forge channel, gain 2.5 (first stage -31.9 dB), bass 5, mid 5, treble 5, master 5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0003"
+    },
+    {
+      "path": "models/Forge/Forge, gain 5.nam",
+      "title": "Forge, gain 5 (high gain, amp only)",
+      "description": "Built-in gain set (loads into any amp slot), step 3 of 5",
+      "author": "Sean Snaider",
+      "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
+      "license": "CC BY 4.0",
+      "license_file": "licenses/CC-BY-4.0.txt",
+      "notes": "A stand-in trained from BellyDSP's own gray-box model, a tight modern high gain (a steep low cut and an upper-mid push before hard-clipping stages) (prototypes/amp_voicings.py, forge channel, gain 5 (first stage -29.3 dB), bass 5, mid 5, treble 5, master 5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0004"
+    },
+    {
+      "path": "models/Forge/Forge, gain 7.5.nam",
+      "title": "Forge, gain 7.5 (high gain, amp only)",
+      "description": "Built-in gain set (loads into any amp slot), step 4 of 5",
+      "author": "Sean Snaider",
+      "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
+      "license": "CC BY 4.0",
+      "license_file": "licenses/CC-BY-4.0.txt",
+      "notes": "A stand-in trained from BellyDSP's own gray-box model, a tight modern high gain (a steep low cut and an upper-mid push before hard-clipping stages) (prototypes/amp_voicings.py, forge channel, gain 7.5 (first stage -25.1 dB), bass 5, mid 5, treble 5, master 5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0007"
     },
     {
       "path": "models/Glass/Glass, gain 0.nam",
@@ -271,7 +421,7 @@
       "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
       "license": "CC BY 4.0",
       "license_file": "licenses/CC-BY-4.0.txt",
-      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, clean channel, gain 0 (first stage -10.2 dB), bass 5, mid 5, treble 6, master 4; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0005; a stand-in until Sean's own captures"
+      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, clean channel, gain 0 (first stage -10.2 dB), bass 5, mid 5, treble 6, master 4; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs; a stand-in until Sean's own captures"
     },
     {
       "path": "models/Glass/Glass, gain 10.nam",
@@ -281,7 +431,7 @@
       "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
       "license": "CC BY 4.0",
       "license_file": "licenses/CC-BY-4.0.txt",
-      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, clean channel, gain 10 (first stage +2.9 dB), bass 5, mid 5, treble 6, master 4; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0003; a stand-in until Sean's own captures"
+      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, clean channel, gain 10 (first stage +2.9 dB), bass 5, mid 5, treble 6, master 4; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs; a stand-in until Sean's own captures"
     },
     {
       "path": "models/Glass/Glass, gain 2.5.nam",
@@ -291,7 +441,7 @@
       "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
       "license": "CC BY 4.0",
       "license_file": "licenses/CC-BY-4.0.txt",
-      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, clean channel, gain 2.5 (first stage -5.7 dB), bass 5, mid 5, treble 6, master 4; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0002; a stand-in until Sean's own captures"
+      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, clean channel, gain 2.5 (first stage -5.7 dB), bass 5, mid 5, treble 6, master 4; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs; a stand-in until Sean's own captures"
     },
     {
       "path": "models/Glass/Glass, gain 5.nam",
@@ -301,7 +451,7 @@
       "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
       "license": "CC BY 4.0",
       "license_file": "licenses/CC-BY-4.0.txt",
-      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, clean channel, gain 5 (first stage -2.8 dB), bass 5, mid 5, treble 6, master 4; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0002; a stand-in until Sean's own captures"
+      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, clean channel, gain 5 (first stage -2.8 dB), bass 5, mid 5, treble 6, master 4; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs; a stand-in until Sean's own captures"
     },
     {
       "path": "models/Glass/Glass, gain 7.5.nam",
@@ -311,7 +461,57 @@
       "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
       "license": "CC BY 4.0",
       "license_file": "licenses/CC-BY-4.0.txt",
-      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, clean channel, gain 7.5 (first stage -0.1 dB), bass 5, mid 5, treble 6, master 4; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0001; a stand-in until Sean's own captures"
+      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, clean channel, gain 7.5 (first stage -0.1 dB), bass 5, mid 5, treble 6, master 4; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs; a stand-in until Sean's own captures"
+    },
+    {
+      "path": "models/Lantern/Lantern, gain 0.nam",
+      "title": "Lantern, gain 0 (crunch, amp only)",
+      "description": "Built-in gain set (loads into any amp slot), step 1 of 5",
+      "author": "Sean Snaider",
+      "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
+      "license": "CC BY 4.0",
+      "license_file": "licenses/CC-BY-4.0.txt",
+      "notes": "A stand-in trained from BellyDSP's own gray-box model, a power-amp-driven edge of breakup to crunch (the gain drives a push-pull output pair with sag) (prototypes/amp_voicings.py, lantern channel, gain 0 (power section -8.8 dB), bass 5, mid 5, treble 5, master 5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0002"
+    },
+    {
+      "path": "models/Lantern/Lantern, gain 10.nam",
+      "title": "Lantern, gain 10 (crunch, amp only)",
+      "description": "Built-in gain set (loads into any amp slot), step 5 of 5",
+      "author": "Sean Snaider",
+      "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
+      "license": "CC BY 4.0",
+      "license_file": "licenses/CC-BY-4.0.txt",
+      "notes": "A stand-in trained from BellyDSP's own gray-box model, a power-amp-driven edge of breakup to crunch (the gain drives a push-pull output pair with sag) (prototypes/amp_voicings.py, lantern channel, gain 10 (power section +10.1 dB), bass 5, mid 5, treble 5, master 5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0004"
+    },
+    {
+      "path": "models/Lantern/Lantern, gain 2.5.nam",
+      "title": "Lantern, gain 2.5 (crunch, amp only)",
+      "description": "Built-in gain set (loads into any amp slot), step 2 of 5",
+      "author": "Sean Snaider",
+      "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
+      "license": "CC BY 4.0",
+      "license_file": "licenses/CC-BY-4.0.txt",
+      "notes": "A stand-in trained from BellyDSP's own gray-box model, a power-amp-driven edge of breakup to crunch (the gain drives a push-pull output pair with sag) (prototypes/amp_voicings.py, lantern channel, gain 2.5 (power section -4.3 dB), bass 5, mid 5, treble 5, master 5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0004"
+    },
+    {
+      "path": "models/Lantern/Lantern, gain 5.nam",
+      "title": "Lantern, gain 5 (crunch, amp only)",
+      "description": "Built-in gain set (loads into any amp slot), step 3 of 5",
+      "author": "Sean Snaider",
+      "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
+      "license": "CC BY 4.0",
+      "license_file": "licenses/CC-BY-4.0.txt",
+      "notes": "A stand-in trained from BellyDSP's own gray-box model, a power-amp-driven edge of breakup to crunch (the gain drives a push-pull output pair with sag) (prototypes/amp_voicings.py, lantern channel, gain 5 (power section -0.4 dB), bass 5, mid 5, treble 5, master 5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0003"
+    },
+    {
+      "path": "models/Lantern/Lantern, gain 7.5.nam",
+      "title": "Lantern, gain 7.5 (crunch, amp only)",
+      "description": "Built-in gain set (loads into any amp slot), step 4 of 5",
+      "author": "Sean Snaider",
+      "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
+      "license": "CC BY 4.0",
+      "license_file": "licenses/CC-BY-4.0.txt",
+      "notes": "A stand-in trained from BellyDSP's own gray-box model, a power-amp-driven edge of breakup to crunch (the gain drives a push-pull output pair with sag) (prototypes/amp_voicings.py, lantern channel, gain 7.5 (power section +4.0 dB), bass 5, mid 5, treble 5, master 5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0003"
     },
     {
       "path": "models/Monolith/Monolith, gain 0.nam",
@@ -321,7 +521,7 @@
       "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
       "license": "CC BY 4.0",
       "license_file": "licenses/CC-BY-4.0.txt",
-      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, the app's Screamer boost (TS808 at minimum drive, tone noon, level +6 dB) into the lead channel, gain 0 (first stage -36.4 dB), bass 4, mid 6, treble 6, master 2; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 200 epochs, validation ESR 0.0003; a stand-in until Sean's own captures"
+      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, the app's Screamer boost (TS808 at minimum drive, tone noon, level +6 dB) into the lead channel, gain 0 (first stage -36.4 dB), bass 4, mid 6, treble 6, master 2; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 200 epochs; a stand-in until Sean's own captures"
     },
     {
       "path": "models/Monolith/Monolith, gain 10.nam",
@@ -331,7 +531,7 @@
       "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
       "license": "CC BY 4.0",
       "license_file": "licenses/CC-BY-4.0.txt",
-      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, the app's Screamer boost (TS808 at minimum drive, tone noon, level +6 dB) into the lead channel, gain 10 (first stage -12.1 dB), bass 4, mid 6, treble 6, master 2; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 200 epochs, validation ESR 0.0010; a stand-in until Sean's own captures"
+      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, the app's Screamer boost (TS808 at minimum drive, tone noon, level +6 dB) into the lead channel, gain 10 (first stage -12.1 dB), bass 4, mid 6, treble 6, master 2; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 200 epochs; a stand-in until Sean's own captures"
     },
     {
       "path": "models/Monolith/Monolith, gain 2.5.nam",
@@ -341,7 +541,7 @@
       "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
       "license": "CC BY 4.0",
       "license_file": "licenses/CC-BY-4.0.txt",
-      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, the app's Screamer boost (TS808 at minimum drive, tone noon, level +6 dB) into the lead channel, gain 2.5 (first stage -32.8 dB), bass 4, mid 6, treble 6, master 2; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 200 epochs, validation ESR 0.0004; a stand-in until Sean's own captures"
+      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, the app's Screamer boost (TS808 at minimum drive, tone noon, level +6 dB) into the lead channel, gain 2.5 (first stage -32.8 dB), bass 4, mid 6, treble 6, master 2; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 200 epochs; a stand-in until Sean's own captures"
     },
     {
       "path": "models/Monolith/Monolith, gain 5.nam",
@@ -351,7 +551,7 @@
       "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
       "license": "CC BY 4.0",
       "license_file": "licenses/CC-BY-4.0.txt",
-      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, the app's Screamer boost (TS808 at minimum drive, tone noon, level +6 dB) into the lead channel, gain 5 (first stage -29.1 dB), bass 4, mid 6, treble 6, master 2; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 200 epochs, validation ESR 0.0005; a stand-in until Sean's own captures"
+      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, the app's Screamer boost (TS808 at minimum drive, tone noon, level +6 dB) into the lead channel, gain 5 (first stage -29.1 dB), bass 4, mid 6, treble 6, master 2; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 200 epochs; a stand-in until Sean's own captures"
     },
     {
       "path": "models/Monolith/Monolith, gain 7.5.nam",
@@ -361,7 +561,57 @@
       "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
       "license": "CC BY 4.0",
       "license_file": "licenses/CC-BY-4.0.txt",
-      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, the app's Screamer boost (TS808 at minimum drive, tone noon, level +6 dB) into the lead channel, gain 7.5 (first stage -24.1 dB), bass 4, mid 6, treble 6, master 2; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 200 epochs, validation ESR 0.0005; a stand-in until Sean's own captures"
+      "notes": "Trained from BellyDSP's own gray-box reference amp (prototypes/amp_sim.py, the app's Screamer boost (TS808 at minimum drive, tone noon, level +6 dB) into the lead channel, gain 7.5 (first stage -24.1 dB), bass 4, mid 6, treble 6, master 2; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 200 epochs; a stand-in until Sean's own captures"
+    },
+    {
+      "path": "models/Quartz/Quartz, gain 0.nam",
+      "title": "Quartz, gain 0 (high gain, amp only)",
+      "description": "Built-in gain set (loads into any amp slot), step 1 of 5",
+      "author": "Sean Snaider",
+      "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
+      "license": "CC BY 4.0",
+      "license_file": "licenses/CC-BY-4.0.txt",
+      "notes": "A stand-in trained from BellyDSP's own gray-box model, a scooped, bright saturated lead (the tone stack before the gain, symmetric cubic clippers) (prototypes/amp_voicings.py, quartz channel, gain 0 (first stage -25.1 dB), bass 5, mid 5, treble 5, master 5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0006"
+    },
+    {
+      "path": "models/Quartz/Quartz, gain 10.nam",
+      "title": "Quartz, gain 10 (high gain, amp only)",
+      "description": "Built-in gain set (loads into any amp slot), step 5 of 5",
+      "author": "Sean Snaider",
+      "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
+      "license": "CC BY 4.0",
+      "license_file": "licenses/CC-BY-4.0.txt",
+      "notes": "A stand-in trained from BellyDSP's own gray-box model, a scooped, bright saturated lead (the tone stack before the gain, symmetric cubic clippers) (prototypes/amp_voicings.py, quartz channel, gain 10 (first stage -1.8 dB), bass 5, mid 5, treble 5, master 5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 200 epochs, validation ESR 0.0009"
+    },
+    {
+      "path": "models/Quartz/Quartz, gain 2.5.nam",
+      "title": "Quartz, gain 2.5 (high gain, amp only)",
+      "description": "Built-in gain set (loads into any amp slot), step 2 of 5",
+      "author": "Sean Snaider",
+      "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
+      "license": "CC BY 4.0",
+      "license_file": "licenses/CC-BY-4.0.txt",
+      "notes": "A stand-in trained from BellyDSP's own gray-box model, a scooped, bright saturated lead (the tone stack before the gain, symmetric cubic clippers) (prototypes/amp_voicings.py, quartz channel, gain 2.5 (first stage -23.2 dB), bass 5, mid 5, treble 5, master 5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0006"
+    },
+    {
+      "path": "models/Quartz/Quartz, gain 5.nam",
+      "title": "Quartz, gain 5 (high gain, amp only)",
+      "description": "Built-in gain set (loads into any amp slot), step 3 of 5",
+      "author": "Sean Snaider",
+      "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
+      "license": "CC BY 4.0",
+      "license_file": "licenses/CC-BY-4.0.txt",
+      "notes": "A stand-in trained from BellyDSP's own gray-box model, a scooped, bright saturated lead (the tone stack before the gain, symmetric cubic clippers) (prototypes/amp_voicings.py, quartz channel, gain 5 (first stage -20.7 dB), bass 5, mid 5, treble 5, master 5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0005"
+    },
+    {
+      "path": "models/Quartz/Quartz, gain 7.5.nam",
+      "title": "Quartz, gain 7.5 (high gain, amp only)",
+      "description": "Built-in gain set (loads into any amp slot), step 4 of 5",
+      "author": "Sean Snaider",
+      "source": "Made for BellyDSP by tools/content/make_default_captures.py (https://github.com/SeanSnaider/BellyDSP)",
+      "license": "CC BY 4.0",
+      "license_file": "licenses/CC-BY-4.0.txt",
+      "notes": "A stand-in trained from BellyDSP's own gray-box model, a scooped, bright saturated lead (the tone stack before the gain, symmetric cubic clippers) (prototypes/amp_voicings.py, quartz channel, gain 7.5 (first stage -16.4 dB), bass 5, mid 5, treble 5, master 5; amp only, no cab) with neural-amp-modeler 0.12.3, standard WaveNet, 100 epochs, validation ESR 0.0006"
     }
   ]
 }
