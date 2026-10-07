@@ -191,7 +191,7 @@ def oracle_worker(a):
     the ladder are kept as they were (the matcher still searches the three slot defaults); the case's earlier
     oracle and estimates are kept as oracle_before and estimates_before."""
     import estimates
-    spec, src, dst, split, workers = a
+    spec, src, dst, split, workers, matcher_configs = a
     if dst.exists():
         return json.loads(dst.read_text())
     t0 = time.time()
@@ -210,6 +210,12 @@ def oracle_worker(a):
     row["oracle_amps"] = list(tm.AMPS)
     row["estimates_before"] = row.get("estimates")
     row["estimates"] = estimates.estimate_case(row, split)
+    # The matcher itself over every amp (matcher.run_all_amps: tone_match.py unchanged, three amps at a time).
+    row["configs_all"] = {}
+    for cfg in matcher_configs:
+        r, used, score = mt.run_all_amps(data["target"], perf["b"], cfg, split, workers)
+        s = mt.result_settings(r)
+        row["configs_all"][cfg] = dict(facets=mx.facets(ref, mt.render_settings(ev, s)), settings=s, label=describe(s), objective=score)
     row["oracle_seconds"] = round(time.time() - t0, 1)
     dst.write_text(json.dumps(row, indent=1, default=float))
     print(f"  {spec['id']}: oracle again in {row['oracle_seconds']} s: space {row['oracle_before']['space']['facets']['combined']:.3f} -> "
@@ -223,7 +229,7 @@ def coverage_report(rows, split, out_dir):
     decomposition (docs/TONE_MATCH.md, "Diagnosis"), against the saved run's."""
     recombine(rows)
     for r in rows:
-        for v in (r.get("oracle_before") or {}).values():
+        for v in list((r.get("oracle_before") or {}).values()) + list((r.get("configs_all") or {}).values()):
             if isinstance(v.get("facets"), dict) and all(k in v["facets"] for k in mx.FACETS):
                 v["facets"]["combined"] = mx.combined(v["facets"])
     m = lambda v: float(np.mean(v)) if v else float("nan")
@@ -247,6 +253,27 @@ def coverage_report(rows, split, out_dir):
     lines += ["", "Means (combined score). Medians, all cases: "
               + ", ".join(f"{o} {fmt(med([get(r, 'oracle_before', o) for r in rows]))} -> {fmt(med([get(r, 'oracle', o) for r in rows]))}"
                           for o in ("space", "full", "amp_only")), ""]
+    cfgs_all = [c for c in rows[0].get("configs_all", {})]
+    if cfgs_all:
+        lines += ["The matcher itself searching every amp (matcher.run_all_amps), against Round 1's three:", "",
+                  "| Config | group | n | before (mean) | after (mean) | before (median) | after (median) | better / worse |", "|---|---|---|---|---|---|---|---|"]
+        for cfg in cfgs_all:
+            for g in ["all", "clean", "edge", "crunch", "high_gain", "lead"]:
+                rs = groups.get(g, [])
+                if not rs:
+                    continue
+                b = [r["configs"][cfg]["facets"]["combined"] for r in rs]
+                a = [r["configs_all"][cfg]["facets"]["combined"] for r in rs]
+                better = sum(x < y - 1e-9 for x, y in zip(a, b))
+                worse = sum(x > y + 1e-9 for x, y in zip(a, b))
+                lines.append(f"| {cfg} | {g} | {len(rs)} | {fmt(m(b))} | {fmt(m(a))} | {fmt(med(b))} | {fmt(med(a))} | {better} / {worse} |")
+        lines.append("")
+        for cfg in cfgs_all:
+            counts = {}
+            for r in rows:
+                counts[r["oracle_amps"][r["configs_all"][cfg]["settings"]["slot"]]] = counts.get(r["oracle_amps"][r["configs_all"][cfg]["settings"]["slot"]], 0) + 1
+            lines.append(f"- the matcher's amp ({cfg}): " + ", ".join(f"{k} {v}" for k, v in sorted(counts.items(), key=lambda kv: -kv[1])))
+        lines.append("")
     # The decomposition's last share: what's left at L4 (amp and cab coverage), before and after.
     for cfg in ("same_clean", "any_clean"):
         if cfg not in rows[0]["configs"]:
@@ -541,7 +568,8 @@ def main():
 
     if args.oracle_only:
         src_dir = pathlib.Path(args.from_dir) / "cases"
-        jobs = [(s, src_dir / f"{s['id']}.json", out_dir / "cases" / f"{s['id']}.json", args.split, args.render_workers)
+        mcfgs = [c for c in args.config.split(",") if c] if args.config != ",".join(mt.CONFIGS) else ["any_raw", "same_clean"]
+        jobs = [(s, src_dir / f"{s['id']}.json", out_dir / "cases" / f"{s['id']}.json", args.split, args.render_workers, mcfgs)
                 for s in chosen if (src_dir / f"{s['id']}.json").exists()]
         for spec in [j[0] for j in jobs]:
             if spec["production"] == "mix":
