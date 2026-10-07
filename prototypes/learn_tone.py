@@ -1,9 +1,9 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
 # /// script
 # requires-python = ">=3.11,<3.13"
 # dependencies = ["neural-amp-modeler==0.12.3", "numpy", "scipy", "demucs"]
 # ///
-# SPDX-License-Identifier: AGPL-3.0-or-later
-# Copyright (C) 2026 Sean Snaider
 
 """
 Learning a capture from the song itself: prototype and synthetic study (docs/TONE_MATCH.md, "Learning a

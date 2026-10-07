@@ -1,0 +1,3660 @@
+[
+ {
+  "id": "clean_00",
+  "index": 0,
+  "style": "clean",
+  "production": "dry",
+  "split": "dev",
+  "seed": 1000,
+  "score_seed": 10001,
+  "c_seed": 10002,
+  "guitar_a": 10003,
+  "guitar_b": 10004,
+  "nl_target": -33.65489169255937,
+  "amp": {
+   "kind": "graybox",
+   "name": "clean_two_stage",
+   "knobs": {
+    "bass": 5.085542951900251,
+    "mid": 5.415367388025318,
+    "treble": 5.648296290627889,
+    "master_db": -1.780512344731927
+   },
+   "drive_db": -6.796875,
+   "nl_reached": -33.66984639069321
+  },
+  "pedal": {
+   "kind": "comp",
+   "threshold": -38.62145281629778,
+   "ratio": 6.76840776095797,
+   "release": 246.88450864817926,
+   "makeup": 9.182332454250332
+  },
+  "cab": {
+   "base": 20,
+   "base_name": "Vintage 4x12, supercardioid, upper",
+   "mods": [
+    [
+     "small_speaker",
+     {
+      "hp": 116.79988663784928,
+      "peak_f": 1780.3828299787883,
+      "peak_db": 2.4078264685484028
+     }
+    ],
+    [
+     "mic_distance",
+     {
+      "delay_ms": 1.712635839450154,
+      "gain": 0.363151078965514,
+      "hf_loss_db": 2.7470188218711624
+     }
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    108.73818903535835,
+    0.0,
+    0.7071
+   ],
+   [
+    "lowshelf",
+    183.89071304441256,
+    -0.31655131865387554,
+    0.7071
+   ],
+   [
+    "peak",
+    212.27513662314044,
+    2.83432813825808,
+    1.1173362857803117
+   ],
+   [
+    "peak",
+    4934.950016702971,
+    -1.9775761152641587,
+    1.1461717955056792
+   ]
+  ],
+  "bus_comp": null,
+  "time_fx": null,
+  "limiter": null,
+  "codec": null
+ },
+ {
+  "id": "clean_01",
+  "index": 1,
+  "style": "clean",
+  "production": "dry",
+  "split": "dev",
+  "seed": 1001,
+  "score_seed": 10011,
+  "c_seed": 10012,
+  "guitar_a": 10013,
+  "guitar_b": 10014,
+  "nl_target": -32.64886085716059,
+  "amp": {
+   "kind": "nam",
+   "name": "nam_lstm",
+   "drive_db": 30.0,
+   "nl_reached": -35.90722649999263
+  },
+  "pedal": {
+   "kind": "comp",
+   "threshold": -39.747725077416845,
+   "ratio": 7.289450322705624,
+   "release": 137.52568588159727,
+   "makeup": 5.206541466672545
+  },
+  "cab": {
+   "base": 10,
+   "base_name": "Modern 4x12, dynamic, bright 60 W, var. 2",
+   "mods": [
+    [
+     "resonance_shift",
+     {
+      "alpha": 0.8631928388017992
+     }
+    ],
+    [
+     "small_speaker",
+     {
+      "hp": 120.60612844723758,
+      "peak_f": 1753.4679147405475,
+      "peak_db": 2.981241967578998
+     }
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    70.55413674306133,
+    0.0,
+    0.7071
+   ],
+   [
+    "peak",
+    4465.05462955756,
+    -2.204150368640699,
+    1.0458741450410094
+   ]
+  ],
+  "bus_comp": null,
+  "time_fx": null,
+  "limiter": null,
+  "codec": null
+ },
+ {
+  "id": "clean_02",
+  "index": 2,
+  "style": "clean",
+  "production": "dry",
+  "split": "test",
+  "seed": 1002,
+  "score_seed": 10021,
+  "c_seed": 10022,
+  "guitar_a": 10023,
+  "guitar_b": 10024,
+  "nl_target": -35.95442575840556,
+  "amp": {
+   "kind": "graybox",
+   "name": "clean_two_stage",
+   "knobs": {
+    "bass": 4.523284637932464,
+    "mid": 4.428757350683788,
+    "treble": 6.616643109738669,
+    "master_db": -0.6630484853705307
+   },
+   "drive_db": -13.453125,
+   "nl_reached": -35.98916987692575
+  },
+  "pedal": null,
+  "cab": {
+   "base": 9,
+   "base_name": "Modern 4x12, dynamic, bright 60 W, var. 1",
+   "mods": [
+    [
+     "big_cab",
+     {
+      "f": 99.09450201128561,
+      "db": 4.857702905996524
+     }
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    77.39566008533573,
+    0.0,
+    0.7071
+   ],
+   [
+    "lowshelf",
+    218.77032265699668,
+    -1.3015406372138691,
+    0.7071
+   ],
+   [
+    "peak",
+    223.05014142978288,
+    -4.359885306451036,
+    0.8873497902369423
+   ],
+   [
+    "peak",
+    338.14152012001193,
+    -4.150814651613934,
+    1.1325253286064088
+   ]
+  ],
+  "bus_comp": null,
+  "time_fx": null,
+  "limiter": null,
+  "codec": null
+ },
+ {
+  "id": "clean_03",
+  "index": 3,
+  "style": "clean",
+  "production": "fx",
+  "split": "dev",
+  "seed": 1003,
+  "score_seed": 10031,
+  "c_seed": 10032,
+  "guitar_a": 10033,
+  "guitar_b": 10034,
+  "nl_target": -30.974645659887077,
+  "amp": {
+   "kind": "graybox",
+   "name": "clean_active",
+   "knobs": {
+    "bass": 3.7510294730745337,
+    "mid": 4.026823240875288,
+    "treble": 5.73137764516098,
+    "master_db": 0.9647493449051117
+   },
+   "drive_db": -2.859375,
+   "nl_reached": -31.013342665789597
+  },
+  "pedal": null,
+  "cab": {
+   "base": 4,
+   "base_name": "Modern 4x12, blend, dark 60 W + 75 W",
+   "mods": [
+    [
+     "off_axis",
+     {
+      "f": 4266.760351166772,
+      "db": 4.302208412794035
+     }
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    67.03501546975497,
+    0.0,
+    0.7071
+   ],
+   [
+    "highshelf",
+    9314.453855850423,
+    -1.2733199704201272,
+    0.7071
+   ],
+   [
+    "highshelf",
+    5573.8028907221615,
+    -0.2509158458183439,
+    0.7071
+   ],
+   [
+    "lowshelf",
+    199.57844252084098,
+    -2.3437348125566135,
+    0.7071
+   ]
+  ],
+  "bus_comp": null,
+  "time_fx": {
+   "kind": "slap",
+   "delay_ms": 122.68219201402273,
+   "mix_db": -9.660046438455435
+  },
+  "limiter": null,
+  "codec": {
+   "kind": "aac",
+   "kbps": 192
+  }
+ },
+ {
+  "id": "clean_04",
+  "index": 4,
+  "style": "clean",
+  "production": "fx",
+  "split": "dev",
+  "seed": 1004,
+  "score_seed": 10041,
+  "c_seed": 10042,
+  "guitar_a": 10043,
+  "guitar_b": 10044,
+  "nl_target": -32.55191434170415,
+  "amp": {
+   "kind": "graybox",
+   "name": "clean_two_stage",
+   "knobs": {
+    "bass": 3.00352181096286,
+    "mid": 3.5206052485105257,
+    "treble": 4.48467077854507,
+    "master_db": -0.7160721783165753
+   },
+   "drive_db": -5.859375,
+   "nl_reached": -32.50345684740339
+  },
+  "pedal": null,
+  "cab": {
+   "base": 10,
+   "base_name": "Modern 4x12, dynamic, bright 60 W, var. 2",
+   "mods": [
+    [
+     "mic_distance",
+     {
+      "delay_ms": 2.132472689143833,
+      "gain": 0.3604375593879031,
+      "hf_loss_db": 1.0367716155747215
+     }
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    62.02528989720546,
+    0.0,
+    0.7071
+   ],
+   [
+    "peak",
+    603.4412832954038,
+    -4.878479759459225,
+    1.7134487603232766
+   ]
+  ],
+  "bus_comp": null,
+  "time_fx": {
+   "kind": "plate",
+   "rt60": 2.2016028030892483,
+   "predelay_ms": 25.07805329100418,
+   "mix_db": -14.984092755716754
+  },
+  "limiter": {
+   "push_db": 3.437464342198697,
+   "release_ms": 53.58650954412288
+  },
+  "codec": {
+   "kind": "mp3",
+   "kbps": 192
+  }
+ },
+ {
+  "id": "clean_05",
+  "index": 5,
+  "style": "clean",
+  "production": "fx",
+  "split": "test",
+  "seed": 1005,
+  "score_seed": 10051,
+  "c_seed": 10052,
+  "guitar_a": 10053,
+  "guitar_b": 10054,
+  "nl_target": -39.01336992318527,
+  "amp": {
+   "kind": "nam",
+   "name": "nam_lstm",
+   "drive_db": 16.453125,
+   "nl_reached": -38.974438498968766
+  },
+  "pedal": null,
+  "cab": {
+   "base": 12,
+   "base_name": "Modern 4x12, dynamic, dark 60 W",
+   "mods": []
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    101.73963622720431,
+    0.0,
+    0.7071
+   ],
+   [
+    "peak",
+    347.2724454651789,
+    3.238816291725491,
+    1.6318752755020327
+   ]
+  ],
+  "bus_comp": {
+   "ratio": 3.8891840560007145,
+   "attack": 9.264687980724668,
+   "release": 193.5240799255785,
+   "gr_db": 3.9847614597099246,
+   "threshold": -5.29382164224357
+  },
+  "time_fx": {
+   "kind": "dotted",
+   "delay_s": 0.523415862139488,
+   "feedback": 0.4407649107175459,
+   "mix_db": -9.534874697494645
+  },
+  "limiter": {
+   "push_db": 6.9525795295469255,
+   "release_ms": 133.1900827727386
+  },
+  "codec": {
+   "kind": "aac",
+   "kbps": 160
+  }
+ },
+ {
+  "id": "clean_06",
+  "index": 6,
+  "style": "clean",
+  "production": "mix",
+  "split": "dev",
+  "seed": 1006,
+  "score_seed": 10061,
+  "c_seed": 10062,
+  "guitar_a": 10063,
+  "guitar_b": 10064,
+  "nl_target": -30.40276172601113,
+  "amp": {
+   "kind": "graybox",
+   "name": "clean_two_stage",
+   "knobs": {
+    "bass": 4.347685734291298,
+    "mid": 5.403427775198619,
+    "treble": 5.042409547932114,
+    "master_db": -1.574565331826561
+   },
+   "drive_db": 4.171875,
+   "nl_reached": -30.36881933121886
+  },
+  "pedal": {
+   "kind": "comp",
+   "threshold": -37.13071932884617,
+   "ratio": 4.7821784108542165,
+   "release": 275.2164070559411,
+   "makeup": 6.933673775266136
+  },
+  "cab": {
+   "base": 10,
+   "base_name": "Modern 4x12, dynamic, bright 60 W, var. 2",
+   "mods": []
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    64.1509676643214,
+    0.0,
+    0.7071
+   ],
+   [
+    "lowshelf",
+    195.39266341498137,
+    -2.8802123475957,
+    0.7071
+   ],
+   [
+    "peak",
+    776.572571052805,
+    3.42821780023761,
+    1.9623656520139745
+   ],
+   [
+    "lowshelf",
+    116.81335028688953,
+    1.7418423852209137,
+    0.7071
+   ]
+  ],
+  "bus_comp": null,
+  "time_fx": {
+   "kind": "slap",
+   "delay_ms": 95.47996787425986,
+   "mix_db": -9.66160286400671
+  },
+  "double": true,
+  "rhythm_guitar": false,
+  "band_db": -2.4803051336428847,
+  "limiter": {
+   "push_db": 8.70349009503505,
+   "release_ms": 69.23533148652935
+  },
+  "codec": {
+   "kind": "mp3",
+   "kbps": 256
+  }
+ },
+ {
+  "id": "clean_07",
+  "index": 7,
+  "style": "clean",
+  "production": "mix",
+  "split": "dev",
+  "seed": 1007,
+  "score_seed": 10071,
+  "c_seed": 10072,
+  "guitar_a": 10073,
+  "guitar_b": 10074,
+  "nl_target": -32.93417447779996,
+  "amp": {
+   "kind": "graybox",
+   "name": "clean_active",
+   "knobs": {
+    "bass": 3.284899749843543,
+    "mid": 6.263921380711773,
+    "treble": 6.2502497952153,
+    "master_db": -1.8204285310341093
+   },
+   "drive_db": -4.640625,
+   "nl_reached": -32.96997522626063
+  },
+  "pedal": null,
+  "cab": {
+   "base": 20,
+   "base_name": "Vintage 4x12, supercardioid, upper",
+   "mods": [
+    [
+     "mic_distance",
+     {
+      "delay_ms": 0.4902138956587313,
+      "gain": 0.4041108847532596,
+      "hf_loss_db": 1.7121900211133398
+     }
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    100.44872785229506,
+    0.0,
+    0.7071
+   ],
+   [
+    "lowshelf",
+    216.71112492997196,
+    1.9959866257732233,
+    0.7071
+   ],
+   [
+    "highshelf",
+    8028.542906491653,
+    -2.4005389062514793,
+    0.7071
+   ]
+  ],
+  "bus_comp": null,
+  "time_fx": {
+   "kind": "dotted",
+   "delay_s": 0.4817060719939295,
+   "feedback": 0.3762830175842131,
+   "mix_db": -9.665576977997043
+  },
+  "double": true,
+  "rhythm_guitar": false,
+  "band_db": 1.4994288522792631,
+  "limiter": {
+   "push_db": 8.312557113445816,
+   "release_ms": 124.12843554023422
+  },
+  "codec": {
+   "kind": "mp3",
+   "kbps": 256
+  }
+ },
+ {
+  "id": "clean_08",
+  "index": 8,
+  "style": "clean",
+  "production": "mix",
+  "split": "test",
+  "seed": 1008,
+  "score_seed": 10081,
+  "c_seed": 10082,
+  "guitar_a": 10083,
+  "guitar_b": 10084,
+  "nl_target": -37.992967011344575,
+  "amp": {
+   "kind": "nam",
+   "name": "nam_lstm",
+   "drive_db": 10.359375,
+   "nl_reached": -37.96203797718246
+  },
+  "pedal": null,
+  "cab": {
+   "base": 12,
+   "base_name": "Modern 4x12, dynamic, dark 60 W",
+   "mods": []
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    109.15941370716037,
+    0.0,
+    0.7071
+   ],
+   [
+    "peak",
+    776.6309145275104,
+    1.5795781710553496,
+    1.0502354652550956
+   ]
+  ],
+  "bus_comp": {
+   "ratio": 2.377940813000594,
+   "attack": 9.992198390004067,
+   "release": 151.31789264300778,
+   "gr_db": 5.382797978882795,
+   "threshold": -9.879011991582495
+  },
+  "time_fx": {
+   "kind": "room",
+   "rt60": 0.6069545127630285,
+   "mix_db": -14.06489212734128
+  },
+  "double": true,
+  "rhythm_guitar": false,
+  "band_db": 1.8310542480476149,
+  "limiter": {
+   "push_db": 7.617538294406307,
+   "release_ms": 121.0663167384373
+  },
+  "codec": {
+   "kind": "mp3",
+   "kbps": 160
+  }
+ },
+ {
+  "id": "clean_09",
+  "index": 9,
+  "style": "clean",
+  "production": "mix",
+  "split": "test",
+  "seed": 1009,
+  "score_seed": 10091,
+  "c_seed": 10092,
+  "guitar_a": 10093,
+  "guitar_b": 10094,
+  "nl_target": -30.08984953027097,
+  "amp": {
+   "kind": "graybox",
+   "name": "clean_active",
+   "knobs": {
+    "bass": 3.226001848213757,
+    "mid": 4.307662350691447,
+    "treble": 4.174480117256194,
+    "master_db": -1.3120414894420453
+   },
+   "drive_db": 1.828125,
+   "nl_reached": -30.096944544409002
+  },
+  "pedal": null,
+  "cab": {
+   "base": 16,
+   "base_name": "Vintage 4x12, dynamic, upper, var. 1",
+   "mods": [
+    [
+     "mic_distance",
+     {
+      "delay_ms": 2.357120127937254,
+      "gain": 0.21427126197912194,
+      "hf_loss_db": 2.3899638206482177
+     }
+    ],
+    [
+     "resonance_shift",
+     {
+      "alpha": 0.8771852312478277
+     }
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    91.57394425872252,
+    0.0,
+    0.7071
+   ],
+   [
+    "lowshelf",
+    158.61160220872617,
+    -1.4262781900930404,
+    0.7071
+   ]
+  ],
+  "bus_comp": {
+   "ratio": 2.022865603499101,
+   "attack": 14.946855262043078,
+   "release": 205.20605556263243,
+   "gr_db": 5.948712332534335,
+   "threshold": -39.02611354575198
+  },
+  "time_fx": {
+   "kind": "plate",
+   "rt60": 1.5883896522757919,
+   "predelay_ms": 21.99942619159241,
+   "mix_db": -14.874692008169816
+  },
+  "double": true,
+  "rhythm_guitar": false,
+  "band_db": 1.3754160121300703,
+  "limiter": {
+   "push_db": 5.073439776493789,
+   "release_ms": 52.22158227779777
+  },
+  "codec": {
+   "kind": "mp3",
+   "kbps": 160
+  }
+ },
+ {
+  "id": "edge_00",
+  "index": 10,
+  "style": "edge",
+  "production": "dry",
+  "split": "dev",
+  "seed": 1010,
+  "score_seed": 10101,
+  "c_seed": 10102,
+  "guitar_a": 10103,
+  "guitar_b": 10104,
+  "nl_target": -18.36062414768875,
+  "amp": {
+   "kind": "graybox",
+   "name": "edge_power",
+   "knobs": {
+    "bass": 3.379969131846289,
+    "mid": 5.143222924947374,
+    "treble": 7.211868565897113,
+    "master_db": 2.8887950933328184
+   },
+   "drive_db": -16.828125,
+   "nl_reached": -18.34558350214021
+  },
+  "pedal": null,
+  "cab": {
+   "base": 20,
+   "base_name": "Vintage 4x12, supercardioid, upper",
+   "mods": [
+    [
+     "small_speaker",
+     {
+      "hp": 115.8758596989411,
+      "peak_f": 1761.140463200464,
+      "peak_db": 3.747066278201606
+     }
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    62.00731296267541,
+    0.0,
+    0.7071
+   ],
+   [
+    "highshelf",
+    8465.693703678306,
+    1.9349042147046625,
+    0.7071
+   ]
+  ],
+  "bus_comp": null,
+  "time_fx": null,
+  "limiter": null,
+  "codec": null
+ },
+ {
+  "id": "edge_01",
+  "index": 11,
+  "style": "edge",
+  "production": "dry",
+  "split": "dev",
+  "seed": 1011,
+  "score_seed": 10111,
+  "c_seed": 10112,
+  "guitar_a": 10113,
+  "guitar_b": 10114,
+  "nl_target": -23.44287643684607,
+  "amp": {
+   "kind": "nam",
+   "name": "nam_wavenet",
+   "drive_db": -2.203125,
+   "nl_reached": -23.493781625676128
+  },
+  "pedal": null,
+  "cab": {
+   "base": 10,
+   "base_name": "Modern 4x12, dynamic, bright 60 W, var. 2",
+   "mods": [
+    [
+     "mic_distance",
+     {
+      "delay_ms": 1.2350934449218514,
+      "gain": 0.3047715762129841,
+      "hf_loss_db": 2.9560370059581014
+     }
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    109.33905904684742,
+    0.0,
+    0.7071
+   ],
+   [
+    "peak",
+    222.2253655965861,
+    2.790571794919792,
+    1.3360580460858973
+   ]
+  ],
+  "bus_comp": null,
+  "time_fx": null,
+  "limiter": null,
+  "codec": null
+ },
+ {
+  "id": "edge_02",
+  "index": 12,
+  "style": "edge",
+  "production": "dry",
+  "split": "test",
+  "seed": 1012,
+  "score_seed": 10121,
+  "c_seed": 10122,
+  "guitar_a": 10123,
+  "guitar_b": 10124,
+  "nl_target": -21.55646227894203,
+  "amp": {
+   "kind": "graybox",
+   "name": "edge_power",
+   "knobs": {
+    "bass": 4.225281933082556,
+    "mid": 6.12258673751197,
+    "treble": 4.834527468437865,
+    "master_db": 2.162404070802233
+   },
+   "drive_db": -10.078125,
+   "nl_reached": -21.586359311623813
+  },
+  "pedal": null,
+  "cab": {
+   "base": 9,
+   "base_name": "Modern 4x12, dynamic, bright 60 W, var. 1",
+   "mods": [
+    [
+     "minimum_phase",
+     {}
+    ],
+    [
+     "small_speaker",
+     {
+      "hp": 119.30422615672606,
+      "peak_f": 1706.7075368000521,
+      "peak_db": 2.657556226217975
+     }
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    92.07044868198938,
+    0.0,
+    0.7071
+   ],
+   [
+    "peak",
+    1049.263612432051,
+    2.5806082549679976,
+    1.1377617471280614
+   ],
+   [
+    "highshelf",
+    9222.879330303422,
+    0.8386794362190493,
+    0.7071
+   ],
+   [
+    "peak",
+    1580.7635144543003,
+    2.3588397523600078,
+    1.744686780368833
+   ]
+  ],
+  "bus_comp": null,
+  "time_fx": null,
+  "limiter": null,
+  "codec": null
+ },
+ {
+  "id": "edge_03",
+  "index": 13,
+  "style": "edge",
+  "production": "fx",
+  "split": "dev",
+  "seed": 1013,
+  "score_seed": 10131,
+  "c_seed": 10132,
+  "guitar_a": 10133,
+  "guitar_b": 10134,
+  "nl_target": -19.590978556361673,
+  "amp": {
+   "kind": "graybox",
+   "name": "edge_single",
+   "knobs": {
+    "bass": 6.177971661224751,
+    "mid": 3.3159178862970244,
+    "treble": 6.354308569538692,
+    "master_db": -0.31458895570016265
+   },
+   "drive_db": -23.859375,
+   "nl_reached": -19.58596274321553
+  },
+  "pedal": {
+   "kind": "boost",
+   "level": 7.143574765089272,
+   "tilt": 1.4191402877892205
+  },
+  "cab": {
+   "base": 10,
+   "base_name": "Modern 4x12, dynamic, bright 60 W, var. 2",
+   "mods": [
+    [
+     "big_cab",
+     {
+      "f": 119.6901814104724,
+      "db": 4.491862354462846
+     }
+    ],
+    [
+     "off_axis",
+     {
+      "f": 4516.136147978588,
+      "db": 8.059578351418729
+     }
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    107.22507652603635,
+    0.0,
+    0.7071
+   ],
+   [
+    "peak",
+    425.56726181469344,
+    4.001188924644295,
+    1.769150624361859
+   ]
+  ],
+  "bus_comp": {
+   "ratio": 3.2133261152708217,
+   "attack": 9.973483165581657,
+   "release": 220.77888704776095,
+   "gr_db": 5.9469868394800685,
+   "threshold": -18.810155781877796
+  },
+  "time_fx": {
+   "kind": "plate",
+   "rt60": 2.2111192889516906,
+   "predelay_ms": 20.013259176948978,
+   "mix_db": -14.698667061303246
+  },
+  "limiter": {
+   "push_db": 3.1955855462806904,
+   "release_ms": 71.40391195598642
+  },
+  "codec": {
+   "kind": "mp3",
+   "kbps": 256
+  }
+ },
+ {
+  "id": "edge_04",
+  "index": 14,
+  "style": "edge",
+  "production": "fx",
+  "split": "dev",
+  "seed": 1014,
+  "score_seed": 10141,
+  "c_seed": 10142,
+  "guitar_a": 10143,
+  "guitar_b": 10144,
+  "nl_target": -21.397456483552528,
+  "amp": {
+   "kind": "graybox",
+   "name": "edge_power",
+   "knobs": {
+    "bass": 4.7420960064912,
+    "mid": 5.342809221201659,
+    "treble": 7.14287682444764,
+    "master_db": 2.955483842503143
+   },
+   "drive_db": -23.203125,
+   "nl_reached": -21.420515484294928
+  },
+  "pedal": {
+   "kind": "boost",
+   "level": 9.059964774860948,
+   "tilt": 1.8848698808092257
+  },
+  "cab": {
+   "base": 14,
+   "base_name": "Modern 4x12, vocal mic, bright 60 W",
+   "mods": [
+    [
+     "big_cab",
+     {
+      "f": 96.84968552349568,
+      "db": 4.051144401528011
+     }
+    ],
+    [
+     "mic_distance",
+     {
+      "delay_ms": 1.6577265719205043,
+      "gain": 0.24596455772861403,
+      "hf_loss_db": 1.8325933828170688
+     }
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    107.5176573786318,
+    0.0,
+    0.7071
+   ],
+   [
+    "peak",
+    885.0303209451505,
+    4.990066006436214,
+    1.081643452015985
+   ],
+   [
+    "lowshelf",
+    137.4653555130964,
+    2.790795852277118,
+    0.7071
+   ]
+  ],
+  "bus_comp": {
+   "ratio": 2.012976382352826,
+   "attack": 10.102272679519393,
+   "release": 114.00895755994325,
+   "gr_db": 3.0859930843122356,
+   "threshold": -9.895122742169821
+  },
+  "time_fx": {
+   "kind": "slap",
+   "delay_ms": 106.5609266732691,
+   "mix_db": -7.558722876224792
+  },
+  "limiter": {
+   "push_db": 3.562431106310007,
+   "release_ms": 121.33739267933886
+  },
+  "codec": {
+   "kind": "aac",
+   "kbps": 256
+  }
+ },
+ {
+  "id": "edge_05",
+  "index": 15,
+  "style": "edge",
+  "production": "fx",
+  "split": "test",
+  "seed": 1015,
+  "score_seed": 10151,
+  "c_seed": 10152,
+  "guitar_a": 10153,
+  "guitar_b": 10154,
+  "nl_target": -22.760873582893478,
+  "amp": {
+   "kind": "nam",
+   "name": "nam_wavenet",
+   "drive_db": -1.546875,
+   "nl_reached": -22.746569521578323
+  },
+  "pedal": null,
+  "cab": {
+   "base": 9,
+   "base_name": "Modern 4x12, dynamic, bright 60 W, var. 1",
+   "mods": [
+    [
+     "big_cab",
+     {
+      "f": 97.30005144507746,
+      "db": 4.387732099322151
+     }
+    ],
+    [
+     "resonance_shift",
+     {
+      "alpha": 0.8812514861334393
+     }
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    72.83302414823075,
+    0.0,
+    0.7071
+   ],
+   [
+    "peak",
+    4934.411354709731,
+    -3.948079733724925,
+    1.5920942511839296
+   ],
+   [
+    "highshelf",
+    7989.931629467438,
+    -2.991379094419736,
+    0.7071
+   ]
+  ],
+  "bus_comp": null,
+  "time_fx": {
+   "kind": "slap",
+   "delay_ms": 117.41803798368882,
+   "mix_db": -9.164984532146935
+  },
+  "limiter": {
+   "push_db": 7.470543122903636,
+   "release_ms": 146.9228425710301
+  },
+  "codec": {
+   "kind": "mp3",
+   "kbps": 160
+  }
+ },
+ {
+  "id": "edge_06",
+  "index": 16,
+  "style": "edge",
+  "production": "mix",
+  "split": "dev",
+  "seed": 1016,
+  "score_seed": 10161,
+  "c_seed": 10162,
+  "guitar_a": 10163,
+  "guitar_b": 10164,
+  "nl_target": -22.265347697250274,
+  "amp": {
+   "kind": "graybox",
+   "name": "edge_power",
+   "knobs": {
+    "bass": 3.9119663868487415,
+    "mid": 4.770775964377245,
+    "treble": 5.237683838596547,
+    "master_db": 0.4782460177271368
+   },
+   "drive_db": -16.640625,
+   "nl_reached": -22.251114472453093
+  },
+  "pedal": null,
+  "cab": {
+   "base": 14,
+   "base_name": "Modern 4x12, vocal mic, bright 60 W",
+   "mods": [
+    [
+     "big_cab",
+     {
+      "f": 97.41154596564898,
+      "db": 3.0235666668117833
+     }
+    ],
+    [
+     "mic_distance",
+     {
+      "delay_ms": 1.948022075091512,
+      "gain": 0.3432047855137599,
+      "hf_loss_db": 2.705788966106844
+     }
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    104.51087671895885,
+    0.0,
+    0.7071
+   ],
+   [
+    "peak",
+    2470.994510954815,
+    3.0652434647632605,
+    1.9370298182537298
+   ],
+   [
+    "peak",
+    243.03151976268998,
+    2.337664160553741,
+    0.7943827602099275
+   ],
+   [
+    "lowshelf",
+    199.1116595893155,
+    2.92341626092201,
+    0.7071
+   ]
+  ],
+  "bus_comp": {
+   "ratio": 2.5447247822439616,
+   "attack": 10.222743880828338,
+   "release": 95.02503638486364,
+   "gr_db": 5.432788563271162,
+   "threshold": -15.613559984154183
+  },
+  "time_fx": null,
+  "double": false,
+  "rhythm_guitar": false,
+  "band_db": 2.4596256849167473,
+  "limiter": {
+   "push_db": 8.019234203041409,
+   "release_ms": 84.82081143300947
+  },
+  "codec": {
+   "kind": "aac",
+   "kbps": 128
+  }
+ },
+ {
+  "id": "edge_07",
+  "index": 17,
+  "style": "edge",
+  "production": "mix",
+  "split": "dev",
+  "seed": 1017,
+  "score_seed": 10171,
+  "c_seed": 10172,
+  "guitar_a": 10173,
+  "guitar_b": 10174,
+  "nl_target": -25.382454915715105,
+  "amp": {
+   "kind": "graybox",
+   "name": "edge_single",
+   "knobs": {
+    "bass": 6.673407017241105,
+    "mid": 6.285327494535259,
+    "treble": 7.404027872269855,
+    "master_db": 0.5977303964301197
+   },
+   "drive_db": -17.203125,
+   "nl_reached": -25.37590159787298
+  },
+  "pedal": {
+   "kind": "transparent",
+   "drive": 0.4449346255056083,
+   "tone": 0.5117201812500989,
+   "level": 1.8903268970101867,
+   "tight": 20.0
+  },
+  "cab": {
+   "base": 20,
+   "base_name": "Vintage 4x12, supercardioid, upper",
+   "mods": [
+    [
+     "off_axis",
+     {
+      "f": 4513.03698187575,
+      "db": 4.958965813979391
+     }
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    100.24401834947886,
+    0.0,
+    0.7071
+   ],
+   [
+    "highshelf",
+    8355.517954832656,
+    -3.5083836398668584,
+    0.7071
+   ],
+   [
+    "highshelf",
+    5313.448045677626,
+    -2.349942014454845,
+    0.7071
+   ],
+   [
+    "highshelf",
+    6384.573527597497,
+    -3.733897918321297,
+    0.7071
+   ]
+  ],
+  "bus_comp": {
+   "ratio": 3.0984509316950053,
+   "attack": 15.200369637391645,
+   "release": 129.3517414710576,
+   "gr_db": 2.3288568045076414,
+   "threshold": -9.77860501725087
+  },
+  "time_fx": null,
+  "double": true,
+  "rhythm_guitar": false,
+  "band_db": 0.45922563443122777,
+  "limiter": {
+   "push_db": 5.370029776856208,
+   "release_ms": 60.41737163317185
+  },
+  "codec": {
+   "kind": "mp3",
+   "kbps": 256
+  }
+ },
+ {
+  "id": "edge_08",
+  "index": 18,
+  "style": "edge",
+  "production": "mix",
+  "split": "test",
+  "seed": 1018,
+  "score_seed": 10181,
+  "c_seed": 10182,
+  "guitar_a": 10183,
+  "guitar_b": 10184,
+  "nl_target": -20.654220957301796,
+  "amp": {
+   "kind": "nam",
+   "name": "nam_wavenet",
+   "drive_db": 2.765625,
+   "nl_reached": -20.59614285849144
+  },
+  "pedal": null,
+  "cab": {
+   "base": 19,
+   "base_name": "Vintage 4x12, supercardioid, lower",
+   "mods": []
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    86.4120925099297,
+    0.0,
+    0.7071
+   ],
+   [
+    "highshelf",
+    6445.59464518235,
+    0.19471659325228852,
+    0.7071
+   ],
+   [
+    "highshelf",
+    7423.591196431177,
+    0.5581138321351667,
+    0.7071
+   ],
+   [
+    "lowshelf",
+    180.99916092205825,
+    -2.504334108575147,
+    0.7071
+   ]
+  ],
+  "bus_comp": {
+   "ratio": 2.6458213100419687,
+   "attack": 14.075468853305374,
+   "release": 82.72037805343062,
+   "gr_db": 2.3865415876877543,
+   "threshold": -24.15492904144693
+  },
+  "time_fx": null,
+  "double": true,
+  "rhythm_guitar": false,
+  "band_db": 1.0657133352584987,
+  "limiter": {
+   "push_db": 6.022382882071038,
+   "release_ms": 82.83136588396093
+  },
+  "codec": {
+   "kind": "mp3",
+   "kbps": 256
+  }
+ },
+ {
+  "id": "edge_09",
+  "index": 19,
+  "style": "edge",
+  "production": "mix",
+  "split": "test",
+  "seed": 1019,
+  "score_seed": 10191,
+  "c_seed": 10192,
+  "guitar_a": 10193,
+  "guitar_b": 10194,
+  "nl_target": -24.089614959542107,
+  "amp": {
+   "kind": "graybox",
+   "name": "edge_single",
+   "knobs": {
+    "bass": 3.867707434426366,
+    "mid": 4.5839801915748914,
+    "treble": 5.634094574878082,
+    "master_db": 1.9725116871985722
+   },
+   "drive_db": -22.078125,
+   "nl_reached": -24.055252341785554
+  },
+  "pedal": null,
+  "cab": {
+   "base": 13,
+   "base_name": "Modern 4x12, supercardioid, dark 60 W",
+   "mods": [
+    [
+     "resonance_shift",
+     {
+      "alpha": 1.1544110530741813
+     }
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    83.25119139247323,
+    0.0,
+    0.7071
+   ],
+   [
+    "peak",
+    292.7224737898121,
+    1.880408956367202,
+    1.3751748675745905
+   ]
+  ],
+  "bus_comp": {
+   "ratio": 3.866634206076923,
+   "attack": 27.18444894820481,
+   "release": 246.28149783700965,
+   "gr_db": 5.861019147376551,
+   "threshold": -22.418638500434156
+  },
+  "time_fx": {
+   "kind": "dotted",
+   "delay_s": 0.40589595216790825,
+   "feedback": 0.3530520975758052,
+   "mix_db": -9.270533534246544
+  },
+  "double": false,
+  "rhythm_guitar": false,
+  "band_db": 2.7926048717898215,
+  "limiter": {
+   "push_db": 5.242955369424006,
+   "release_ms": 149.60462256256386
+  },
+  "codec": {
+   "kind": "mp3",
+   "kbps": 128
+  }
+ },
+ {
+  "id": "crunch_00",
+  "index": 20,
+  "style": "crunch",
+  "production": "dry",
+  "split": "dev",
+  "seed": 1020,
+  "score_seed": 10201,
+  "c_seed": 10202,
+  "guitar_a": 10203,
+  "guitar_b": 10204,
+  "nl_target": -15.378609144656973,
+  "amp": {
+   "kind": "graybox",
+   "name": "crunch_three",
+   "knobs": {
+    "bass": 5.314800971983443,
+    "mid": 4.134701125152806,
+    "treble": 4.26492472406861,
+    "master_db": 1.2418021710342348
+   },
+   "drive_db": -20.671875,
+   "nl_reached": -15.411597137200626
+  },
+  "pedal": {
+   "kind": "boost",
+   "level": 6.9368146944644264,
+   "tilt": 1.259856676744465
+  },
+  "cab": {
+   "base": 14,
+   "base_name": "Modern 4x12, vocal mic, bright 60 W",
+   "mods": [
+    [
+     "minimum_phase",
+     {}
+    ],
+    [
+     "off_axis",
+     {
+      "f": 2571.480874793238,
+      "db": 8.31869289048598
+     }
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    90.80003420602014,
+    0.0,
+    0.7071
+   ],
+   [
+    "lowshelf",
+    187.68372391408258,
+    2.218935203099332,
+    0.7071
+   ],
+   [
+    "highshelf",
+    6197.7562802013545,
+    -1.843516748358687,
+    0.7071
+   ],
+   [
+    "lowshelf",
+    212.09423323746753,
+    -1.9376988018859225,
+    0.7071
+   ]
+  ],
+  "bus_comp": null,
+  "time_fx": null,
+  "limiter": null,
+  "codec": null
+ },
+ {
+  "id": "crunch_01",
+  "index": 21,
+  "style": "crunch",
+  "production": "dry",
+  "split": "dev",
+  "seed": 1021,
+  "score_seed": 10211,
+  "c_seed": 10212,
+  "guitar_a": 10213,
+  "guitar_b": 10214,
+  "nl_target": -13.37928300229614,
+  "amp": {
+   "kind": "nam",
+   "name": "nam_wavenet",
+   "drive_db": 5.953125,
+   "nl_reached": -13.388588521451716
+  },
+  "pedal": {
+   "kind": "mid",
+   "drive": 0.24605877383624744,
+   "tone": 0.7287571389468608,
+   "level": 4.221090544205055,
+   "tight": 20.0
+  },
+  "cab": {
+   "base": 3,
+   "base_name": "Modern 4x12, blend, dark + bright 60 W, 2",
+   "mods": [
+    [
+     "off_axis",
+     {
+      "f": 4344.313211467704,
+      "db": 7.700541079607027
+     }
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    62.95092984097761,
+    0.0,
+    0.7071
+   ],
+   [
+    "peak",
+    5157.732154861281,
+    2.4869635808122315,
+    1.5864834730311776
+   ],
+   [
+    "highshelf",
+    8684.359412769154,
+    0.2624298306987656,
+    0.7071
+   ],
+   [
+    "peak",
+    1042.1066756788177,
+    -1.8923013932343795,
+    1.6569418854839448
+   ]
+  ],
+  "bus_comp": null,
+  "time_fx": null,
+  "limiter": null,
+  "codec": null
+ },
+ {
+  "id": "crunch_02",
+  "index": 22,
+  "style": "crunch",
+  "production": "dry",
+  "split": "test",
+  "seed": 1022,
+  "score_seed": 10221,
+  "c_seed": 10222,
+  "guitar_a": 10223,
+  "guitar_b": 10224,
+  "nl_target": -12.401244053756184,
+  "amp": {
+   "kind": "graybox",
+   "name": "crunch_three",
+   "knobs": {
+    "bass": 3.0021065816972636,
+    "mid": 6.673667024224991,
+    "treble": 6.064350539228279,
+    "master_db": 0.8764019176600348
+   },
+   "drive_db": -17.203125,
+   "nl_reached": -12.409830392744169
+  },
+  "pedal": null,
+  "cab": {
+   "base": 16,
+   "base_name": "Vintage 4x12, dynamic, upper, var. 1",
+   "mods": [
+    [
+     "resonance_shift",
+     {
+      "alpha": 1.1823804567451988
+     }
+    ],
+    [
+     "off_axis",
+     {
+      "f": 4653.481523004324,
+      "db": 7.202334210674552
+     }
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    68.11048054453333,
+    0.0,
+    0.7071
+   ],
+   [
+    "highshelf",
+    8776.056019493839,
+    -2.97700112604477,
+    0.7071
+   ]
+  ],
+  "bus_comp": null,
+  "time_fx": null,
+  "limiter": null,
+  "codec": null
+ },
+ {
+  "id": "crunch_03",
+  "index": 23,
+  "style": "crunch",
+  "production": "fx",
+  "split": "dev",
+  "seed": 1023,
+  "score_seed": 10231,
+  "c_seed": 10232,
+  "guitar_a": 10233,
+  "guitar_b": 10234,
+  "nl_target": -10.23828374789802,
+  "amp": {
+   "kind": "graybox",
+   "name": "crunch_sag",
+   "knobs": {
+    "bass": 4.355476320034105,
+    "mid": 6.623594940330706,
+    "treble": 7.183606829096268,
+    "master_db": 1.4833402932562028
+   },
+   "drive_db": 12.0,
+   "nl_reached": -11.692471750409556
+  },
+  "pedal": {
+   "kind": "distortion",
+   "drive": 0.5657426502999774,
+   "tone": 0.6494962467843752,
+   "level": 2.2418702649978854,
+   "tight": 90.52410276769353
+  },
+  "cab": {
+   "base": 4,
+   "base_name": "Modern 4x12, blend, dark 60 W + 75 W",
+   "mods": [
+    [
+     "resonance_shift",
+     {
+      "alpha": 0.9248615828474612
+     }
+    ],
+    [
+     "mic_distance",
+     {
+      "delay_ms": 0.9899027437764629,
+      "gain": 0.2809892729532638,
+      "hf_loss_db": 2.7472722957518854
+     }
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    75.75478479934932,
+    0.0,
+    0.7071
+   ],
+   [
+    "highshelf",
+    5238.269302597783,
+    1.3108180740045132,
+    0.7071
+   ],
+   [
+    "lowshelf",
+    198.7925364456228,
+    -2.2159435070303823,
+    0.7071
+   ]
+  ],
+  "bus_comp": {
+   "ratio": 2.1454252654382415,
+   "attack": 14.909735589279547,
+   "release": 216.59684953558863,
+   "gr_db": 2.4053794491695117,
+   "threshold": -8.675373743084158
+  },
+  "time_fx": {
+   "kind": "plate",
+   "rt60": 2.1069924816475565,
+   "predelay_ms": 20.79601179595134,
+   "mix_db": -14.71921314810206
+  },
+  "limiter": {
+   "push_db": 4.9968409121083415,
+   "release_ms": 147.1749670098188
+  },
+  "codec": null
+ },
+ {
+  "id": "crunch_04",
+  "index": 24,
+  "style": "crunch",
+  "production": "fx",
+  "split": "dev",
+  "seed": 1024,
+  "score_seed": 10241,
+  "c_seed": 10242,
+  "guitar_a": 10243,
+  "guitar_b": 10244,
+  "nl_target": -11.633900354459493,
+  "amp": {
+   "kind": "graybox",
+   "name": "crunch_three",
+   "knobs": {
+    "bass": 4.289847876466279,
+    "mid": 4.033411240091805,
+    "treble": 5.296091349519016,
+    "master_db": 2.310297940042224
+   },
+   "drive_db": -9.609375,
+   "nl_reached": -11.650030508471838
+  },
+  "pedal": {
+   "kind": "mid",
+   "drive": 0.5248168790370652,
+   "tone": 0.404070768662042,
+   "level": 5.053109756061094,
+   "tight": 20.0
+  },
+  "cab": {
+   "base": 15,
+   "base_name": "Vintage 4x12, dynamic, lower",
+   "mods": [
+    [
+     "minimum_phase",
+     {}
+    ],
+    [
+     "big_cab",
+     {
+      "f": 103.32525069959054,
+      "db": 3.884600454106116
+     }
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    89.17587414335796,
+    0.0,
+    0.7071
+   ],
+   [
+    "highshelf",
+    8980.397794551638,
+    -3.2467161258684083,
+    0.7071
+   ],
+   [
+    "highshelf",
+    5185.869130102567,
+    1.478811486176712,
+    0.7071
+   ],
+   [
+    "highshelf",
+    8520.024463481728,
+    -2.505125824371595,
+    0.7071
+   ]
+  ],
+  "bus_comp": {
+   "ratio": 3.4154845648850998,
+   "attack": 23.32716966902054,
+   "release": 133.99198445797947,
+   "gr_db": 2.7298316900894717,
+   "threshold": -1.5929083240013076
+  },
+  "time_fx": {
+   "kind": "plate",
+   "rt60": 1.7683723414210952,
+   "predelay_ms": 19.38396482746432,
+   "mix_db": -15.137208560375397
+  },
+  "limiter": {
+   "push_db": 7.1402876451886765,
+   "release_ms": 129.34341902528746
+  },
+  "codec": null
+ },
+ {
+  "id": "crunch_05",
+  "index": 25,
+  "style": "crunch",
+  "production": "fx",
+  "split": "test",
+  "seed": 1025,
+  "score_seed": 10251,
+  "c_seed": 10252,
+  "guitar_a": 10253,
+  "guitar_b": 10254,
+  "nl_target": -10.252178433780992,
+  "amp": {
+   "kind": "nam",
+   "name": "nam_wavenet",
+   "drive_db": 4.546875,
+   "nl_reached": -10.2622871030205
+  },
+  "pedal": null,
+  "cab": {
+   "base": 9,
+   "base_name": "Modern 4x12, dynamic, bright 60 W, var. 1",
+   "mods": [
+    [
+     "off_axis",
+     {
+      "f": 4108.712146780362,
+      "db": 6.908339774089505
+     }
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    60.29052622034718,
+    0.0,
+    0.7071
+   ],
+   [
+    "lowshelf",
+    205.06763558766343,
+    -1.634488933676345,
+    0.7071
+   ]
+  ],
+  "bus_comp": null,
+  "time_fx": {
+   "kind": "slap",
+   "delay_ms": 109.64210652279783,
+   "mix_db": -6.024279417462971
+  },
+  "limiter": {
+   "push_db": 3.887211984739843,
+   "release_ms": 58.5535900918535
+  },
+  "codec": {
+   "kind": "aac",
+   "kbps": 256
+  }
+ },
+ {
+  "id": "crunch_06",
+  "index": 26,
+  "style": "crunch",
+  "production": "mix",
+  "split": "dev",
+  "seed": 1026,
+  "score_seed": 10261,
+  "c_seed": 10262,
+  "guitar_a": 10263,
+  "guitar_b": 10264,
+  "nl_target": -12.009352816581353,
+  "amp": {
+   "kind": "graybox",
+   "name": "crunch_three",
+   "knobs": {
+    "bass": 3.682948783617554,
+    "mid": 5.380469058269284,
+    "treble": 4.680995476493273,
+    "master_db": -2.7866639013383026
+   },
+   "drive_db": -10.921875,
+   "nl_reached": -12.018067387133119
+  },
+  "pedal": null,
+  "cab": {
+   "base": 4,
+   "base_name": "Modern 4x12, blend, dark 60 W + 75 W",
+   "mods": [
+    [
+     "minimum_phase",
+     {}
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    80.68969431394942,
+    0.0,
+    0.7071
+   ],
+   [
+    "highshelf",
+    7190.814059961749,
+    2.560409872410936,
+    0.7071
+   ],
+   [
+    "lowshelf",
+    111.6287815976399,
+    1.1836601386839376,
+    0.7071
+   ],
+   [
+    "lowshelf",
+    147.70049204643718,
+    1.7459408887789143,
+    0.7071
+   ]
+  ],
+  "bus_comp": {
+   "ratio": 2.6493126988002085,
+   "attack": 11.315175910587334,
+   "release": 109.37277324425477,
+   "gr_db": 2.186066182606489,
+   "threshold": -5.472909950676363
+  },
+  "time_fx": {
+   "kind": "room",
+   "rt60": 0.6599580782317955,
+   "mix_db": -11.585139016434537
+  },
+  "double": false,
+  "rhythm_guitar": false,
+  "band_db": -1.1859113663662781,
+  "limiter": {
+   "push_db": 6.64020917191549,
+   "release_ms": 99.05124934054835
+  },
+  "codec": {
+   "kind": "mp3",
+   "kbps": 160
+  }
+ },
+ {
+  "id": "crunch_07",
+  "index": 27,
+  "style": "crunch",
+  "production": "mix",
+  "split": "dev",
+  "seed": 1027,
+  "score_seed": 10271,
+  "c_seed": 10272,
+  "guitar_a": 10273,
+  "guitar_b": 10274,
+  "nl_target": -9.659250565353725,
+  "amp": {
+   "kind": "graybox",
+   "name": "crunch_sag",
+   "knobs": {
+    "bass": 3.1118982244444786,
+    "mid": 5.2485825736416185,
+    "treble": 5.978067213882875,
+    "master_db": -2.930904671960521
+   },
+   "drive_db": -11.015625,
+   "nl_reached": -9.636140205603889
+  },
+  "pedal": null,
+  "cab": {
+   "base": 14,
+   "base_name": "Modern 4x12, vocal mic, bright 60 W",
+   "mods": [
+    [
+     "off_axis",
+     {
+      "f": 4616.136481311017,
+      "db": 6.053784789077019
+     }
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    93.72063590819869,
+    0.0,
+    0.7071
+   ],
+   [
+    "peak",
+    4078.3256672726075,
+    2.3240597635392923,
+    1.4077406337364444
+   ]
+  ],
+  "bus_comp": null,
+  "time_fx": null,
+  "double": false,
+  "rhythm_guitar": false,
+  "band_db": 2.4009924693223637,
+  "limiter": {
+   "push_db": 4.851872304919813,
+   "release_ms": 71.71989659001588
+  },
+  "codec": {
+   "kind": "mp3",
+   "kbps": 128
+  }
+ },
+ {
+  "id": "crunch_08",
+  "index": 28,
+  "style": "crunch",
+  "production": "mix",
+  "split": "test",
+  "seed": 1028,
+  "score_seed": 10281,
+  "c_seed": 10282,
+  "guitar_a": 10283,
+  "guitar_b": 10284,
+  "nl_target": -10.286802449711177,
+  "amp": {
+   "kind": "nam",
+   "name": "nam_wavenet",
+   "drive_db": -3.421875,
+   "nl_reached": -10.259125665946955
+  },
+  "pedal": {
+   "kind": "boost",
+   "level": 8.0518729741778,
+   "tilt": -0.9117283397310438
+  },
+  "cab": {
+   "base": 1,
+   "base_name": "Modern 4x12, blend, 75 W + bright 60 W, 2",
+   "mods": [
+    [
+     "minimum_phase",
+     {}
+    ],
+    [
+     "big_cab",
+     {
+      "f": 108.06317556534879,
+      "db": 3.4892231480109035
+     }
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    84.44236694610457,
+    0.0,
+    0.7071
+   ],
+   [
+    "peak",
+    329.6207894686567,
+    -3.201942178012877,
+    1.2212272289493884
+   ],
+   [
+    "peak",
+    4279.475537511197,
+    -2.256927037196168,
+    1.191127319194641
+   ]
+  ],
+  "bus_comp": {
+   "ratio": 3.7728956688635984,
+   "attack": 24.908279883059244,
+   "release": 183.47281790228948,
+   "gr_db": 5.040346506839417,
+   "threshold": -18.343548866889368
+  },
+  "time_fx": {
+   "kind": "room",
+   "rt60": 0.8355398021199866,
+   "mix_db": -11.658955424984015
+  },
+  "double": false,
+  "rhythm_guitar": false,
+  "band_db": 1.4084194115689517,
+  "limiter": {
+   "push_db": 8.033003771357725,
+   "release_ms": 90.82819744152773
+  },
+  "codec": {
+   "kind": "mp3",
+   "kbps": 192
+  }
+ },
+ {
+  "id": "crunch_09",
+  "index": 29,
+  "style": "crunch",
+  "production": "mix",
+  "split": "test",
+  "seed": 1029,
+  "score_seed": 10291,
+  "c_seed": 10292,
+  "guitar_a": 10293,
+  "guitar_b": 10294,
+  "nl_target": -13.42025517054933,
+  "amp": {
+   "kind": "graybox",
+   "name": "crunch_sag",
+   "knobs": {
+    "bass": 6.347109345305935,
+    "mid": 6.291744489336718,
+    "treble": 4.172187876582583,
+    "master_db": -1.8959046608763552
+   },
+   "drive_db": -13.828125,
+   "nl_reached": -13.444104235837873
+  },
+  "pedal": null,
+  "cab": {
+   "base": 1,
+   "base_name": "Modern 4x12, blend, 75 W + bright 60 W, 2",
+   "mods": [
+    [
+     "small_speaker",
+     {
+      "hp": 120.56380390506176,
+      "peak_f": 2370.7303711670397,
+      "peak_db": 2.4057964791886404
+     }
+    ],
+    [
+     "big_cab",
+     {
+      "f": 106.54240856454811,
+      "db": 3.018449666772215
+     }
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    67.98570271039405,
+    0.0,
+    0.7071
+   ],
+   [
+    "highshelf",
+    9214.797935530565,
+    -1.342330148613354,
+    0.7071
+   ]
+  ],
+  "bus_comp": null,
+  "time_fx": null,
+  "double": false,
+  "rhythm_guitar": false,
+  "band_db": -1.6851902202872493,
+  "limiter": {
+   "push_db": 6.279285822420556,
+   "release_ms": 80.04843169336624
+  },
+  "codec": {
+   "kind": "mp3",
+   "kbps": 192
+  }
+ },
+ {
+  "id": "high_gain_00",
+  "index": 30,
+  "style": "high_gain",
+  "production": "dry",
+  "split": "dev",
+  "seed": 1030,
+  "score_seed": 10301,
+  "c_seed": 10302,
+  "guitar_a": 10303,
+  "guitar_b": 10304,
+  "nl_target": -5.532150958192017,
+  "amp": {
+   "kind": "graybox",
+   "name": "hg_tight",
+   "knobs": {
+    "bass": 3.9474589911944844,
+    "mid": 3.1007483915544243,
+    "treble": 6.8448669516962495,
+    "master_db": 0.4501627667046648
+   },
+   "drive_db": -10.453125,
+   "nl_reached": -5.527055570576133
+  },
+  "pedal": null,
+  "cab": {
+   "base": 4,
+   "base_name": "Modern 4x12, blend, dark 60 W + 75 W",
+   "mods": [
+    [
+     "mic_distance",
+     {
+      "delay_ms": 0.7008900767106917,
+      "gain": 0.33372994567398484,
+      "hf_loss_db": 2.3490787822444363
+     }
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    74.56661421191198,
+    0.0,
+    0.7071
+   ],
+   [
+    "lowshelf",
+    192.40237582765093,
+    -0.3900005244406939,
+    0.7071
+   ]
+  ],
+  "bus_comp": null,
+  "time_fx": null,
+  "limiter": null,
+  "codec": null
+ },
+ {
+  "id": "high_gain_01",
+  "index": 31,
+  "style": "high_gain",
+  "production": "dry",
+  "split": "dev",
+  "seed": 1031,
+  "score_seed": 10311,
+  "c_seed": 10312,
+  "guitar_a": 10313,
+  "guitar_b": 10314,
+  "nl_target": -6.576015799390968,
+  "amp": {
+   "kind": "nam",
+   "name": "nam_slimmable",
+   "drive_db": -30.046875,
+   "nl_reached": -6.580556871401264
+  },
+  "pedal": null,
+  "cab": {
+   "base": 7,
+   "base_name": "Modern 4x12, dynamic, 75 W, var. 3",
+   "mods": []
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    69.92310070309824,
+    0.0,
+    0.7071
+   ],
+   [
+    "peak",
+    240.48455651490636,
+    2.5276463244735177,
+    1.8090302153142104
+   ],
+   [
+    "highshelf",
+    6110.501250579296,
+    -2.9078682697464293,
+    0.7071
+   ]
+  ],
+  "bus_comp": null,
+  "time_fx": null,
+  "limiter": null,
+  "codec": null
+ },
+ {
+  "id": "high_gain_02",
+  "index": 32,
+  "style": "high_gain",
+  "production": "dry",
+  "split": "test",
+  "seed": 1032,
+  "score_seed": 10321,
+  "c_seed": 10322,
+  "guitar_a": 10323,
+  "guitar_b": 10324,
+  "nl_target": -6.894902507040767,
+  "amp": {
+   "kind": "graybox",
+   "name": "hg_tight",
+   "knobs": {
+    "bass": 6.510960025179157,
+    "mid": 3.9387617284609426,
+    "treble": 7.487720759208083,
+    "master_db": 1.2804515369992004
+   },
+   "drive_db": -24.046875,
+   "nl_reached": -6.8859728291269615
+  },
+  "pedal": {
+   "kind": "boost",
+   "level": 4.205007057261206,
+   "tilt": -0.5102676949347993
+  },
+  "cab": {
+   "base": 19,
+   "base_name": "Vintage 4x12, supercardioid, lower",
+   "mods": []
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    85.07716459287127,
+    0.0,
+    0.7071
+   ],
+   [
+    "lowshelf",
+    105.56744082623774,
+    -0.1236315615783079,
+    0.7071
+   ],
+   [
+    "peak",
+    5018.099167480943,
+    -2.972649895660293,
+    1.6515552763187846
+   ],
+   [
+    "highshelf",
+    5445.828288993556,
+    2.224366652364811,
+    0.7071
+   ]
+  ],
+  "bus_comp": null,
+  "time_fx": null,
+  "limiter": null,
+  "codec": null
+ },
+ {
+  "id": "high_gain_03",
+  "index": 33,
+  "style": "high_gain",
+  "production": "fx",
+  "split": "dev",
+  "seed": 1033,
+  "score_seed": 10331,
+  "c_seed": 10332,
+  "guitar_a": 10333,
+  "guitar_b": 10334,
+  "nl_target": -7.056419455129907,
+  "amp": {
+   "kind": "graybox",
+   "name": "hg_fat",
+   "knobs": {
+    "bass": 6.312552508523679,
+    "mid": 6.491990020879008,
+    "treble": 7.2223161214109375,
+    "master_db": 0.7540664678675302
+   },
+   "drive_db": -14.953125,
+   "nl_reached": -7.05111094527787
+  },
+  "pedal": null,
+  "cab": {
+   "base": 4,
+   "base_name": "Modern 4x12, blend, dark 60 W + 75 W",
+   "mods": [
+    [
+     "off_axis",
+     {
+      "f": 3855.1998390382632,
+      "db": 6.447972218423594
+     }
+    ],
+    [
+     "big_cab",
+     {
+      "f": 91.34436677257276,
+      "db": 3.750280579939341
+     }
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    62.068906736764696,
+    0.0,
+    0.7071
+   ],
+   [
+    "lowshelf",
+    116.97386967332524,
+    2.709421796160843,
+    0.7071
+   ]
+  ],
+  "bus_comp": {
+   "ratio": 3.808700278375407,
+   "attack": 7.584242945791118,
+   "release": 127.48673152188998,
+   "gr_db": 4.608133845812766,
+   "threshold": -4.72629927195076
+  },
+  "time_fx": {
+   "kind": "slap",
+   "delay_ms": 111.16888936160699,
+   "mix_db": -6.684113459622043
+  },
+  "limiter": {
+   "push_db": 6.196930101072543,
+   "release_ms": 125.08915780880146
+  },
+  "codec": {
+   "kind": "aac",
+   "kbps": 160
+  }
+ },
+ {
+  "id": "high_gain_04",
+  "index": 34,
+  "style": "high_gain",
+  "production": "fx",
+  "split": "dev",
+  "seed": 1034,
+  "score_seed": 10341,
+  "c_seed": 10342,
+  "guitar_a": 10343,
+  "guitar_b": 10344,
+  "nl_target": -6.047214454290392,
+  "amp": {
+   "kind": "graybox",
+   "name": "hg_tight",
+   "knobs": {
+    "bass": 6.921045360719358,
+    "mid": 3.6444191008972266,
+    "treble": 4.271516375619191,
+    "master_db": 2.5243458471546405
+   },
+   "drive_db": -5.484375,
+   "nl_reached": -6.045466541435124
+  },
+  "pedal": {
+   "kind": "mid",
+   "drive": 0.43182900755114756,
+   "tone": 0.6054109952166989,
+   "level": 5.447443942987658,
+   "tight": 90.52950814463908
+  },
+  "cab": {
+   "base": 4,
+   "base_name": "Modern 4x12, blend, dark 60 W + 75 W",
+   "mods": []
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    74.5641568541742,
+    0.0,
+    0.7071
+   ],
+   [
+    "lowshelf",
+    112.11189847456562,
+    1.2786739978218438,
+    0.7071
+   ],
+   [
+    "peak",
+    444.32178210934865,
+    4.596462009995335,
+    1.114970885460576
+   ],
+   [
+    "lowshelf",
+    107.28864538324929,
+    -0.1340620319090433,
+    0.7071
+   ]
+  ],
+  "bus_comp": {
+   "ratio": 3.4140950831313823,
+   "attack": 10.761552994343544,
+   "release": 140.64202860562813,
+   "gr_db": 3.555001772652217,
+   "threshold": 0.35972951175620693
+  },
+  "time_fx": {
+   "kind": "dotted",
+   "delay_s": 0.34370151120813947,
+   "feedback": 0.3438501528407302,
+   "mix_db": -10.178061458700087
+  },
+  "limiter": null,
+  "codec": {
+   "kind": "mp3",
+   "kbps": 192
+  }
+ },
+ {
+  "id": "high_gain_05",
+  "index": 35,
+  "style": "high_gain",
+  "production": "fx",
+  "split": "test",
+  "seed": 1035,
+  "score_seed": 10351,
+  "c_seed": 10352,
+  "guitar_a": 10353,
+  "guitar_b": 10354,
+  "nl_target": -7.880383334427689,
+  "amp": {
+   "kind": "nam",
+   "name": "nam_slimmable",
+   "drive_db": 18.0,
+   "nl_reached": -6.164437501869905
+  },
+  "pedal": {
+   "kind": "boost",
+   "level": 8.736378308651531,
+   "tilt": 3.6607062361017926
+  },
+  "cab": {
+   "base": 12,
+   "base_name": "Modern 4x12, dynamic, dark 60 W",
+   "mods": [
+    [
+     "big_cab",
+     {
+      "f": 110.55446114287571,
+      "db": 3.466605052344983
+     }
+    ],
+    [
+     "minimum_phase",
+     {}
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    97.9967112609828,
+    0.0,
+    0.7071
+   ],
+   [
+    "highshelf",
+    6293.053227805383,
+    -0.26322252163536397,
+    0.7071
+   ],
+   [
+    "peak",
+    230.23694301719414,
+    -2.833286115174623,
+    1.0509359024489224
+   ]
+  ],
+  "bus_comp": {
+   "ratio": 3.3404399959584783,
+   "attack": 22.469379734959407,
+   "release": 231.69825156564312,
+   "gr_db": 2.5552355535490716,
+   "threshold": -8.239993721018081
+  },
+  "time_fx": {
+   "kind": "dotted",
+   "delay_s": 0.4010093690136216,
+   "feedback": 0.4114281192369868,
+   "mix_db": -8.388890121310855
+  },
+  "limiter": {
+   "push_db": 7.636659596645481,
+   "release_ms": 62.869360736139335
+  },
+  "codec": null
+ },
+ {
+  "id": "high_gain_06",
+  "index": 36,
+  "style": "high_gain",
+  "production": "mix",
+  "split": "dev",
+  "seed": 1036,
+  "score_seed": 10361,
+  "c_seed": 10362,
+  "guitar_a": 10363,
+  "guitar_b": 10364,
+  "nl_target": -8.055662073860391,
+  "amp": {
+   "kind": "graybox",
+   "name": "hg_tight",
+   "knobs": {
+    "bass": 4.1762325795136785,
+    "mid": 6.203688012438894,
+    "treble": 5.738393756237778,
+    "master_db": -2.7526034016204686
+   },
+   "drive_db": -20.203125,
+   "nl_reached": -8.0380094918643
+  },
+  "pedal": {
+   "kind": "boost",
+   "level": 4.669558977425792,
+   "tilt": 2.7884310888867905
+  },
+  "cab": {
+   "base": 14,
+   "base_name": "Modern 4x12, vocal mic, bright 60 W",
+   "mods": []
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    87.0836152824558,
+    0.0,
+    0.7071
+   ],
+   [
+    "peak",
+    2016.0822176212453,
+    4.4640417272521145,
+    0.7579250176687382
+   ],
+   [
+    "peak",
+    1121.9560195243464,
+    -1.60711661130962,
+    1.3210814072672457
+   ],
+   [
+    "peak",
+    387.47530675243195,
+    -2.344881607938596,
+    1.0097263329265633
+   ]
+  ],
+  "bus_comp": {
+   "ratio": 3.975939302862292,
+   "attack": 15.021283633195136,
+   "release": 85.27874434570433,
+   "gr_db": 2.3704473614309447,
+   "threshold": 3.1365668755283553
+  },
+  "time_fx": null,
+  "double": true,
+  "rhythm_guitar": false,
+  "band_db": 1.2975360145683545,
+  "limiter": {
+   "push_db": 5.011598368736283,
+   "release_ms": 145.472681794914
+  },
+  "codec": {
+   "kind": "aac",
+   "kbps": 256
+  }
+ },
+ {
+  "id": "high_gain_07",
+  "index": 37,
+  "style": "high_gain",
+  "production": "mix",
+  "split": "dev",
+  "seed": 1037,
+  "score_seed": 10371,
+  "c_seed": 10372,
+  "guitar_a": 10373,
+  "guitar_b": 10374,
+  "nl_target": -6.972313362400249,
+  "amp": {
+   "kind": "graybox",
+   "name": "hg_fat",
+   "knobs": {
+    "bass": 4.2893336912584,
+    "mid": 4.236235544048465,
+    "treble": 6.1316075231598015,
+    "master_db": -0.2717683219904812
+   },
+   "drive_db": -14.765625,
+   "nl_reached": -6.976578425250516
+  },
+  "pedal": null,
+  "cab": {
+   "base": 7,
+   "base_name": "Modern 4x12, dynamic, 75 W, var. 3",
+   "mods": []
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    76.08923880432617,
+    0.0,
+    0.7071
+   ],
+   [
+    "highshelf",
+    7183.008630887908,
+    1.734920063660539,
+    0.7071
+   ],
+   [
+    "peak",
+    4547.823964923812,
+    -3.381912401399723,
+    1.9428168298065642
+   ],
+   [
+    "lowshelf",
+    150.44145934428138,
+    -1.6761022446144422,
+    0.7071
+   ]
+  ],
+  "bus_comp": null,
+  "time_fx": null,
+  "double": true,
+  "rhythm_guitar": false,
+  "band_db": -1.1375859390019933,
+  "limiter": {
+   "push_db": 6.207131422628731,
+   "release_ms": 54.384265629118836
+  },
+  "codec": {
+   "kind": "mp3",
+   "kbps": 192
+  }
+ },
+ {
+  "id": "high_gain_08",
+  "index": 38,
+  "style": "high_gain",
+  "production": "mix",
+  "split": "test",
+  "seed": 1038,
+  "score_seed": 10381,
+  "c_seed": 10382,
+  "guitar_a": 10383,
+  "guitar_b": 10384,
+  "nl_target": -7.856352357411751,
+  "amp": {
+   "kind": "nam",
+   "name": "nam_a2",
+   "drive_db": 5.484375,
+   "nl_reached": -7.861478246730446
+  },
+  "pedal": {
+   "kind": "mid",
+   "drive": 0.4564851729770841,
+   "tone": 0.5803165156480702,
+   "level": 4.499518532576724,
+   "tight": 20.0
+  },
+  "cab": {
+   "base": 9,
+   "base_name": "Modern 4x12, dynamic, bright 60 W, var. 1",
+   "mods": []
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    103.67559514698942,
+    0.0,
+    0.7071
+   ],
+   [
+    "peak",
+    1487.892285128235,
+    2.0141928840641836,
+    1.545366575346273
+   ]
+  ],
+  "bus_comp": {
+   "ratio": 2.2674404915570037,
+   "attack": 24.420535134135957,
+   "release": 136.5594082988885,
+   "gr_db": 2.543293349067073,
+   "threshold": -16.534631382741324
+  },
+  "time_fx": {
+   "kind": "room",
+   "rt60": 0.7552396064563168,
+   "mix_db": -11.103254272059313
+  },
+  "double": true,
+  "rhythm_guitar": false,
+  "band_db": 2.19058512074934,
+  "limiter": {
+   "push_db": 4.3603260888609,
+   "release_ms": 52.652981835901194
+  },
+  "codec": {
+   "kind": "aac",
+   "kbps": 256
+  }
+ },
+ {
+  "id": "high_gain_09",
+  "index": 39,
+  "style": "high_gain",
+  "production": "mix",
+  "split": "test",
+  "seed": 1039,
+  "score_seed": 10391,
+  "c_seed": 10392,
+  "guitar_a": 10393,
+  "guitar_b": 10394,
+  "nl_target": -6.5545462255247715,
+  "amp": {
+   "kind": "graybox",
+   "name": "hg_fat",
+   "knobs": {
+    "bass": 6.477291554696823,
+    "mid": 4.9224843774914415,
+    "treble": 5.938630461497551,
+    "master_db": 1.571043780827185
+   },
+   "drive_db": -13.171875,
+   "nl_reached": -6.562183959898666
+  },
+  "pedal": null,
+  "cab": {
+   "base": 19,
+   "base_name": "Vintage 4x12, supercardioid, lower",
+   "mods": []
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    98.03997819802575,
+    0.0,
+    0.7071
+   ],
+   [
+    "lowshelf",
+    139.85003918025103,
+    0.7232164000202361,
+    0.7071
+   ],
+   [
+    "peak",
+    317.19281654451777,
+    3.5888374971714567,
+    1.0653407672139668
+   ],
+   [
+    "highshelf",
+    7200.632247107149,
+    -2.340877749222038,
+    0.7071
+   ]
+  ],
+  "bus_comp": null,
+  "time_fx": null,
+  "double": false,
+  "rhythm_guitar": false,
+  "band_db": -2.607316519358278,
+  "limiter": {
+   "push_db": 4.8072388736399905,
+   "release_ms": 98.3139120732088
+  },
+  "codec": {
+   "kind": "mp3",
+   "kbps": 256
+  }
+ },
+ {
+  "id": "lead_00",
+  "index": 40,
+  "style": "lead",
+  "production": "dry",
+  "split": "dev",
+  "seed": 1040,
+  "score_seed": 10401,
+  "c_seed": 10402,
+  "guitar_a": 10403,
+  "guitar_b": 10404,
+  "nl_target": -5.4816850145058,
+  "amp": {
+   "kind": "graybox",
+   "name": "lead_smooth",
+   "knobs": {
+    "bass": 6.320761032685883,
+    "mid": 6.127102485018579,
+    "treble": 6.490821039123359,
+    "master_db": 1.0941106934301434
+   },
+   "drive_db": -18.515625,
+   "nl_reached": -5.477559178210383
+  },
+  "pedal": null,
+  "cab": {
+   "base": 20,
+   "base_name": "Vintage 4x12, supercardioid, upper",
+   "mods": [
+    [
+     "big_cab",
+     {
+      "f": 105.588524881383,
+      "db": 3.794183591156637
+     }
+    ],
+    [
+     "small_speaker",
+     {
+      "hp": 125.62991949112116,
+      "peak_f": 2008.1997791435726,
+      "peak_db": 2.1271390463950146
+     }
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    61.9422682296008,
+    0.0,
+    0.7071
+   ],
+   [
+    "lowshelf",
+    121.08475562357387,
+    -0.23941742446144065,
+    0.7071
+   ],
+   [
+    "highshelf",
+    7317.709506671623,
+    0.48947215941778166,
+    0.7071
+   ],
+   [
+    "highshelf",
+    6413.708682293713,
+    1.1072943642526607,
+    0.7071
+   ]
+  ],
+  "bus_comp": null,
+  "time_fx": null,
+  "limiter": null,
+  "codec": null
+ },
+ {
+  "id": "lead_01",
+  "index": 41,
+  "style": "lead",
+  "production": "dry",
+  "split": "dev",
+  "seed": 1041,
+  "score_seed": 10411,
+  "c_seed": 10412,
+  "guitar_a": 10413,
+  "guitar_b": 10414,
+  "nl_target": -3.74636150053634,
+  "amp": {
+   "kind": "nam",
+   "name": "nam_a2",
+   "drive_db": 18.0,
+   "nl_reached": -5.939155313425029
+  },
+  "pedal": {
+   "kind": "mid",
+   "drive": 0.5149509424475668,
+   "tone": 0.5255386108092245,
+   "level": 5.1974016048315255,
+   "tight": 20.0
+  },
+  "cab": {
+   "base": 10,
+   "base_name": "Modern 4x12, dynamic, bright 60 W, var. 2",
+   "mods": []
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    105.17632841802306,
+    0.0,
+    0.7071
+   ],
+   [
+    "peak",
+    2371.270947283985,
+    -2.2818083136162692,
+    1.8550215924685867
+   ],
+   [
+    "lowshelf",
+    181.8898544330329,
+    -0.5473208950493138,
+    0.7071
+   ]
+  ],
+  "bus_comp": null,
+  "time_fx": null,
+  "limiter": null,
+  "codec": null
+ },
+ {
+  "id": "lead_02",
+  "index": 42,
+  "style": "lead",
+  "production": "dry",
+  "split": "test",
+  "seed": 1042,
+  "score_seed": 10421,
+  "c_seed": 10422,
+  "guitar_a": 10423,
+  "guitar_b": 10424,
+  "nl_target": -5.538481621706335,
+  "amp": {
+   "kind": "graybox",
+   "name": "lead_smooth",
+   "knobs": {
+    "bass": 4.4296339273019045,
+    "mid": 4.488834635361085,
+    "treble": 6.016012818196836,
+    "master_db": 1.4825513537038173
+   },
+   "drive_db": -21.703125,
+   "nl_reached": -5.527107088329943
+  },
+  "pedal": null,
+  "cab": {
+   "base": 5,
+   "base_name": "Modern 4x12, dynamic, 75 W, var. 1",
+   "mods": []
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    73.20818297964327,
+    0.0,
+    0.7071
+   ],
+   [
+    "highshelf",
+    6158.294853945264,
+    2.2256241519192845,
+    0.7071
+   ],
+   [
+    "peak",
+    4207.2703206109345,
+    2.914162788493525,
+    1.8041775345689874
+   ]
+  ],
+  "bus_comp": null,
+  "time_fx": null,
+  "limiter": null,
+  "codec": null
+ },
+ {
+  "id": "lead_03",
+  "index": 43,
+  "style": "lead",
+  "production": "fx",
+  "split": "dev",
+  "seed": 1043,
+  "score_seed": 10431,
+  "c_seed": 10432,
+  "guitar_a": 10433,
+  "guitar_b": 10434,
+  "nl_target": -5.644302628004261,
+  "amp": {
+   "kind": "graybox",
+   "name": "lead_bright",
+   "knobs": {
+    "bass": 3.6693063850267746,
+    "mid": 3.408256599947126,
+    "treble": 5.3937519285014845,
+    "master_db": 2.195271749090913
+   },
+   "drive_db": -26.390625,
+   "nl_reached": -5.650002247736711
+  },
+  "pedal": null,
+  "cab": {
+   "base": 4,
+   "base_name": "Modern 4x12, blend, dark 60 W + 75 W",
+   "mods": []
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    78.7538163780374,
+    0.0,
+    0.7071
+   ],
+   [
+    "peak",
+    401.0862049082869,
+    4.40769749231562,
+    1.3566006778591515
+   ]
+  ],
+  "bus_comp": {
+   "ratio": 2.44406771221539,
+   "attack": 11.263912551772696,
+   "release": 177.6106240594331,
+   "gr_db": 2.7872298614205757,
+   "threshold": -3.4799795890755663
+  },
+  "time_fx": {
+   "kind": "dotted",
+   "delay_s": 0.36655828687530007,
+   "feedback": 0.444013112926639,
+   "mix_db": -8.174931655376978
+  },
+  "limiter": {
+   "push_db": 6.931522240975511,
+   "release_ms": 124.89874969790972
+  },
+  "codec": null
+ },
+ {
+  "id": "lead_04",
+  "index": 44,
+  "style": "lead",
+  "production": "fx",
+  "split": "dev",
+  "seed": 1044,
+  "score_seed": 10441,
+  "c_seed": 10442,
+  "guitar_a": 10443,
+  "guitar_b": 10444,
+  "nl_target": -4.05153715655174,
+  "amp": {
+   "kind": "graybox",
+   "name": "lead_smooth",
+   "knobs": {
+    "bass": 3.049481933254141,
+    "mid": 6.433870412221724,
+    "treble": 4.112210114485727,
+    "master_db": 2.5468536225761453
+   },
+   "drive_db": -15.421875,
+   "nl_reached": -4.047480418557224
+  },
+  "pedal": null,
+  "cab": {
+   "base": 10,
+   "base_name": "Modern 4x12, dynamic, bright 60 W, var. 2",
+   "mods": []
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    92.85304560986633,
+    0.0,
+    0.7071
+   ],
+   [
+    "highshelf",
+    7224.097842789545,
+    -0.6685688294355511,
+    0.7071
+   ],
+   [
+    "peak",
+    1397.6828985187453,
+    3.702370554325531,
+    1.7368918978319559
+   ]
+  ],
+  "bus_comp": {
+   "ratio": 3.296721277862882,
+   "attack": 23.972538761753825,
+   "release": 122.4612545831737,
+   "gr_db": 4.734142893221316,
+   "threshold": -4.407959486880125
+  },
+  "time_fx": {
+   "kind": "slap",
+   "delay_ms": 97.27769428993639,
+   "mix_db": -9.586772825468906
+  },
+  "limiter": {
+   "push_db": 6.00559735926368,
+   "release_ms": 119.58111665306733
+  },
+  "codec": {
+   "kind": "aac",
+   "kbps": 160
+  }
+ },
+ {
+  "id": "lead_05",
+  "index": 45,
+  "style": "lead",
+  "production": "fx",
+  "split": "test",
+  "seed": 1045,
+  "score_seed": 10451,
+  "c_seed": 10452,
+  "guitar_a": 10453,
+  "guitar_b": 10454,
+  "nl_target": -3.878810213464864,
+  "amp": {
+   "kind": "nam",
+   "name": "nam_a2",
+   "drive_db": 12.0,
+   "nl_reached": -10.441250724545512
+  },
+  "pedal": {
+   "kind": "distortion",
+   "drive": 0.5895479548045358,
+   "tone": 0.5466535242358066,
+   "level": 2.0990190482489552,
+   "tight": 20.0
+  },
+  "cab": {
+   "base": 12,
+   "base_name": "Modern 4x12, dynamic, dark 60 W",
+   "mods": [
+    [
+     "resonance_shift",
+     {
+      "alpha": 0.8850938749584576
+     }
+    ],
+    [
+     "small_speaker",
+     {
+      "hp": 129.26955824375253,
+      "peak_f": 2228.541129744052,
+      "peak_db": 3.153127401806408
+     }
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    100.1973411450868,
+    0.0,
+    0.7071
+   ],
+   [
+    "peak",
+    224.0212720839174,
+    -4.388881166077412,
+    0.7406197952854654
+   ]
+  ],
+  "bus_comp": {
+   "ratio": 2.9601766952084754,
+   "attack": 23.447837933392282,
+   "release": 96.72016464277827,
+   "gr_db": 4.519628223752683,
+   "threshold": -16.679964328519777
+  },
+  "time_fx": {
+   "kind": "room",
+   "rt60": 0.6187419819375914,
+   "mix_db": -13.742235115526201
+  },
+  "limiter": {
+   "push_db": 6.069218664544799,
+   "release_ms": 101.7645345673563
+  },
+  "codec": {
+   "kind": "aac",
+   "kbps": 192
+  }
+ },
+ {
+  "id": "lead_06",
+  "index": 46,
+  "style": "lead",
+  "production": "mix",
+  "split": "dev",
+  "seed": 1046,
+  "score_seed": 10461,
+  "c_seed": 10462,
+  "guitar_a": 10463,
+  "guitar_b": 10464,
+  "nl_target": -5.219234344599558,
+  "amp": {
+   "kind": "graybox",
+   "name": "lead_smooth",
+   "knobs": {
+    "bass": 3.3516530171221133,
+    "mid": 6.253172290030051,
+    "treble": 6.292398027972408,
+    "master_db": -0.18905770347361117
+   },
+   "drive_db": 21.234375,
+   "nl_reached": -5.218784421581612
+  },
+  "pedal": {
+   "kind": "mid",
+   "drive": 0.5105779677041182,
+   "tone": 0.6873167123906501,
+   "level": 1.573765363315115,
+   "tight": 20.0
+  },
+  "cab": {
+   "base": 20,
+   "base_name": "Vintage 4x12, supercardioid, upper",
+   "mods": [
+    [
+     "off_axis",
+     {
+      "f": 2904.8653641700103,
+      "db": 8.11613916227896
+     }
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    75.80997239268441,
+    0.0,
+    0.7071
+   ],
+   [
+    "highshelf",
+    6564.762534886151,
+    -1.0033386866135912,
+    0.7071
+   ],
+   [
+    "peak",
+    4087.0641104401666,
+    -4.075501345692205,
+    1.7397782870899183
+   ],
+   [
+    "peak",
+    249.20876160371137,
+    -1.6765022004832422,
+    1.7085613567642246
+   ]
+  ],
+  "bus_comp": {
+   "ratio": 2.575964598797225,
+   "attack": 23.42626816624458,
+   "release": 158.4408038800319,
+   "gr_db": 5.3281072428435134,
+   "threshold": -6.935997116775927
+  },
+  "time_fx": null,
+  "double": false,
+  "rhythm_guitar": true,
+  "band_db": 1.45474824179792,
+  "limiter": {
+   "push_db": 5.263020661441285,
+   "release_ms": 75.3610536526606
+  },
+  "codec": {
+   "kind": "aac",
+   "kbps": 128
+  }
+ },
+ {
+  "id": "lead_07",
+  "index": 47,
+  "style": "lead",
+  "production": "mix",
+  "split": "dev",
+  "seed": 1047,
+  "score_seed": 10471,
+  "c_seed": 10472,
+  "guitar_a": 10473,
+  "guitar_b": 10474,
+  "nl_target": -4.040961194240691,
+  "amp": {
+   "kind": "graybox",
+   "name": "lead_bright",
+   "knobs": {
+    "bass": 5.213452773295002,
+    "mid": 4.700149398131483,
+    "treble": 5.152263842642286,
+    "master_db": 0.4279224843859586
+   },
+   "drive_db": -6.0,
+   "nl_reached": -13.221129409709732
+  },
+  "pedal": {
+   "kind": "distortion",
+   "drive": 0.6488245370030867,
+   "tone": 0.47267406321289646,
+   "level": 4.602168886522072,
+   "tight": 85.6921152579668
+  },
+  "cab": {
+   "base": 14,
+   "base_name": "Modern 4x12, vocal mic, bright 60 W",
+   "mods": []
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    104.49606111235275,
+    0.0,
+    0.7071
+   ],
+   [
+    "peak",
+    739.9295955589018,
+    3.268022982891586,
+    1.1490332379003716
+   ],
+   [
+    "lowshelf",
+    177.58188258202168,
+    -0.8864297348494004,
+    0.7071
+   ]
+  ],
+  "bus_comp": {
+   "ratio": 2.1915575080418614,
+   "attack": 26.981424619249605,
+   "release": 84.21509560553098,
+   "gr_db": 3.1730356160923794,
+   "threshold": -7.05386319799705
+  },
+  "time_fx": null,
+  "double": false,
+  "rhythm_guitar": true,
+  "band_db": -1.0449249247594106,
+  "limiter": {
+   "push_db": 5.390492690506352,
+   "release_ms": 94.52800506649245
+  },
+  "codec": {
+   "kind": "aac",
+   "kbps": 192
+  }
+ },
+ {
+  "id": "lead_08",
+  "index": 48,
+  "style": "lead",
+  "production": "mix",
+  "split": "test",
+  "seed": 1048,
+  "score_seed": 10481,
+  "c_seed": 10482,
+  "guitar_a": 10483,
+  "guitar_b": 10484,
+  "nl_target": -4.179470459741626,
+  "amp": {
+   "kind": "nam",
+   "name": "nam_standard",
+   "drive_db": -18.515625,
+   "nl_reached": -4.158028985784277
+  },
+  "pedal": {
+   "kind": "fuzz",
+   "drive": 0.8707552704228687,
+   "tone": 0.39820855880361733,
+   "level": 4.302842437804408,
+   "tight": 20.0
+  },
+  "cab": {
+   "base": 13,
+   "base_name": "Modern 4x12, supercardioid, dark 60 W",
+   "mods": [
+    [
+     "small_speaker",
+     {
+      "hp": 105.4310049560046,
+      "peak_f": 1833.900803885297,
+      "peak_db": 2.1938441493778527
+     }
+    ]
+   ]
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    103.20849140816938,
+    0.0,
+    0.7071
+   ],
+   [
+    "highshelf",
+    8992.054635932436,
+    2.793648089052433,
+    0.7071
+   ]
+  ],
+  "bus_comp": null,
+  "time_fx": {
+   "kind": "dotted",
+   "delay_s": 0.4388795658504956,
+   "feedback": 0.383238488418017,
+   "mix_db": -10.163647436608821
+  },
+  "double": false,
+  "rhythm_guitar": true,
+  "band_db": -0.8853593416995313,
+  "limiter": {
+   "push_db": 6.160377219511106,
+   "release_ms": 66.64191611541293
+  },
+  "codec": {
+   "kind": "aac",
+   "kbps": 192
+  }
+ },
+ {
+  "id": "lead_09",
+  "index": 49,
+  "style": "lead",
+  "production": "mix",
+  "split": "test",
+  "seed": 1049,
+  "score_seed": 10491,
+  "c_seed": 10492,
+  "guitar_a": 10493,
+  "guitar_b": 10494,
+  "nl_target": -4.938086672668383,
+  "amp": {
+   "kind": "graybox",
+   "name": "lead_bright",
+   "knobs": {
+    "bass": 4.032697414923524,
+    "mid": 5.1880523374395455,
+    "treble": 6.721975385354012,
+    "master_db": 1.3777564834633427
+   },
+   "drive_db": -23.671875,
+   "nl_reached": -4.949459658510989
+  },
+  "pedal": null,
+  "cab": {
+   "base": 9,
+   "base_name": "Modern 4x12, dynamic, bright 60 W, var. 1",
+   "mods": []
+  },
+  "mic_eq": [
+   [
+    "highpass",
+    97.63922730247137,
+    0.0,
+    0.7071
+   ],
+   [
+    "highshelf",
+    8177.6100839827905,
+    -0.6963540224168937,
+    0.7071
+   ],
+   [
+    "peak",
+    3355.3950433923947,
+    2.968752024962241,
+    1.5250113184285183
+   ]
+  ],
+  "bus_comp": {
+   "ratio": 3.2032173052070956,
+   "attack": 6.820712685157072,
+   "release": 216.75516766947402,
+   "gr_db": 3.592590050314872,
+   "threshold": -2.333729404695014
+  },
+  "time_fx": null,
+  "double": false,
+  "rhythm_guitar": true,
+  "band_db": -1.9646243857306556,
+  "limiter": {
+   "push_db": 7.361448178557694,
+   "release_ms": 54.59474891520494
+  },
+  "codec": {
+   "kind": "aac",
+   "kbps": 256
+  }
+ }
+]
