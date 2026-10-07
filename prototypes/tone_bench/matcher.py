@@ -22,7 +22,8 @@ Configurations:
                target's, Round 2 step 3)
   any_auto_take_fx  any_auto_take with the pedals and the post compressor in the search (tone_match.pedal_variants,
                search_post_comp; Round 2 step 2)
-  any_fx_curve     any_auto_take_fx with the match curve instead of the 5-band match EQ (tone_match.fit_match_curve)
+  any_fx_curve     any_auto_take_fx with the match curve instead of the 5-band match EQ (tone_match.fit_match_curve), at
+               tone_match.CURVE_AMOUNT_PERCENT
   any_fx_curve_eq  any_auto_take_fx with the match curve fitted on top of the match EQ
 The DI the matcher gets is always the take (B). Its search is the split's searchable IRs (rigs.HELD_OUT).
 """
@@ -93,7 +94,8 @@ def run(target, take, config, split, workers=4, separated=False):
 def result_settings(r):
     cab = next(p for p in rigs.ALL_IRS if p.name == r["cab"])
     return dict(slot=r["slot"], gain=r["gain_db"], tone=list(r["tone_db"]), cab=str(cab), eq=[list(b) for b in r["eq"]],
-                pedal=r.get("pedal"), post_comp=r.get("post_comp"), match_curve=r.get("match_curve"))
+                pedal=r.get("pedal"), post_comp=r.get("post_comp"), match_curve=r.get("match_curve"),
+                match_curve_amount=r.get("match_curve_amount"))
 
 
 def render_settings(x, s, pedal=None, comp=None):
@@ -104,7 +106,7 @@ def render_settings(x, s, pedal=None, comp=None):
     comp = comp if comp is not None else s.get("post_comp")
     y = rigs.pedal_out(x, pedal)
     y = tm.render(y, s["slot"], s["gain"], tone=s["tone"], cab=s["cab"], eq=[tuple(b) for b in s["eq"]] if s["eq"] else None,
-                  curve=s.get("match_curve"))
+                  curve=s.get("match_curve"), curve_amount=s.get("match_curve_amount") or 100.0)
     if comp:
         y = rigs.post_comp(y, comp)
     return y

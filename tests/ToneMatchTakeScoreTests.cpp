@@ -144,6 +144,88 @@ public:
             logMessage ("  -> worst term " + juce::String (worstTerm, 6) + ", worst total " + juce::String (worstTotal, 5));
         }
 
+        beginTest ("golden: the match curve's fit (Round 2, item 5) on three candidates, and the search with the curve instead of the match EQ");
+        {
+            const auto* cands = e["candidates"].getArray();
+            const auto ta = Analysis::of (target);
+            double worstPoint = 0.0;
+            int points = 0;
+            for (const auto& c : *cands)
+            {
+                const auto amp = ToneMatcher::renderAmp (gainSet ((int) c["slot"]), {}, takeDi, (double) c["gain"], noCancel);
+                const auto ir = ToneMatcher::loadIR (platform::factoryContentFolder().getChildFile ("irs").getChildFile (c["cab"].toString()));
+                std::array<double, 5> tone {};
+                const auto tv = doubles (c["tone"]);
+                for (size_t b = 0; b < 5; ++b)
+                    tone[b] = tv[b];
+                auto bins = Analysis::of (ToneMatcher::convolve (amp, ir)).ltasBins;
+                const auto h = ToneMatcher::linearPowerOnBins (tone, nullptr);
+                for (size_t k = 0; k < bins.size(); ++k)
+                    bins[k] *= h[k];
+                const auto curve = ToneMatcher::fitMatchCurve (ta, bins);
+                const auto* py = c["curve"].getArray();
+                expect (py != nullptr && py->size() == (int) curve.points.size());
+                for (int i = 0; py != nullptr && i < py->size() && i < (int) curve.points.size(); ++i)
+                {
+                    worstPoint = std::max (worstPoint, std::abs (curve.points[(size_t) i].db - (double) (*py)[i][1]));
+                    worstPoint = std::max (worstPoint, std::abs (curve.points[(size_t) i].hz - (double) (*py)[i][0]) * 1.0e-3);
+                    ++points;
+                }
+            }
+            expectLessThan (worstPoint, 1.0e-3);
+
+            MatchSettings s;
+            s.mode = Mode::anything;
+            for (int i = 0; i < 3; ++i)
+                s.models.push_back (gainSet (i));
+            s.cabs = builtInCabs();
+            s.takeIsLinedUp = true;
+            s.searchPedals = true;
+            s.fitCurve = true;
+            const auto r = ToneMatcher::match (target, takeDi, s, noCancel);
+            expect (r.ok && ! r.usesMatchEq(), r.error);
+            const auto& m = e["match_curve"];
+            expectEquals (r.slot, (int) m["slot"]);
+            expectWithinAbsoluteError (r.gainDb, (double) m["gain"], 1.0e-9);
+            expectEquals (r.cab.getFileName(), m["cab"].toString());
+            expectWithinAbsoluteError (r.matchCurveAmountPercent, (double) m["amount"], 1.0e-9);
+            const auto* mp = m["points"].getArray();
+            double worstMatch = 0.0;
+            for (int i = 0; mp != nullptr && i < mp->size() && i < (int) r.matchCurve.points.size(); ++i)
+                worstMatch = std::max (worstMatch, std::abs (r.matchCurve.points[(size_t) i].db - (double) (*mp)[i][1]));
+            expect (mp != nullptr && mp->size() == (int) r.matchCurve.points.size());
+            expectLessThan (worstMatch, 1.0e-3);
+            expect (r.postCompressor.on == m["post_comp"].isObject());
+            const auto pyScores = doubles (m["post_comp_scores"]);
+            expectLessThan (worst (r.postCompressorScores, pyScores), 0.05);
+            for (const auto& b : r.eq)
+                expect (juce::exactlyEqual (b.gainDb, 0.0f), "the match EQ is flat when the curve replaces it");
+            expectWithinAbsoluteError (r.spectralErrorAfterEqDb, (double) m["spectral_after"], 1.0e-3);
+
+            // The render plays the curve: the result through renderTone against the same without it.
+            auto settings = ToneMatcher::settingsFor (r, s);
+            expect (settings.matchCurveOn && ! settings.postEqOn);
+            const auto with = ToneMatcher::renderTone (settings, takeDi, noCancel);
+            settings.matchCurveOn = false;
+            const auto without = ToneMatcher::renderTone (settings, takeDi, noCancel);
+            double diff = 0.0, energy = 0.0;
+            for (size_t i = 0; i < with.size(); ++i)
+            {
+                diff += ((double) with[i] - without[i]) * ((double) with[i] - without[i]);
+                energy += (double) without[i] * without[i];
+            }
+            expectGreaterThan (diff / energy, 1.0e-4);
+            juce::String scores;
+            for (auto v : r.postCompressorScores)
+                scores << juce::String (v, 3) << " ";
+            logMessage ("  -> the fit on " + juce::String (cands->size()) + " candidates: " + juce::String (points) + " points, the worst "
+                        + juce::String (worstPoint, 6) + " dB from the prototype's; the search with the curve: slot " + juce::String (r.slot + 1) + " at "
+                        + juce::String (r.gainDb, 1) + " dB, " + r.cab.getFileNameWithoutExtension() + ", the curve's " + juce::String ((int) r.matchCurve.points.size())
+                        + " points within " + juce::String (worstMatch, 6) + " dB, at " + juce::String (r.matchCurveAmountPercent, 0) + "%, post compressor scores "
+                        + scores + "(prototype " + juce::String (pyScores.size() > 0 ? pyScores[0] : 0.0, 3) + " ...); the curve changes the render by "
+                        + juce::String (10.0 * std::log10 (diff / energy), 1) + " dB relative");
+        }
+
         beginTest ("golden: the whole search with the take-aware score finds the prototype's amp, Gain, and cab");
         {
             MatchSettings s;

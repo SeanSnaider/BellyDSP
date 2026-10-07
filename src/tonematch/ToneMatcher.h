@@ -9,6 +9,7 @@
 
 #include "../dsp/Boost.h"
 #include "../dsp/Compressor.h"
+#include "../dsp/MatchCurve.h"
 #include "../dsp/NamAmp.h"
 #include "../dsp/Overdrive.h"
 
@@ -59,7 +60,6 @@ struct Pedal
     Boost::Settings boost;
     Overdrive::Settings overdrive;
     Compressor::Settings compressor;
-    bool operator== (const Pedal&) const = default;
 };
 
 /// The post compressor (after the cab and the post EQ), when a match uses it.
@@ -95,6 +95,11 @@ struct MatchSettings
     /// Also try the app's pedals in front of the best amp and its post compressor (Round 2; ToneMatcher::pedalVariants,
     /// searchPostCompressor). The post compressor needs the take-aware score (a take).
     bool searchPedals = false;
+    /// The match curve (src/dsp/MatchCurve.h) instead of the 5-band match EQ (Round 2, item 5: tone_bench DEV 0.435 ->
+    /// 0.426 median, TEST measured in docs/TONE_MATCH.md), fitted to the winner (fitMatchCurve below) and played at
+    /// matchCurveAmountPercent. Needs the take-aware score (it was measured with it).
+    bool fitCurve = false;
+    double matchCurveAmountPercent = 50.0;
     int pedalOversampling = 4;                                   ///< as the processor sets the drive blocks
     double voltsAtFullScale = drive::defaultVoltsAtFullScale;    ///< the interface's calibration, as the processor's
 };
@@ -113,6 +118,11 @@ struct MatchResult
     std::array<Equalizer::Band, Equalizer::numParametricBands> eq {};
     Pedal pedal;                        ///< in front of the amp (none unless the pedal search found one better)
     PostCompressor postCompressor;      ///< after the cab and the EQ
+    /// The match curve when the search fitted one (MatchSettings::fitCurve): then it replaces the match EQ, whose
+    /// bands are flat and which Apply switches off; empty otherwise.
+    MatchCurve::Curve matchCurve;
+    double matchCurveAmountPercent = 0.0;
+    bool usesMatchEq() const noexcept { return matchCurve.points.empty(); }
     std::vector<double> postCompressorScores; ///< the take-aware score of the finished match without it and with each tried
 
     double spectralErrorDb = 0.0;        ///< after the tone, before the match EQ
@@ -151,6 +161,9 @@ struct ToneSettings
     juce::File model;                   ///< the slot's capture or gain set; empty: no amp
     NamAmp::Calibration calibration;    ///< as the app loads its captures
     std::vector<Pedal> pedals;          ///< in front of the amp, in chain order (the pre compressor, the boost, the overdrive)
+    bool matchCurveOn = false;          ///< the match curve, after the cab, before the post EQ
+    MatchCurve::Curve matchCurve;
+    double matchCurveAmount = 1.0;      ///< 0 to 1
     PostCompressor postCompressor;      ///< after the post EQ
     bool ampOn = true;                  ///< amp_bypass off
     float gainDb = 0.0f;                ///< the slot's Gain (amp*_input_trim)
@@ -188,6 +201,16 @@ public:
     /// The playing level of x: the 90th percentile of a 50 ms RMS (the mean square over [n - 1200, n + 1200)) over the
     /// samples where it's above 1e-6, dB (-120 if none). Pedal and compressor thresholds are set from it.
     static double playingLevelDb (const std::vector<float>& x);
+
+    /// The match curve's fit (prototypes/tone_match.py, fit_match_curve): the target's long-term power per analysis
+    /// bin against the candidate's (candidateBins: its ltasBins times its linear part's |H|^2), the dB difference
+    /// smoothed by a Gaussian of 1/12 octave (sigma, +-3 sigma) on log frequency, scaled toward 0 dB by the target's
+    /// confidence (full within 20 dB of its loudest, 5% at 35 dB down; 0 outside 60 Hz to 14 kHz), the confidence-
+    /// weighted mean removed, capped at +-12 dB; sampled every 1/48 octave from 40 Hz to 16 kHz (415 points).
+    static MatchCurve::Curve fitMatchCurve (const Analysis& target, const std::vector<double>& candidateBins);
+
+    /// |H|^2 of the tone bands and the EQ bands (eq may be null) on the analysis bins (k fs / 8192).
+    static std::vector<double> linearPowerOnBins (const std::array<double, 5>& tone, const std::array<Equalizer::Band, Equalizer::numParametricBands>* eq);
 
     /// The pedals tried in front of the best amp at its best Gain (prototypes/tone_match.py, pedal_variants): the
     /// overdrive's four modes at Drive 0.3 and 0.7 (Tone 0.5, Level 0 dB, Tight off) each at the Gain and 6 dB under

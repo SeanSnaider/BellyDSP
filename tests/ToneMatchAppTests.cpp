@@ -289,12 +289,14 @@ public:
             p.undoManager.beginNewTransaction();
             p.undoManager.clearUndoHistory();
             const auto ids = juce::StringArray { "pre_fx_on", "comp_pre_on", "boost_on", "od_on", "od_mode", "od_drive", "od_tone", "comp_post_on", "comp_post_threshold",
-                                                 "comp_post_ratio", "comp_post_detector", "comp_post_mix", "amp1_input_trim" };
+                                                 "comp_post_ratio", "comp_post_detector", "comp_post_mix", "amp1_input_trim", "match_curve_on",
+                                                 "match_curve_amount", "eq_post_on" };
             auto values = [&] {
                 juce::StringArray v;
                 for (const auto& id : ids)
                     v.add (id + "=" + juce::String (getParam (p, id), 2));
                 v.add ("slot1=" + p.getSlotCapture (0).getParentDirectory().getFileName());
+                v.add ("curve=" + juce::String ((int) p.getMatchCurve().points.size()) + " points");
                 return v.joinIntoString (", ");
             };
             const auto before = values();
@@ -324,13 +326,24 @@ public:
             c.autoMakeup = false;
             c.makeupDb = 0.0f;
             c.mix = 1.0f;
+            // The match curve instead of the match EQ (Round 2, item 5): a bump at 2.5 kHz and a cut at 400 Hz, at 50%.
+            r.eq = {};
+            r.matchCurve = ampsim::MatchCurve::Curve::fromPoints ({ { 100.0, 0.0 }, { 400.0, -4.0 }, { 1000.0, 0.0 }, { 2500.0, 5.0 }, { 6000.0, 0.0 } });
+            r.matchCurveAmountPercent = 50.0;
+            setParam (p, "eq_post_on", 1.0f);
+            setParam (p, "match_curve_on", 0.0f);
+            p.parameters.copyState();
+            p.undoManager.beginNewTransaction();
+            p.undoManager.clearUndoHistory();
+            const auto beforeCurve = values();
             session.setResultForTests (r);
             page.refresh();
             expectEquals (session.applySlot(), 0, "the playing slot");
             const auto note = page.getApplyNote();
             expect (note.contains ("it uses overdrive"), note);
             const auto text = page.getResultText();
-            expect (text.contains ("Monolith (loads into slot 1)") && text.contains ("Overdrive, Distortion") && text.contains ("post compressor -22.0 dB 3:1"), text);
+            expect (text.contains ("Monolith (loads into slot 1)") && text.contains ("Overdrive, Distortion") && text.contains ("post compressor -22.0 dB 3:1")
+                    && text.contains ("Match curve  50% (replaces the match EQ)"), text);
             const auto matched = session.matchedSettings();
             ed.refresh();
             const auto shot = shots.getChildFile ("31_result_pedal.png");
@@ -345,6 +358,8 @@ public:
             expect (getParam (p, "comp_post_on") > 0.5f);
             expectWithinAbsoluteError (getParam (p, "comp_post_threshold"), -25.0f, 0.051f); // -22 dB with the Master at -3 dB
             expectEquals ((int) getParam (p, "comp_post_detector"), 1);
+            expect (p.getMatchCurve() == r.matchCurve && getParam (p, "match_curve_on") > 0.5f && getParam (p, "eq_post_on") < 0.5f);
+            expectWithinAbsoluteError (getParam (p, "match_curve_amount"), 50.0f, 0.051f);
             // Match renders exactly what Apply set (the settings read back from the processor), the pedal and the post
             // compressor included.
             const auto di = guitarDI ((int) (3.0 * fs));
@@ -355,13 +370,14 @@ public:
             const auto a = ampsim::tonematch::ToneMatcher::renderTone (m, di, noCancel), b = ampsim::tonematch::ToneMatcher::renderTone (current, di, noCancel);
             expect (! a.empty() && a == b, "Match's render equals the applied settings' render, sample for sample");
             expectEquals ((int) current.pedals.size(), 1);
-            expect (current.postCompressor.on);
+            expect (current.postCompressor.on && current.matchCurveOn && ! current.postEqOn);
             const auto after = values();
 
             expect (p.undoManager.canUndo());
             p.undoManager.undo();
             waitForLoads (p);
-            expectEquals (values(), before);
+            expectEquals (values(), beforeCurve);
+            expect (p.getMatchCurve().points.empty(), "undo takes the curve away again");
             expectEquals (p.getSlotCapture (0).getFullPathName(), glass.getFullPathName());
             expect (! p.undoManager.canUndo(), "one undo step");
             logMessage ("  -> \"" + note + "\"; before: " + before + "; applied: " + after + "; Match and the applied settings render the same "

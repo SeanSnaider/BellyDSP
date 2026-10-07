@@ -5,7 +5,9 @@
 
 #include "../dsp/AmpSection.h"
 #include "../dsp/CabIR.h"
+#include "../dsp/AmpTone.h"
 #include "../dsp/Equalizer.h"
+#include "../dsp/Svf.h"
 #include "InformedMask.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
@@ -247,6 +249,13 @@ std::vector<float> ToneMatcher::renderTone (const ToneSettings& settings, const 
     if (cancel.load())
         return {};
 
+    // The match curve: its minimum-phase FIR (the block's output is exactly this convolution), after the cab.
+    if (settings.matchCurveOn)
+        if (const auto fir = MatchCurve::designFir (settings.matchCurve, settings.matchCurveAmount); ! fir.empty())
+            out = convolve (out, fir);
+    if (cancel.load())
+        return {};
+
     // The post EQ: the chain's own block, mono, settings in before prepare() (which snaps them).
     if (settings.postEqOn)
     {
@@ -271,7 +280,10 @@ ToneSettings ToneMatcher::settingsFor (const MatchResult& r, const MatchSettings
     for (size_t b = 0; b < 5; ++b)
         t.tone[b] = (float) r.tone[b];
     t.cabIR = irAsPlayed (r.cab);
-    t.postEqOn = true;
+    t.matchCurveOn = ! r.matchCurve.points.empty();
+    t.matchCurve = r.matchCurve;
+    t.matchCurveAmount = r.matchCurveAmountPercent / 100.0;
+    t.postEqOn = r.usesMatchEq();
     t.postEq.mode = Equalizer::Mode::parametric;
     for (size_t b = 0; b < r.eq.size(); ++b)
         t.postEq.bands[b] = r.eq[b];
@@ -281,6 +293,93 @@ ToneSettings ToneMatcher::settingsFor (const MatchResult& r, const MatchSettings
         t.pedals.push_back (r.pedal);
     t.postCompressor = r.postCompressor;
     return t;
+}
+
+std::vector<double> ToneMatcher::linearPowerOnBins (const std::array<double, 5>& tone,
+                                                    const std::array<Equalizer::Band, Equalizer::numParametricBands>* eq)
+{
+    std::vector<double> h ((size_t) numBins, 1.0);
+    const auto apply = [&h] (const Svf::Coefficients& c) {
+        for (int k = 0; k < numBins; ++k)
+            h[(size_t) k] *= std::norm (Svf::responseAt (c, k * sampleRate / fftSize, sampleRate));
+    };
+    for (size_t band = 0; band < AmpTone::numBands; ++band)
+        if (tone[band] != 0.0)
+            apply (Svf::design (AmpTone::bands[band].type, AmpTone::bands[band].frequency, AmpTone::bands[band].q, tone[band], sampleRate));
+    if (eq != nullptr)
+        for (const auto& b : *eq)
+            if (b.gainDb != 0.0f)
+                apply (Svf::design (b.type == Equalizer::BandType::lowShelf    ? Svf::Type::lowShelf
+                                    : b.type == Equalizer::BandType::highShelf ? Svf::Type::highShelf
+                                    : b.type == Equalizer::BandType::notch     ? Svf::Type::notch
+                                                                               : Svf::Type::peak,
+                                    b.frequency, b.q, b.gainDb, sampleRate));
+    return h;
+}
+
+MatchCurve::Curve ToneMatcher::fitMatchCurve (const Analysis& target, const std::vector<double>& candidateBins)
+{
+    const auto n = numBins;
+    const auto dbOf = [] (double p) { return 10.0 * std::log10 (std::max (p, 1.0e-20)); };
+    std::vector<double> f ((size_t) n), lf ((size_t) n), tDb ((size_t) n), d ((size_t) n);
+    for (int k = 0; k < n; ++k)
+    {
+        f[(size_t) k] = k * sampleRate / fftSize;
+        lf[(size_t) k] = std::log2 (std::max (f[(size_t) k], 1.0));
+        tDb[(size_t) k] = dbOf (target.ltasBins[(size_t) k]);
+        d[(size_t) k] = tDb[(size_t) k] - dbOf (candidateBins[(size_t) k]);
+    }
+    // A Gaussian of 1/12 octave (sigma) on log frequency, over +-3 sigma (numpy's searchsorted, left), bin 0 kept.
+    const auto smooth = [&] (const std::vector<double>& x) {
+        const double frac = 12.0;
+        std::vector<double> out (x);
+        for (int i = 1; i < n; ++i)
+        {
+            const auto lo = (int) (std::lower_bound (lf.begin(), lf.end(), lf[(size_t) i] - 3.0 / frac) - lf.begin());
+            const auto hi = (int) (std::lower_bound (lf.begin(), lf.end(), lf[(size_t) i] + 3.0 / frac) - lf.begin());
+            double num = 0.0, den = 0.0;
+            for (int j = lo; j < hi; ++j)
+            {
+                const auto z = (lf[(size_t) j] - lf[(size_t) i]) * frac;
+                const auto w = std::exp (-0.5 * z * z);
+                num += w * x[(size_t) j];
+                den += w;
+            }
+            out[(size_t) i] = num / den;
+        }
+        return out;
+    };
+    const auto ds = smooth (d), ts = smooth (tDb);
+    double loudest = -1.0e300;
+    for (int k = 0; k < n; ++k)
+        if (f[(size_t) k] >= 60.0 && f[(size_t) k] <= 14000.0)
+            loudest = std::max (loudest, ts[(size_t) k]);
+    std::vector<double> conf ((size_t) n, 0.0);
+    double num = 0.0, den = 0.0;
+    for (int k = 0; k < n; ++k)
+        if (f[(size_t) k] >= 60.0 && f[(size_t) k] <= 14000.0)
+        {
+            conf[(size_t) k] = juce::jlimit (minConfidence, 1.0, (ignoredDb - (loudest - ts[(size_t) k])) / (ignoredDb - confidentDb));
+            num += ds[(size_t) k] * conf[(size_t) k];
+            den += conf[(size_t) k];
+        }
+    const auto mean = num / den;
+    std::vector<double> curve ((size_t) n);
+    for (int k = 0; k < n; ++k)
+        curve[(size_t) k] = juce::jlimit (-eqCapDb, eqCapDb, (ds[(size_t) k] - mean) * conf[(size_t) k]);
+
+    std::vector<MatchCurve::Point> points;
+    const auto count = (int) std::floor (48.0 * std::log2 (16000.0 / 40.0)) + 1;
+    for (int i = 0; i < count; ++i)
+    {
+        const auto hz = 40.0 * std::pow (2.0, i / 48.0);
+        // np.interp on the bins (linear in Hz).
+        const auto pos = hz * fftSize / sampleRate;
+        const auto k = juce::jlimit (0, n - 2, (int) std::floor (pos));
+        const auto frac = pos - k;
+        points.push_back ({ hz, curve[(size_t) k] + (curve[(size_t) k + 1] - curve[(size_t) k]) * frac });
+    }
+    return MatchCurve::Curve::fromPoints (std::move (points));
 }
 
 std::vector<float> ToneMatcher::irAsPlayed (const juce::File& file)
@@ -805,6 +904,23 @@ MatchResult ToneMatcher::match (const std::vector<float>& targetSignal, const st
         result.runnersUp.push_back ({ ranked[i]->slot, ranked[i]->gainDb, settings.cabs[(size_t) ranked[i]->cab], ranked[i]->total() });
     if (settings.mode == Mode::samePart)
         result.alignmentPath = alignments.at (best.slot).path;
+
+    // 4b. The match curve instead of the match EQ (Round 2, item 5): fitted to what's left after the tone knobs (the
+    //     winner's take render through its cab, times the tone's |H|^2, against the target), played at the amount.
+    if (settings.fitCurve && result.takeScored)
+    {
+        result.matchCurve = fitMatchCurve (target, [&] {
+            auto bins = best.analysis.ltasBins;
+            const auto h = linearPowerOnBins (result.tone, nullptr);
+            for (size_t k = 0; k < bins.size(); ++k)
+                bins[k] *= h[k];
+            return bins;
+        }());
+        result.matchCurveAmountPercent = settings.matchCurveAmountPercent;
+        for (auto& b : result.eq)
+            b.gainDb = 0.0f;
+        result.spectralErrorAfterEqDb = weightedRmsCentred (result.residual, target.weights);
+    }
 
     // 5. The post compressor on the finished match (prototypes/tone_match.py, search_post_comp): the take through
     //    everything as the chain plays it (renderTone), then through the compressor 4 and 8 dB under that render's

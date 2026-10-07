@@ -266,7 +266,18 @@ public:
         {
             // The fit ignores overall level (it's matched separately), so the curve is drawn shifted by the
             // weighted mean difference to the dots: where it lines up with them is what it fits.
-            const auto atCentres = ampsim::tonematch::eqDb (r->eq);
+            // The thick line: the match EQ's response, or the match curve as it plays (MatchCurve::targetDb at the
+            // match's amount) when the match has one instead.
+            usesCurve = ! r->usesMatchEq();
+            std::array<double, ampsim::tonematch::numBands> atCentres {};
+            if (usesCurve)
+            {
+                for (int b = 0; b < ampsim::tonematch::numBands; ++b)
+                    atCentres[(size_t) b] = ampsim::MatchCurve::targetDb (r->matchCurve, r->matchCurveAmountPercent / 100.0,
+                                                                         ampsim::tonematch::bands().centre[(size_t) b]);
+            }
+            else
+                atCentres = ampsim::tonematch::eqDb (r->eq);
             double num = 0.0, den = 0.0, wMax = 1.0e-9;
             for (int b = 0; b < ampsim::tonematch::numBands; ++b)
             {
@@ -286,7 +297,8 @@ public:
             std::vector<double> f;
             for (int i = 0; i < 240; ++i)
                 f.push_back (minF * std::pow (maxF / minF, i / 239.0));
-            const auto db = ampsim::Equalizer::responseDb (s, f, 48000.0);
+            const auto db = usesCurve ? ampsim::MatchCurve::targetDb (r->matchCurve, r->matchCurveAmountPercent / 100.0, f)
+                                      : ampsim::Equalizer::responseDb (s, f, 48000.0);
             for (size_t i = 0; i < f.size(); ++i)
                 curve.push_back ({ f[i], db[i] + offset });
         }
@@ -402,7 +414,9 @@ public:
         for (auto db : { -12.0, -6.0, 6.0, 12.0 })
             g.drawText ((db > 0 ? "+" : "") + juce::String (juce::roundToInt (db)), juce::Rectangle<float> (r.getX() + 4.0f, yFor (db) - 13.0f, 30.0f, 12.0f),
                         juce::Justification::centredLeft, false);
-        g.drawText (target.empty() ? "The match EQ appears here" : "Match EQ (thick line) over what was left to fit (dots, faint ones barely count)",
+        g.drawText (target.empty() ? "The match EQ appears here"
+                                   : usesCurve ? "Match curve as it plays (thick line) over what was left to fit (dots, faint ones barely count)"
+                                               : "Match EQ (thick line) over what was left to fit (dots, faint ones barely count)",
                     r.reduced (8.0f, 5.0f).withHeight (13.0f), juce::Justification::centredRight, false);
 
         // The spectra's legend, under the EQ's caption: a short line in each colour before its name.
@@ -445,6 +459,7 @@ private:
     std::vector<std::pair<double, double>> target, curve, targetSpectrum, matchSpectrum;
     std::vector<float> weight;
     double offset = 0.0;
+    bool usesCurve = false;
 };
 
 // ---- The comparison's loop -------------------------------------------------------------------------------
@@ -1292,7 +1307,24 @@ void ToneMatchPage::updateResultText()
         if (std::abs (band.gainDb) >= 0.5f)
             eq.add ((band.type == ampsim::Equalizer::BandType::lowShelf ? "low shelf " : band.type == ampsim::Equalizer::BandType::highShelf ? "high shelf " : "")
                     + juce::String (juce::roundToInt (band.frequency)) + " Hz " + signedDb (band.gainDb));
-    add ("Match EQ", eq.isEmpty() ? juce::StringArray { "flat" } : eq);
+    if (r.usesMatchEq())
+        add ("Match EQ", eq.isEmpty() ? juce::StringArray { "flat" } : eq);
+    else
+    {
+        // The match curve: its amount and where it does the most, as the fitted points say.
+        double lo = 0.0, hi = 0.0, loHz = 0.0, hiHz = 0.0;
+        for (const auto& pt : r.matchCurve.points)
+        {
+            const auto d = pt.db * r.matchCurveAmountPercent / 100.0;
+            if (d < lo)
+                lo = d, loHz = pt.hz;
+            if (d > hi)
+                hi = d, hiHz = pt.hz;
+        }
+        const auto hz = [] (double f) { return f >= 1000.0 ? juce::String (f / 1000.0, 1) + " kHz" : juce::String (juce::roundToInt (f)) + " Hz"; };
+        add ("Match curve", { juce::String (juce::roundToInt (r.matchCurveAmountPercent)) + "% (replaces the match EQ)", "most cut " + signedDb (lo) + " at " + hz (loHz),
+                              "most boost " + signedDb (hi) + " at " + hz (hiHz) });
+    }
 
     juce::StringArray lines;
     for (int i = 0; i < resultLabels.size(); ++i)

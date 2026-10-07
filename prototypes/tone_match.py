@@ -391,7 +391,7 @@ def post_comp_args(c):
     return ["--post-comp", f"studio:rms:{c['threshold']:.2f}:{c['ratio']:.2f}:{c['attack']:.1f}:{c['release']:.0f}:0:1"]
 
 
-def curve_args(points):
+def curve_args(points, amount=100.0):
     """ampsim_render's --match-curve: the points ([[hz, dB], ...]) in a JSON file named by its content, so renders
     with the same curve hit the cache."""
     if not points:
@@ -403,10 +403,11 @@ def curve_args(points):
         tmp = path.with_suffix(".tmp")
         tmp.write_text(text)
         os.replace(tmp, path)
-    return ["--match-curve", str(path)]
+    return ["--match-curve", str(path)] + (["--match-amount", f"{amount:.1f}"] if amount != 100.0 else [])
 
 
-def render(x, slot, gain_db, tone=(0.0,) * 5, cab=None, eq=None, cache=True, pedal=None, post_comp=None, curve=None):
+def render(x, slot, gain_db, tone=(0.0,) * 5, cab=None, eq=None, cache=True, pedal=None, post_comp=None, curve=None,
+           curve_amount=100.0):
     """x through slot `slot` at Gain `gain_db`, with tone, cab (a path, or None for none), and the post
     EQ (list of bands, or None for off); a pedal in front (pedal_args) and the post compressor (post_comp_args)
     if given. Returns the left output channel. Renders are cached on disk by content, since the study reuses
@@ -415,7 +416,7 @@ def render(x, slot, gain_db, tone=(0.0,) * 5, cab=None, eq=None, cache=True, ped
                                 "--tone", ",".join(f"{t:.3f}" for t in tone)]
     if cab is not None:
         args += ["--ir", str(cab)]
-    args += curve_args(curve)
+    args += curve_args(curve, curve_amount)
     if eq is not None:
         args += ["--post-eq", eq_arg(eq)]
     args += post_comp_args(post_comp)
@@ -1174,12 +1175,14 @@ def full_take_score(tn, target_analysis, y, mode="anything"):
 
 
 def search_post_comp(di_x, target, tn, best, eq, workers, curve=None):
-    base = render(di_x, best.slot, best.gain, tone=best.tone, cab=best.cab, eq=eq, pedal=getattr(best, "pedal", None), curve=curve)
+    base = render(di_x, best.slot, best.gain, tone=best.tone, cab=best.cab, eq=eq, pedal=getattr(best, "pedal", None), curve=curve,
+                  curve_amount=CURVE_AMOUNT_PERCENT)
     play = playing_level_db(base)
     comps = [dict(threshold=round(play - b, 2), ratio=3.0, attack=10.0, release=150.0) for b in POST_COMP_BELOW]
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
         ys = list(pool.map(lambda c: render(di_x, best.slot, best.gain, tone=best.tone, cab=best.cab, eq=eq,
-                                            pedal=getattr(best, "pedal", None), post_comp=c, curve=curve), comps))
+                                            pedal=getattr(best, "pedal", None), post_comp=c, curve=curve,
+                                            curve_amount=CURVE_AMOUNT_PERCENT), comps))
     scores = [full_take_score(tn, target.analysis, base)] + [full_take_score(tn, target.analysis, y) for y in ys]
     k = int(np.argmin(scores))
     return (None if k == 0 else comps[k - 1]), [round(v, 3) for v in scores]
@@ -1196,6 +1199,12 @@ def search_post_comp(di_x, target, tn, best, eq, workers, curve=None):
 # 16 kHz; the block smooths and clamps again. Two ways to use it, both measured:
 #   "replace"  the curve does the match EQ's job: fitted to what's left after the tone knobs, the EQ flat;
 #   "on_top"   the match EQ as before and the curve fitted to what it leaves.
+# Measured on DEV (curve_study.py, on any_fx_curve's results): replacing at 100% 0.449 median (mean 0.488) against the
+# 5-band EQ's 0.435 (0.494); on top 0.461 (0.497); at 50% 0.426 (0.468), at 75% 0.430 (0.471), 1/6 octave no better
+# (0.433 at 50%); the 5-band EQ at half its gains 0.434 (0.480). Fitted to another performance of the notes, the full
+# correction also fits the playing, and half of it transfers better. So the curve replaces the EQ, played at 50%:
+# the points are the whole fitted correction, and the block's amount (Apply sets 50%) halves it in dB exactly.
+CURVE_AMOUNT_PERCENT = 50.0
 
 CURVE_POINTS_HZ = 40.0 * 2.0 ** (np.arange(0, int(48 * math.log2(16000.0 / 40.0)) + 1) / 48.0)
 
@@ -1375,7 +1384,7 @@ def match(target_x, di_x, mode="anything", log=print, workers=8, band_seconds=No
         "eq_target": eq_target.tolist(), "residual": residual.tolist(),
         "path": paths[best.slot].tolist() if mode == "same" else [],
         "take_terms": take_terms,
-        "pedal": getattr(best, "pedal", None), "post_comp": comp, "post_comp_scores": comp_scores, "match_curve": curve_points,
+        "pedal": getattr(best, "pedal", None), "post_comp": comp, "post_comp_scores": comp_scores, "match_curve": curve_points, "match_curve_amount": CURVE_AMOUNT_PERCENT if curve_points else None,
     }
     return result
 
@@ -1842,10 +1851,15 @@ def take_golden(args):
         ir = (ir[:, 0] if ir.ndim == 2 else ir)[:SR]
         cy = sps.fftconvolve(y, ir)[: len(y)]
         sc, terms = take_score(tn, ta, y, cy, tone, eq, 1.0)
-        cands.append(dict(slot=slot, gain=gain, cab=cab, tone=tone, eq=[list(b) for b in eq], spectral=1.0, total=sc, terms=terms))
+        cands.append(dict(slot=slot, gain=gain, cab=cab, tone=tone, eq=[list(b) for b in eq], spectral=1.0, total=sc, terms=terms,
+                          curve=fit_match_curve(ta, Analysis(cy).ltas_bins * linear_power_bins(tone, []))))
     r = match(target, take, "anything", log=print, workers=8, take_notes=notes)
     rfx = match(target, take, "anything", log=print, workers=8, take_notes=notes, pedals=True)
-    out = dict(playing_level_db=playing_level_db(take), pedal_variants=[[p, g] for p, g in pedal_variants(take, 18.0)],
+    rcv = match(target, take, "anything", log=print, workers=8, take_notes=notes, pedals=True, curve="replace")
+    out = dict(playing_level_db=playing_level_db(take),
+               match_curve=dict(slot=rcv["slot"], gain=rcv["gain_db"], cab=rcv["cab"], pedal=rcv["pedal"], post_comp=rcv["post_comp"],
+                                post_comp_scores=rcv["post_comp_scores"], points=rcv["match_curve"], amount=rcv["match_curve_amount"],
+                                spectral_after=rcv["spectral_error_after_eq_db"]), pedal_variants=[[p, g] for p, g in pedal_variants(take, 18.0)],
                match_fx=dict(slot=rfx["slot"], gain=rfx["gain_db"], cab=rfx["cab"], terms=rfx["take_terms"], pedal=rfx["pedal"],
                              post_comp=rfx["post_comp"], post_comp_scores=rfx["post_comp_scores"]),notes=dict(o=tn.o.tolist(), t=tn.t.tolist(), L=tn.L.tolist()), attack=tn.attack.tolist(), level=tn.level.tolist(),
                erb_centres=ERB_CENTRES.tolist(), erb_db=tn.erb_db.tolist(), erb_weights=tn.erb_weights.tolist(), candidates=cands,

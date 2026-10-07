@@ -99,6 +99,32 @@ private:
     juce::File next, previous;
 };
 
+/// The match curve (data, not a parameter), as one undoable action: Apply's undo puts the previous curve back.
+class MatchCurveChange final : public juce::UndoableAction
+{
+public:
+    MatchCurveChange (AmpSimProcessor& p, ampsim::MatchCurve::Curve newCurve)
+        : processor (p), next (std::move (newCurve)), previous (p.getMatchCurve())
+    {
+    }
+
+    bool perform() override
+    {
+        processor.setMatchCurve (next);
+        return true;
+    }
+
+    bool undo() override
+    {
+        processor.setMatchCurve (previous);
+        return true;
+    }
+
+private:
+    AmpSimProcessor& processor;
+    ampsim::MatchCurve::Curve next, previous;
+};
+
 /// The Settings the chain's pedal and compressor blocks get, from the parameters as the processor reads them.
 int driveOversampling (AmpSimProcessor& p)
 {
@@ -302,6 +328,8 @@ bool ToneMatchSession::startMatch()
     // The pedals and the post compressor (Round 2) are searched with a take (only the take-aware score was measured
     // choosing them), as the drive blocks run now.
     settings.searchPedals = referenceIsTake();
+    // The match curve instead of the 5-band match EQ, with a take (Round 2, item 5; measured with the take-aware score).
+    settings.fitCurve = referenceIsTake();
     settings.pedalOversampling = driveOversampling (ampSim);
     settings.voltsAtFullScale = driveVolts (ampSim);
     settings.calibration = ampSim.getCaptureCalibration();
@@ -601,21 +629,37 @@ bool ToneMatchSession::apply()
     setPlain (p, "cab_highcut_on", 0.0f);
     p.undoManager.perform (new CabChange (p, slot, r.cab));
 
+    // The match curve when the match has one (it replaces the match EQ: the post EQ is switched off, its bands left
+    // as they were), at the match's amount; otherwise off, its curve left as it was.
+    if (! r.usesMatchEq())
+    {
+        if (p.getMatchCurve() != r.matchCurve)
+            p.undoManager.perform (new MatchCurveChange (p, r.matchCurve));
+        setPlain (p, "match_curve_on", 1.0f);
+        setPlain (p, "match_curve_amount", (float) r.matchCurveAmountPercent);
+        setPlain (p, "eq_post_on", 0.0f);
+    }
+    else
+        setPlain (p, "match_curve_on", 0.0f);
+
     // The match EQ: the post EQ, parametric, the five fitted bands, no cuts; its section on.
     const juce::String eq = "eq_post";
     setPlain (p, "post_fx_on", 1.0f);
-    setPlain (p, eq + "_on", 1.0f);
-    setPlain (p, eq + "_mode", 1.0f); // Parametric
-    for (int b = 0; b < ampsim::Equalizer::numParametricBands; ++b)
+    if (r.usesMatchEq())
     {
-        const auto& band = r.eq[(size_t) b];
-        setPlain (p, params::EqualizerParameters::bandId (eq, b, "type"), (float) (int) band.type);
-        setPlain (p, params::EqualizerParameters::bandId (eq, b, "freq"), band.frequency);
-        setPlain (p, params::EqualizerParameters::bandId (eq, b, "gain"), band.gainDb);
-        setPlain (p, params::EqualizerParameters::bandId (eq, b, "q"), band.q);
+        setPlain (p, eq + "_on", 1.0f);
+        setPlain (p, eq + "_mode", 1.0f); // Parametric
+        for (int b = 0; b < ampsim::Equalizer::numParametricBands; ++b)
+        {
+            const auto& band = r.eq[(size_t) b];
+            setPlain (p, params::EqualizerParameters::bandId (eq, b, "type"), (float) (int) band.type);
+            setPlain (p, params::EqualizerParameters::bandId (eq, b, "freq"), band.frequency);
+            setPlain (p, params::EqualizerParameters::bandId (eq, b, "gain"), band.gainDb);
+            setPlain (p, params::EqualizerParameters::bandId (eq, b, "q"), band.q);
+        }
+        setPlain (p, eq + "_lowcut_on", 0.0f);
+        setPlain (p, eq + "_highcut_on", 0.0f);
     }
-    setPlain (p, eq + "_lowcut_on", 0.0f);
-    setPlain (p, eq + "_highcut_on", 0.0f);
 
     // The pre effects that color the tone before the amp are set as the match has them (Round 2; the decision log,
     // 2026-10-07: they were switched off before the search tried them): the pre compressor, the boost, or the
@@ -847,7 +891,10 @@ ampsim::tonematch::ToneSettings ToneMatchSession::matchedSettings() const
     }
     s.postEq.lowCut.on = false;
     s.postEq.highCut.on = false;
-    s.postEqOn = true;
+    s.postEqOn = r.usesMatchEq();
+    s.matchCurveOn = ! r.usesMatchEq();
+    s.matchCurve = r.matchCurve;
+    s.matchCurveAmount = storedValue ("match_curve_amount", r.matchCurveAmountPercent) / 100.0;
     return s;
 }
 
@@ -905,6 +952,9 @@ ampsim::tonematch::ToneSettings ToneMatchSession::currentSettings() const
             s.pedals.push_back (pedal);
         }
     }
+    s.matchCurve = p.getMatchCurve();
+    s.matchCurveOn = raw ("match_curve_on") >= 0.5f && ! s.matchCurve.isFlat();
+    s.matchCurveAmount = raw ("match_curve_amount") / 100.0;
     params::CompressorParameters post;
     post.bind (p.parameters, "comp_post");
     s.postCompressor.on = raw ("post_fx_on") >= 0.5f && post.isOn();
@@ -951,6 +1001,10 @@ juce::String ToneMatchSession::currentFingerprint (const ampsim::tonematch::Tone
             f << ":" << (int) pd.overdrive.mode << "," << pd.overdrive.drive << "," << pd.overdrive.tone << "," << pd.overdrive.levelDb << ","
               << pd.overdrive.mix << "," << pd.overdrive.tightHz << "," << pd.overdrive.oversampling << "," << pd.overdrive.voltsAtFullScale;
     }
+    f << "|curve" << (int) s.matchCurveOn << "," << s.matchCurveAmount;
+    if (s.matchCurveOn)
+        for (const auto& pt : s.matchCurve.points)
+            f << ";" << pt.hz << ":" << pt.db;
     f << "|post" << (int) s.postCompressor.on;
     if (s.postCompressor.on)
         comp (s.postCompressor.settings);
