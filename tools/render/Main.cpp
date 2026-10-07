@@ -35,6 +35,8 @@ struct Options
     std::array<float, ampsim::AmpTone::numBands> tone {};          // slot 1's Depth, Bass, Mid, Treble, Presence (dB)
     bool postEqOn = false;                                         // the post EQ, parametric mode
     ampsim::Equalizer::Settings postEq;
+    juce::File matchCurve;                                         // the match curve's points (after the cab)
+    float matchAmountPercent = 100.0f;
 
     // The tone match benchmark (prototypes/tone_bench) renders hidden rigs' pedals and compressors with these,
     // and the oracle's "the true pedal in BellyDSP". Defaults leave the chain as before.
@@ -92,6 +94,32 @@ bool parseCompressor (const juce::String& text, ampsim::Compressor::Settings& c)
 
 // "--post-eq ls:100:3:0.71,pk:400:-2:1,pk:1000:0:1,pk:3000:1.5:2,hs:8000:-4:0.71": up to five parametric
 // bands in order, each type:frequency:gain:q, type one of pk, ls, hs, notch. Bands not given stay flat.
+/// A match curve file: JSON as presets store it ([[hz, dB], ...]), or text with one "hz dB" pair per line
+/// (commas or spaces between, # starts a comment).
+bool readMatchCurve (const juce::File& file, ampsim::MatchCurve::Curve& curve)
+{
+    const auto text = file.loadFileAsString();
+    if (text.trimStart().startsWith ("["))
+    {
+        curve = ampsim::MatchCurve::Curve::fromVar (juce::JSON::parse (text));
+        return ! curve.points.empty();
+    }
+
+    std::vector<ampsim::MatchCurve::Point> points;
+    for (auto line : juce::StringArray::fromLines (text))
+    {
+        line = line.upToFirstOccurrenceOf ("#", false, false).replaceCharacter (',', ' ').trim();
+        if (line.isEmpty())
+            continue;
+        const auto fields = juce::StringArray::fromTokens (line, " \t", "");
+        if (fields.size() != 2)
+            return false;
+        points.push_back ({ fields[0].getDoubleValue(), fields[1].getDoubleValue() });
+    }
+    curve = ampsim::MatchCurve::Curve::fromPoints (std::move (points));
+    return ! curve.points.empty();
+}
+
 bool parsePostEq (const juce::String& text, ampsim::Equalizer::Settings& eq)
 {
     eq.mode = ampsim::Equalizer::Mode::parametric;
@@ -154,7 +182,10 @@ void printUsage()
                  "  --tone <d,b,m,t,p>     slot 1's Depth, Bass, Mid, Treble, Presence in dB (default all 0)\n"
                  "  --post-eq <bands>      switch the post EQ on in parametric mode: up to five comma-separated\n"
                  "                         bands type:freq:gain:q, type pk, ls, hs, or notch\n"
-                 "                         (e.g. ls:100:3:0.71,pk:1000:-2:1,hs:8000:-4:0.71)\n";
+                 "                         (e.g. ls:100:3:0.71,pk:1000:-2:1,hs:8000:-4:0.71)\n"
+                 "  --match-curve <file>   switch the match curve on (after the cab, before the post EQ): JSON\n"
+                 "                         [[hz, dB], ...] as presets store it, or one \"hz dB\" pair per line\n"
+                 "  --match-amount <%>     the match curve's amount, 0 to 100 (default 100)\n";
 }
 
 juce::File fileArg (const char* arg)
@@ -213,6 +244,8 @@ bool parse (int argc, char* argv[], Options& o)
                 return false;
             o.postEqOn = true;
         }
+        else if (a == "--match-curve" && hasValue)   o.matchCurve = fileArg (argv[++i]);
+        else if (a == "--match-amount" && hasValue)  o.matchAmountPercent = juce::String (argv[++i]).getFloatValue();
         else if (a.startsWith ("--"))                return false;
         else                                         positional.push_back (fileArg (argv[i]));
     }
@@ -398,6 +431,22 @@ int main (int argc, char* argv[])
     {
         chain.postEq.setSettings (o.postEq);
         chain.setBypassed (ampsim::Chain::Slot::postEq, false);
+    }
+
+    // The match curve: designed here (as the app's loader does) before prepare(), which installs it, so it
+    // plays from the first sample. Amount 0 is the app's bypass.
+    if (o.matchCurve != juce::File())
+    {
+        ampsim::MatchCurve::Curve curve;
+        if (! readMatchCurve (o.matchCurve, curve))
+        {
+            std::cerr << "Couldn't read a match curve from " << o.matchCurve.getFullPathName() << "\n";
+            return 1;
+        }
+        const auto amount = juce::jlimit (0.0f, 100.0f, o.matchAmountPercent);
+        chain.matchCurve.setCurve (curve, amount / 100.0);
+        chain.setBypassed (ampsim::Chain::Slot::matchCurve, amount <= 0.0f || curve.isFlat());
+        std::cout << "Match curve: " << curve.points.size() << " points, amount " << amount << "%\n";
     }
 
     // Set the gains before prepare(), which snaps them, so the render doesn't start with a ramp.
