@@ -122,19 +122,21 @@ AMPS = {
     # The five more (prototypes/amp_voicings.py, where each circuit is described and how it differs from the
     # built-ins and from tone_bench's hidden voicings). Not slot defaults: a slot loads one from the capture
     # menu's built-in list, keeping its head. Their NL ranges cover what tone_bench found the three don't reach:
-    # high gain and lead from -11 or -9 dB to the measure's ceiling (about -4.3 on this DI: every voicing
-    # flattens there, NL stops rising with drive), and a power-amp breakup from the edge (-27) to crunch (-9).
-    # voicing: the manifest's words for it. Latency: pinned per amp from --latency-only.
-    "Forge": dict(channel="forge", tone_type="hi_gain", boost_db=None, epochs=100, latency=91, nl_range=(-11.0, -4.9),
+    # high gain and lead from -11 or -9 dB to just under each voicing's NL ceiling (-4.5 to -5.1: every voicing,
+    # Monolith too, flattens out around there on this DI and more drive stops raising NL; aiming at the ceiling
+    # itself put step 10's drive at +30 dB, ASSUMPTIONS AG23), and a power-amp breakup from the edge (-27) to
+    # crunch (-9). voicing: the manifest's words for it. latency: pinned from --latency-only (AG24).
+    # epochs_by_step: the high-gain and lead tops at 200, their ESR at 100 being clearly worse (AG25).
+    "Forge": dict(channel="forge", tone_type="hi_gain", boost_db=None, epochs=100, epochs_by_step={10.0: 200}, latency=91, nl_range=(-11.0, -4.9),
                   description="Tight modern high gain", voicing="a tight modern high gain (a steep low cut and an upper-mid push before hard-clipping stages)",
                   knobs=dict(bass=5.0, mid=5.0, treble=5.0, master=5.0)),
-    "Basalt": dict(channel="basalt", tone_type="hi_gain", boost_db=None, epochs=100, latency=88, nl_range=(-11.0, -5.1),
+    "Basalt": dict(channel="basalt", tone_type="hi_gain", boost_db=None, epochs=100, epochs_by_step={10.0: 200}, latency=88, nl_range=(-11.0, -5.1),
                    description="Fat high gain with sag", voicing="a fat high gain (the lows into smooth arctangent stages, a cathode follower, power-amp sag)",
                    knobs=dict(bass=5.0, mid=5.0, treble=5.0, master=5.0)),
-    "Comet": dict(channel="comet", tone_type="hi_gain", boost_db=None, epochs=100, latency=90, nl_range=(-9.0, -4.5),
+    "Comet": dict(channel="comet", tone_type="hi_gain", boost_db=None, epochs=100, epochs_by_step={10.0: 200}, latency=90, nl_range=(-9.0, -4.5),
                   description="Saturated lead, mids forward", voicing="a saturated lead with pushed mids and a two-section power-amp sag (softer attack, long sustain)",
                   knobs=dict(bass=5.0, mid=5.0, treble=5.0, master=5.0)),
-    "Quartz": dict(channel="quartz", tone_type="hi_gain", boost_db=None, epochs=100, latency=91, nl_range=(-9.0, -4.7),
+    "Quartz": dict(channel="quartz", tone_type="hi_gain", boost_db=None, epochs=100, epochs_by_step={10.0: 200}, latency=91, nl_range=(-9.0, -4.7),
                    description="Saturated lead, scooped and bright", voicing="a scooped, bright saturated lead (the tone stack before the gain, symmetric cubic clippers)",
                    knobs=dict(bass=5.0, mid=5.0, treble=5.0, master=5.0)),
     "Lantern": dict(channel="lantern", tone_type="crunch", boost_db=None, epochs=100, latency=89, nl_range=(-27.0, -9.0),
@@ -514,7 +516,7 @@ def main():
                     output_wav, entry["render"] = render_capture(name, spec, gain, work)
                     print(f"  rendered in {time.time() - started:.0f} s", flush=True)
                     if not args.render_only:
-                        summary = train(name, spec, gain, output_wav, work, args.epochs or spec["epochs"])
+                        summary = train(name, spec, gain, output_wav, work, args.epochs or spec.get("epochs_by_step", {}).get(gain, spec["epochs"]))
                         entry["training"] = {k: summary[k] for k in ("epochs", "seconds", "validation_esr", "latency_samples", "device")}
                         entry["nam_bytes"] = step_file(name, gain).stat().st_size
                 if not args.render_only and step_file(name, gain).exists():
