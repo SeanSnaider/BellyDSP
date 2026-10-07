@@ -26,6 +26,11 @@ namespace ui
 ///   Microphones   per mic: its file (a click loads another), Distance (pos_y) and Level knobs, Flip
 ///                 phase, Mute, and a quiet row of pan, delay, and the file's channel. Then the cuts'
 ///                 knobs with their switches and slopes, then the room mic and auto-align.
+///
+/// Under the speaker, at the foot of the centre column, the match curve (dsp/MatchCurve.h; not in the
+/// handoff, ASSUMPTIONS MC8): its heading, Amount, and switch on one line, over a read-only view of the
+/// curve as it plays (the target at the current amount, +-15 dB, 20 Hz to 20 kHz), drawn like the EQ
+/// page's response: an emerald line over a soft emerald fill to 0 dB.
 class CabView final : public ControlGroup, public juce::FileDragAndDropTarget
 {
 public:
@@ -66,6 +71,12 @@ public:
     juce::String getReadout() const;
     bool isMarkerDimmed (int mic) const;
 
+    /// For tests: the match curve view's area (in this page's coordinates) and what it draws: the curve's
+    /// dB at its points (empty when there's no curve), and whether it's drawn as on.
+    juce::Rectangle<int> getMatchCurveViewBounds() const;
+    std::vector<float> getMatchCurveDrawnDb() const;
+    bool isMatchCurveDrawnOn() const;
+
     /// The zone a normalised radius (0 centre, 1 the speaker's edge) falls in (handoff 4.7).
     static juce::String zoneFor (float radius);
 
@@ -84,6 +95,7 @@ private:
     class DropZone;
     class Speaker;
     class MicLink;
+    class MatchCurveView;
 
     std::unique_ptr<LibraryList> list;
     std::unique_ptr<juce::Viewport> listViewport;
@@ -104,6 +116,11 @@ private:
     Switch *lowCutOn = nullptr, *highCutOn = nullptr, *roomMute = nullptr, *align = nullptr;
     ValueField *lowSlope = nullptr, *highSlope = nullptr, *roomLevel = nullptr, *roomPreDelay = nullptr;
     juce::Label *roomLabel = nullptr, *roomLevelLabel = nullptr, *roomPreDelayLabel = nullptr;
+    std::unique_ptr<MatchCurveView> matchView;
+    Switch* matchOn = nullptr;
+    ValueField* matchAmount = nullptr;
+    juce::Label* matchAmountLabel = nullptr;
+    juce::Rectangle<int> matchHeading;
 
     std::vector<Entry> entries;
     // The list's layout: each entry's top, each group heading's top and text, the total height, and
