@@ -35,7 +35,60 @@ struct Options
     std::array<float, ampsim::AmpTone::numBands> tone {};          // slot 1's Depth, Bass, Mid, Treble, Presence (dB)
     bool postEqOn = false;                                         // the post EQ, parametric mode
     ampsim::Equalizer::Settings postEq;
+
+    // The tone match benchmark (prototypes/tone_bench) renders hidden rigs' pedals and compressors with these,
+    // and the oracle's "the true pedal in BellyDSP". Defaults leave the chain as before.
+    float boostTiltDb = 0.0f;                                      // the boost's Clean tilt
+    bool overdriveOn = false;
+    ampsim::Overdrive::Settings overdrive;
+    bool preCompOn = false, postCompOn = false;
+    ampsim::Compressor::Settings preComp, postComp;
 };
+
+// "--od mid:0.6:0.5:0:20": the overdrive's mode (mid, distortion, transparent, fuzz), Drive and Tone (0 to 1),
+// Level (dB), and Tight (Hz; 20 is off). With the unity trim the app applies.
+bool parseOverdrive (const juce::String& text, ampsim::Overdrive::Settings& od)
+{
+    const auto f = juce::StringArray::fromTokens (text, ":", "");
+    if (f.size() != 5)
+        return false;
+    if (f[0] == "mid")              od.mode = ampsim::Overdrive::Mode::midDrive;
+    else if (f[0] == "distortion")  od.mode = ampsim::Overdrive::Mode::distortion;
+    else if (f[0] == "transparent") od.mode = ampsim::Overdrive::Mode::transparent;
+    else if (f[0] == "fuzz")        od.mode = ampsim::Overdrive::Mode::fuzz;
+    else                            return false;
+    od.drive = juce::jlimit (0.0f, 1.0f, f[1].getFloatValue());
+    od.tone = juce::jlimit (0.0f, 1.0f, f[2].getFloatValue());
+    od.levelDb = f[3].getFloatValue();
+    od.tightHz = juce::jmax (20.0f, f[4].getFloatValue());
+    od.unityTrim = true;
+    return true;
+}
+
+// "--pre-comp studio:rms:-24:4:8:120:0:1": mode (studio, pedal), detector (peak, rms), threshold (dB), ratio,
+// attack and release (ms), makeup (dB), and mix (0 to 1); fixed release and makeup, a 6 dB knee, the sidechain
+// high-pass at its default.
+bool parseCompressor (const juce::String& text, ampsim::Compressor::Settings& c)
+{
+    const auto f = juce::StringArray::fromTokens (text, ":", "");
+    if (f.size() != 8)
+        return false;
+    if (f[0] == "studio")      c.mode = ampsim::Compressor::Mode::studio;
+    else if (f[0] == "pedal")  c.mode = ampsim::Compressor::Mode::pedal;
+    else                       return false;
+    if (f[1] == "peak")        c.detector = ampsim::Compressor::Detector::peak;
+    else if (f[1] == "rms")    c.detector = ampsim::Compressor::Detector::rms;
+    else                       return false;
+    c.thresholdDb = f[2].getFloatValue();
+    c.ratio = juce::jmax (1.0f, f[3].getFloatValue());
+    c.attackMs = f[4].getFloatValue();
+    c.releaseMs = f[5].getFloatValue();
+    c.makeupDb = f[6].getFloatValue();
+    c.mix = juce::jlimit (0.0f, 1.0f, f[7].getFloatValue());
+    c.autoRelease = false;
+    c.autoMakeup = false;
+    return true;
+}
 
 // "--post-eq ls:100:3:0.71,pk:400:-2:1,pk:1000:0:1,pk:3000:1.5:2,hs:8000:-4:0.71": up to five parametric
 // bands in order, each type:frequency:gain:q, type one of pk, ls, hs, notch. Bands not given stay flat.
@@ -87,6 +140,13 @@ void printUsage()
                  "  --boost <mode>         switch the Boost block on in front of the amp: clean, tight, or screamer\n"
                  "                         (the TS808 circuit at minimum drive, tone at noon; 0 dBFS = +12 dBu)\n"
                  "  --boost-level <dB>     the boost's Level (default 0)\n"
+                 "  --boost-tilt <dB>      the boost's Clean tilt, highs minus lows (default 0)\n"
+                 "  --od <m:d:t:l:h>       switch the overdrive on: mode mid, distortion, transparent, or fuzz, Drive and\n"
+                 "                         Tone 0 to 1, Level dB, Tight Hz (20 is off), with the app's unity trim\n"
+                 "                         (e.g. mid:0.6:0.5:0:20)\n"
+                 "  --pre-comp <settings>  switch the pre compressor on: mode:detector:threshold:ratio:attack:release:\n"
+                 "                         makeup:mix (e.g. pedal:peak:-30:3:2:200:8:1); fixed release and makeup\n"
+                 "  --post-comp <settings> the post compressor (after the cab and post EQ), the same format\n"
                  "  --compare <ref.wav>    report the difference between the output and a reference\n"
                  "  --trim <dB>            slot 1's Gain as its parameter stores it, -24 to +24 dB (default 0)\n"
                  "  --gain <0-10>          slot 1's Gain as the amp head shows it (5 is --trim 0): a gain set's\n"
@@ -123,6 +183,20 @@ bool parse (int argc, char* argv[], Options& o)
         else if (a == "--no-normalize")              o.normalize = false;
         else if (a == "--boost" && hasValue)         o.boost = argv[++i];
         else if (a == "--boost-level" && hasValue)   o.boostLevelDb = juce::String (argv[++i]).getFloatValue();
+        else if (a == "--boost-tilt" && hasValue)    o.boostTiltDb = juce::String (argv[++i]).getFloatValue();
+        else if (a == "--od" && hasValue)
+        {
+            if (! parseOverdrive (argv[++i], o.overdrive))
+                return false;
+            o.overdriveOn = true;
+        }
+        else if ((a == "--pre-comp" || a == "--post-comp") && hasValue)
+        {
+            const bool isPre = a == "--pre-comp";
+            if (! parseCompressor (argv[++i], isPre ? o.preComp : o.postComp))
+                return false;
+            (isPre ? o.preCompOn : o.postCompOn) = true;
+        }
         else if (a == "--trim" && hasValue)          o.trimDb = juce::String (argv[++i]).getFloatValue();
         else if (a == "--gain" && hasValue)          o.trimDb = ampsim::AmpSection::GainKnob::dbForPosition (juce::String (argv[++i]).getFloatValue());
         else if (a == "--tone" && hasValue)
@@ -290,9 +364,29 @@ int main (int argc, char* argv[])
                : o.boost == "tight"    ? ampsim::Boost::Mode::tight
                                        : ampsim::Boost::Mode::clean;
         b.levelDb = o.boostLevelDb;
+        b.tiltDb = o.boostTiltDb;
         chain.boost.setSettings (b);
         chain.setBypassed (ampsim::Chain::Slot::boost, false);
         std::cout << "Boost: " << o.boost << ", level " << juce::String (o.boostLevelDb, 1) << " dB\n";
+    }
+
+    if (o.overdriveOn)
+    {
+        chain.overdrive.setSettings (o.overdrive);
+        chain.setBypassed (ampsim::Chain::Slot::overdrive, false);
+        std::cout << "Overdrive: on\n";
+    }
+
+    if (o.preCompOn)
+    {
+        chain.preCompressor.setSettings (o.preComp);
+        chain.setBypassed (ampsim::Chain::Slot::preCompressor, false);
+    }
+
+    if (o.postCompOn)
+    {
+        chain.postCompressor.setSettings (o.postComp);
+        chain.setBypassed (ampsim::Chain::Slot::postCompressor, false);
     }
 
     // Slot 1's Gain and tone, and the post EQ, also before prepare(), which snaps their smoothers.
