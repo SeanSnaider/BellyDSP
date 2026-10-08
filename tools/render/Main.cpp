@@ -4,8 +4,8 @@
 // ampsim_render: runs a WAV file through the same DSP chain the app uses, offline.
 //
 // Use it to listen to a capture/IR combination without the interface, to compare against
-// NeuralAmpModelerCore's own render tool (--compare), and to measure CPU per audio block (--slots N
-// runs N amp slots at once, like the planned three always-running slots).
+// NeuralAmpModelerCore's own render tool (--compare), and to measure CPU per audio block. (--slots N loads
+// the model into the first N amps; since 2026-10-07 only the selected amp runs, so N > 1 no longer adds CPU.)
 
 #include "dsp/Chain.h"
 
@@ -163,7 +163,7 @@ void printUsage()
                  "  --input-gain <dB>      input trim (default 0)\n"
                  "  --output-gain <dB>     output level (default 0)\n"
                  "  --block <samples>      block size (default 128)\n"
-                 "  --slots <n>            load the model into n of the 3 always-running slots (default 1)\n"
+                 "  --slots <n>            load the model into n of the 9 amps (default 1; only amp 1 runs and is heard)\n"
                  "  --no-normalize         skip loudness normalization of the model\n"
                  "  --boost <mode>         switch the Boost block on in front of the amp: clean, tight, or screamer\n"
                  "                         (the TS808 circuit at minimum drive, tone at noon; 0 dBFS = +12 dBu)\n"
@@ -347,11 +347,11 @@ int main (int argc, char* argv[])
 
     if (o.model != juce::File())
     {
-        // All three slots always run (BUILD_PLAN "Seamless amp switching"); --slots loads the model
-        // into the first N of them, so the timing below covers N real models. Slot 1 is heard.
-        for (int s = 0; s < juce::jmin (o.slots, ampsim::AmpSection::numSlots); ++s)
+        // --slots loads the model into the first N amps. Only the selected one, amp 1, runs and is heard
+        // (BUILD_PLAN "Amp switching"), so the render and its timing are amp 1's whatever N is.
+        for (int s = 0; s < juce::jmin (o.slots, ampsim::AmpSection::numAmps); ++s)
         {
-            const auto result = chain.amp.slot (s).model.loadModel (o.model, o.normalize);
+            const auto result = chain.amp.amp (s).model.loadModel (o.model, o.normalize);
 
             if (! result.ok)
             {
@@ -423,9 +423,9 @@ int main (int argc, char* argv[])
     }
 
     // Slot 1's Gain and tone, and the post EQ, also before prepare(), which snaps their smoothers.
-    chain.amp.slot (0).inputTrim.setGainDecibels (o.trimDb);
+    chain.amp.amp (0).inputTrim.setGainDecibels (o.trimDb);
     for (int b = 0; b < ampsim::AmpTone::numBands; ++b)
-        chain.amp.slot (0).tone.setGainDb ((ampsim::AmpTone::Band) b, o.tone[(size_t) b]);
+        chain.amp.amp (0).tone.setGainDb ((ampsim::AmpTone::Band) b, o.tone[(size_t) b]);
 
     if (o.postEqOn)
     {
@@ -487,7 +487,7 @@ int main (int argc, char* argv[])
     const auto p99 = sorted[(size_t) (0.99 * (double) (sorted.size() - 1))];
     const auto worst = sorted.back();
 
-    std::cout << "CPU (" << o.slots << " amp slot" << (o.slots == 1 ? "" : "s") << ", " << o.blockSize
+    std::cout << "CPU (" << o.slots << " amp" << (o.slots == 1 ? "" : "s") << " loaded, 1 running" << ", " << o.blockSize
               << "-sample blocks, deadline " << juce::String (deadline, 0) << " us):\n"
               << "  mean " << juce::String (mean, 1) << " us (" << juce::String (100.0 * mean / deadline, 1)
               << "% of deadline), p99 " << juce::String (p99, 1) << " us, worst " << juce::String (worst, 1)

@@ -400,7 +400,7 @@ public:
                         ++mismatched;
                 }
             expectEquals (mismatched, 0);
-            for (int s = 0; s < AmpSimProcessor::numAmpSlots; ++s)
+            for (int s = 0; s < AmpSimProcessor::numAmps; ++s)
                 expectEquals (b.getStatus().model[(size_t) s], a.getStatus().model[(size_t) s]);
             for (int m = 0; m < AmpSimProcessor::numCabMics; ++m)
                 expectEquals (b.getStatus().cab[(size_t) m], a.getStatus().cab[(size_t) m]);
@@ -432,7 +432,7 @@ public:
             const auto warnings = p.getPresetWarnings().joinIntoString ("; ");
             expect (warnings.contains ("made_up_id") && warnings.contains ("/nowhere/amp.nam") && warnings.contains ("/nowhere/cab.wav"), warnings);
 
-            const auto future = p.loadPreset (juce::JSON::parse (R"({ "format_version": 3, "parameters": {} })"));
+            const auto future = p.loadPreset (juce::JSON::parse (R"({ "format_version": 4, "parameters": {} })"));
             const auto garbage = p.loadPreset (juce::var ("not a preset"));
             expect (! future.ok && future.error.contains ("newer"));
             expect (! garbage.ok);
@@ -551,7 +551,7 @@ public:
             logMessage ("  -> version 1 migrates to version 2 without touching the original: \"/a/b.nam\" becomes { path, no hash }");
         }
 
-        beginTest ("scenes: one footswitch press moves the song from verse to chorus (the amp slot, every switch, the chosen knobs, nothing else), saved in presets");
+        beginTest ("scenes: one footswitch press moves the song from verse to chorus (the amp, every switch, the chosen knobs, nothing else), saved in presets");
         {
             AmpSimProcessor p;
             p.prepareToPlay (fs, blockSize);
@@ -571,8 +571,8 @@ public:
             scenes.setChosen ("reverb_mix", true);
 
             using Values = std::initializer_list<std::pair<const char*, float>>;
-            const Values verse { { "amp_slot", 0.0f }, { "chorus_on", 1.0f }, { "delay_on", 0.0f }, { "delay_mix", 25.0f }, { "reverb_mix", 20.0f }, { "boost_on", 0.0f } };
-            const Values chorusPart { { "amp_slot", 2.0f }, { "chorus_on", 0.0f }, { "delay_on", 1.0f }, { "delay_mix", 40.0f }, { "reverb_mix", 35.0f }, { "boost_on", 1.0f } };
+            const Values verse { { "amp_model", 0.0f }, { "chorus_on", 1.0f }, { "delay_on", 0.0f }, { "delay_mix", 25.0f }, { "reverb_mix", 20.0f }, { "boost_on", 0.0f } };
+            const Values chorusPart { { "amp_model", 2.0f }, { "chorus_on", 0.0f }, { "delay_on", 1.0f }, { "delay_mix", 40.0f }, { "reverb_mix", 35.0f }, { "boost_on", 1.0f } };
             for (const auto& [id, value] : verse)
                 setParam (p, id, value);
             p.storeScene (0);
@@ -592,9 +592,9 @@ public:
                 return true;
             };
             send (70, 0);
-            const auto toVerse = matches (verse) && p.getChain().amp.getSelectedSlot() == 0;
+            const auto toVerse = matches (verse) && p.getChain().amp.getSelectedAmp() == 0;
             send (70, 1);
-            const auto toChorus = matches (chorusPart) && p.getChain().amp.getSelectedSlot() == 2;
+            const auto toChorus = matches (chorusPart) && p.getChain().amp.getSelectedAmp() == 2;
             send (70, 5);   // an empty scene: nothing changes
             send (70, 100); // not a scene: ignored
             const auto unchanged = matches (chorusPart) && scenes.getCurrent() == 1;
@@ -681,7 +681,7 @@ public:
                 expect (result.ok, result.error);
                 expect (p.getPresetWarnings().isEmpty(), preset["name"].toString() + ": " + p.getPresetWarnings().joinIntoString ("; "));
                 expect (p.getScenes().get (0).stored && p.getScenes().get (2).stored);
-                expect (preset["notes"].toString().contains ("Swap in your own captures"));
+                expect (preset["notes"].toString().contains ("Load a capture of your own"));
                 // Close mic 1 starts on a bundled IR, found in the app's content folder (the tests' copy of it).
                 waitForLoads (p);
                 const auto mic1 = juce::File (p.parameters.state.getProperty (AmpSimProcessor::cabPathKey (0)).toString());
@@ -701,7 +701,7 @@ public:
             expect (chon.loadPreset (factory[1]).ok);
             expect (getParam (chon, "delay_stereo") == 2.0f && getParam (chon, "chorus_on") == 1.0f);
             expect (chon.recallScene (2));
-            expectEquals (getParam (chon, "amp_slot"), 1.0f); // Crunch on Ember at Gain 5 since the gain sets (ASSUMPTIONS AG12)
+            expectEquals (getParam (chon, "amp_model"), 1.0f); // Crunch on Ember at Gain 5 since the gain sets (ASSUMPTIONS AG12)
             logMessage ("  -> " + names.joinIntoString (", "));
         }
 
@@ -779,7 +779,7 @@ public:
             }
 
             expect (silentFrom > requestAt && silentTo > silentFrom);
-            expect (p.getStatus().model[0].startsWith ("lstm"));
+            expect (p.getStatus().model[(size_t) AmpSimProcessor::yourCaptureAmp].startsWith ("lstm")); // a format 1 preset's own capture: your capture now
             const auto steady = maxStep (out, (size_t) (0.5 * fs), requestAt);
             const auto fadeOut = maxStep (out, requestAt, silentFrom + blockSize);
             const auto fadeIn = maxStep (out, silentTo, silentTo + 2400);
@@ -959,12 +959,12 @@ public:
                 walk (*editor);
             }
             for (const auto* id : { "delay_on", "reverb_mix", "gate_a_threshold", "gate_link", "eq_pre_g3", "cab_bypass", "comp_post_mode",
-                                    "tuner_on", "amp_slot", "bloom_phaser_mode", "harm_v1_steps", "mv_v8_drift", "tempo_bpm", "input_level_dbu" })
+                                    "tuner_on", "amp_model", "bloom_phaser_mode", "harm_v1_steps", "mv_v8_drift", "tempo_bpm", "input_level_dbu" })
                 expect (tagged.contains (id), id);
 
             // Every parameter has a tagged control, except the ones set by drawn surfaces: the mics' positions
             // (the speaker map) and the custom scale's bit mask (its 12 note switches).
-            const juce::StringArray drawnOnly { "cab_mic1_pos_x", "cab_mic1_pos_y", "cab_mic2_pos_x", "cab_mic2_pos_y", "harm_custom_mask" };
+            const juce::StringArray drawnOnly { "cab_mic1_pos_x", "cab_mic1_pos_y", "cab_mic2_pos_x", "cab_mic2_pos_y", "harm_custom_mask", "amp_slot" /* unused since 2026-10-07 */ };
             juce::StringArray missing;
             for (auto* parameter : p.getParameters())
                 if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (parameter);

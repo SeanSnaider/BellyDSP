@@ -276,7 +276,7 @@ public:
             const auto cab = presets::resolve (presets::FileRef::fromVar (presets::factoryPresets()[2]["cab"]["mic1"]), "irs").file;
             p.loadCabIR (0, cab);
             waitForLoads (p);
-            setParam (p, AmpSimProcessor::slotParamId, 2.0f);
+            setParam (p, AmpSimProcessor::ampModelParamId, 2.0f);
 
             // Three times: the 2 s riff (peaks -6 dBFS), then 1.5 s of muted strings; the noise under all of it.
             const auto phrase = (size_t) (2.0 * fs), gap = (size_t) (1.5 * fs), cycle = phrase + gap;

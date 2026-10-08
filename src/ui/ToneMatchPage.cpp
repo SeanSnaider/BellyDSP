@@ -1282,9 +1282,10 @@ void ToneMatchPage::updateResultText()
         resultLabels.add (label);
         resultItems.push_back (std::move (items));
     };
-    const auto slot = session.applySlot();
-    const auto loads = ampSim.getSlotCapture (slot) != r.model;
-    add ("Amp", { capture + (loads ? " (loads into slot " : " (slot ") + juce::String (slot + 1) + ")", "Gain " + juce::String (gainPosition, 1) });
+    const auto amp = session.applyAmp();
+    const auto loads = ampSim.getAmpCapture (amp) != r.model;
+    add ("Amp", { capture + (amp == AmpSimProcessor::yourCaptureAmp ? (loads ? " (loads as your capture)" : " (your capture)") : juce::String()),
+                  "Gain " + juce::String (gainPosition, 1) });
     // The pedal in front and the post compressor after, on one row (the card has room for five).
     juce::StringArray effects;
     if (const auto pedal = pedalText (r.pedal); pedal.isNotEmpty())

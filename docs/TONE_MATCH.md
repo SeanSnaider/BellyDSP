@@ -6,8 +6,8 @@
 
 A song holds only the output of a rig (the amp, its cab, the mic, the studio's EQ and compression), mixed with drums, bass, vocals, and a mastering chain. Nothing in that recording says which amp made it, so **the real amp can't be recovered**. Tone match finds the closest *fingerprint* with what BellyDSP already has:
 
-- an amp: every gain set in the content folder (the built-ins Glass, Ember, Monolith, and any set added there), and whichever capture each slot holds,
-- that slot's Gain (its input trim) and five tone knobs (Depth, Bass, Mid, Treble, Presence),
+- an amp: every gain set in the content folder (the eight built-in amps, and any set added there), and your own capture if one is loaded,
+- that amp's Gain (its input trim) and five tone knobs (Depth, Bass, Mid, Treble, Presence),
 - one of the 21 built-in cabs in close mic 1,
 - and a **match EQ**: the post EQ's five parametric bands, fitted to whatever difference is left, capped at +-12 dB;
 - with a play-along take (Round 2, below): a pedal in front (the overdrive's four modes, the clean boost, or the pre compressor) and the post compressor, both only when they score better than none, and the **match curve** (the high-resolution correction after the cab) in place of the match EQ.
@@ -28,7 +28,7 @@ What it can't do, as measured below: pin the Gain down within a few dB (a cranke
 
 6. **Compare.** Once the result is in, the Match card plays three things, looped: **Target** (what was matched), **Match** (your DI through the result) and **Current** (your DI through what's set now). See "Comparing" below.
 
-What Apply changes (ASSUMPTIONS TM8, TM19, TM75): the amp (the slot that holds the matched amp, or the playing slot with the matched gain set loaded into it), its Gain and tone, the cab (close mic 1, with mic 2 and the room muted, cuts off), the post EQ (on, parametric, the five bands, cuts off) or, when the match has a match curve, the curve (on, at the match's amount) with the post EQ switched off and its bands left alone; the pre compressor, boost, and overdrive as the match has them (the one it uses at its fitted settings, the others off), the pre EQ off, and the post compressor as the match has it (its threshold moved with the slot's Master). So the match is heard as it was made. The noise gate stays as it is. All of it is one undo step. The page says this above Apply, with which pre effects are on right now.
+What Apply changes (ASSUMPTIONS TM8, TM19, TM75): the amp (since 2026-10-07: the built-in amp whose set matched, or your capture, chosen with `amp_model`; ASSUMPTIONS AS13), its Gain and tone, the cab (close mic 1, with mic 2 and the room muted, cuts off), the post EQ (on, parametric, the five bands, cuts off) or, when the match has a match curve, the curve (on, at the match's amount) with the post EQ switched off and its bands left alone; the pre compressor, boost, and overdrive as the match has them (the one it uses at its fitted settings, the others off), the pre EQ off, and the post compressor as the match has it (its threshold moved with the slot's Master). So the match is heard as it was made. The noise gate stays as it is. All of it is one undo step. The page says this above Apply, with which pre effects are on right now.
 
 From the command line: `prototypes/tone_match.py match TARGET DI --mode same|anything` (the prototype, through `ampsim_render`), and `ampsim_separate song.wav guitar.wav` (the separation, with its timing and memory).
 
@@ -40,8 +40,8 @@ Sean's feedback on the first version: "hard to compare". So the page plays the s
 
 - **Target**: what was matched, the separated guitar stem when "Separate the guitar first" was on, otherwise the selected section of the file; cleaned up with your take when that was used.
 - **Raw** (only when the cleanup was used): the target before the cleanup, on the target's clock (the player's source 5).
-- **Match**: the DI the match used, rendered through what Apply would set (the slot, its Gain and tone, the cab in close mic 1, the match EQ as the post EQ, the pre effects off). The values are the ones the parameters will hold, so the render equals what Apply produces bit for bit (tested: `renderTone` on the settings read back from the processor after Apply gives the identical 432,000 samples).
-- **Current**: the same DI through what's set now. It re-renders by itself when the slot, its knobs, its capture, close mic 1's IR, the amp or cab bypass, or the post EQ change and then stay still for 300 ms. After Apply it equals Match (tested).
+- **Match**: the DI the match used, rendered through what Apply would set (the amp, its Gain and tone, the cab in close mic 1, the match EQ as the post EQ, the pre effects off). The values are the ones the parameters will hold, so the render equals what Apply produces bit for bit (tested: `renderTone` on the settings read back from the processor after Apply gives the identical 432,000 samples).
+- **Current**: the same DI through what's set now. It re-renders by itself when the amp, its knobs, its capture, close mic 1's IR, the amp or cab bypass, or the post EQ change and then stay still for 300 ms. After Apply it equals Match (tested).
 
 Both renders run on the session's worker through `ToneMatcher::renderTone`: the chain's own `AmpSection`, close mic 1's IR as the cab plays it (the cab's own loading and loudness match), FFT convolution, and the chain's own `Equalizer`. They take about 3.6 s for a 9 s DI on this Mac, while the page stays usable, and Cancel stops them (bounded by a capture's load, which can't be interrupted: 1.2 s measured with a gain set). Not in them: the pre effects (Apply switches the coloring ones off, and Current leaves them out too), close mic 2, the room, the other post effects, the cab mic's level and pan, and the output level.
 
@@ -718,7 +718,7 @@ C++: `ToneMatcher::fitMatchCurve` (golden: 1245 points on three candidates withi
 
 ### The amp list
 
-The matcher's amps are every gain set in `content/models` (the built-ins first in slot order, then the others by name), then the slots' own captures that aren't among them (`ToneMatchSession::contentGainSets`, `modelsToSearch`; the prototype and the benchmark the same, `common.GAIN_SETS`). A matched set no slot holds loads into the playing slot on Apply (`ModelChange`, in the same undo step). New sets cost about 7 renders each in the grid.
+The matcher's amps are every gain set in `content/models` (the built-in amps first in their order, then the others by name), then the amps' own captures that aren't among them (your capture) (`ToneMatchSession::contentGainSets`, `modelsToSearch`; the prototype and the benchmark the same, `common.GAIN_SETS`). Apply chooses the built-in amp whose set matched (since 2026-10-07; before, a matched set no slot held loaded into the playing slot), or loads a matched capture as your capture (`ModelChange`, in the same undo step). New sets cost about 7 renders each in the grid.
 
 ### Time
 

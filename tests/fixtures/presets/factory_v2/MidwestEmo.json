@@ -1,10 +1,9 @@
 {
-  "format_version": 3,
+  "format_version": 2,
   "name": "Midwest Emo",
-  "notes": "It plays the built-in amps Glass (clean to the edge of breakup) and Ember (light to heavy crunch): stand-ins until your own. Scenes: Clean on Glass at Gain 3.75 (warm and chimey), Crunch on Ember at 3.75, Breakup on Glass at Gain 10, its edge of breakup (the scenes hold Glass's Gain). Give the room mic a room IR. Close mic 1 starts on a built-in vintage 4x12 IR (pick another on the Cab page). Load a capture of your own on the Amp page to play it as your capture; these settings are starting points to tune by ear.",
+  "notes": "Slots 1 and 2 start on the built-in gain sets, Glass (clean to the edge of breakup) and Ember (light to heavy crunch): stand-ins until your own. Scenes: Clean on Glass at Gain 3.75 (warm and chimey), Crunch on Ember at 3.75, Breakup on Glass at Gain 10, its edge of breakup (the scenes hold Glass's Gain). Give the room mic a room IR. Close mic 1 starts on a built-in vintage 4x12 IR (pick another on the Cab page). Swap in your own captures; these settings are starting points to tune by ear.",
   "parameters": {
     "amp_slot": 0,
-    "amp_model": 0,
     "comp_pre_on": 1,
     "comp_pre_threshold": -20.0,
     "comp_pre_ratio": 2.5,
@@ -40,48 +39,18 @@
   "amps": [
     {
       "path": "factory:models/Glass/gainset.json",
-      "hash": "",
-      "size": 0
+      "hash": "fnv1a64:910d7b5e1dbb7d3d",
+      "size": 707
     },
     {
       "path": "factory:models/Ember/gainset.json",
-      "hash": "",
-      "size": 0
+      "hash": "fnv1a64:8ab3c14a7c2fe381",
+      "size": 708
     },
     {
       "path": "factory:models/Monolith/gainset.json",
-      "hash": "",
-      "size": 0
-    },
-    {
-      "path": "factory:models/Lantern/gainset.json",
-      "hash": "",
-      "size": 0
-    },
-    {
-      "path": "factory:models/Basalt/gainset.json",
-      "hash": "",
-      "size": 0
-    },
-    {
-      "path": "factory:models/Comet/gainset.json",
-      "hash": "",
-      "size": 0
-    },
-    {
-      "path": "factory:models/Forge/gainset.json",
-      "hash": "",
-      "size": 0
-    },
-    {
-      "path": "factory:models/Quartz/gainset.json",
-      "hash": "",
-      "size": 0
-    },
-    {
-      "path": "",
-      "hash": "",
-      "size": 0
+      "hash": "fnv1a64:13aa6684a718af14",
+      "size": 734
     }
   ],
   "cab": {
@@ -134,7 +103,7 @@
       {
         "name": "Clean",
         "values": {
-          "amp_model": 0,
+          "amp_slot": 0,
           "delay_on": 1,
           "reverb_on": 1,
           "amp1_input_trim": -6.0
@@ -143,7 +112,7 @@
       {
         "name": "Crunch",
         "values": {
-          "amp_model": 1,
+          "amp_slot": 1,
           "delay_on": 0,
           "reverb_on": 1,
           "amp1_input_trim": -6.0
@@ -152,7 +121,7 @@
       {
         "name": "Breakup",
         "values": {
-          "amp_model": 0,
+          "amp_slot": 0,
           "delay_on": 1,
           "reverb_on": 1,
           "amp1_input_trim": 24.0

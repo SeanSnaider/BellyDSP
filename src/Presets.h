@@ -5,6 +5,7 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include <array>
 #include <vector>
 
 class AmpSimProcessor;
@@ -12,13 +13,16 @@ class AmpSimProcessor;
 /// Presets (BUILD_PLAN "Presets and scenes"): one JSON file per preset.
 ///
 ///   {
-///     "format_version": 2,
+///     "format_version": 3,
 ///     "name": "...",
-///     "parameters": { "<parameter id>": <plain value>, ... },   every parameter except global settings
-///     "amps": [ <file>, <file>, <file> ],                        one per slot, an empty path for an empty slot
+///     "parameters": { "<parameter id>": <plain value>, ... },   every parameter except global settings; amp_model
+///                                                                is the amp that plays (0 to 8)
+///     "amps": [ <file>, ... ],                                   one per amp, nine: the eight built-in amps' gain
+///                                                                sets ("factory:models/Glass/gainset.json", ...)
+///                                                                and the user's own capture (an empty path for none)
 ///     "cab": { "mic1": <file>, "mic2": <file>, "room": <file> }, an IR file, or a pack folder for a close mic
-///     "cab_assign": [ <file>, <file>, <file> ],                  each amp slot's cab for "Follow amp choice" (optional)
-///     "cab_follow": true,                                        whether switching slots loads it (optional, default true)
+///     "cab_assign": [ <file>, ... ],                             each amp's cab for "Follow amp choice", nine (optional)
+///     "cab_follow": true,                                        whether switching amps loads it (optional, default true)
 ///     "match_curve": [ [ 20.0, 0.0 ], [ 21.2, 0.4 ], ... ],      the match curve's points, [hz, dB] (optional: none
 ///                                                                if absent; added 2026-10-07 within format 2,
 ///                                                                since an older build just ignores the key)
@@ -34,9 +38,10 @@ class AmpSimProcessor;
 ///     missing file.
 ///
 ///   Version 1 (Phase 5) stored plain absolute paths; migrateV1toV2() turns them into <file> entries
-///   without a hash (so they can't be relinked if they move). Every step of the format gets one small,
-///   pure, tested migration function, and the golden files in tests/fixtures/presets load the same on
-///   every build.
+///   without a hash (so they can't be relinked if they move). Version 2 (until 2026-10-07) had three amp
+///   slots, each holding any capture, and amp_slot choosing one; migrateV2toV3() turns them into the nine
+///   amps (slotsToAmps below). Every step of the format gets one small, pure, tested migration function, and
+///   the golden files in tests/fixtures/presets load the same on every build.
 ///     "order": { "pre": [ "gate", "comp", ... ], "post": [ "eq", "comp", "bloom", ... ], "bloom": [ "bitcrush", "phaser", "flanger" ] },
 ///     "midi": [ { "cc": 82, "action": "toggle", "parameter": "delay_on" }, ... ],
 ///     "scenes": { "parameters": [ "delay_mix", ... ], "list": [ { "name": "Verse", "values": { ... } }, null, ... ] }
@@ -48,7 +53,7 @@ class AmpSimProcessor;
 /// and the tuner's settings so far) are never saved in a preset or changed by one.
 namespace presets
 {
-constexpr int formatVersion = 2;
+constexpr int formatVersion = 3;
 
 /// The library roots relinking searches: "models" for captures, "irs" for cab IRs and packs. Default
 /// ~/Library/Application Support/BellyDSP/<kind> (%APPDATA%\BellyDSP\<kind> on Windows); tests point them
@@ -92,7 +97,52 @@ Resolved resolve (const FileRef& ref, const juce::String& kind);
 
 /// Format migrations: one pure function per step. migrate() runs every step a preset needs.
 juce::var migrateV1toV2 (const juce::var& v1);
+juce::var migrateV2toV3 (const juce::var& v2);
 juce::var migrate (const juce::var& preset);
+
+/// From three slots to nine amps (BUILD_PLAN "Amp switching", 2026-10-07; ASSUMPTIONS AS1 to AS6). Until then the
+/// rig had three amp slots that all ran, each holding any capture with its own knobs (amp1_* .. amp3_*), and
+/// amp_slot choosing one. Now there are nine amps, each with its own knobs: the eight built-in amps (amp1_* Glass,
+/// amp2_* Ember, amp3_* Monolith, then Lantern, Basalt, Comet, Forge, Quartz) and the user's own capture (amp9_*),
+/// and amp_model choosing one. An old slot becomes the amp its capture was:
+///   - a built-in gain set (or a pre-gain-set built-in, Glass.nam) is that built-in amp;
+///   - any other capture is "your capture" (amp 9); if two slots held different captures of their own, the
+///     selected slot's (else the lowest slot's) is the one kept, and the other slot plays it too;
+///   - an empty slot (cleared on purpose, or never filled) is the built-in its head wore: slot 1 Glass, 2 Ember,
+///     3 Monolith.
+/// The slot's knobs become that amp's knobs (when two slots become one amp, the selected slot's win), amp_slot
+/// becomes amp_model, and a scene or MIDI mapping naming amp_slot or a slot's knob names the amp's.
+struct SlotMapping
+{
+    std::array<int, 3> ampOf { 0, 1, 2 }; ///< the amp each old slot becomes
+    int selectedSlot = 0;                 ///< the slot amp_slot chose
+    int yourCaptureSlot = -1;             ///< the slot whose own capture becomes amp 9 (-1: none)
+};
+
+/// Which amp each slot becomes, from the slots' saved capture paths (a preset's "factory:..." or library paths, or
+/// a state's absolute ones; empty for an empty slot) and the selected slot.
+SlotMapping mapSlots (const std::array<juce::String, 3>& slotCaptures, int selectedSlot);
+
+/// The built-in amp a saved capture path names (0 to 7), or -1: "factory:models/<Amp>/gainset.json", a saved
+/// absolute path (either OS) ending in content/models/<Amp>/gainset.json, or a pre-gain-set built-in
+/// (content/models/Glass.nam, Ember.nam, Monolith.nam).
+int builtInAmpFor (const juce::String& path);
+
+/// Plain parameter values (a preset's "parameters", a state's PARAM values) from slots to amps: each slot's seven
+/// knobs move to its amp's IDs (the old amp1_* .. amp3_* entries are removed first), and amp_model is set from
+/// amp_slot. Knobs of an amp no slot became are left out (they take their defaults). amp_slot stays as it was.
+void slotValuesToAmps (juce::NamedValueSet& values, const SlotMapping& mapping);
+
+/// A scenes var (Scenes::toVar's form) from slots to amps: each scene's amp_slot becomes amp_model, and its knob
+/// values and the chosen IDs move to the amps' IDs (when two slots become one amp, the slot the scene selects wins).
+juce::var slotScenesToAmps (const juce::var& scenes, const SlotMapping& mapping);
+
+/// A MIDI map var (MidiMap::toVar's form) from slots to amps: a mapping on amp_slot moves to amp_model (its range
+/// through the slots' amps), one on a slot's knob to its amp's knob.
+juce::var slotMidiToAmps (const juce::var& midi, const SlotMapping& mapping);
+
+/// The seven knobs every amp has, as the last part of their IDs (amp<N>_<name>).
+const juce::StringArray& ampKnobNames();
 
 /// Parameters that belong to the rig, not the sound, and are never part of a preset.
 bool isGlobal (const juce::String& parameterId);
@@ -117,9 +167,9 @@ ApplyResult validate (const juce::var& preset);
 /// ~/Library/Application Support/BellyDSP/presets (%APPDATA%\BellyDSP\presets on Windows)
 juce::File defaultFolder();
 
-/// The factory presets (the five style presets), in the plan's order. They set the sound and its scenes,
-/// put the built-in captures in their slots (Glass, Ember, Monolith) and a bundled cab IR
-/// ("factory:irs/...", content/irs) in close mic 1, and say in their "notes" what to swap in.
+/// The factory presets (the five style presets), in the plan's order. They set the sound and its scenes (which
+/// choose among the built-in amps), put a bundled cab IR ("factory:irs/...", content/irs) in close mic 1, and say
+/// in their "notes" what to swap in.
 juce::Array<juce::var> factoryPresets();
 
 /// A factory preset's current name for a name it once had: "Polyphia" is "Modern Prog" and "CHON" is "Math
@@ -128,23 +178,22 @@ juce::Array<juce::var> factoryPresets();
 /// through this.
 juce::String currentFactoryPresetName (const juce::String& name);
 
-/// The built-in captures (content/models, BUILD_PLAN decision log 2026-10-03): one per amp slot, named after
-/// the head it plays in: slot 1 Glass (clean), slot 2 Ember (crunch), slot 3 Monolith (high gain). Stand-ins
-/// trained from the project's own gray-box amp (prototypes/amp_sim.py, tools/content/make_default_captures.py)
-/// until Sean's own captures replace them. A fresh slot starts on its built-in (AmpSimProcessor).
-/// Since 2026-10-04 each is a gain set (BUILD_PLAN "Amp gain"): content/models/Glass/ holds five captures across
-/// the amp's gain knob and the gainset.json that lists them, and the JSON is what slots, presets, and the state
-/// refer to.
-juce::String builtInCaptureName (int slot);
-juce::String builtInCapturePath (int slot); ///< "factory:models/Glass/gainset.json", as a preset refers to it
-juce::File builtInCapture (int slot);       ///< that file in the app's content folder
+/// The built-in amps (content/models; BUILD_PLAN decision log 2026-10-03, "More built-in amps", "Amp switching"):
+/// amps 1 to 8 in the shelf's order, Glass (clean), Ember (crunch), Monolith (high gain), then Lantern, Basalt,
+/// Comet, Forge, Quartz (AG27's order: by NAM's tone type, then name). The order is fixed: it's the amp_model
+/// parameter's and the amp1_* .. amp8_* IDs' (a ninth built-in would be amp 10, after the user's capture). Stand-ins
+/// trained from the project's own gray-box amps (prototypes/amp_sim.py, amp_voicings.py,
+/// tools/content/make_default_captures.py) until Sean's own captures replace them. Each is a gain set (BUILD_PLAN
+/// "Amp gain"): content/models/Glass/ holds five captures across the amp's gain knob and the gainset.json that
+/// lists them, and the JSON is what amps, presets, and the state refer to.
+constexpr int numBuiltInAmps = 8;
+juce::String builtInAmpName (int amp);     ///< "Glass", "Ember", ... "Quartz"
+juce::String builtInCapturePath (int amp); ///< "factory:models/Glass/gainset.json", as a preset refers to it
+juce::File builtInCapture (int amp);       ///< that file in the app's content folder
 
-/// Every gain set that ships with the app (content/models/<Amp>/gainset.json): the three slot defaults first,
-/// in slot order (Glass, Ember, Monolith), then the others (Forge, Basalt, Comet, Quartz, Lantern since
-/// 2026-10-07; BUILD_PLAN "More built-in amps") by tone type (clean, overdrive, crunch, high gain, fuzz, as
-/// in NAM's metadata), then name. Read from the folder, so a set added to content/models shows up without a
-/// code change. Any slot can load any of them and keeps its head (the capture menu's "Built-in amps").
-/// Message thread (it reads each JSON).
+/// Every gain set that ships with the app (content/models/<Amp>/gainset.json): the built-in amps in their order,
+/// then any other set in the folder by tone type (clean, overdrive, crunch, high gain, fuzz, as in NAM's metadata),
+/// then name. Read from the folder. Message thread (it reads each JSON).
 struct BuiltInAmp
 {
     juce::String name, description, toneType;

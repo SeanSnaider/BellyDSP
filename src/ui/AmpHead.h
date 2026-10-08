@@ -10,20 +10,33 @@
 namespace ui
 {
 
-/// The three amp heads' materials (handoff 4.6): slot 1 wears Glass, slot 2 Ember, slot 3 Monolith, always
-/// (ASSUMPTIONS UH12). The names are invented and appear on the badges and tabs.
+/// The amp heads' materials (handoff 4.6): the three slot amps' (slot 1 wears Glass, slot 2 Ember, slot 3 Monolith:
+/// ASSUMPTIONS UH12), one for each of the five more built-in amps (UH20 to UH24), and a neutral one for a user's own
+/// capture (UH25). The names are invented and appear on the badges and tabs. The order is fixed: the first three
+/// are the slots'.
 enum class Material
 {
     glass,
     ember,
-    monolith
+    monolith,
+    forge,
+    basalt,
+    comet,
+    quartz,
+    lantern,
+    custom
 };
 
-inline Material materialFor (int slot) { return (Material) juce::jlimit (0, 2, slot); }
+constexpr int numMaterials = 9;
+
+/// The material for an amp by its name: each of the eight built-in amps has its own (by name, ignoring case);
+/// anything else (a user's capture or gain set) wears Custom.
+Material materialForAmp (const juce::String& amp);
+
 const char* materialName (Material material);
 theme::Skin skinFor (Material material);
 
-/// The amp head (handoff 4.6), one component for all three: a 150 x 14 handle above a 960 x 262 body
+/// The amp head (handoff 4.6), one component for every material: a 150 x 14 handle above a 960 x 262 body
 /// (radius 14, padding 16, a soft drop shadow), the 118 px control panel on top and the grille below
 /// (radius 6, an inset shadow, the badge centred), and two feet under the bottom edge. Only the materials
 /// change: the body's tolex, the panel, the grille's weave, and the badge.
@@ -44,7 +57,8 @@ public:
     Material getMaterial() const noexcept { return material; }
 
     /// The word on the badge, in the material's lettering: the amp the slot plays ("Comet" on the Glass head, since
-    /// any slot can load any built-in amp); empty: the material's own name. Re-renders the art when it changes.
+    /// any slot can load any built-in amp; a capture's name on Custom); empty: the material's own name. A word too
+    /// long for the grille is elided with an ellipsis. Re-renders the art when it changes.
     void setBadge (const juce::String& name);
     juce::String getBadge() const;
 
@@ -88,12 +102,12 @@ private:
     bool lit = false;
 };
 
-/// The amp tabs' 30 x 20 mini heads (handoff 4.5, .mini).
+/// A material's 30 x 20 mini head (handoff 4.5, .mini; the amp tabs and the Amp page's shelf): the same look as
+/// the full head in miniature, colours only, no lettering.
 void drawMiniHead (juce::Graphics& g, juce::Rectangle<float> box, Material material);
 
-/// A built-in amp's 30 x 20 mini head, by its name (the Amp page's shelf): the three slot materials' own minis for
-/// Glass, Ember, and Monolith, a look of its own for each of the five more (Forge, Basalt, Comet, Quartz, Lantern),
-/// and a plain grey one for any other gain set.
+/// An amp's mini head by its name: drawMiniHead with materialForAmp (a built-in amp's own look; Custom for any
+/// other capture or gain set).
 void drawMiniAmp (juce::Graphics& g, juce::Rectangle<float> box, const juce::String& amp);
 
 } // namespace ui

@@ -8,7 +8,7 @@ bool Scenes::isSwitch (const juce::String& id)
 {
     if (presets::isGlobal (id))
         return false;
-    return id == "amp_slot" || id == "cab_bypass" || id.endsWith ("_on");
+    return id == "amp_model" || id == "cab_bypass" || id.endsWith ("_on");
 }
 
 void Scenes::setChosen (const juce::String& id, bool shouldBeChosen)
