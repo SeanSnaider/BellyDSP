@@ -400,7 +400,7 @@ public:
                         ++mismatched;
                 }
             expectEquals (mismatched, 0);
-            for (int s = 0; s < AmpSimProcessor::numAmpSlots; ++s)
+            for (int s = 0; s < AmpSimProcessor::numAmps; ++s)
                 expectEquals (b.getStatus().model[(size_t) s], a.getStatus().model[(size_t) s]);
             for (int m = 0; m < AmpSimProcessor::numCabMics; ++m)
                 expectEquals (b.getStatus().cab[(size_t) m], a.getStatus().cab[(size_t) m]);
@@ -592,9 +592,9 @@ public:
                 return true;
             };
             send (70, 0);
-            const auto toVerse = matches (verse) && p.getChain().amp.getSelectedSlot() == 0;
+            const auto toVerse = matches (verse) && p.getChain().amp.getSelectedAmp() == 0;
             send (70, 1);
-            const auto toChorus = matches (chorusPart) && p.getChain().amp.getSelectedSlot() == 2;
+            const auto toChorus = matches (chorusPart) && p.getChain().amp.getSelectedAmp() == 2;
             send (70, 5);   // an empty scene: nothing changes
             send (70, 100); // not a scene: ignored
             const auto unchanged = matches (chorusPart) && scenes.getCurrent() == 1;

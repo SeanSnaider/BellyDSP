@@ -52,11 +52,11 @@ bool savePng (const juce::Image& image, const juce::File& file)
 
 juce::String cabPath (AmpSimProcessor& p) { return p.parameters.state.getProperty (AmpSimProcessor::cabPathKey (0)).toString(); }
 
-/// The values Apply writes (every slot's Gain and tone, the post EQ, the cab), as a string, to compare before and after.
+/// The values Apply writes (the amp choice, every amp's Gain and tone, the post EQ, the cab), as a string, to compare before and after.
 juce::String snapshotOf (AmpSimProcessor& p)
 {
-    juce::StringArray ids { AmpSimProcessor::slotParamId };
-    for (int slot = 0; slot < 3; ++slot)
+    juce::StringArray ids { AmpSimProcessor::ampModelParamId };
+    for (int slot = 0; slot < AmpSimProcessor::numAmps; ++slot)
         for (const auto* name : { "input_trim", "depth", "bass", "mid", "treble", "presence" })
             ids.add (AmpSimProcessor::ampParamId (slot, name));
     ids.addArray ({ "eq_post_on", "eq_post_mode", "eq_post_b1_type", "eq_post_b1_gain", "eq_post_b2_freq", "eq_post_b3_q", "eq_post_b5_gain",
@@ -181,7 +181,7 @@ public:
             expect (page.getMatchButton().isEnabled(), page.getStatusText());
 
             // Settings that Apply must change, and that undo must bring back.
-            setParam (p, AmpSimProcessor::slotParamId, 0.0f);
+            setParam (p, AmpSimProcessor::ampModelParamId, 0.0f);
             setParam (p, "eq_post_mode", 0.0f);
             // Pre effects in a mix of states: Apply must switch the tone-coloring ones off, leave the gate
             // alone, and undo must put each back exactly as it was.
@@ -216,15 +216,15 @@ public:
             expectEquals (note, juce::String ("Apply sets these in one undo step: the compressors, boost, and overdrive as the match has them (it uses none), "
                                               "the pre EQ off (on now: compressor, boost, pre EQ). The gate stays as it is."));
 
-            // The search covers every gain set in the content folder, so r.slot indexes that list, not the slots: Apply
-            // plays the result in the slot holding the matched amp, or loads it into the playing slot (applySlot).
-            const auto slot = session.applySlot();
-            const auto captureBefore = p.getSlotCapture (slot);
+            // The search covers every gain set in the content folder (r.slot indexes that list): Apply plays the result
+            // on the built-in amp whose set it is, with that amp's knobs (applyAmp).
+            const auto slot = session.applyAmp();
+            const auto captureBefore = p.getAmpCapture (slot);
             page.apply();
             waitForLoads (p);
             const auto after = snapshotOf (p);
-            expectEquals ((int) getParam (p, AmpSimProcessor::slotParamId), slot);
-            expectEquals (p.getSlotCapture (slot).getFullPathName(), r.model.getFullPathName());
+            expectEquals ((int) getParam (p, AmpSimProcessor::ampModelParamId), slot);
+            expectEquals (p.getAmpCapture (slot).getFullPathName(), r.model.getFullPathName());
             expectWithinAbsoluteError (getParam (p, AmpSimProcessor::ampParamId (slot, "input_trim")), (float) r.gainDb, 0.051f);
             expectWithinAbsoluteError (getParam (p, AmpSimProcessor::ampParamId (slot, "mid")), (float) r.tone[2], 0.051f);
             expectEquals ((int) getParam (p, "eq_post_mode"), 1);
@@ -246,14 +246,14 @@ public:
             const auto undone = snapshotOf (p);
             expectEquals (undone, before);
             expectEquals (cabPath (p), cabBefore);
-            expectEquals (p.getSlotCapture (slot).getFullPathName(), captureBefore.getFullPathName());
+            expectEquals (p.getAmpCapture (slot).getFullPathName(), captureBefore.getFullPathName());
             const auto canUndoMore = p.undoManager.canUndo();
             expect (! canUndoMore, "Apply must be a single undo step");
             p.undoManager.redo();
             waitForLoads (p);
             expectEquals (cabPath (p), r.cab.getFullPathName());
-            expectEquals ((int) getParam (p, AmpSimProcessor::slotParamId), slot);
-            expectEquals (p.getSlotCapture (slot).getFullPathName(), r.model.getFullPathName());
+            expectEquals ((int) getParam (p, AmpSimProcessor::ampModelParamId), slot);
+            expectEquals (p.getAmpCapture (slot).getFullPathName(), r.model.getFullPathName());
             expect (getParam (p, "boost_on") < 0.5f && getParam (p, "comp_pre_on") < 0.5f && getParam (p, "eq_pre_on") < 0.5f);
 
             page.discard();
@@ -271,7 +271,7 @@ public:
             logMessage ("  -> snapshots: tone_match/" + pngs.joinIntoString (", tone_match/"));
         }
 
-        beginTest ("Apply with a pedal, a post compressor, and a gain set no slot holds (Round 2): the set loads into the playing slot, the pedal and the compressors are set, Match renders what Apply sets, one undo step puts it all back");
+        beginTest ("Apply with a pedal, a post compressor, and an amp that isn't playing (Round 2): Apply selects Monolith with its knobs (its set loaded again, it was emptied), the pedal and the compressors are set, Match renders what Apply sets, one undo step puts it all back");
         {
             WithBuiltInCaptures builtIns;
             AmpSimProcessor p;
@@ -282,27 +282,28 @@ public:
             ed.showPage (ui::PageId::toneMatch);
             auto& page = ed.getToneMatchPage();
             auto& session = page.getSession();
-            const auto glass = p.getSlotCapture (0);
-            // Slot 3 is emptied, and slot 1 (Glass) plays; the result is Monolith's gain set, which no slot holds now.
+            const auto glass = p.getAmpCapture (0);
+            // Glass plays; the result is Monolith's gain set, whose amp (3) is emptied first, so Apply loads it back too.
             p.clearModel (2);
             waitForLoads (p);
-            setParam (p, AmpSimProcessor::slotParamId, 0.0f);
+            setParam (p, AmpSimProcessor::ampModelParamId, 0.0f);
             setParam (p, "pre_fx_on", 0.0f);
             setParam (p, "comp_pre_on", 1.0f);
             setParam (p, "boost_on", 1.0f);
             setParam (p, "comp_post_on", 0.0f);
-            setParam (p, AmpSimProcessor::ampParamId (0, "output_trim"), -3.0f);
+            setParam (p, AmpSimProcessor::ampParamId (2, "output_trim"), -3.0f);
             p.parameters.copyState();
             p.undoManager.beginNewTransaction();
             p.undoManager.clearUndoHistory();
             const auto ids = juce::StringArray { "pre_fx_on", "comp_pre_on", "boost_on", "od_on", "od_mode", "od_drive", "od_tone", "comp_post_on", "comp_post_threshold",
-                                                 "comp_post_ratio", "comp_post_detector", "comp_post_mix", "amp1_input_trim", "match_curve_on",
-                                                 "match_curve_amount", "eq_post_on" };
+                                                 "comp_post_ratio", "comp_post_detector", "comp_post_mix", "amp1_input_trim", "amp3_input_trim", "amp3_mid",
+                                                 "amp_model", "match_curve_on", "match_curve_amount", "eq_post_on" };
             auto values = [&] {
                 juce::StringArray v;
                 for (const auto& id : ids)
                     v.add (id + "=" + juce::String (getParam (p, id), 2));
-                v.add ("slot1=" + p.getSlotCapture (0).getParentDirectory().getFileName());
+                v.add ("amp1=" + p.getAmpCapture (0).getParentDirectory().getFileName());
+                v.add ("amp3=" + p.getAmpCapture (2).getParentDirectory().getFileName());
                 v.add ("curve=" + juce::String ((int) p.getMatchCurve().points.size()) + " points");
                 return v.joinIntoString (", ");
             };
@@ -345,11 +346,11 @@ public:
             const auto beforeCurve = values();
             session.setResultForTests (r);
             page.refresh();
-            expectEquals (session.applySlot(), 0, "the playing slot");
+            expectEquals (session.applyAmp(), 2, "Monolith's own amp");
             const auto note = page.getApplyNote();
             expect (note.contains ("it uses overdrive"), note);
             const auto text = page.getResultText();
-            expect (text.contains ("Monolith (loads into slot 1)") && text.contains ("Overdrive, Distortion") && text.contains ("post compressor -22.0 dB 3:1")
+            expect (text.contains ("Monolith") && ! text.contains ("slot") && text.contains ("Overdrive, Distortion") && text.contains ("post compressor -22.0 dB 3:1")
                     && text.contains ("Match curve  50% (replaces the match EQ)"), text);
             const auto matched = session.matchedSettings();
             ed.refresh();
@@ -358,7 +359,10 @@ public:
 
             page.apply();
             waitForLoads (p);
-            expectEquals (p.getSlotCapture (0).getFullPathName(), r.model.getFullPathName());
+            expectEquals (p.getAmpCapture (2).getFullPathName(), r.model.getFullPathName());
+            expectEquals ((int) getParam (p, AmpSimProcessor::ampModelParamId), 2);
+            expectWithinAbsoluteError (getParam (p, AmpSimProcessor::ampParamId (2, "input_trim")), 4.5f, 0.051f);
+            expectWithinAbsoluteError (getParam (p, AmpSimProcessor::ampParamId (0, "input_trim")), 0.0f, 0.001f); // Glass's own knobs untouched
             expect (getParam (p, "pre_fx_on") > 0.5f && getParam (p, "od_on") > 0.5f && getParam (p, "comp_pre_on") < 0.5f && getParam (p, "boost_on") < 0.5f);
             expectEquals ((int) getParam (p, "od_mode"), (int) ampsim::Overdrive::Mode::distortion);
             expectWithinAbsoluteError (getParam (p, "od_drive"), 30.0f, 0.051f);
@@ -385,10 +389,47 @@ public:
             waitForLoads (p);
             expectEquals (values(), beforeCurve);
             expect (p.getMatchCurve().points.empty(), "undo takes the curve away again");
-            expectEquals (p.getSlotCapture (0).getFullPathName(), glass.getFullPathName());
+            expectEquals (p.getAmpCapture (0).getFullPathName(), glass.getFullPathName());
+            expectEquals (p.getAmpCapture (2), juce::File(), "undo empties Monolith's amp again, as it was");
+            expectEquals ((int) getParam (p, AmpSimProcessor::ampModelParamId), 0);
             expect (! p.undoManager.canUndo(), "one undo step");
             logMessage ("  -> \"" + note + "\"; before: " + before + "; applied: " + after + "; Match and the applied settings render the same "
                         + juce::String ((int) a.size()) + " samples; undone: identical to before");
+        }
+
+        beginTest ("Apply of a capture that isn't a built-in amp: it becomes your capture (amp 9), selected with its knobs, in one undo step");
+        {
+            AmpSimProcessor p;
+            ToneMatchSession session (p);
+            setParam (p, AmpSimProcessor::ampModelParamId, 1.0f);
+            p.parameters.copyState();
+            p.undoManager.beginNewTransaction();
+            p.undoManager.clearUndoHistory();
+            ampsim::tonematch::MatchResult r;
+            r.mode = ampsim::tonematch::Mode::anything;
+            r.model = exampleModel ("wavenet_a1_standard.nam");
+            r.gainDb = -6.0;
+            r.tone = { 0.0, 1.5, -2.0, 0.0, 0.0 };
+            r.cab = platform::factoryContentFolder().getChildFile ("irs/Modern 4x12/Modern 4x12, dynamic, 75 W, var. 1.wav");
+            session.setResultForTests (r);
+            const auto amp = session.applyAmp();
+            expect (session.apply());
+            waitForLoads (p);
+            const auto yours = AmpSimProcessor::yourCaptureAmp;
+            expectEquals (amp, yours);
+            expectEquals ((int) getParam (p, AmpSimProcessor::ampModelParamId), yours);
+            expectEquals (p.getAmpCapture (yours).getFullPathName(), r.model.getFullPathName());
+            expectWithinAbsoluteError (getParam (p, AmpSimProcessor::ampParamId (yours, "input_trim")), -6.0f, 0.051f);
+            expectWithinAbsoluteError (getParam (p, AmpSimProcessor::ampParamId (yours, "bass")), 1.5f, 0.051f);
+            expectEquals (p.getCabAssignment (yours).getFullPathName(), r.cab.getFullPathName());
+            const auto status = p.getStatus().model[(size_t) yours];
+            p.undoManager.undo();
+            waitForLoads (p);
+            expectEquals ((int) getParam (p, AmpSimProcessor::ampModelParamId), 1);
+            expectEquals (p.getAmpCapture (yours), juce::File());
+            expectEquals (getParam (p, AmpSimProcessor::ampParamId (yours, "input_trim")), 0.0f);
+            expect (! p.undoManager.canUndo());
+            logMessage ("  -> a non-built-in result: applied as your capture (\"" + status + "\"), amp 9 selected with Gain -6 dB and its tone; one undo: Ember again, amp 9 empty");
         }
 
         beginTest ("cancelling from the page stops the match and says so, and the page can match again");

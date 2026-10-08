@@ -63,7 +63,7 @@ std::array<bool, 3> running (AmpSimProcessor& p)
     play (p, std::vector<float> (blockSize, 0.0f));
     std::array<bool, 3> r {};
     for (int s = 0; s < 3; ++s)
-        r[(size_t) s] = p.getChain().amp.slot (s).model.hasModel();
+        r[(size_t) s] = p.getChain().amp.amp (s).model.hasModel();
     return r;
 }
 
@@ -172,7 +172,7 @@ public:
             proofDir().getChildFile ("default_captures").createDirectory();
             for (int s = 0; s < 3; ++s)
             {
-                setParam (p, AmpSimProcessor::slotParamId, (float) s);
+                setParam (p, AmpSimProcessor::ampModelParamId, (float) s);
                 const auto out = play (p, input);
                 amp.getSpectrum().update();
                 ed.refresh();
@@ -349,7 +349,7 @@ public:
                 waitForLoads (p);
                 expectEquals (modelPath (p, slot), sets[i].file.getFullPathName());
                 expect (! p.getStatus().modelError[(size_t) slot], p.getStatus().model[(size_t) slot]);
-                setParam (p, AmpSimProcessor::slotParamId, (float) slot);
+                setParam (p, AmpSimProcessor::ampModelParamId, (float) slot);
                 const auto out = play (p, input);
                 ed.refresh();
                 expectEquals (amp.getModelText(), sets[i].name + " (built in, gain set)");
@@ -471,7 +471,7 @@ public:
             expectEquals (amp.getHead().getBadge(), sets.back().name);
 
             // Another slot: the picker follows the playing slot; slot 2 still plays Ember on its own head.
-            setParam (p, AmpSimProcessor::slotParamId, 1.0f);
+            setParam (p, AmpSimProcessor::ampModelParamId, 1.0f);
             ed.refresh();
             expectEquals (amp.getPickerText(), juce::String ("Ember"));
             expectEquals (amp.getHead().getBadge(), juce::String ("Ember"));
@@ -536,7 +536,7 @@ public:
                 for (int i = 0; i < 3; ++i)
                 {
                     expect (p.recallScene (i));
-                    sceneSlots.add (p.getScenes().get (i).name + " " + names[(size_t) juce::roundToInt (getParam (p, AmpSimProcessor::slotParamId))]);
+                    sceneSlots.add (p.getScenes().get (i).name + " " + names[(size_t) juce::roundToInt (getParam (p, AmpSimProcessor::ampModelParamId))]);
                 }
                 lines.add (name + " (" + sceneSlots.joinIntoString (", ") + "; close mic 1 \""
                            + juce::File (p.parameters.state.getProperty (AmpSimProcessor::cabPathKey (0)).toString()).getFileNameWithoutExtension() + "\")");
@@ -607,7 +607,7 @@ public:
                     AmpSimProcessor p;
                     p.loadCabIR (0, cab);
                     waitForLoads (p);
-                    setParam (p, AmpSimProcessor::slotParamId, (float) s);
+                    setParam (p, AmpSimProcessor::ampModelParamId, (float) s);
                     setParam (p, "cab_bypass", withCab ? 0.0f : 1.0f);
                     p.prepareToPlay (fs, blockSize);
                     const auto out = play (p, input);

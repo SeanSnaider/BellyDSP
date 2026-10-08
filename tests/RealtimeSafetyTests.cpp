@@ -87,16 +87,8 @@ public:
             const auto a1 = exampleModel ("wavenet_a1_standard.nam");
             const auto lstm = exampleModel ("lstm.nam");
             const auto small = exampleModel ("wavenet.nam");
-            // One of the built-in amps beyond the slot defaults (BUILD_PLAN "More built-in amps"), as the capture
-            // menu's "Built-in amps" loads it.
-            juce::File forgeSet;
-            for (const auto& b : presets::builtInGainSets())
-                if (b.name == "Forge")
-                    forgeSet = b.file;
-            expect (forgeSet.existsAsFile(), "Forge's gain set");
-
-            // As in the app: the processor starts on the built-in captures (Glass, Ember, Monolith), and slot 1
-            // gets an example capture on top before playing starts.
+            // As in the app: the processor starts on the eight built-in amps, all loaded, and amp 1 gets an example
+            // capture on top before playing starts.
             WithBuiltInCaptures builtIns;
             AmpSimProcessor p;
             p.getMidiMap().set ({ 82, MidiMapping::Action::toggle, "chorus_on" }); // a footswitch mapped to an effect
@@ -112,7 +104,7 @@ public:
             juce::MidiBuffer midi;
             rtcheck::Counts total;
             int blocks = 0, modelFadeBlocks = 0, slotSwitchBlocks = 0, morphsBefore = 0, gainMovingBlocks = 0, maxSetModels = 0;
-            int setSlotSwitches = 0, heldBlendBlocks = 0, maxTotalModels = 0;
+            int setSlotSwitches = 0, heldBlendBlocks = 0, maxTotalModels = 0, maxRunningAmps = 0, warmingBlocks = 0;
             bool ampWasBypassed = false, sectionsWereBypassed = false;
             juce::StringArray events;
 
@@ -180,9 +172,9 @@ public:
                 midi.clear();
                 switch (blocks)
                 {
-                    case 200:  p.loadModel (0, lstm); break;                                // new capture in the playing slot
-                    case 300:  p.loadModel (1, small); break;                               // capture into a slot that isn't playing
-                    case 450:  setParam (p, AmpSimProcessor::slotParamId, 1.0f); break;     // slot 2 from the GUI
+                    case 200:  p.loadModel (0, lstm); break;                                // new capture in the playing amp
+                    case 300:  p.loadModel (1, small); break;                               // capture into an amp that isn't running
+                    case 450:  setParam (p, AmpSimProcessor::ampModelParamId, 1.0f); break; // amp 2 from the shelf: it starts, warms, fades in
                     case 600:  p.loadCabIR (0, irB); break;                                 // IR swap on close mic 1
                     case 630:  p.loadCabIR (0, bundledIR); break;                           // a built-in 1 s IR (content/irs)
                     case 650:  p.loadCabIR (1, irC); break;                                 // close mic 2 (and auto alignment)
@@ -202,11 +194,11 @@ public:
                     case 700:  setParam (p, AmpSimProcessor::ampParamId (1, "bass"), 6.0f); break;     // tone knobs
                     case 710:  setParam (p, AmpSimProcessor::ampParamId (1, "presence"), -4.0f); break;
                     case 800:  setParam (p, AmpSimProcessor::ampParamId (1, "output_trim"), -3.0f); break;
-                    case 900:  midi.addEvent (juce::MidiMessage::programChange (1, 2), 0); break;      // footswitch: slot 3
+                    case 900:  midi.addEvent (juce::MidiMessage::programChange (1, 2), 0); break;      // footswitch: amp 3
                     case 905:  p.loadCabIR (1, packFolder); morphsBefore = p.getMorphCount(); break; // close mic 2 becomes movable
                     case 1000: setParam (p, "cab_bypass", 1.0f); break;                     // cab off
                     case 1100: setParam (p, "cab_bypass", 0.0f); break;                     // cab back on
-                    case 1200: midi.addEvent (juce::MidiMessage::programChange (1, 0), 0); break;      // footswitch: slot 1
+                    case 1200: midi.addEvent (juce::MidiMessage::programChange (1, 0), 0); break;      // footswitch: amp 1
                     case 1250: setParam (p, "input_level_dbu", 15.0f); break;               // interface level: captures reload
                     // Phase 4 effects: on, re-moded, re-typed, re-sloped, and reordered while playing.
                     case 1300: setParam (p, "comp_pre_on", 1.0f); break;
@@ -299,7 +291,7 @@ public:
                     case 52:   p.setAnalyzerTap (AmpSimProcessor::AnalyzerTap::postSection); break;
                     case 2205: p.setAnalyzerTap (AmpSimProcessor::AnalyzerTap::preSection); break;
                     case 3555: p.setAnalyzerTap (AmpSimProcessor::AnalyzerTap::postSection); break;
-                    // The UI handoff's bypass dots: the amp (its captures keep running), and each effect section.
+                    // The UI handoff's bypass dots: the amp (the playing amp keeps running), and each effect section.
                     case 1010: setParam (p, "amp_bypass", 1.0f); break;
                     case 1090: setParam (p, "amp_bypass", 0.0f); break;
                     case 3610: setParam (p, "pre_fx_on", 0.0f); break;
@@ -313,9 +305,11 @@ public:
                     case 1595: setParam (p, "output_limit_on", 1.0f); break;
                     case 1600: setParam (p, "output_gain", -6.0f); break;
                     case 2000: p.loadModel (0, a1); break;                                  // switch the capture back
-                    case 1150: p.useBuiltInCapture (1); break;                              // the menu's "Use the built-in capture": Ember back in slot 2
-                    case 3212: p.loadModel (2, forgeSet); break;                            // the capture menu's "Built-in amps": Forge into slot 3
-                    case 3700: p.clearModel (2); break;                                     // then slot 3 cleared
+                    case 1150: p.loadModel (1, presets::builtInCapture (1)); break;         // Ember's own set back in amp 2 (not running)
+                    case 3212: p.loadYourCapture (small); break;                            // a capture of your own: loads into amp 9 and plays
+                    case 3262: setParam (p, AmpSimProcessor::ampModelParamId, 6.0f); break; // Forge from the shelf, its set never run yet
+                    case 3290: setParam (p, AmpSimProcessor::ampModelParamId, 8.0f); break; // back to your capture
+                    case 3700: setParam (p, AmpSimProcessor::ampModelParamId, 0.0f); p.clearModel (8); break; // Glass, and your capture removed
                     // Tone match: the DI recorder records from block 400 to block 2609 (the page's Record and Stop).
                     case 400:  p.getDiRecorder().start(); break;
                     case 2610: p.getDiRecorder().stop(); break;
@@ -396,13 +390,14 @@ public:
                 if (blocks >= 3000 && blocks < 3200)
                     setParam (p, AmpSimProcessor::ampParamId (0, "input_trim"), GainKnob::dbForPosition (5.0f + 4.0f * (float) (blocks - 3000) / 200.0f));
 
-                // Only the selected slot blends a gain set (NamAmp::Blend): slot 3 is selected from the footswitch for
-                // its drag and its jump between steps; then the footswitch flips between slots 2 and 3 (both between
-                // steps, Ember while it's dragged) every 8 to 40 buffers, mostly inside a newly selected slot's 85 ms
-                // warm-up, so blends are held, dropped to the nearest step, and warmed again; and back to slot 1.
+                // Only the selected amp runs (BUILD_PLAN "Amp switching"): amp 3 is selected from the footswitch for its
+                // drag and its jump between steps; then the footswitch flips between amps 2 and 3 (both between steps,
+                // Ember while it's dragged) and out to Comet, Lantern and Quartz every 8 to 40 buffers, mostly inside an
+                // incoming amp's 85 ms warm-up (a retarget) or its 20 ms fade (a redirect), so amps start, warm, fade,
+                // hold their blends, and stop; and back to amp 1.
                 for (const auto& [at, slot] : std::initializer_list<std::pair<int, int>> {
                          { 1985, 2 }, { 2460, 1 }, { 2470, 2 }, { 2478, 1 }, { 2490, 2 }, { 2530, 1 }, { 2545, 2 }, { 2560, 1 }, { 2600, 2 }, { 2612, 1 },
-                         { 2620, 2 }, { 2660, 1 }, { 2690, 0 } })
+                         { 2620, 2 }, { 2660, 5 }, { 2668, 3 }, { 2700, 7 }, { 2735, 1 }, { 2780, 0 } })
                     if (blocks == at)
                     {
                         midi.addEvent (juce::MidiMessage::programChange (1, slot), 11);
@@ -415,18 +410,19 @@ public:
                 rtcheck::begin();
                 p.processBlock (buffer, midi); // the audio thread's side, measured
                 total += rtcheck::end();
-                gainMovingBlocks += p.getChain().amp.slot (2).model.isGainMoving() || p.getChain().amp.slot (1).model.isGainMoving()
-                                    || p.getChain().amp.slot (0).model.isGainMoving() ? 1 : 0;
-                maxSetModels = std::max (maxSetModels, p.getChain().amp.slot (2).model.getRunningSteps());
+                gainMovingBlocks += p.getChain().amp.amp (2).model.isGainMoving() || p.getChain().amp.amp (1).model.isGainMoving()
+                                    || p.getChain().amp.amp (0).model.isGainMoving() ? 1 : 0;
+                maxSetModels = std::max (maxSetModels, p.getChain().amp.amp (2).model.getRunningSteps());
                 {
-                    int models = 0;
-                    for (int s = 0; s < 3; ++s)
+                    const auto& section = p.getChain().amp;
+                    for (int s = 0; s < AmpSimProcessor::numAmps; ++s)
                     {
-                        const auto& m = p.getChain().amp.slot (s).model;
-                        models += m.getRunningSteps();
-                        heldBlendBlocks += m.getBlend() == ampsim::NamAmp::Blend::hold && m.getRunningSteps() == 2 ? 1 : 0;
+                        const auto& m = section.amp (s).model;
+                        heldBlendBlocks += section.isRunning (s) && m.getBlend() == ampsim::NamAmp::Blend::hold && m.getRunningSteps() == 2 ? 1 : 0;
                     }
-                    maxTotalModels = std::max (maxTotalModels, models);
+                    maxTotalModels = std::max (maxTotalModels, section.getRunningModels());
+                    maxRunningAmps = std::max (maxRunningAmps, section.getRunningAmps());
+                    warmingBlocks += section.isWarmingUp() ? 1 : 0;
                 }
                 previewBlocks += preview.isActive() ? 1 : 0;
                 matchCurveBlocks += p.getChain().isFullyBypassed (ampsim::Chain::Slot::matchCurve) ? 0 : 1;
@@ -472,17 +468,20 @@ public:
             expect (ampWasBypassed, "the amp bypass must have reached the audio thread");
             expect (sectionsWereBypassed, "the section switches must have reached the audio thread");
             expectGreaterThan (modelFadeBlocks, 16, "the model loads must have crossfaded during the measurement");
-            expectGreaterThan (slotSwitchBlocks, 16, "the slot switches must have crossfaded during the measurement");
+            expectGreaterThan (slotSwitchBlocks, 16, "the amp switches must have warmed and crossfaded during the measurement");
+            expectGreaterThan (warmingBlocks, 100, "incoming amps must have warmed up during the measurement");
             expectGreaterThan (gainMovingBlocks, 250, "the Gain drags must have moved the captures during the measurement");
             expectGreaterThan (previewBlocks, 395, "the A/B player must have played during the measurement");
             expect (! preview.isActive(), "the A/B player must have stopped and gone idle");
             expectEquals (maxSetModels, ampsim::NamAmp::maxRunningSteps, "the gain set's sweep must have run a model warming ahead");
-            expectEquals (setSlotSwitches, 13);
-            expectGreaterThan (heldBlendBlocks, 10, "slots fading out must have held their blends during the measurement");
-            expectLessOrEqual (maxTotalModels, 6);
-            expectEquals (p.getChain().amp.getSelectedSlot(), 0);
+            expectEquals (setSlotSwitches, 16);
+            expectGreaterThan (heldBlendBlocks, 10, "amps fading out must have held their blends during the measurement");
+            expectLessOrEqual (maxRunningAmps, 3);
+            expectLessOrEqual (maxTotalModels, 3 * ampsim::NamAmp::maxRunningSteps);
+            expectEquals (p.getChain().amp.getSelectedAmp(), 0);
             const auto ember = p.parameters.state.getProperty (AmpSimProcessor::modelPathKey (1)).toString() == presets::builtInCapture (1).getFullPathName();
-            expect (ember, "slot 2 must be back on its built-in capture");
+            expect (ember, "amp 2 must be back on its built-in capture");
+            expect (p.getStatus().model[8] == "Empty", "your capture must have been removed");
             expect (p.getStatus().cab[0].contains ("Modern 4x12, dynamic, 75 W, var. 3"), p.getStatus().cab[0]); // the built-in IR replaced rt_ir_b
             expectEquals (p.getCalibrationReloadCount(), 1, "the calibration change must have reloaded the captures during the measurement");
             expectEquals (p.getChain().gateA.getLearnCount(), 2, "both gate Learns must have finished during the measurement");
@@ -531,10 +530,10 @@ public:
             expectEquals (total.blockingLocks, 0L);
 
             logMessage ("  -> " + juce::String (blocks) + " blocks (" + juce::String (blocks * blockSize / fs, 1)
-                        + " s of audio), starting on the built-in captures: 5 capture loads, one of them Ember put back by \"Use the built-in capture\" and one Forge from \"Built-in amps\" into slot 3, which was then cleared ("
-                        + juce::String (modelFadeBlocks) + " blocks mid-crossfade), "
-                        "3 slot switches from the GUI and the footswitch (" + juce::String (slotSwitchBlocks)
-                        + " blocks mid-crossfade), 3 IR loads into the three cab mics plus an IR swap and a built-in 1 s IR from the app's content folder, auto alignment, 6 cab mic changes, cuts on, off, re-sloped and swept, "
+                        + " s of audio), starting on the eight built-in amps: 5 capture loads, one of them into an amp that wasn't running, one Ember's own set put back, "
+                        "and one a capture of your own (amp 9, selected, later removed) (" + juce::String (modelFadeBlocks) + " blocks mid-crossfade), "
+                        "amp switches from the shelf and the footswitch, Forge's set run for the first time among them (" + juce::String (slotSwitchBlocks)
+                        + " blocks warming up or crossfading), 3 IR loads into the three cab mics plus an IR swap and a built-in 1 s IR from the app's content folder, auto alignment, 6 cab mic changes, cuts on, off, re-sloped and swept, "
                         "a cab pack loaded into close mic 2 and dragged around (" + juce::String (morphs) + " re-morphs), cab bypass off and on, 5 knob ramps, "
                         "an interface-level change that recalibrated and reloaded every capture, "
                         "both compressors switched on (one to pedal mode, one to RMS), EQ sliders and bands moved, graphic -> parametric, "
@@ -552,9 +551,10 @@ public:
                         "and the post section again; the GUI read " + juce::String (analyzed) + " samples from the ring and stopped for 400 buffers, "
                         "so the ring filled and the audio thread dropped " + juce::String (analyzerDropped) + " samples instead of waiting; CPU meter "
                         + juce::String (p.getCpuLoad(), 1) + "%");
-            logMessage ("  -> gain sets across the slots: " + juce::String (setSlotSwitches) + " footswitch switches with the Gains between steps, " + juce::String (heldBlendBlocks)
-                        + " slot-buffers holding a blend while fading out, at most " + juce::String (maxTotalModels)
-                        + " step models running in one buffer across the three slots");
+            logMessage ("  -> amp switching: " + juce::String (setSlotSwitches) + " footswitch switches with the Gains between steps, 8 to 40 buffers apart (retargets "
+                        "mid-warm-up and redirects mid-fade among them), " + juce::String (warmingBlocks) + " buffers with an incoming amp warming, "
+                        + juce::String (heldBlendBlocks) + " amp-buffers holding a blend while fading out, at most " + juce::String (maxRunningAmps)
+                        + " amps and " + juce::String (maxTotalModels) + " step models running in one buffer");
             logMessage ("  -> the match curve: two curves, swapped and cleared mid-stream, off and on, its amount dragged from 100 to 30% and to 0 and back ("
                         + juce::String (matchBuilds) + " FIR designs handed over, " + juce::String (matchCurveBlocks) + " blocks playing it)");
             logMessage ("  -> audio thread: " + describe (total));

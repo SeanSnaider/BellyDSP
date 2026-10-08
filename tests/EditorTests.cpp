@@ -148,7 +148,7 @@ public:
             juce::StringArray files, seen;
             for (int s = 0; s < 3; ++s)
             {
-                setParam (p, AmpSimProcessor::slotParamId, (float) s);
+                setParam (p, AmpSimProcessor::ampModelParamId, (float) s);
                 play (p, 0.6, [&] { amp.getSpectrum().update(); });
                 ed.refresh();
                 ed.getTopBar().updateMeters (p.takePeaks(), 1.0 / 30.0); // what the meter timer does
@@ -198,13 +198,13 @@ public:
             tab.mouseDown (mouseEvent (tab, middle, middle));
             tab.mouseUp (mouseEvent (tab, middle, middle));
             ed.refresh();
-            expectEquals ((int) getParam (p, AmpSimProcessor::slotParamId), 0);
+            expectEquals ((int) getParam (p, AmpSimProcessor::ampModelParamId), 0);
             expectEquals (amp.getKnob (0, 0).getValueText(), juce::String ("3.5"));
 
             // An empty slot: a dark jewel and "No capture loaded".
             p.clearModel (2);
             waitForLoads (p);
-            setParam (p, AmpSimProcessor::slotParamId, 2.0f);
+            setParam (p, AmpSimProcessor::ampModelParamId, 2.0f);
             ed.refresh();
             expect (! amp.getJewel().isLit());
             expectEquals (amp.getVoiceText(), juce::String ("No capture loaded"));
@@ -288,7 +288,7 @@ public:
             // Follow back on, then switching to a slot with a cab assigned loads it.
             p.setCabAssignment (1, library.getChildFile ("4x12 vintage.wav"));
             p.setCabFollow (true);
-            setParam (p, AmpSimProcessor::slotParamId, 1.0f);
+            setParam (p, AmpSimProcessor::ampModelParamId, 1.0f);
             p.runHousekeeping();
             ed.refresh();
             expectEquals (p.parameters.state.getProperty (AmpSimProcessor::cabPathKey (0)).toString(), library.getChildFile ("4x12 vintage.wav").getFullPathName());

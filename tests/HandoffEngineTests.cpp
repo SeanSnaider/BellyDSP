@@ -190,11 +190,11 @@ public:
             p.pickCab (irA); // slot 1 playing
             waitForLoads (p);
             expect (p.getCabAssignment (0) == irA && mic1() == irA.getFullPathName());
-            setParam (p, AmpSimProcessor::slotParamId, 1.0f);
+            setParam (p, AmpSimProcessor::ampModelParamId, 1.0f);
             p.runHousekeeping();
             const auto unassignedKeeps = mic1() == irA.getFullPathName(); // slot 2 has no cab: nothing changes
             p.pickCab (irB);
-            setParam (p, AmpSimProcessor::slotParamId, 0.0f);
+            setParam (p, AmpSimProcessor::ampModelParamId, 0.0f);
             p.runHousekeeping();
             const auto followedToA = mic1() == irA.getFullPathName();
 
@@ -209,7 +209,7 @@ public:
             const auto followedFootswitch = mic1() == irB.getFullPathName();
 
             p.setCabFollow (false);
-            setParam (p, AmpSimProcessor::slotParamId, 0.0f);
+            setParam (p, AmpSimProcessor::ampModelParamId, 0.0f);
             p.runHousekeeping();
             const auto notFollowing = mic1() == irB.getFullPathName();
             p.setCabFollow (true); // follows at once: slot 1's cab

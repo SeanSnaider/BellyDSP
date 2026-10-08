@@ -231,7 +231,7 @@ public:
             {
                 toDefaults (p);
                 setLimiter (p, false);
-                setParam (p, AmpSimProcessor::slotParamId, (float) s);
+                setParam (p, AmpSimProcessor::ampModelParamId, (float) s);
                 base[(size_t) s][(size_t) l] = measure (p, *inputs[(size_t) l]);
                 if (s == 0)
                     baseInput[(size_t) l] = ampInput (p, *inputs[(size_t) l]);
@@ -252,7 +252,7 @@ public:
             {
                 toDefaults (p);
                 setLimiter (p, false);
-                setParam (p, AmpSimProcessor::slotParamId, (float) slot);
+                setParam (p, AmpSimProcessor::ampModelParamId, (float) slot);
                 for (const auto& [id, value] : c.settings)
                     setParam (p, id, value);
             };
@@ -322,7 +322,7 @@ public:
             {
                 if (! p.recallScene (scene))
                     continue;
-                const auto slot = juce::roundToInt (getParam (p, AmpSimProcessor::slotParamId));
+                const auto slot = juce::roundToInt (getParam (p, AmpSimProcessor::ampModelParamId));
                 auto row = col (preset["name"].toString() + " / " + p.getScenes().get (scene).name, 28) + col (slotNames[slot], 10);
                 std::array<Level, 2> out, in;
                 for (int l = 0; l < 2; ++l)

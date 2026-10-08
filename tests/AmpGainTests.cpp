@@ -159,11 +159,11 @@ void writeSet (const juce::File& json, const juce::String& name, const std::vect
 
 juce::String positionText (float p) { return juce::String (p, 2).trimCharactersAtEnd ("0").trimCharactersAtEnd ("."); }
 
-/// Every amp parameter of every slot.
+/// Every amp parameter of every amp.
 juce::StringArray ampParameterIds()
 {
     juce::StringArray ids;
-    for (int s = 0; s < AmpSimProcessor::numAmpSlots; ++s)
+    for (int s = 0; s < AmpSimProcessor::numAmps; ++s)
         for (const auto* name : { "input_trim", "output_trim", "depth", "bass", "mid", "treble", "presence" })
             ids.add (AmpSimProcessor::ampParamId (s, name));
     return ids;
@@ -537,7 +537,7 @@ public:
             for (int s = 0; s < 3; ++s)
             {
                 expectEquals (fresh.parameters.state.getProperty (AmpSimProcessor::modelPathKey (s)).toString(), sets[(size_t) s].getFullPathName());
-                expect (fresh.getChain().amp.slot (s).model.hasGainSet());
+                expect (fresh.getChain().amp.amp (s).model.hasGainSet());
                 expect (fresh.getStatus().model[(size_t) s].contains ("gain set, 5 steps"), fresh.getStatus().model[(size_t) s]);
                 status.add (fresh.getStatus().model[(size_t) s]);
             }
@@ -568,7 +568,7 @@ public:
             AmpSimProcessor p;
             waitForLoads (p);
             p.prepareToPlay (fs, blockSize);
-            setParam (p, AmpSimProcessor::slotParamId, 2.0f);
+            setParam (p, AmpSimProcessor::ampModelParamId, 2.0f);
             setParam (p, AmpSimProcessor::ampParamId (2, "input_trim"), GainKnob::dbForPosition (6.25f));
             play (p, guitarDI ((int) (0.5 * fs)));
             std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
@@ -591,7 +591,7 @@ public:
             const auto onStep = amp.getLitGainSteps();
             expect (onStep == std::vector<bool> { false, false, false, true, false });
 
-            setParam (p, AmpSimProcessor::slotParamId, 0.0f);
+            setParam (p, AmpSimProcessor::ampModelParamId, 0.0f);
             p.loadModel (0, exampleModel ("wavenet_a1_standard.nam"));
             waitForLoads (p);
             p.runHousekeeping();
@@ -618,11 +618,11 @@ public:
                 p.runHousekeeping();
 
                 // The slots it plays: the preset's own, and every scene's.
-                std::set<int> used { juce::roundToInt ((double) stored.getProperty (AmpSimProcessor::slotParamId, 0)) };
+                std::set<int> used { juce::roundToInt ((double) stored.getProperty (AmpSimProcessor::ampModelParamId, 0)) };
                 if (const auto* list = preset["scenes"]["list"].getArray())
                     for (const auto& scene : *list)
-                        if (scene.isObject() && scene["values"].hasProperty (AmpSimProcessor::slotParamId))
-                            used.insert (juce::roundToInt ((double) scene["values"][AmpSimProcessor::slotParamId.toRawUTF8()]));
+                        if (scene.isObject() && scene["values"].hasProperty (AmpSimProcessor::ampModelParamId))
+                            used.insert (juce::roundToInt ((double) scene["values"][AmpSimProcessor::ampModelParamId.toRawUTF8()]));
                 for (const auto s : used)
                     for (const auto* knob : { "input_trim", "output_trim", "depth", "bass", "mid", "treble", "presence" })
                         expect (stored.hasProperty (AmpSimProcessor::ampParamId (s, knob)), name + " plays slot " + juce::String (s + 1) + " but doesn't set its " + knob);
@@ -657,7 +657,7 @@ public:
                         else
                             expectEquals (getParam (p, id), before[id], name + " scene " + scene.name + " " + id);
                     }
-                    const auto slot = juce::roundToInt (getParam (p, AmpSimProcessor::slotParamId));
+                    const auto slot = juce::roundToInt (getParam (p, AmpSimProcessor::ampModelParamId));
                     sceneText.add (scene.name + " on " + names[(size_t) slot] + " at Gain "
                                    + juce::String (GainKnob::positionForDb (getParam (p, AmpSimProcessor::ampParamId (slot, "input_trim"))), 1)
                                    + (ampValues > 0 ? " (scene sets " + juce::String (ampValues) + " amp knobs)" : juce::String()));
@@ -750,7 +750,7 @@ public:
                     const auto skip = (size_t) fs;
                     const auto loud12 = ampsim::loudness::integrated ({ quiet.left.data() + skip, quiet.right.data() + skip }, (int) (quiet.left.size() - skip), fs);
 
-                    const auto slot = juce::roundToInt (getParam (p, AmpSimProcessor::slotParamId));
+                    const auto slot = juce::roundToInt (getParam (p, AmpSimProcessor::ampModelParamId));
                     const auto knob = [&] (const char* id, float range) { return juce::String ((getParam (p, AmpSimProcessor::ampParamId (slot, id)) + range) / (2.0f * range) * 10.0f, 1); };
                     table.add ("| " + name + " | " + sceneName + " | " + names[(size_t) slot] + " | " + knob ("input_trim", 24.0f) + " | " + knob ("bass", 12.0f) + " | "
                                + knob ("mid", 12.0f) + " | " + knob ("treble", 12.0f) + " | " + knob ("presence", 12.0f) + " | " + knob ("depth", 12.0f) + " | "
@@ -817,8 +817,8 @@ public:
             std::array<NamAmp::LoadResult, 3> info;
             for (int s = 0; s < 3; ++s)
             {
-                info[(size_t) s] = section.slot (s).model.loadModel (sets[(size_t) s], true);
-                section.slot (s).inputTrim.setPosition (startGain[(size_t) s]);
+                info[(size_t) s] = section.amp (s).model.loadModel (sets[(size_t) s], true);
+                section.amp (s).inputTrim.setPosition (startGain[(size_t) s]);
                 exact[(size_t) s].loadModel (sets[(size_t) s], true);
                 exact[(size_t) s].setGain (startGain[(size_t) s]);
                 exact[(size_t) s].prepare (fs, blockSize);
@@ -865,14 +865,14 @@ public:
                     auto& last = stretches.back();
                     last.to = b;
                     endedExact[(size_t) last.slot] = last.identicalFrom < b;
-                    section.selectSlot (it->second);
+                    section.selectAmp (it->second);
                     const auto p = knob (it->second, b);
                     stretches.push_back ({ b, 0, it->second, SIZE_MAX, (float) std::abs (p - (float) info[(size_t) it->second].stepGains[nearestOf (it->second, p)]) });
                 }
                 const auto start = b * (size_t) blockSize;
                 for (int s = 0; s < 3; ++s)
                 {
-                    section.slot (s).inputTrim.setPosition (knob (s, b));
+                    section.amp (s).inputTrim.setPosition (knob (s, b));
                     exact[(size_t) s].setGain (knob (s, b));
                     buffer.copyFrom (0, 0, input.data() + start, blockSize);
                     exact[(size_t) s].process (juce::dsp::AudioBlock<float> (buffer), context);
@@ -882,17 +882,17 @@ public:
                 section.process (juce::dsp::AudioBlock<float> (buffer), context);
                 std::copy (buffer.getReadPointer (0), buffer.getReadPointer (0) + blockSize, out.begin() + (std::ptrdiff_t) start);
                 switching[b] = section.isSwitching();
-                selectedAt[b] = section.getSelectedSlot();
+                selectedAt[b] = section.getSelectedAmp();
 
                 int total = 0;
-                const auto selected = section.getSelectedSlot();
+                const auto selected = section.getSelectedAmp();
                 for (int s = 0; s < 3; ++s)
                 {
-                    const auto& model = section.slot (s).model;
+                    const auto& model = section.amp (s).model;
                     const auto running = model.getRunningSteps();
                     total += running;
                     slotMax[(size_t) s] = std::max (slotMax[(size_t) s], running);
-                    const auto* y = section.getSlotOutput (s);
+                    const auto* y = section.getAmpOutput (s);
                     const auto sameAs = [&] (const std::vector<float>& ref) { return std::equal (y, y + blockSize, ref.begin() + (std::ptrdiff_t) start); };
 
                     if (s != selected)
@@ -924,7 +924,7 @@ public:
                     }
                 }
                 for (int s = 0; s < 3; ++s)
-                    wasMoving[(size_t) s] = section.slot (s).model.isGainMoving() || section.slot (s).model.getBlend() != NamAmp::Blend::nearest;
+                    wasMoving[(size_t) s] = section.amp (s).model.isGainMoving() || section.amp (s).model.getBlend() != NamAmp::Blend::nearest;
                 ++histogram[(size_t) juce::jlimit (0, 15, total)];
                 globalMax = std::max (globalMax, total);
                 if (b < blockAt (5.5) || b >= blockAt (6.5))
