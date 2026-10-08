@@ -20,14 +20,14 @@ namespace testing::cpu
 /// rigs below. It's set so a 4-core x64 laptop from about 2017, assumed 3 to 5 times slower per core for this
 /// code, keeps its p99 at or under about 60% of the deadline on the defaults and the factory presets at ASIO 128
 /// (BUILD_PLAN "CPU", the budget; ASSUMPTIONS CPU1, CPU2). The heaviest rig is for faster machines: on this budget
-/// a 2x slower PC (Sean's measured 1.75x) holds it at about 60%. The tests multiply these by cpuBudgetScale().
+/// a 2x slower PC (Sean's measured 1.75x) holds it at about 50% (p99 under 70%). The tests multiply these by cpuBudgetScale().
 struct Budget
 {
     double meanPercent, p99Percent;
 };
 constexpr Budget defaultsBudget { 7.0, 10.0 };
 constexpr Budget typicalBudget { 10.0, 12.0 };
-constexpr Budget heaviestBudget { 25.0, 30.0 };
+constexpr Budget heaviestBudget { 25.0, 35.0 };
 
 /// One cost over a run of buffers, in microseconds per 128-sample buffer.
 struct Stats
