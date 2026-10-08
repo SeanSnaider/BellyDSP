@@ -29,9 +29,6 @@ enum class Material
 
 constexpr int numMaterials = 9;
 
-/// The material a slot's head wears today (until the Amp page plays one amp at a time).
-inline Material materialFor (int slot) { return (Material) juce::jlimit (0, 2, slot); }
-
 /// The material for an amp by its name: each of the eight built-in amps has its own (by name, ignoring case);
 /// anything else (a user's capture or gain set) wears Custom.
 Material materialForAmp (const juce::String& amp);

@@ -565,13 +565,8 @@ private:
 
 Material materialForAmp (int amp)
 {
-    // Glass, Ember, Monolith their own; the others borrow the nearest in character until their materials land:
-    // Lantern (power-amp breakup, edge to crunch) and Quartz (scooped, bright lead) Glass's, Comet (mids-forward
-    // lead) Ember's, Basalt and Forge (high gain) Monolith's, your capture Glass's.
-    static constexpr Material materials[] { Material::glass, Material::ember, Material::monolith, Material::glass, Material::monolith,
-                                            Material::ember, Material::monolith, Material::glass, Material::glass };
-    static_assert (std::size (materials) == (size_t) AmpSimProcessor::numAmps);
-    return materials[(size_t) juce::jlimit (0, AmpSimProcessor::numAmps - 1, amp)];
+    // Each built-in amp wears its own material (by name), your capture Custom.
+    return amp >= 0 && amp < AmpSimProcessor::numBuiltInAmps ? materialForAmp (presets::builtInAmpName (amp)) : Material::custom;
 }
 
 AmpView::AmpView (AmpSimProcessor& p) : ControlGroup (p), spectrum (p)
@@ -803,8 +798,16 @@ void AmpView::refresh()
     info->set (voice, model, info->rate.isEmpty() ? juce::String ("48 kHz") : info->rate);
     updateGainSteps();
 
-    // The shelf: the playing amp underlined, your capture's mini once one is loaded.
+    // The shelf: the playing amp underlined, your capture's mini once one is loaded. The badge names the amp; your
+    // capture's (Custom) names the capture itself.
     shelf->set (shownSlot, yourCaptureLoaded());
+    if (shownSlot == AmpSimProcessor::yourCaptureAmp)
+    {
+        juce::String name;
+        if (file != juce::File())
+            name = setInfo (path).name.isNotEmpty() ? setInfo (path).name : file.getFileNameWithoutExtension();
+        head.setBadge (name.isNotEmpty() ? name : AmpSimProcessor::ampName (shownSlot));
+    }
 }
 
 void AmpView::pageShown()

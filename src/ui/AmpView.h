@@ -51,9 +51,7 @@ private:
     bool active = false;
 };
 
-/// The head's material for an amp (0 to 8). Glass, Ember, and Monolith wear their own; the five more and your
-/// capture borrow one of those three until their own materials land (another branch draws them: ui::Material's
-/// forge, basalt, comet, quartz, lantern, custom), and then this is the one place that changes (ASSUMPTIONS AS9).
+/// The head's material for an amp (0 to 8): each built-in amp its own (materialForAmp by name), your capture Custom.
 Material materialForAmp (int amp);
 
 /// The Amp page (handoff 4.5, with the shelf of 2026-10-07 where the tabs were): the amp shelf (one mini head per

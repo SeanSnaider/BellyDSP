@@ -390,7 +390,7 @@ public:
             expectEquals (values(), beforeCurve);
             expect (p.getMatchCurve().points.empty(), "undo takes the curve away again");
             expectEquals (p.getAmpCapture (0).getFullPathName(), glass.getFullPathName());
-            expectEquals (p.getAmpCapture (2), juce::File(), "undo empties Monolith's amp again, as it was");
+            expect (p.getAmpCapture (2) == juce::File(), "undo empties Monolith's amp again, as it was");
             expectEquals ((int) getParam (p, AmpSimProcessor::ampModelParamId), 0);
             expect (! p.undoManager.canUndo(), "one undo step");
             logMessage ("  -> \"" + note + "\"; before: " + before + "; applied: " + after + "; Match and the applied settings render the same "
@@ -426,7 +426,7 @@ public:
             p.undoManager.undo();
             waitForLoads (p);
             expectEquals ((int) getParam (p, AmpSimProcessor::ampModelParamId), 1);
-            expectEquals (p.getAmpCapture (yours), juce::File());
+            expect (p.getAmpCapture (yours) == juce::File());
             expectEquals (getParam (p, AmpSimProcessor::ampParamId (yours, "input_trim")), 0.0f);
             expect (! p.undoManager.canUndo());
             logMessage ("  -> a non-built-in result: applied as your capture (\"" + status + "\"), amp 9 selected with Gain -6 dB and its tone; one undo: Ember again, amp 9 empty");
