@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Sean Snaider
 
 #include "NamAmp.h"
+#include "NamTanh.h"
 #include "Loudness.h"
 #include "ReferenceSignals.h"
 
@@ -27,6 +28,9 @@ std::unique_ptr<nam::DSP> openModel (const juce::File& file, int maxBlock, juce:
 
     try
     {
+        // The vectorised tanh (NamTanh.h, BUILD_PLAN "CPU"), in NAM core's registry before the first model is built.
+        namtanh::useAppTanh();
+
         // Skip get_dsp()'s own prewarm: Reset() below prewarms once we know the block size.
         nam::DspLoadOptions options;
         options.prewarm = false;

@@ -184,6 +184,7 @@ set(AMPSIM_DSP_SOURCES
     src/dsp/ReferenceSignals.cpp
     src/dsp/Chain.cpp
     src/dsp/NamAmp.cpp
+    src/dsp/NamTanh.cpp
     src/dsp/GainSet.cpp
     src/dsp/CabIR.cpp
     src/dsp/CutFilter.cpp
