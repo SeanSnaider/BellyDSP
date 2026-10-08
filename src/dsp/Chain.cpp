@@ -213,6 +213,15 @@ void Chain::runBlockUntimed (Slot slot, juce::dsp::AudioBlock<float>& io, const 
     auto& block = blockFor (slot);
     auto& state = bypass[(size_t) slot];
     const auto numSamples = io.getNumSamples();
+    state.ran = false;
+
+    // The CPU saver: a switch-on that was waiting for the warm-up fades in once the block has run long enough unheard.
+    if (state.pendingOn && state.warmed >= state.warmupSamples)
+    {
+        state.pendingOn = false;
+        state.bypassed = false;
+        state.wet.setTargetValue (1.0f);
+    }
 
     if (block.isStereo() && ! stereoCopied && ! state.fullyOff())
     {
@@ -228,15 +237,27 @@ void Chain::runBlockUntimed (Slot slot, juce::dsp::AudioBlock<float>& io, const 
     // running, run it on a copy and leave the audio alone.
     if (state.fullyOff())
     {
-        if (state.keepRunning)
+        if (state.runsWhileOff())
         {
+            // A block the CPU saver stopped starts again from rest: its state is stale (setStopWhileOff).
+            if (state.warmed == 0)
+                block.reset();
             dryView.copyFrom (view);
             if (numChannels == 2 && ! stereoCopied)
                 dryView.getSingleChannelBlock (1).copyFrom (dryView.getSingleChannelBlock (0));
             block.process (dryView, context);
+            state.warmed = (int) juce::jmin ((juce::int64) BypassState::maxWarmed, (juce::int64) state.warmed + (juce::int64) numSamples);
+            state.ran = true;
+        }
+        else if (state.keepRunning)
+        {
+            state.warmed = 0; // stopped by the CPU saver: stale from here on
         }
         return;
     }
+
+    state.ran = true;
+    state.warmed = (int) juce::jmin ((juce::int64) BypassState::maxWarmed, (juce::int64) state.warmed + (juce::int64) numSamples);
 
     if (state.resetBeforeNextRun)
     {
@@ -398,8 +419,23 @@ void Chain::setBypassed (Slot slot, bool shouldBeBypassed)
 
     auto& state = bypass[(size_t) slot];
 
+    // The CPU saver: a switch-on still warming up stays pending (and bypassed); a switch-off cancels it.
+    if (state.pendingOn)
+    {
+        if (shouldBeBypassed)
+            state.pendingOn = false;
+        return;
+    }
+
     if (state.bypassed == shouldBeBypassed)
         return;
+
+    // A keep-running block switched on before it has warmed up (the CPU saver stopped it): it warms up unheard first.
+    if (! shouldBeBypassed && state.keepRunning && state.fullyOff() && state.warmed < state.warmupSamples)
+    {
+        state.pendingOn = true;
+        return;
+    }
 
     // Re-enabling a block that was fully off: its state is stale (filter memory or a tail from
     // whenever it was switched off), so clear it before it runs again (decision 4). A block that's
@@ -409,6 +445,15 @@ void Chain::setBypassed (Slot slot, bool shouldBeBypassed)
 
     state.bypassed = shouldBeBypassed;
     state.wet.setTargetValue (shouldBeBypassed ? 0.0f : 1.0f);
+}
+
+void Chain::setStopWhileOff (Slot slot, bool stop, int warmupSamples) noexcept
+{
+    auto& state = bypass[(size_t) slot];
+    if (! state.keepRunning)
+        return; // only blocks that keep running while off have anything to stop
+    state.stopWhileOff = stop;
+    state.warmupSamples = juce::jmax (0, warmupSamples);
 }
 
 bool Chain::isFullyBypassed (Slot slot) const

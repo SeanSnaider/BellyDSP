@@ -292,6 +292,9 @@ OutputPage::OutputPage (AmpSimProcessor& p) : ControlGroup (p)
     ceiling = &addField ("output_limit_ceiling", " dBFS");
     ceiling->setTooltip ("The limiter's ceiling: the highest level the output can reach");
     ceiling->setShowsBar (false);
+    saver = &addSwitch ("cpu_saver", "CPU saver");
+    saver->setTooltip ("For slower computers: switched-off drives stop (and take 0.2 s to come on), the drives run at 2x, and Gain "
+                       "plays its nearest of the five steps. Costs some tone. A global setting: presets and scenes never change it");
     abA = &addButton ("A", [this] { if (onAbSelect) onAbSelect (false); });
     abB = &addButton ("B", [this] { if (onAbSelect) onAbSelect (true); });
     abA->setConnectedEdges (juce::Button::ConnectedOnRight);
@@ -381,7 +384,13 @@ void OutputPage::resized()
     row.removeFromLeft (gap);
 
     auto cpuCard = card (row.removeFromLeft (juce::jmin (row.getWidth(), 200)), "Audio thread");
-    cpu.setBounds (cpuCard.withSizeKeepingCentre (cpuCard.getWidth(), 16).withWidth (120));
+    {
+        // The CPU meter, and the CPU saver under it.
+        auto column = cpuCard.withSizeKeepingCentre (cpuCard.getWidth(), 16 + space::m + controlHeight);
+        cpu.setBounds (column.removeFromTop (16).withWidth (120));
+        column.removeFromTop (space::m);
+        saver->setBounds (column.removeFromTop (controlHeight));
+    }
     area.removeFromTop (gap);
 
     // Row two: the scenes.

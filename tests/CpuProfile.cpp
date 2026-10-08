@@ -515,6 +515,55 @@ int runBenchmark (double seconds)
     return 0;
 }
 
+int renderRigs (const juce::File& folder)
+{
+    folder.createDirectory();
+    const auto input = guitarDI ((int) (10.0 * fs));
+    const auto render = [&] (AmpSimProcessor& p, const juce::String& name)
+    {
+        // Prepared again once everything has loaded, so every block starts from its prepared state whatever the loads'
+        // timing did before (the LFOs' phases, the tails), and two runs or two builds start alike.
+        p.prepareToPlay (fs, blockSize);
+        juce::AudioBuffer<float> out (2, (int) input.size());
+        juce::AudioBuffer<float> buffer (2, blockSize);
+        juce::MidiBuffer midi;
+        for (int start = 0; start + blockSize <= (int) input.size(); start += blockSize)
+        {
+            buffer.clear();
+            buffer.copyFrom (0, 0, input.data() + start, blockSize);
+            p.processBlock (buffer, midi);
+            for (int ch = 0; ch < 2; ++ch)
+                out.copyFrom (ch, start, buffer, ch, 0, blockSize);
+        }
+        const auto file = folder.getChildFile (name + ".wav");
+        file.deleteFile();
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::OutputStream> stream (file.createOutputStream());
+        if (auto writer = std::unique_ptr<juce::AudioFormatWriter> (wav.createWriterFor (stream.get(), fs, 2, 32, {}, 0)))
+        {
+            stream.release();
+            writer->writeFromAudioSampleBuffer (out, 0, out.getNumSamples());
+        }
+        std::cout << file.getFullPathName() << "\n";
+    };
+    {
+        auto p = makeRig();
+        setDefaults (*p);
+        render (*p, "defaults");
+        for (const auto& preset : presets::factoryPresets())
+        {
+            setFactoryPreset (*p, preset);
+            render (*p, "preset " + preset["name"].toString());
+        }
+    }
+    {
+        auto p = makeRig();
+        setHeaviest (*p);
+        render (*p, "heaviest");
+    }
+    return 0;
+}
+
 int runGuiBenchmark (double secondsPerPage)
 {
     auto p = makeRig();

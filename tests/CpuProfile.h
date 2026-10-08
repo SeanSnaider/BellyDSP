@@ -117,6 +117,10 @@ const char* slotName (ampsim::Chain::Slot slot);
 /// block, against the 128-sample deadline and the budget. Returns the process exit code (0).
 int runBenchmark (double seconds);
 
+/// `ampsim_tests --render-rigs <folder>`: the defaults, every factory preset, and the heaviest rig rendered on 10 s of the
+/// tests' DI into 32-bit float WAVs, one per rig, so two builds' outputs can be compared bit for bit. Returns 0.
+int renderRigs (const juce::File& folder);
+
 /// `ampsim_tests --bench-gui [seconds]`: opens the editor in a real window (it appears on screen) with the defaults
 /// rig playing in real time on a thread of its own, shows each page in turn, and reports the message thread's CPU
 /// time on each (the meters, the analyzer, the timers, the repaints), as a share of one core. Returns 0.

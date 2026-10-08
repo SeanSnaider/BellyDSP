@@ -6,6 +6,7 @@
 //   ampsim_tests [--proof-dir <dir>] [--only <test name substring>] [--skip <substring>]...
 //   ampsim_tests --bench [seconds]
 //   ampsim_tests --bench-gui [seconds per page]
+//   ampsim_tests --render-rigs <folder>
 //
 // --bench runs no tests: it prints the CPU profile of the defaults, every factory preset, and the heaviest rig on
 // this machine, block by block, at 48 kHz and 128-sample buffers (tests/CpuProfile.h; BUILD_PLAN "CPU"). --bench-gui
@@ -160,6 +161,14 @@ int main (int argc, char* argv[])
             platform::settings::setFileForTests (settingsFile);
             const auto seconds = i + 1 < argc ? juce::String (argv[i + 1]).getDoubleValue() : 0.0;
             return testing::cpu::runGuiBenchmark (seconds > 0.0 ? juce::jlimit (1.0, 600.0, seconds) : 5.0);
+        }
+        else if (juce::String (argv[i]) == "--render-rigs" && i + 1 < argc)
+        {
+            AmpSimProcessor::builtInCapturesForFreshSlots = false;
+            const auto settingsFile = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ampsim_bench_settings.json");
+            settingsFile.deleteFile();
+            platform::settings::setFileForTests (settingsFile);
+            return testing::cpu::renderRigs (juce::File::getCurrentWorkingDirectory().getChildFile (argv[i + 1]));
         }
         else if (juce::String (argv[i]) == "--bench")
         {

@@ -276,6 +276,15 @@ public:
                     case 2450: setParam (p, "boost_on", 1.0f); setParam (p, "boost_mode", 2.0f); break; // Screamer
                     case 2500: setParam (p, "od_on", 1.0f); setParam (p, "od_mode", 1.0f); setParam (p, "od_drive", 80.0f); break;
                     case 2550: setParam (p, "drive_oversampling", 1.0f); break;                        // 8x
+                    // The CPU saver (BUILD_PLAN "CPU"): on with both drives off (they stop), the boost and overdrive switched
+                    // on while it's on (each warms up unheard, then fades in), off (2x -> 8x through the drives' fade), on
+                    // again, then on, off, and on around the drives switching off and back on.
+                    case 2410: setParam (p, "cpu_saver", 1.0f); break;
+                    case 2560: setParam (p, "cpu_saver", 0.0f); break;
+                    case 2580: setParam (p, "cpu_saver", 1.0f); break;
+                    case 3680: setParam (p, "od_on", 1.0f); break;                                      // warms up: pending
+                    case 3690: setParam (p, "cpu_saver", 0.0f); break;                                  // off mid-warm-up
+                    case 3720: setParam (p, "cpu_saver", 1.0f); setParam (p, "od_on", 0.0f); break;
                     // Phase 8 Bloom: on with all three, re-moded, reordered, through-zero on and off, bypassed.
                     case 3010: setParam (p, "bloom_on", 1.0f); setParam (p, "bloom_crush_on", 1.0f); setParam (p, "bloom_phaser_on", 1.0f);
                                setParam (p, "bloom_flanger_on", 1.0f); break;

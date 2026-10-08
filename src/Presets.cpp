@@ -441,7 +441,7 @@ juce::var migrate (const juce::var& preset)
 bool isGlobal (const juce::String& parameterId)
 {
     return parameterId == "input_calibrate" || parameterId == "input_level_dbu" || parameterId == "drive_oversampling"
-           || parameterId.startsWith ("tuner_") || parameterId.startsWith ("output_limit_");
+           || parameterId == "cpu_saver" || parameterId.startsWith ("tuner_") || parameterId.startsWith ("output_limit_");
 }
 
 juce::var capture (AmpSimProcessor& processor, const juce::String& name)

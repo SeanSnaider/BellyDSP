@@ -117,6 +117,7 @@ private:
     Knob* output = nullptr;
     Switch* limiter = nullptr;     // output_limit_on (a global setting)
     ValueField* ceiling = nullptr; // output_limit_ceiling
+    Switch* saver = nullptr;       // cpu_saver (a global setting)
     juce::TextButton *abA = nullptr, *abB = nullptr, *tap = nullptr, *midi = nullptr;
     IconButton abCopy { "Copy", IconButton::Icon::copy };
     ValueField *tempo = nullptr, *tapCc = nullptr, *freezeCc = nullptr, *sceneCc = nullptr;

@@ -62,6 +62,7 @@ AmpSimProcessor::AmpSimProcessor()
     boostParams.bind (parameters);
     overdriveParams.bind (parameters);
     driveOversampling.bind (parameters, "drive_oversampling");
+    cpuSaver = raw ("cpu_saver");
     preCompParams.bind (parameters, "comp_pre");
     postCompParams.bind (parameters, "comp_post");
     preEqParams.bind (parameters, "eq_pre");
@@ -261,6 +262,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout AmpSimProcessor::createParam
     // Global (not in presets): 8x costs about 1.5 to 1.9x the CPU of 4x (BUILD_PLAN "Boost and Overdrive").
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "drive_oversampling", 1 }, "Drive Oversampling",
                                                               juce::StringArray { "4x", "8x" }, 0));
+    // Global (not in presets or scenes): the CPU saver (BUILD_PLAN "CPU", the CPU saver), off by default. Not smoothed:
+    // every change it makes is crossfaded where it happens (the drives' warm-up and bypass fade, their oversampling
+    // fade, the Gain's crossing to its nearest step).
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "cpu_saver", 1 }, "CPU Saver", false));
     params::CompressorParameters::addTo (layout, "comp_pre", "Pre Comp", false);
     params::EqualizerParameters::addTo (layout, "eq_pre", "Pre EQ", true);
     params::EqualizerParameters::addTo (layout, "eq_post", "Post EQ", true);
@@ -475,8 +480,17 @@ void AmpSimProcessor::applyEffectParameters()
     chain.gateB.gate.setSettings (gateBParams.read());
     chain.gateB.setLinked (gateLink->load (std::memory_order_relaxed) >= 0.5f);
 
-    // The drive circuits run on volts: 0 dBFS is the interface's full scale (as for the NAM calibration).
-    const auto oversampling = params::oversamplingFactor (driveOversampling);
+    // The drive circuits run on volts: 0 dBFS is the interface's full scale (as for the NAM calibration). The CPU saver
+    // runs them at 2x, whatever the global setting; a change goes through the drives' own oversampling fade.
+    const auto saver = cpuSaver->load (std::memory_order_relaxed) >= 0.5f;
+    const auto oversampling = saver ? cpuSaverOversampling : params::oversamplingFactor (driveOversampling);
+
+    // The CPU saver's other two parts, set before the drives' switches below so a switch-on in this buffer already
+    // knows whether it has to warm up: switched-off drives stop (and warm up unheard for 200 ms when switched on), and
+    // the amp plays its nearest gain step.
+    for (const auto slot : { Slot::boost, Slot::overdrive })
+        chain.setStopWhileOff (slot, saver, juce::roundToInt (cpuSaverWarmupSeconds * cpuSampleRate));
+    chain.amp.setNearestStepOnly (saver);
     const auto volts = params::voltsAtFullScale ((double) interfaceInputDbu->load (std::memory_order_relaxed));
     chain.setBypassed (Slot::boost, pre (boostParams.isOn())); // off, both keep running (Chain: keepRunning)
     chain.boost.setSettings (boostParams.read (oversampling, volts));
