@@ -91,4 +91,9 @@ private:
 /// The amp tabs' 30 x 20 mini heads (handoff 4.5, .mini).
 void drawMiniHead (juce::Graphics& g, juce::Rectangle<float> box, Material material);
 
+/// A built-in amp's 30 x 20 mini head, by its name (the Amp page's shelf): the three slot materials' own minis for
+/// Glass, Ember, and Monolith, a look of its own for each of the five more (Forge, Basalt, Comet, Quartz, Lantern),
+/// and a plain grey one for any other gain set.
+void drawMiniAmp (juce::Graphics& g, juce::Rectangle<float> box, const juce::String& amp);
+
 } // namespace ui

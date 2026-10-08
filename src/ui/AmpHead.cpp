@@ -430,4 +430,102 @@ void drawMiniHead (juce::Graphics& g, juce::Rectangle<float> box, Material mater
     }
 }
 
+void drawMiniAmp (juce::Graphics& g, juce::Rectangle<float> box, const juce::String& amp)
+{
+    for (const auto m : { Material::glass, Material::ember, Material::monolith })
+        if (amp == materialName (m))
+            return drawMiniHead (g, box, m);
+
+    // The same build as the slot minis (a white .08 ring, the body at radius 3, a 5 px panel bar 3 px in), each
+    // with one detail of its own that hints at the voice. Colours only: no lettering at this size.
+    g.setColour (juce::Colours::white.withAlpha (0.08f));
+    g.fillRoundedRectangle (box.expanded (1.0f), radiusMini + 1.0f);
+    const auto bar = juce::Rectangle<float> (box.getX() + 3.0f, box.getY() + 3.0f, box.getWidth() - 6.0f, 5.0f);
+    const auto body = [&] (juce::Colour c)
+    {
+        g.setColour (c);
+        g.fillRoundedRectangle (box, radiusMini);
+    };
+
+    if (amp == "Forge")
+    {
+        // Tight modern high gain: black, a brushed steel panel, a line of hot orange under it.
+        body (juce::Colour (0xff111213));
+        g.setColour (juce::Colour (0xff8d9399));
+        g.fillRoundedRectangle (bar, 1.0f);
+        g.setColour (juce::Colour (0xffff6a1f));
+        g.fillRect (bar.getX(), bar.getBottom() + 1.5f, bar.getWidth(), 1.0f);
+    }
+    else if (amp == "Basalt")
+    {
+        // Fat high gain: dark stone with a few lighter flecks, a near-black panel in a grey frame.
+        body (juce::Colour (0xff35383b));
+        g.setColour (juce::Colour (0xff4d5155));
+        for (const auto& [fx, fy] : { std::pair<float, float> { 0.22f, 0.62f }, { 0.48f, 0.78f }, { 0.71f, 0.58f }, { 0.86f, 0.82f }, { 0.36f, 0.88f } })
+            g.fillEllipse (juce::Rectangle<float> (1.6f, 1.6f).withCentre ({ box.getX() + fx * box.getWidth(), box.getY() + fy * box.getHeight() }));
+        g.setColour (juce::Colour (0xff7b8085));
+        g.fillRoundedRectangle (bar.expanded (1.0f), 2.0f);
+        g.setColour (juce::Colour (0xff1a1b1c));
+        g.fillRoundedRectangle (bar, 1.0f);
+    }
+    else if (amp == "Comet")
+    {
+        // Lead, mids forward: deep navy, a dark panel, and a comet's streak across the body to a bright head.
+        body (juce::Colour (0xff17234d));
+        g.setColour (juce::Colour (0xff0b1230));
+        g.fillRoundedRectangle (bar, 1.0f);
+        const juce::Point<float> tail { box.getX() + 4.0f, box.getBottom() - 3.5f }, head { box.getRight() - 7.0f, box.getY() + 11.5f };
+        g.setGradientFill (juce::ColourGradient (juce::Colour (0x0067e8f9), tail, juce::Colour (0xff9ff3ff), head, false));
+        juce::Path streak;
+        streak.startNewSubPath (tail);
+        streak.lineTo (head);
+        g.strokePath (streak, juce::PathStrokeType (1.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.setColour (juce::Colours::white);
+        g.fillEllipse (juce::Rectangle<float> (2.6f, 2.6f).withCentre (head));
+    }
+    else if (amp == "Quartz")
+    {
+        // Lead, scooped and bright: pale lilac, a deeper lilac panel, a small white crystal.
+        body (juce::Colour (0xffe4d7ea));
+        g.setColour (juce::Colour (0xffa58fb6));
+        g.fillRoundedRectangle (bar, 1.0f);
+        const auto c = juce::Point<float> (box.getCentreX(), box.getY() + 14.0f);
+        juce::Path crystal;
+        crystal.startNewSubPath (c.x, c.y - 3.5f);
+        crystal.lineTo (c.x + 2.5f, c.y);
+        crystal.lineTo (c.x, c.y + 3.5f);
+        crystal.lineTo (c.x - 2.5f, c.y);
+        crystal.closeSubPath();
+        g.setColour (juce::Colours::white);
+        g.fillPath (crystal);
+        g.setColour (juce::Colour (0xff8d78a0));
+        g.strokePath (crystal, juce::PathStrokeType (0.6f));
+    }
+    else if (amp == "Lantern")
+    {
+        // Power-amp breakup: warm tweed (a faint diagonal weave), a brown panel, an amber pilot light.
+        body (juce::Colour (0xffc8a467));
+        {
+            const juce::Graphics::ScopedSaveState saved (g);
+            juce::Path shape;
+            shape.addRoundedRectangle (box, radiusMini);
+            g.reduceClipRegion (shape);
+            g.setColour (juce::Colour (0xff8a6a3a).withAlpha (0.35f));
+            for (auto x = box.getX() - box.getHeight(); x < box.getRight(); x += 3.0f)
+                g.drawLine (x, box.getBottom(), x + box.getHeight(), box.getY(), 0.6f);
+        }
+        g.setColour (juce::Colour (0xff3b2a1b));
+        g.fillRoundedRectangle (bar, 1.0f);
+        g.setColour (juce::Colour (0xffffb347));
+        g.fillEllipse (juce::Rectangle<float> (2.4f, 2.4f).withCentre ({ bar.getRight() - 2.5f, bar.getCentreY() }));
+    }
+    else
+    {
+        // Any other gain set: plain grey, a darker panel.
+        body (juce::Colour (0xff5a5e62));
+        g.setColour (juce::Colour (0xff2c2e30));
+        g.fillRoundedRectangle (bar, 1.0f);
+    }
+}
+
 } // namespace ui
