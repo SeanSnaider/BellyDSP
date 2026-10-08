@@ -43,6 +43,11 @@ public:
     void setMaterial (Material m);
     Material getMaterial() const noexcept { return material; }
 
+    /// The word on the badge, in the material's lettering: the amp the slot plays ("Comet" on the Glass head, since
+    /// any slot can load any built-in amp); empty: the material's own name. Re-renders the art when it changes.
+    void setBadge (const juce::String& name);
+    juce::String getBadge() const;
+
     static constexpr int headWidth = 960, headHeight = 262;
     static inline const juce::BorderSize<int> margin { 24, 56, 72, 56 }; // top, left, bottom, right
     static juce::Rectangle<int> headBox() { return { margin.getLeft(), margin.getTop(), headWidth, headHeight }; }
@@ -56,14 +61,16 @@ public:
 
     void paint (juce::Graphics&) override;
 
-    /// The art at a scale, uncached (tests and the cache).
-    static juce::Image render (Material material, float scale);
+    /// The art at a scale, uncached (tests and the cache), with a badge word (empty: the material's name).
+    static juce::Image render (Material material, float scale, const juce::String& name = {});
 
 private:
     Material material = Material::glass;
+    juce::String badge; // empty: the material's name
     juce::Image cached;
     float cachedScale = 0.0f;
     Material cachedMaterial = Material::glass;
+    juce::String cachedBadge;
     int renders = 0;
 };
 

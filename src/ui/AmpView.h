@@ -76,6 +76,17 @@ public:
     std::function<void (int slot)> onLoadCapture;
     std::function<void (int slot, juce::Component& near)> onCaptureMenu;
 
+    /// The amp picker right of the tabs (Sean, 2026-10-07: "I can't find the new amps"): its menu lists every
+    /// built-in amp (presets::builtInGainSets) and loads the one picked into the playing slot; its arrows step
+    /// through them, wrapping around. The capture menu (a right-click on the grille) keeps reload and clear.
+    juce::PopupMenu ampMenu();
+    void stepAmp (int delta);
+    juce::String getPickerText() const;
+    juce::Component& getPicker() noexcept;
+    /// The name the slot's tab and badge show: a gain set's name (any slot can play any built-in amp), else
+    /// the slot's material.
+    juce::String slotAmpName (int slot);
+
     /// The message shown where "48 kHz" sits (empty: the rate).
     void setStatus (const juce::String& message);
 
@@ -118,6 +129,7 @@ public:
 
 private:
     class InfoRow;
+    class AmpPicker;
     class Grille;
     class GateLight;
     class GainSteps;
@@ -152,6 +164,9 @@ private:
     std::map<juce::String, SetInfo> gainSets; // capture path -> its set's name and steps (empty: not a set)
     const SetInfo& setInfo (const juce::String& path);
     std::unique_ptr<GainSteps> gainStepDots;
+    std::unique_ptr<AmpPicker> picker;
+    std::vector<presets::BuiltInAmp> builtIns; // read once: the content folder doesn't change while the app runs
+    int builtInIndex (int slot) const;         ///< the built-in amp the slot plays, or -1
 };
 
 } // namespace ui

@@ -12,6 +12,8 @@
 #include "TestHelpers.h"
 #include "platform/AppInfo.h"
 
+#include <map>
+
 namespace
 {
 using namespace testing;
@@ -367,6 +369,138 @@ public:
             }
             logMessage ("  -> Built-in amps: " + items.joinIntoString (" | ") + "; loaded from the menu: " + rows.joinIntoString ("; ")
                         + "; snapshots in default_captures/editor_amp_builtin_*.png");
+        }
+
+        beginTest ("the amp picker right of the tabs: lists every built-in amp, loads the pick into the playing slot, its arrows step through them and wrap, and the badge and the picker name the amp");
+        {
+            WithBuiltInCaptures builtIns;
+            AmpSimProcessor p;
+            waitForLoads (p);
+            p.prepareToPlay (fs, blockSize);
+            std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+            auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
+            ed.showPage (ui::PageId::amp);
+            ed.refresh();
+            auto& amp = ed.getAmpView();
+            const auto sets = presets::builtInGainSets();
+            const auto snap = [&] (const juce::String& name)
+            {
+                proofDir().getChildFile ("default_captures").createDirectory();
+                expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f),
+                                 proofDir().getChildFile ("default_captures/editor_amp_picker_" + name + ".png")));
+            };
+
+            // Fresh: slot 1 plays Glass; the picker and the badge say so, and the picker sits on the tabs' row,
+            // right of the last tab, inside the page.
+            expectEquals (amp.getPickerText(), juce::String ("Glass"));
+            expectEquals (amp.getHead().getBadge(), juce::String ("Glass"));
+            const auto pickerBounds = amp.getPicker().getBounds();
+            const auto lastTab = amp.getTabs().getTab (AmpSimProcessor::numAmpSlots - 1);
+            expect (amp.getPicker().isVisible() && amp.getLocalBounds().contains (pickerBounds));
+            expect (lastTab != nullptr && pickerBounds.getX() > lastTab->getRight(), "the picker clears the tabs");
+            snap ("glass");
+
+            // The menu: a header, the eight amps (the three slot defaults, a line, the other five), Glass ticked,
+            // a line, and "Load a capture file...".
+            const auto menu = amp.ampMenu();
+            juce::StringArray items, ticked;
+            int separators = 0, header = 0;
+            std::map<juce::String, std::function<void()>> actions;
+            for (juce::PopupMenu::MenuItemIterator it (menu); it.next();)
+            {
+                const auto& item = it.getItem();
+                if (item.isSeparator)
+                    ++separators;
+                else if (item.isSectionHeader)
+                    ++header;
+                else
+                {
+                    items.add (item.text);
+                    if (item.isTicked)
+                        ticked.add (item.text);
+                    actions[item.text] = item.action;
+                }
+            }
+            expectEquals (header, 1);
+            expectEquals (separators, 2);
+            expectEquals (items.size(), (int) sets.size() + 1);
+            for (size_t i = 0; i < sets.size(); ++i)
+                expect (items[(int) i].startsWith (sets[i].name + ": "), items[(int) i]);
+            expectEquals (items[items.size() - 1], juce::String ("Load a capture file..."));
+            expect (ticked.size() == 1 && ticked[0].startsWith ("Glass: "), ticked.joinIntoString (", "));
+
+            // A pick from the menu loads into the playing slot (slot 1 here) and plays.
+            const auto comet = std::find_if (sets.begin(), sets.end(), [] (const presets::BuiltInAmp& a) { return a.name == "Comet"; });
+            expect (comet != sets.end());
+            for (const auto& [text, action] : actions)
+                if (text.startsWith ("Comet: ") && action)
+                    action();
+            waitForLoads (p);
+            ed.refresh();
+            expectEquals (modelPath (p, 0), comet->file.getFullPathName());
+            expect (! p.getStatus().modelError[0], p.getStatus().model[0]);
+            expectEquals (amp.getPickerText(), juce::String ("Comet"));
+            expectEquals (amp.getHead().getBadge(), juce::String ("Comet"));
+            expectEquals (amp.slotAmpName (0), juce::String ("Comet"));
+            expect (rms (play (p, guitarDI ((int) (0.5 * fs))).left) > 1.0e-3, "Comet plays");
+            snap ("comet");
+
+            // The arrows: next from Comet is the amp after it; previous twice from the first amp wraps to the last.
+            juce::StringArray stepped;
+            const auto indexOf = [&] (const juce::String& path)
+            {
+                for (size_t i = 0; i < sets.size(); ++i)
+                    if (sets[i].file.getFullPathName() == path)
+                        return (int) i;
+                return -1;
+            };
+            const auto cometIndex = indexOf (comet->file.getFullPathName());
+            amp.stepAmp (1);
+            waitForLoads (p);
+            ed.refresh();
+            expectEquals (indexOf (modelPath (p, 0)), (cometIndex + 1) % (int) sets.size());
+            stepped.add (amp.getPickerText());
+            p.loadModel (0, sets.front().file);
+            waitForLoads (p);
+            ed.refresh();
+            amp.stepAmp (-1);
+            waitForLoads (p);
+            ed.refresh();
+            expectEquals (indexOf (modelPath (p, 0)), (int) sets.size() - 1);
+            stepped.add (amp.getPickerText());
+            expectEquals (amp.getHead().getBadge(), sets.back().name);
+
+            // Another slot: the picker follows the playing slot; slot 2 still plays Ember on its own head.
+            setParam (p, AmpSimProcessor::slotParamId, 1.0f);
+            ed.refresh();
+            expectEquals (amp.getPickerText(), juce::String ("Ember"));
+            expectEquals (amp.getHead().getBadge(), juce::String ("Ember"));
+            amp.stepAmp (1);
+            waitForLoads (p);
+            ed.refresh();
+            expectEquals (indexOf (modelPath (p, 1)), indexOf (presets::builtInCapture (1).getFullPathName()) + 1);
+            expectEquals (indexOf (modelPath (p, 0)), (int) sets.size() - 1); // slot 1 untouched
+            snap ("slot2_stepped");
+
+            // A capture that isn't built in: the picker shows its file, the badge keeps the slot's material, and
+            // next starts at the first built-in amp.
+            const auto own = presets::builtInCapture (2).getParentDirectory().getChildFile ("Monolith, gain 5.nam"); // one step on its own
+            expect (own.existsAsFile(), own.getFullPathName());
+            {
+                p.loadModel (1, own);
+                waitForLoads (p);
+                ed.refresh();
+                expectEquals (amp.getPickerText(), own.getFileNameWithoutExtension());
+                expectEquals (amp.getHead().getBadge(), juce::String ("Ember"));
+                amp.stepAmp (1);
+                waitForLoads (p);
+                ed.refresh();
+                expectEquals (modelPath (p, 1), sets.front().file.getFullPathName());
+            }
+            logMessage ("  -> the picker at x " + juce::String (pickerBounds.getX()) + " to " + juce::String (pickerBounds.getRight()) + " of "
+                        + juce::String (amp.getWidth()) + " (the last tab ends at " + juce::String (lastTab != nullptr ? lastTab->getRight() : -1)
+                        + "); menu: " + items.joinIntoString (" | ") + "; next from Comet: " + stepped[0] + "; previous from Glass: " + stepped[1]
+                        + "; snapshots default_captures/editor_amp_picker_*.png");
         }
 
         beginTest ("factory presets: renamed, and each loads the built-in captures and its bundled cab with no warnings");

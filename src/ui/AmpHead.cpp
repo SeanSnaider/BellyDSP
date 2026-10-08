@@ -106,14 +106,14 @@ juce::Path textPath (const juce::String& text, const juce::FontOptions& font, fl
     return p;
 }
 
-void drawBadge (juce::Graphics& g, Material material, juce::Rectangle<float> grille)
+void drawBadge (juce::Graphics& g, Material material, juce::Rectangle<float> grille, const juce::String& name)
 {
     switch (material)
     {
         case Material::glass:
         {
             // Geist 300, 46 px, tracking .08em, light chrome; text-shadow 0 1px 0 white .3, 0 2px 4px black .6.
-            const auto p = textPath ("Glass", geist (Weight::light, 46.0f), 0.08f * 46.0f, grille);
+            const auto p = textPath (name, geist (Weight::light, 46.0f), 0.08f * 46.0f, grille);
             juce::DropShadow (juce::Colours::black.withAlpha (0.6f), 4, { 0, 2 }).drawForPath (g, p);
             g.setColour (juce::Colours::white.withAlpha (0.3f));
             g.fillPath (p, juce::AffineTransform::translation (0.0f, 1.0f));
@@ -124,7 +124,7 @@ void drawBadge (juce::Graphics& g, Material material, juce::Rectangle<float> gri
         case Material::ember:
         {
             // Fraunces italic 600, 52 px, gold; text-shadow 0 2px 0 black .6.
-            const auto p = textPath ("Ember", fraunces (52.0f), 0.0f, grille);
+            const auto p = textPath (name, fraunces (52.0f), 0.0f, grille);
             g.setColour (juce::Colours::black.withAlpha (0.6f));
             g.fillPath (p, juce::AffineTransform::translation (0.0f, 2.0f));
             g.setColour (juce::Colour (0xffd9b878));
@@ -137,7 +137,7 @@ void drawBadge (juce::Graphics& g, Material material, juce::Rectangle<float> gri
             // #262928 ring outside and a 2 px emerald bar along its bottom inside.
             const auto f = geist (Weight::semibold, 24.0f);
             const auto spacing = 0.28f * 24.0f;
-            const auto run = textWidth (f, "Monolith") + spacing * 8.0f;
+            const auto run = textWidth (f, name) + spacing * (float) name.length();
             const auto lineHeight = juce::Font (f).getAscent() + juce::Font (f).getDescent();
             const auto plate = juce::Rectangle<float> (run + 52.0f, lineHeight + 20.0f).withCentre (grille.getCentre());
             g.setColour (juce::Colour (0xff262928));
@@ -153,7 +153,7 @@ void drawBadge (juce::Graphics& g, Material material, juce::Rectangle<float> gri
                 g.fillRect (plate.withTop (plate.getBottom() - 2.0f));
             }
             const auto textBox = plate.withTrimmedLeft (30.0f).withTrimmedRight (22.0f).withTrimmedTop (10.0f).withTrimmedBottom (10.0f);
-            const auto p = textPath ("Monolith", f, spacing, textBox.withWidth (run).withX (textBox.getX()));
+            const auto p = textPath (name, f, spacing, textBox.withWidth (run).withX (textBox.getX()));
             g.setColour (juce::Colour (0xffcfd6d3));
             g.fillPath (p);
             break;
@@ -162,7 +162,7 @@ void drawBadge (juce::Graphics& g, Material material, juce::Rectangle<float> gri
 }
 } // namespace
 
-juce::Image AmpHead::render (Material material, float scale)
+juce::Image AmpHead::render (Material material, float scale, const juce::String& name)
 {
     const auto bounds = juce::Rectangle<int> (0, 0, margin.getLeft() + headWidth + margin.getRight(), margin.getTop() + headHeight + margin.getBottom());
     juce::Image image (juce::Image::ARGB, juce::roundToInt ((float) bounds.getWidth() * scale), juce::roundToInt ((float) bounds.getHeight() * scale), true);
@@ -315,7 +315,7 @@ juce::Image AmpHead::render (Material material, float scale)
             break;
     }
 
-    drawBadge (g, material, grille);
+    drawBadge (g, material, grille, name.isNotEmpty() ? name : juce::String (materialName (material)));
     return image;
 }
 
@@ -333,15 +333,32 @@ void AmpHead::setMaterial (Material m)
     }
 }
 
+void AmpHead::setBadge (const juce::String& name)
+{
+    const auto word = name == materialName (material) ? juce::String() : name;
+    if (word != badge)
+    {
+        badge = word;
+        repaint();
+    }
+}
+
+juce::String AmpHead::getBadge() const
+{
+    return badge.isNotEmpty() ? badge : juce::String (materialName (material));
+}
+
 void AmpHead::paint (juce::Graphics& g)
 {
-    // Re-rendered only when the scale it's shown at or the material changes (a window resize, a slot switch).
+    // Re-rendered only when the scale it's shown at, the material, or the badge changes (a window resize, a slot
+    // switch, another amp loaded).
     const auto scale = juce::jmax (1.0f, g.getInternalContext().getPhysicalPixelScaleFactor());
-    if (! cached.isValid() || std::abs (scale - cachedScale) > 0.01f || material != cachedMaterial)
+    if (! cached.isValid() || std::abs (scale - cachedScale) > 0.01f || material != cachedMaterial || badge != cachedBadge)
     {
-        cached = render (material, scale);
+        cached = render (material, scale, badge);
         cachedScale = scale;
         cachedMaterial = material;
+        cachedBadge = badge;
         ++renders;
     }
     g.drawImage (cached, getLocalBounds().toFloat());
