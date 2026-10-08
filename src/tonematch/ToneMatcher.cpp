@@ -568,6 +568,9 @@ MatchResult ToneMatcher::match (const std::vector<float>& targetSignal, const st
             return result;
     }
     const auto takeAware = takeNotes.usable();
+    // S_pre (Candidate::pre) for every candidate, only when the wide search asks for it: it needs each candidate's take
+    // measures, which otherwise only the shortlist's get.
+    const auto usesPre = takeAware && (settings.takePreShortlist > 0 || settings.takePedalSlotsByPre > 0);
 
     // Renders, keyed by (slot, Gain in thousandths of a dB, pedal: an index into `pedals`, -1 for none).
     std::map<std::tuple<int, int, int>, std::vector<float>> renders;
@@ -682,7 +685,7 @@ MatchResult ToneMatcher::match (const std::vector<float>& targetSignal, const st
                 return; // the result is discarded anyway
             const auto& [s, g, cabs] = jobs[(size_t) i];
             chosenCabs[(size_t) i] = cabs.empty() ? screen (s, g) : cabs;
-            if (takeAware)
+            if (usesPre)
             {
                 const auto k = key (s, g, pedalOf.empty() ? pedalIndex : pedalOf[(size_t) i]);
                 {
@@ -710,9 +713,9 @@ MatchResult ToneMatcher::match (const std::vector<float>& targetSignal, const st
                 return;
             const auto [s, g, c, p] = work[(size_t) i];
             auto cand = score (s, g, c, renders.at (key (s, g, p)), irs[(size_t) c], target, settings.mode,
-                               settings.mode == Mode::samePart ? &alignments.at (s) : nullptr, takeAware);
+                               settings.mode == Mode::samePart ? &alignments.at (s) : nullptr, usesPre);
             cand.pedal = p;
-            if (takeAware)
+            if (usesPre)
                 cand.pre = take::scoreOf (takeNotes, target, cand.analysis.features[1], cand.analysis.features[3], noteMeasuresOf.at (key (s, g, p)),
                                           cand.takeLtasBins, cand.tone, nullptr, cand.spectral)
                                .total;
@@ -800,7 +803,7 @@ MatchResult ToneMatcher::match (const std::vector<float>& targetSignal, const st
         auto byOld = slots;
         std::stable_sort (byOld.begin(), byOld.end(), [&] (int a, int b) { return bestFor (a)->total() < bestFor (b)->total(); });
         std::vector<int> pedalSlots (byOld.begin(), byOld.begin() + juce::jlimit (0, (int) byOld.size(), settings.pedalSlots));
-        if (takeAware)
+        if (usesPre)
         {
             auto byPre = slots;
             std::stable_sort (byPre.begin(), byPre.end(), [&] (int a, int b) { return bestFor (a, true)->pre < bestFor (b, true)->pre; });
@@ -891,7 +894,7 @@ MatchResult ToneMatcher::match (const std::vector<float>& targetSignal, const st
         // takePreShortlist best, in the old score's order, each fitted completely and scored by S.
         auto byPre = ranked;
         std::stable_sort (byPre.begin(), byPre.end(), [] (const Candidate* a, const Candidate* b) { return a->pre < b->pre; });
-        const std::set<const Candidate*> keep (byPre.begin(), byPre.begin() + juce::jlimit (0, (int) byPre.size(), settings.takePreShortlist));
+        const std::set<const Candidate*> keep (byPre.begin(), byPre.begin() + (usesPre ? juce::jlimit (0, (int) byPre.size(), settings.takePreShortlist) : 0));
         std::vector<const Candidate*> shortlisted;
         for (size_t i = 0; i < ranked.size(); ++i)
             if ((int) i < take::shortlist || keep.count (ranked[i]) > 0)
@@ -903,9 +906,15 @@ MatchResult ToneMatcher::match (const std::vector<float>& targetSignal, const st
                 return;
             const auto& c = *shortlisted[(size_t) i];
             fins[(size_t) i] = finish (c);
-            fins[(size_t) i].score = take::scoreOf (takeNotes, target, c.analysis.features[1], c.analysis.features[3],
-                                                    noteMeasuresOf.at (key (c.slot, c.gainDb, c.pedal)), c.takeLtasBins, fins[(size_t) i].tone,
-                                                    &fins[(size_t) i].eq, c.spectral);
+            const auto& f = fins[(size_t) i];
+            if (usesPre)
+                fins[(size_t) i].score = take::scoreOf (takeNotes, target, c.analysis.features[1], c.analysis.features[3],
+                                                        noteMeasuresOf.at (key (c.slot, c.gainDb, c.pedal)), c.takeLtasBins, f.tone, &f.eq, c.spectral);
+            else
+            {
+                const auto& amp = renders.at (key (c.slot, c.gainDb, c.pedal));
+                fins[(size_t) i].score = take::score (takeNotes, target, amp, convolve (amp, irs[(size_t) c.cab]), f.tone, &f.eq, c.spectral);
+            }
         });
         if (cancelled())
             return result;

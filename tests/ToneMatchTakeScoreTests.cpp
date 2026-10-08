@@ -331,37 +331,74 @@ public:
                         + old.cab.getFileNameWithoutExtension());
         }
 
-        beginTest ("the search over every content gain set (the app's, after a take) is never worse by its own score than over the three built-ins");
+        beginTest ("golden: the wide search (every amp refined, S_pre's shortlist and pedal amp) over the built-ins and every content gain set");
         {
-            // A search over a superset of the amps can't end with a worse take-aware score S (docs/TONE_MATCH.md, "Round 2:
-            // eight amps": with the shortlist cut by the old score, it did on 8 of 30 DEV cases). The app's settings after a
-            // take: the take-aware score, the pedals and the post compressor, the match curve. S is the winner's before the
-            // post compressor (which is chosen on the finished match).
+            // docs/TONE_MATCH.md, "Round 2: eight amps". With eight amps the Round 2 search cut the take-aware score's winner
+            // before S saw it (on 7 of 30 DEV cases its S was worse than the three-amp search's, a subset of the same amps).
+            // The wide search (MatchSettings::takeRefinesEverySlot, takePedalSlotsByPre, takePreShortlist; off by default,
+            // because over eight amps the lower S wasn't closer to the hidden rigs) against the prototype's on the fixture,
+            // and both searches' S and time over three amps and over every content gain set. The app's settings after a
+            // take: the take-aware score, the pedals and the post compressor, the match curve.
             auto all = platform::factoryContentFolder().getChildFile ("models").findChildFiles (juce::File::findDirectories, false);
             std::sort (all.begin(), all.end(), [] (const juce::File& a, const juce::File& b) { return a.getFileName() < b.getFileName(); });
-            MatchSettings s;
-            s.mode = Mode::anything;
+            std::vector<juce::File> every;
             for (int i = 0; i < 3; ++i)
-                s.models.push_back (gainSet (i));
+                every.push_back (gainSet (i));
             for (const auto& d : all)
-                if (const auto f = d.getChildFile ("gainset.json"); f.existsAsFile() && std::find (s.models.begin(), s.models.end(), f) == s.models.end())
-                    s.models.push_back (f);
-            s.cabs = builtInCabs();
-            s.takeIsLinedUp = true;
-            s.searchPedals = true;
-            s.fitCurve = true;
-            const auto everyAmp = ToneMatcher::match (target, takeDi, s, noCancel);
-            const auto amps = (int) s.models.size();
-            s.models.resize (3);
-            const auto three = ToneMatcher::match (target, takeDi, s, noCancel);
-            expect (everyAmp.ok && three.ok && everyAmp.takeScored && three.takeScored);
-            expectGreaterOrEqual (amps, 8);
-            expectLessOrEqual (everyAmp.takeScore.total, three.takeScore.total + 1.0e-9);
-            logMessage ("  -> " + juce::String (amps) + " amps: slot " + juce::String (everyAmp.slot + 1) + " at " + juce::String (everyAmp.gainDb, 1) + " dB, S "
-                        + juce::String (everyAmp.takeScore.total, 4) + ", " + juce::String (everyAmp.renders) + " renders, " + juce::String (everyAmp.candidates)
-                        + " candidates, " + juce::String (everyAmp.runtimeSeconds, 1) + " s; the three built-ins: slot " + juce::String (three.slot + 1) + " at "
-                        + juce::String (three.gainDb, 1) + " dB, S " + juce::String (three.takeScore.total, 4) + ", " + juce::String (three.renders)
-                        + " renders, " + juce::String (three.runtimeSeconds, 1) + " s (the take is " + juce::String ((double) takeDi.size() / sampleRate, 1) + " s)");
+                if (const auto f = d.getChildFile ("gainset.json"); f.existsAsFile() && std::find (every.begin(), every.end(), f) == every.end())
+                    every.push_back (f);
+            expectGreaterOrEqual ((int) every.size(), 8);
+
+            const auto run = [&] (bool wide, int amps) {
+                MatchSettings s;
+                s.mode = Mode::anything;
+                s.models.assign (every.begin(), every.begin() + amps);
+                s.cabs = builtInCabs();
+                s.takeIsLinedUp = true;
+                s.searchPedals = true;
+                s.fitCurve = true;
+                if (wide)
+                {
+                    s.takeRefinesEverySlot = true;
+                    s.takePedalSlotsByPre = 1;
+                    s.takePreShortlist = 16;
+                }
+                return ToneMatcher::match (target, takeDi, s, noCancel);
+            };
+            juce::StringArray lines;
+            for (const auto* which : { "three", "every" })
+            {
+                const auto amps = juce::String (which) == "three" ? 3 : (int) every.size();
+                const auto narrow = run (false, amps);
+                const auto wide = run (true, amps);
+                expect (narrow.ok && wide.ok && narrow.takeScored && wide.takeScored);
+                const auto& w = e["wide"][which];
+                expectEquals ((int) w["models"].size(), amps);
+                expectEquals (wide.slot, (int) w["slot"]);
+                expectWithinAbsoluteError (wide.gainDb, (double) w["gain"], 1.0e-9);
+                expectEquals (wide.cab.getFileName(), w["cab"].toString());
+                expectEquals (wide.shortlisted, (int) w["shortlisted"]);
+                expectEquals (wide.renders, (int) w["renders"]);
+                expectEquals (wide.candidates, (int) w["candidates"]);
+                const auto& ep = w["pedal"];
+                const auto kind = ep.isObject() ? ep["kind"].toString() : juce::String ("none");
+                const auto cppKind = wide.pedal.kind == Pedal::Kind::compressor ? "comp" : wide.pedal.kind == Pedal::Kind::boost ? "boost"
+                                   : wide.pedal.kind == Pedal::Kind::overdrive ? "overdrive" : "none";
+                expect (kind == cppKind || (wide.pedal.kind == Pedal::Kind::overdrive && kind != "comp" && kind != "boost" && kind != "none"),
+                        kind + " vs " + cppKind);
+                expect (wide.postCompressor.on == w["post_comp"].isObject());
+                expectWithinAbsoluteError (wide.takeScore.total, (double) w["terms"]["total"], 0.05);
+                // The wide search sees everything the narrow one fits completely, so it can't end with a worse S.
+                expectLessOrEqual (wide.takeScore.total, narrow.takeScore.total + 1.0e-9);
+                lines.add (juce::String (amps) + " amps: the Round 2 search " + every[(size_t) narrow.slot].getParentDirectory().getFileName() + " "
+                           + juce::String (narrow.gainDb, 1) + " dB, S " + juce::String (narrow.takeScore.total, 4) + ", " + juce::String (narrow.renders)
+                           + " renders, " + juce::String (narrow.shortlisted) + " fitted, " + juce::String (narrow.runtimeSeconds, 1) + " s; the wide search "
+                           + every[(size_t) wide.slot].getParentDirectory().getFileName() + " " + juce::String (wide.gainDb, 1) + " dB, " + kind + ", S "
+                           + juce::String (wide.takeScore.total, 4) + " (prototype " + juce::String ((double) w["terms"]["total"], 4) + "), "
+                           + juce::String (wide.renders) + " renders, " + juce::String (wide.shortlisted) + " fitted, " + juce::String (wide.runtimeSeconds, 1) + " s");
+            }
+            for (const auto& l : lines)
+                logMessage ("  -> " + l + " (the take is " + juce::String ((double) takeDi.size() / sampleRate, 1) + " s)");
         }
     }
 };

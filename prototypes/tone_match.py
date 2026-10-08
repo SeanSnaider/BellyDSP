@@ -1275,6 +1275,24 @@ def linear_power_bins(tone, eq):
     return linear_power_on(FREQS, tone, eq)
 
 
+# ---- Round 2 with eight amps: how far the search looks (docs/TONE_MATCH.md, "Round 2: eight amps") --------------
+#
+# With a take, the take-aware score S picks the winner, but the search's earlier stages rank by the old score: Gain is
+# refined for the old score's 2 best amps, the pedals go in front of its best amp, and S only sees its 16 best
+# candidates. With three amps that was 2 of 3 and most of the space; with eight, S's winner was often cut before S saw
+# it (7 of 30 DEV cases ended with a worse S than the three-amp search over a subset of the same amps).
+#
+# The knobs below widen it. S_pre is S without the expensive part, from measures every candidate keeps when it's
+# scored (flux, crest, its notes' attack and level, its long-term power on the ERB bins): the linear tone fit instead
+# of the polished one, and no match EQ in D_erb (or, PRE_WITH_EQ_TARGET, the EQ's target curve instead of the fitted
+# EQ). It costs no render and no Nelder-Mead fit, so every candidate gets one. Simulated on every candidate scored by S
+# (tone_bench any_fx_curve_all, DEV): with every amp refined, S_pre's 16 best in the shortlist and the pedals in front
+# of S_pre's best amp too (any_fx_curve_wide), the search's S is worse than the three-amp search's in 1 of 28 cases (6
+# before) and at the optimum of the whole space in 21 of 30 (11 before). But the optimum itself is no closer to the
+# hidden rigs: DEV median 0.463 for S's optimum, 0.455 for the wide search, 0.465 for the Round 2 search over eight
+# amps, against the three amps' 0.422. Over eight amps S prefers amps that are further away about as often as closer
+# ones. So the defaults stay the Round 2 search until the score is refitted with the new amps; at these values the
+# knobs reproduce it exactly.
 TAKE_PER_AMP = 0             # the shortlist also holds each amp's best this many by the old score
 TAKE_PRE_SHORTLIST = 0       # and the best this many by S_pre
 TAKE_REFINE_ALL = False      # with a take, every amp's Gain is refined (else REFINE_SLOTS)
@@ -1936,7 +1954,7 @@ def take_golden(args):
     terms of three fixed candidates (the built-in gain sets through ampsim_render, the cab by FFT convolution), and
     the whole search with the take-aware score (anything mode, the gain sets, the built-in cabs)."""
     import learn_tone as lt
-    global MODEL_FILES
+    global MODEL_FILES, AMPS, TAKE_REFINE_ALL, TAKE_PRE_SHORTLIST, PEDAL_SLOTS_PRE
     MODEL_FILES = [REPO / "content/models" / a / "gainset.json" for a in AMPS]
     fx = REPO / "tests/fixtures/informed_mask"
     _, target = read_wav(fx / "record.wav")
@@ -1956,7 +1974,24 @@ def take_golden(args):
     r = match(target, take, "anything", log=print, workers=8, take_notes=notes)
     rfx = match(target, take, "anything", log=print, workers=8, take_notes=notes, pedals=True)
     rcv = match(target, take, "anything", log=print, workers=8, take_notes=notes, pedals=True, curve="replace")
-    out = dict(playing_level_db=playing_level_db(take),
+    # The wide search (Round 2 with eight amps: every amp refined, S_pre's 16 best shortlisted, the pedals in front of
+    # S_pre's best amp too), on the three built-ins and on every built-in gain set.
+    saved = (TAKE_REFINE_ALL, TAKE_PRE_SHORTLIST, PEDAL_SLOTS_PRE, MODEL_FILES, AMPS)
+    TAKE_REFINE_ALL, TAKE_PRE_SHORTLIST, PEDAL_SLOTS_PRE = True, 16, 1
+    wide = {}
+    try:
+        for name, files in (("three", MODEL_FILES), ("every", MODEL_FILES + [p for p in sorted((REPO / "content/models").glob("*/gainset.json"))
+                                                                            if p not in MODEL_FILES])):
+            MODEL_FILES, AMPS = files, [p.parent.name for p in files]
+            trace = {}
+            rw = match(target, take, "anything", log=print, workers=8, take_notes=notes, pedals=True, curve="replace", trace=trace)
+            wide[name] = dict(models=[p.parent.name for p in files], slot=rw["slot"], gain=rw["gain_db"], cab=rw["cab"], pedal=rw["pedal"],
+                              post_comp=rw["post_comp"], post_comp_scores=rw["post_comp_scores"], terms=rw["take_terms"],
+                              shortlisted=rw["shortlisted"], renders=rw["renders"], candidates=rw["candidates"], pedal_slots=trace["pedal_slots"],
+                              points=rw["match_curve"])
+    finally:
+        TAKE_REFINE_ALL, TAKE_PRE_SHORTLIST, PEDAL_SLOTS_PRE, MODEL_FILES, AMPS = saved
+    out = dict(playing_level_db=playing_level_db(take), wide=wide,
                match_curve=dict(slot=rcv["slot"], gain=rcv["gain_db"], cab=rcv["cab"], pedal=rcv["pedal"], post_comp=rcv["post_comp"],
                                 post_comp_scores=rcv["post_comp_scores"], points=rcv["match_curve"], amount=rcv["match_curve_amount"],
                                 spectral_after=rcv["spectral_error_after_eq_db"]), pedal_variants=[[p, g] for p, g in pedal_variants(take, 18.0)],

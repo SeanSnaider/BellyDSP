@@ -50,6 +50,9 @@ CONFIGS = {
     "any_fx_curve_r2": dict(mode="anything", cleanup="auto", score="take", pedals=True, curve="replace",
                             search=dict(REFINE_SLOTS=2, TAKE_SHORTLIST=16, TAKE_PER_AMP=0, PEDAL_SLOTS=1, TAKE_PRE_SHORTLIST=0,
                                         TAKE_REFINE_ALL=False, PEDAL_SLOTS_PRE=0)),
+    "any_fx_curve_wide": dict(mode="anything", cleanup="auto", score="take", pedals=True, curve="replace",
+                              search=dict(TAKE_REFINE_ALL=True, TAKE_PRE_SHORTLIST=16, PEDAL_SLOTS=1, PEDAL_SLOTS_PRE=1, TAKE_PER_AMP=0,
+                                          PRE_WITH_EQ_TARGET=False)),
     "any_fx_curve_all": dict(mode="anything", cleanup="auto", score="take", pedals=True, curve="replace", trace=True,
                              search=dict(REFINE_SLOTS=None, TAKE_SHORTLIST=10 ** 6, TAKE_PER_AMP=0, PEDAL_SLOTS=10 ** 6)),
 }

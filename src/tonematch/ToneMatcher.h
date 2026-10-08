@@ -87,10 +87,12 @@ struct MatchSettings
     /// so it scales with the number of amps. The old score ranks the amps differently from S, so with eight amps the
     /// three-amp search's winner was often never refined, never had the pedals tried in front of it, or ranked below
     /// the old score's 16 best (prototypes/tone_match.py, TAKE_REFINE_ALL, PEDAL_SLOTS_PRE, TAKE_PRE_SHORTLIST).
-    bool takeRefinesEverySlot = true;   ///< every slot's Gain refined, not refineSlots
+    /// The defaults are the Round 2 search: the wider one finds a lower S but, over eight amps, isn't closer to the
+    /// hidden rigs (the score, not the search, decides which new amp wins), so it waits for the score's refit.
+    bool takeRefinesEverySlot = false;  ///< every slot's Gain refined, not refineSlots (the wide search: true)
     int pedalSlots = 1;                 ///< the pedals in front of this many amps, the best by the old score
-    int takePedalSlotsByPre = 1;        ///< and in front of this many more, the best by S_pre (take::scoreOf without the EQ)
-    int takePreShortlist = 16;          ///< the shortlist: the old score's take::shortlist best and S_pre's this many best
+    int takePedalSlotsByPre = 0;        ///< and in front of this many more, the best by S_pre (the wide search: 1)
+    int takePreShortlist = 0;           ///< the shortlist: the old score's take::shortlist best and S_pre's this many best (16)
     /// Same part: > 0 when the DI is a play-along take, recorded lined up with the target (the session
     /// trims it so its sample 0 is the target's), so DTW only searches this far either side of that
     /// alignment (align's band; playAlongBandSeconds). 0: unconstrained, as for a take played on its own.
