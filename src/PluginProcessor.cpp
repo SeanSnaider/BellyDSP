@@ -710,6 +710,17 @@ void AmpSimProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     // The CPU meter times the whole callback against its deadline.
     const auto startTicks = juce::Time::getHighResolutionTicks();
 
+    // Benchmarks only (setCpuProfile): each stage's time, from one lap of the high-resolution clock to the next.
+    auto lapTicks = startTicks;
+    const auto lap = [this, &lapTicks] (double CpuProfile::*stage) noexcept
+    {
+        if (cpuProfile == nullptr)
+            return;
+        const auto now = juce::Time::getHighResolutionTicks();
+        cpuProfile->*stage += 1.0e6 * juce::Time::highResolutionTicksToSeconds (now - lapTicks);
+        lapTicks = now;
+    };
+
     // Denormals (tiny floats near zero) are very slow on some CPUs, and a decaying tail produces
     // them. This flushes them to zero for the duration of the callback (BUILD_PLAN "Denormals").
     juce::ScopedNoDenormals noDenormals;
@@ -776,6 +787,7 @@ void AmpSimProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
 
     applyCabParameters();
     applyEffectParameters();
+    lap (&CpuProfile::parametersMicros);
 
     // The tuner reads the clean guitar, before any block touches it (wait-free; nothing while disengaged).
     tuner.setEngaged (tunerOn->load (std::memory_order_relaxed) >= 0.5f);
@@ -786,6 +798,7 @@ void AmpSimProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     const auto analyzerSource = (AnalyzerTap) analyzerTap.load (std::memory_order_relaxed);
     if (analyzerSource == AnalyzerTap::preSection)
         analyzerRing.write (buffer.getReadPointer (0), numSamples);
+    lap (&CpuProfile::tapsMicros);
 
     // Hosts may occasionally send more samples than promised, so feed the chain in pieces that fit.
     auto io = juce::dsp::AudioBlock<float> (buffer).getSubsetChannelBlock (0, 2);
@@ -805,6 +818,7 @@ void AmpSimProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     }
 
     samplesProcessed += numSamples;
+    lap (&CpuProfile::chainMicros);
 
     // The Out meter's limit light: the limiter's largest gain reduction in this buffer (0 while it's off).
     if (! chain.isFullyBypassed (ampsim::Chain::Slot::limiter))
@@ -845,6 +859,9 @@ void AmpSimProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     raisePeak (outputPeakLeft, buffer.getMagnitude (0, 0, numSamples));
     raisePeak (outputPeakRight, buffer.getMagnitude (1, 0, numSamples));
     measureCpu (startTicks, numSamples);
+    lap (&CpuProfile::outputMicros);
+    if (cpuProfile != nullptr)
+        cpuProfile->totalMicros += 1.0e6 * juce::Time::highResolutionTicksToSeconds (lapTicks - startTicks);
 }
 
 void AmpSimProcessor::raisePeak (std::atomic<float>& peak, float value) noexcept

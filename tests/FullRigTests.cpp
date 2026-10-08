@@ -3,7 +3,9 @@
 
 #include "AllocationTracking.h"
 #include "BuiltInCaptures.h"
+#include "CpuProfile.h"
 #include "PluginProcessor.h"
+#include "Presets.h"
 #include "TestHelpers.h"
 
 #include <algorithm>
@@ -88,6 +90,50 @@ public:
 
         beginTest ("the same on the eight built-in amps (standard WaveNet gain sets, all loaded, one playing), as the app starts");
         rig (true);
+
+        beginTest ("the CPU profile, block by block: the defaults, the factory presets, the heaviest rig; the budget for weaker machines (BUILD_PLAN \"CPU\")");
+        profileAndBudget();
+    }
+
+    /// Every block's cost (mean, p99, worst) on the defaults, each factory preset, and the heaviest rig, and the budget
+    /// they're held to (BUILD_PLAN "CPU").
+    void profileAndBudget()
+    {
+        const auto input = guitarDI ((int) (10.0 * fs));
+        std::vector<cpu::RigRun> runs;
+        const auto show = [&] (const cpu::RigRun& run)
+        {
+            for (const auto& line : run.table())
+                logMessage ("  -> " + line);
+            expectEquals (run.counts.allocations, 0L);
+            expectEquals (run.counts.frees, 0L);
+            expectEquals (run.counts.blockingLocks, 0L);
+            runs.push_back (run);
+        };
+
+        cpu::RigRun defaults, typical, heaviest;
+        {
+            auto p = cpu::makeRig();
+            cpu::setDefaults (*p);
+            defaults = cpu::profile (*p, input, "Defaults (Glass, one close mic on a 1 s IR, everything else off)");
+            show (defaults);
+            for (const auto& preset : presets::factoryPresets())
+            {
+                expect (cpu::setFactoryPreset (*p, preset));
+                const auto run = cpu::profile (*p, input, "Factory preset " + preset["name"].toString());
+                show (run);
+                if (run.total.mean > typical.total.mean)
+                    typical = run;
+            }
+        }
+        {
+            auto p = cpu::makeRig();
+            cpu::setHeaviest (*p);
+            heaviest = cpu::profile (*p, input, "Heaviest (every block on at its heaviest, three mics on 1 s IRs, the Gain between two steps)");
+            show (heaviest);
+            expectEquals (heaviest.maxModels, 2);
+        }
+        logMessage ("  -> the heaviest factory preset (typical): " + typical.name + ", " + typical.summary());
     }
 
     /// Defaults, everything on, and the heaviest settings, timed. builtIns: the eight built-in amps the app starts

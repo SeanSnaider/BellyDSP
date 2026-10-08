@@ -537,6 +537,7 @@ target_sources(ampsim_tests PRIVATE
     tests/HarmonyTests.cpp
     tests/HarmonizerTests.cpp
     tests/FullRigTests.cpp
+    tests/CpuProfile.cpp
     tests/GateTests.cpp
     tests/OversamplerTests.cpp
     tests/DriveTests.cpp

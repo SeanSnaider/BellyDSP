@@ -353,6 +353,33 @@ public:
     /// For tests: the DSP chain. Only touch it from the thread that calls processBlock().
     ampsim::Chain& getChain() noexcept { return chain; }
 
+    /// CPU profiling, for benchmarks only (BUILD_PLAN "CPU": tests/FullRigTests.cpp and `ampsim_tests --bench`).
+    /// While one is attached, processBlock() adds what each stage of the callback took, in microseconds, and the
+    /// chain adds each block's time (Chain::Profile). The caller clears it between buffers. Detached (the app,
+    /// always) it costs a pointer test per stage.
+    struct CpuProfile
+    {
+        ampsim::Chain::Profile chain;
+        double parametersMicros = 0.0; // the input meter, MIDI, the amp choice, and every block's knobs and switches
+        double tapsMicros = 0.0;       // the tuner's ring and the analyzer's pre tap
+        double chainMicros = 0.0;      // Chain::process (chain.* splits it) and tone match's DI recorder
+        double outputMicros = 0.0;     // the limit and gate lights, the analyzer's post tap, the preset and tuner fades, the output meters, the CPU meter
+        double totalMicros = 0.0;      // the whole callback
+
+        void clear() noexcept
+        {
+            chain.clear();
+            parametersMicros = tapsMicros = chainMicros = outputMicros = totalMicros = 0.0;
+        }
+    };
+
+    /// The thread that calls processBlock(), between buffers: attach (or detach, with nullptr) a profile.
+    void setCpuProfile (CpuProfile* newProfile) noexcept
+    {
+        cpuProfile = newProfile;
+        chain.setProfile (newProfile != nullptr ? &newProfile->chain : nullptr);
+    }
+
     /// For tests: what the timer does, run on demand (frees retired objects, syncs MIDI slot changes
     /// to the slot parameter, reloads an IR whose channel choice changed).
     void runHousekeeping() { timerCallback(); }
@@ -603,6 +630,7 @@ private:
     std::atomic<float> inputPeak { 0.0f }, outputPeakLeft { 0.0f }, outputPeakRight { 0.0f }, limiterReduction { 0.0f };
     std::atomic<float> cpuLoad { 0.0f };
     float cpuSmoothed = 0.0f;       // audio thread
+    CpuProfile* cpuProfile = nullptr; // benchmarks only (setCpuProfile)
     double cpuSampleRate = 48000.0; // set in prepareToPlay, read by the audio thread
     std::atomic<int> analyzerTap { 0 };
     ampsim::SpscRing<float> analyzerRing;

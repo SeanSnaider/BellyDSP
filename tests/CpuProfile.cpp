@@ -1,0 +1,323 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Sean Snaider
+
+#include "CpuProfile.h"
+
+#include "BuiltInCaptures.h"
+#include "Presets.h"
+#include "TestHelpers.h"
+#include "platform/AppInfo.h"
+
+#include <algorithm>
+#include <chrono>
+#include <iostream>
+#include <numeric>
+
+namespace testing::cpu
+{
+namespace
+{
+using Slot = ampsim::Chain::Slot;
+
+Stats statsOf (std::vector<double> micros)
+{
+    Stats s;
+    if (micros.empty())
+        return s;
+    std::sort (micros.begin(), micros.end());
+    s.mean = std::accumulate (micros.begin(), micros.end(), 0.0) / (double) micros.size();
+    s.p99 = micros[(size_t) (0.99 * (double) (micros.size() - 1))];
+    s.worst = micros.back();
+    return s;
+}
+
+double percent (double micros)
+{
+    return 100.0 * micros / deadlineMicros;
+}
+
+juce::String pad (const juce::String& text, int width)
+{
+    return text.paddedRight (' ', width);
+}
+
+juce::String num (double value, int decimals, int width)
+{
+    return juce::String (value, decimals).paddedLeft (' ', width);
+}
+
+juce::String row (const juce::String& name, const Stats& s)
+{
+    return pad (name, 26) + num (s.mean, 1, 8) + num (percent (s.mean), 2, 8) + "%" + num (s.p99, 1, 9) + num (percent (s.p99), 2, 8) + "%"
+           + num (s.worst, 1, 9);
+}
+
+juce::File bundledIR (const juce::String& relative)
+{
+    return platform::factoryContentFolder().getChildFile ("irs").getChildFile (relative);
+}
+
+// The longest of the bundled IRs (1 s), and another for the second close mic.
+const char* const longIR = "Modern 4x12/Modern 4x12, dynamic, bright 60 W, var. 3.wav";
+const char* const longIR2 = "Modern 4x12/Modern 4x12, dynamic, 75 W, var. 1.wav";
+
+void settle (AmpSimProcessor& p, int buffers)
+{
+    juce::AudioBuffer<float> buffer (2, blockSize);
+    juce::MidiBuffer midi;
+    for (int i = 0; i < buffers; ++i)
+    {
+        buffer.clear();
+        p.processBlock (buffer, midi);
+    }
+}
+/// Lets everything loaded settle while audio runs: the cab's IRs (JUCE builds each convolution engine on its own
+/// background thread and crossfades it in over 50 ms), an amp's warm-up and switch, a second step's warm-up.
+void settleLoads (AmpSimProcessor& p)
+{
+    for (int i = 0; i < 100; ++i)
+    {
+        settle (p, 4);
+        juce::Thread::sleep (5);
+        p.runHousekeeping();
+    }
+}
+} // namespace
+
+const char* slotName (Slot slot)
+{
+    switch (slot)
+    {
+        case Slot::inputGain:      return "input level";
+        case Slot::gateA:          return "gate A";
+        case Slot::preCompressor:  return "compressor (pre)";
+        case Slot::boost:          return "boost";
+        case Slot::overdrive:      return "overdrive";
+        case Slot::preEq:          return "EQ (pre)";
+        case Slot::amp:            return "amp (NAM + tone)";
+        case Slot::gateB:          return "gate B";
+        case Slot::cab:            return "cab";
+        case Slot::matchCurve:     return "match curve";
+        case Slot::postEq:         return "EQ (post)";
+        case Slot::postCompressor: return "compressor (post)";
+        case Slot::harmonizer:     return "harmonizer";
+        case Slot::multivoicer:    return "multivoicer";
+        case Slot::bloom:          return "Bloom";
+        case Slot::chorus:         return "chorus";
+        case Slot::delay:          return "delay";
+        case Slot::reverb:         return "reverb";
+        case Slot::outputGain:     return "output level";
+        case Slot::preview:        return "A/B player";
+        case Slot::limiter:        return "limiter";
+        case Slot::count:          break;
+    }
+    return "?";
+}
+
+double RigRun::meanPercent() const { return percent (total.mean); }
+double RigRun::p99Percent() const { return percent (total.p99); }
+
+juce::String RigRun::summary() const
+{
+    return juce::String (meanPercent(), 1) + "% of the deadline on average (" + juce::String (juce::roundToInt (total.mean)) + " us), p99 "
+           + juce::String (p99Percent(), 1) + "%, worst " + juce::String (percent (total.worst), 1) + "%, " + juce::String (over) + " of "
+           + juce::String (buffers) + " buffers over";
+}
+
+juce::StringArray RigRun::table() const
+{
+    juce::StringArray lines;
+    lines.add (name + ": " + summary() + " (" + juce::String (maxModels) + " NAM models running at most)");
+    lines.add (pad ("  block / stage", 26) + "  mean us  % dl.   p99 us  % dl.  worst us");
+    lines.add (row ("  parameters, MIDI", stages[(size_t) Stage::parameters]));
+    lines.add (row ("  tuner + analyzer taps", stages[(size_t) Stage::taps]));
+    for (size_t i = 0; i < ampsim::Chain::numSlots; ++i)
+        if (blocks[i].worst >= 0.05) // a block that's off and skipped costs nothing
+            lines.add (row ("  " + juce::String (slotName ((Slot) i)), blocks[i]));
+    lines.add (row ("  chain (DI, copies, dips)", stages[(size_t) Stage::chainOwn]));
+    lines.add (row ("  meters, fades, output", stages[(size_t) Stage::output]));
+    lines.add (row ("  TOTAL", total));
+    return lines;
+}
+
+void setParam (AmpSimProcessor& p, const juce::String& id, float plainValue)
+{
+    auto* param = p.parameters.getParameter (id);
+    jassert (param != nullptr);
+    param->setValueNotifyingHost (param->convertTo0to1 (plainValue));
+}
+
+void waitForLoads (AmpSimProcessor& p)
+{
+    for (int i = 0; i < 12000 && p.isLoading(); ++i) // the eight built-in sets take seconds on a busy machine
+        juce::Thread::sleep (5);
+}
+
+RigRun profile (AmpSimProcessor& p, const std::vector<float>& input, const juce::String& name, const std::function<void (size_t)>& beforeBlock)
+{
+    RigRun run;
+    run.name = name;
+
+    const auto numBuffers = input.size() / (size_t) blockSize;
+    std::vector<double> total, chainOwn, parameters, taps, output;
+    std::array<std::vector<double>, ampsim::Chain::numSlots> blocks;
+    for (auto* v : { &total, &chainOwn, &parameters, &taps, &output })
+        v->reserve (numBuffers);
+    for (auto& v : blocks)
+        v.reserve (numBuffers);
+
+    AmpSimProcessor::CpuProfile prof;
+    p.setCpuProfile (&prof);
+    juce::AudioBuffer<float> buffer (2, blockSize);
+    juce::MidiBuffer midi;
+    for (size_t b = 0; b < numBuffers; ++b)
+    {
+        if (beforeBlock)
+            beforeBlock (b);
+        buffer.clear();
+        buffer.copyFrom (0, 0, input.data() + b * (size_t) blockSize, blockSize);
+        prof.clear();
+        rtcheck::begin();
+        p.processBlock (buffer, midi);
+        run.counts += rtcheck::end();
+
+        total.push_back (prof.totalMicros);
+        chainOwn.push_back (prof.chain.chainMicros);
+        parameters.push_back (prof.parametersMicros);
+        taps.push_back (prof.tapsMicros);
+        // Everything after the chain, plus the bits of the chain stage the chain itself didn't time (the DI recorder).
+        const auto chainTimed = std::accumulate (prof.chain.slotMicros.begin(), prof.chain.slotMicros.end(), prof.chain.chainMicros);
+        output.push_back (prof.outputMicros + std::max (0.0, prof.chainMicros - chainTimed));
+        for (size_t i = 0; i < ampsim::Chain::numSlots; ++i)
+            blocks[i].push_back (prof.chain.slotMicros[i]);
+
+        run.maxModels = std::max (run.maxModels, p.getChain().amp.getRunningModels());
+        run.maxAmps = std::max (run.maxAmps, p.getChain().amp.getRunningAmps());
+    }
+    p.setCpuProfile (nullptr);
+
+    run.buffers = (int) numBuffers;
+    run.over = (int) std::count_if (total.begin(), total.end(), [] (double us) { return us > deadlineMicros; });
+    run.total = statsOf (std::move (total));
+    run.stages[(size_t) Stage::parameters] = statsOf (std::move (parameters));
+    run.stages[(size_t) Stage::taps] = statsOf (std::move (taps));
+    run.stages[(size_t) Stage::chainOwn] = statsOf (std::move (chainOwn));
+    run.stages[(size_t) Stage::output] = statsOf (std::move (output));
+    for (size_t i = 0; i < ampsim::Chain::numSlots; ++i)
+        run.blocks[i] = statsOf (std::move (blocks[i]));
+    return run;
+}
+
+std::unique_ptr<AmpSimProcessor> makeRig()
+{
+    std::unique_ptr<AmpSimProcessor> owner;
+    {
+        WithBuiltInCaptures on;
+        owner = std::make_unique<AmpSimProcessor>();
+    }
+    waitForLoads (*owner);
+    owner->prepareToPlay (fs, blockSize);
+    return owner;
+}
+
+void setDefaults (AmpSimProcessor& p)
+{
+    p.loadCabIR (0, bundledIR (longIR));
+    waitForLoads (p);
+    settleLoads (p);
+}
+
+bool setFactoryPreset (AmpSimProcessor& p, const juce::var& preset)
+{
+    const auto ok = p.loadPreset (preset).ok;
+    waitForLoads (p);
+    for (int i = 0; i < 400 && p.isChangingPreset(); ++i)
+    {
+        settle (p, 4); // the preset's fade out and in run on the audio thread
+        p.runHousekeeping();
+        waitForLoads (p);
+    }
+    p.recallScene (0);
+    settleLoads (p);
+    return ok && ! p.isChangingPreset();
+}
+
+void setHeaviest (AmpSimProcessor& p)
+{
+    // Three mics on 1 s IRs, the room's stereo.
+    const auto room = tempDir().getChildFile ("cpu_room.wav");
+    {
+        juce::AudioBuffer<float> stereo (2, 48000);
+        const auto left = syntheticCabIR (48000, 0.0, 4000.0), right = syntheticCabIR (48000, 2.0, 3500.0);
+        for (int n = 0; n < 48000; ++n)
+        {
+            stereo.setSample (0, n, (float) left[(size_t) n]);
+            stereo.setSample (1, n, (float) right[(size_t) n]);
+        }
+        writeWav (room, stereo);
+    }
+    p.loadCabIR (0, bundledIR (longIR));
+    p.loadCabIR (1, bundledIR (longIR2));
+    p.loadCabIR (AmpSimProcessor::roomMic, room);
+    waitForLoads (p);
+
+    for (const auto& [id, value] : std::initializer_list<std::pair<const char*, float>> {
+             { "gate_a_on", 1 }, { "gate_b_on", 1 }, { "comp_pre_on", 1 }, { "boost_on", 1 }, { "boost_mode", 2 }, { "od_on", 1 },
+             { "comp_post_on", 1 }, { "harm_on", 1 }, { "harm_v2_on", 1 }, { "harm_v3_on", 1 }, { "harm_v4_on", 1 }, { "mv_on", 1 },
+             { "mv_engine", 1 }, { "mv_voices", 8 }, { "bloom_on", 1 }, { "bloom_crush_on", 1 }, { "bloom_phaser_on", 1 }, { "bloom_flanger_on", 1 },
+             { "chorus_on", 1 }, { "chorus_mode", 2 }, { "delay_on", 1 }, { "delay_mode", 2 }, { "reverb_on", 1 }, { "reverb_engine", 1 },
+             { "reverb_shimmer", 50 }, { "drive_oversampling", 1 }, { "od_mode", 3 }, { "eq_pre_on", 1 }, { "eq_post_on", 1 },
+             { "cab_lowcut_on", 1 }, { "cab_highcut_on", 1 } })
+        setParam (p, id, value);
+
+    // The Gain between two steps: two models (BUILD_PLAN "Amp gain").
+    setParam (p, AmpSimProcessor::ampParamId (p.getChain().amp.getSelectedAmp(), "input_trim"),
+              ampsim::AmpSection::GainKnob::dbForPosition (6.25f));
+    settleLoads (p);
+}
+
+int runBenchmark (double seconds)
+{
+    const auto input = guitarDI ((int) (seconds * fs));
+    std::cout << "BellyDSP CPU benchmark: " << juce::SystemStats::getCpuModel() << ", " << juce::SystemStats::getNumPhysicalCpus() << " cores ("
+              << juce::SystemStats::getNumCpus() << " threads), " << juce::SystemStats::getOperatingSystemName()
+              << (juce::SystemStats::hasAVX2() ? ", AVX2" : "") << (juce::SystemStats::hasFMA3() ? ", FMA" : "")
+              << (juce::SystemStats::hasNeon() ? ", NEON" : "") << "\n"
+              << "48 kHz, 128-sample buffers (the deadline is " << juce::String (deadlineMicros, 1) << " us), " << seconds
+              << " s of guitar DI per rig, on a normal-priority thread\n\n";
+
+    std::vector<RigRun> runs;
+    const auto show = [&runs] (const RigRun& run)
+    {
+        for (const auto& line : run.table())
+            std::cout << line << "\n";
+        std::cout << std::endl;
+        runs.push_back (run);
+    };
+
+    {
+        auto p = makeRig();
+        setDefaults (*p);
+        show (profile (*p, input, "Defaults (Glass, one close mic on a 1 s IR, everything else off)"));
+        for (const auto& preset : presets::factoryPresets())
+        {
+            setFactoryPreset (*p, preset);
+            show (profile (*p, input, "Factory preset " + preset["name"].toString()));
+        }
+    }
+    {
+        auto p = makeRig();
+        setHeaviest (*p);
+        show (profile (*p, input, "Heaviest (every block on at its heaviest, three mics on 1 s IRs, the Gain between two steps)"));
+    }
+
+    std::cout << "Summary (mean / p99 of the 128-sample deadline; a real ASIO or Core Audio thread runs at a higher priority):\n";
+    for (const auto& run : runs)
+        std::cout << "  " << pad (run.name.upToFirstOccurrenceOf (" (", false, false), 34) << num (run.meanPercent(), 1, 6) << "% / "
+                  << num (run.p99Percent(), 1, 5) << "%" << (run.over > 0 ? "   " + juce::String (run.over) + " buffers over the deadline" : juce::String())
+                  << "\n";
+    std::cout << "\nRule of thumb (BUILD_PLAN \"CPU\"): a p99 under 60% of the deadline leaves the driver and the GUI room at that buffer size.\n";
+    return 0;
+}
+
+} // namespace testing::cpu

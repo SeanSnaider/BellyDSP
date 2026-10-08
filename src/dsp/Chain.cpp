@@ -4,6 +4,8 @@
 #include "Chain.h"
 
 #include <algorithm>
+#include <chrono>
+#include <numeric>
 
 namespace ampsim
 {
@@ -14,6 +16,11 @@ namespace
 void copyLeftToRight (juce::dsp::AudioBlock<float>& io)
 {
     io.getSingleChannelBlock (1).copyFrom (io.getSingleChannelBlock (0));
+}
+
+double microsSince (std::chrono::steady_clock::time_point start) noexcept
+{
+    return std::chrono::duration<double, std::micro> (std::chrono::steady_clock::now() - start).count();
 }
 
 } // namespace
@@ -191,6 +198,18 @@ void Chain::reset()
 
 void Chain::runBlock (Slot slot, juce::dsp::AudioBlock<float>& io, const BlockContext& context, bool& stereoCopied)
 {
+    if (profile == nullptr)
+    {
+        runBlockUntimed (slot, io, context, stereoCopied);
+        return;
+    }
+    const auto start = std::chrono::steady_clock::now();
+    runBlockUntimed (slot, io, context, stereoCopied);
+    profile->slotMicros[(size_t) slot] += microsSince (start);
+}
+
+void Chain::runBlockUntimed (Slot slot, juce::dsp::AudioBlock<float>& io, const BlockContext& context, bool& stereoCopied)
+{
     auto& block = blockFor (slot);
     auto& state = bypass[(size_t) slot];
     const auto numSamples = io.getNumSamples();
@@ -319,6 +338,23 @@ void Chain::runSection (Section section, juce::dsp::AudioBlock<float>& io, const
 }
 
 void Chain::process (juce::dsp::AudioBlock<float> io)
+{
+    if (profile == nullptr)
+    {
+        processUntimed (io);
+        return;
+    }
+
+    // The chain's own work is what the whole call took minus the slots' share of it.
+    const auto slotsBefore = std::accumulate (profile->slotMicros.begin(), profile->slotMicros.end(), 0.0);
+    const auto start = std::chrono::steady_clock::now();
+    processUntimed (io);
+    const auto total = microsSince (start);
+    const auto slots = std::accumulate (profile->slotMicros.begin(), profile->slotMicros.end(), 0.0) - slotsBefore;
+    profile->chainMicros += std::max (0.0, total - slots);
+}
+
+void Chain::processUntimed (juce::dsp::AudioBlock<float> io)
 {
     jassert (io.getNumChannels() >= 2);
     const auto numSamples = io.getNumSamples();
