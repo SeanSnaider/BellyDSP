@@ -6,12 +6,28 @@
 #include "BuiltInCaptures.h"
 #include "Presets.h"
 #include "TestHelpers.h"
+#include "PluginEditor.h"
 #include "platform/AppInfo.h"
 
+#if JUCE_WINDOWS
+ #ifndef NOMINMAX
+  #define NOMINMAX
+ #endif
+ #ifndef WIN32_LEAN_AND_MEAN
+  #define WIN32_LEAN_AND_MEAN
+ #endif
+ #include <windows.h>
+#else
+ #include <ctime>
+ #include <sys/resource.h>
+#endif
+
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <iostream>
 #include <numeric>
+#include <thread>
 
 namespace testing::cpu
 {
@@ -71,6 +87,35 @@ void settle (AmpSimProcessor& p, int buffers)
         p.processBlock (buffer, midi);
     }
 }
+/// The calling thread's CPU time, and the whole process's, in seconds.
+double threadCpuSeconds()
+{
+   #if JUCE_WINDOWS
+    FILETIME created, exited, kernel, user;
+    GetThreadTimes (GetCurrentThread(), &created, &exited, &kernel, &user);
+    const auto ticks = [] (FILETIME f) { return (double) (((unsigned long long) f.dwHighDateTime << 32) | f.dwLowDateTime); };
+    return (ticks (kernel) + ticks (user)) * 1.0e-7;
+   #else
+    timespec t {};
+    clock_gettime (CLOCK_THREAD_CPUTIME_ID, &t);
+    return (double) t.tv_sec + 1.0e-9 * (double) t.tv_nsec;
+   #endif
+}
+
+double processCpuSeconds()
+{
+   #if JUCE_WINDOWS
+    FILETIME created, exited, kernel, user;
+    GetProcessTimes (GetCurrentProcess(), &created, &exited, &kernel, &user);
+    const auto ticks = [] (FILETIME f) { return (double) (((unsigned long long) f.dwHighDateTime << 32) | f.dwLowDateTime); };
+    return (ticks (kernel) + ticks (user)) * 1.0e-7;
+   #else
+    rusage u {};
+    getrusage (RUSAGE_SELF, &u);
+    return (double) u.ru_utime.tv_sec + 1.0e-6 * (double) u.ru_utime.tv_usec + (double) u.ru_stime.tv_sec + 1.0e-6 * (double) u.ru_stime.tv_usec;
+   #endif
+}
+
 /// Lets everything loaded settle while audio runs: the cab's IRs (JUCE builds each convolution engine on its own
 /// background thread and crossfades it in over 50 ms), an amp's warm-up and switch, a second step's warm-up.
 void settleLoads (AmpSimProcessor& p)
@@ -317,6 +362,83 @@ int runBenchmark (double seconds)
                   << num (run.p99Percent(), 1, 5) << "%" << (run.over > 0 ? "   " + juce::String (run.over) + " buffers over the deadline" : juce::String())
                   << "\n";
     std::cout << "\nRule of thumb (BUILD_PLAN \"CPU\"): a p99 under 60% of the deadline leaves the driver and the GUI room at that buffer size.\n";
+    return 0;
+}
+
+int runGuiBenchmark (double secondsPerPage)
+{
+    auto p = makeRig();
+    setDefaults (*p);
+
+    // The audio: the defaults rig on a looped DI, one 128-sample buffer per 2.67 ms of wall time, as a device would
+    // call it, so the meters, the analyzer, and the tuner move.
+    std::atomic<bool> running { true };
+    std::atomic<double> audioCpu { 0.0 };
+    std::thread audio ([&]
+    {
+        const auto di = guitarDI ((int) (10.0 * fs));
+        juce::AudioBuffer<float> buffer (2, blockSize);
+        juce::MidiBuffer midi;
+        const auto period = std::chrono::microseconds ((long long) deadlineMicros);
+        auto next = std::chrono::steady_clock::now();
+        size_t position = 0;
+        const auto start = threadCpuSeconds();
+        while (running.load())
+        {
+            buffer.clear();
+            buffer.copyFrom (0, 0, di.data() + position, blockSize);
+            position = (position + (size_t) blockSize) % (di.size() - (size_t) blockSize);
+            p->processBlock (buffer, midi);
+            audioCpu.store (threadCpuSeconds() - start);
+            next += period;
+            std::this_thread::sleep_until (next);
+        }
+    });
+
+    std::unique_ptr<juce::AudioProcessorEditor> editor (p->createEditor());
+    auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
+    editor->setOpaque (true);
+    editor->addToDesktop (juce::ComponentPeer::windowHasTitleBar | juce::ComponentPeer::windowIsResizable);
+    editor->setTopLeftPosition (60, 60);
+    editor->setVisible (true);
+    juce::MessageManager::getInstance()->runDispatchLoopUntil (1000); // the window up, the first paint done
+
+    std::cout << "BellyDSP GUI benchmark: " << juce::SystemStats::getCpuModel() << ", the editor at " << editor->getWidth() << " x "
+              << editor->getHeight() << " (the window is on screen while it runs), the defaults rig playing\n"
+              << "Each page for " << secondsPerPage << " s: the message thread's CPU time (timers, meters, the analyzer, repaints) as a share of one core\n\n";
+
+    const auto measurePage = [&] (ui::PageId page, const juce::String& name)
+    {
+        ed.showPage (page);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (300); // the page's first paint, not measured
+        const auto wall0 = juce::Time::getMillisecondCounterHiRes();
+        const auto main0 = threadCpuSeconds(), process0 = processCpuSeconds(), audio0 = audioCpu.load();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil ((int) (secondsPerPage * 1000.0));
+        const auto wall = (juce::Time::getMillisecondCounterHiRes() - wall0) / 1000.0;
+        const auto main = threadCpuSeconds() - main0, audioThread = audioCpu.load() - audio0;
+        const auto others = processCpuSeconds() - process0 - main - audioThread;
+        std::cout << "  " << pad (name, 26) << "message thread " << num (100.0 * main / wall, 1, 5) << "% of a core,  audio thread "
+                  << num (100.0 * audioThread / wall, 1, 5) << "%,  other threads " << num (100.0 * std::max (0.0, others) / wall, 1, 5) << "%\n";
+    };
+
+    for (int i = 0; i < ui::numPages; ++i)
+    {
+        const auto page = (ui::PageId) i;
+        if (page == ui::PageId::tuner)
+        {
+            setParam (*p, "tuner_on", 1.0f);
+            measurePage (page, "tuner (engaged)");
+            setParam (*p, "tuner_on", 0.0f);
+            continue;
+        }
+        measurePage (page, ui::pageName (page));
+    }
+
+    editor->setVisible (false);
+    editor.reset();
+    running = false;
+    audio.join();
+    std::cout << "\nThe audio thread's share is the defaults rig in real time; the message thread runs on another core.\n";
     return 0;
 }
 

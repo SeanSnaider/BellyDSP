@@ -80,4 +80,9 @@ const char* slotName (ampsim::Chain::Slot slot);
 /// block, against the 128-sample deadline and the budget. Returns the process exit code (0).
 int runBenchmark (double seconds);
 
+/// `ampsim_tests --bench-gui [seconds]`: opens the editor in a real window (it appears on screen) with the defaults
+/// rig playing in real time on a thread of its own, shows each page in turn, and reports the message thread's CPU
+/// time on each (the meters, the analyzer, the timers, the repaints), as a share of one core. Returns 0.
+int runGuiBenchmark (double secondsPerPage);
+
 } // namespace testing::cpu
