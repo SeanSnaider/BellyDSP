@@ -396,28 +396,33 @@ void drawBadge (juce::Graphics& g, Material material, juce::Rectangle<float> gri
         case Material::comet:
         {
             // Motion: Geist 600 at 54 px, slanted 12 degrees, in ice white with a cyan glow; a comet's tail of three
-            // tapering streaks runs in from the left to the word, the longest at its x-height.
+            // tapering streaks runs in from the left towards the word, the longest at its x-height, their heads
+            // staggered back from the slanted letters. The word sits 90 px right of centre so the mark (the tail and
+            // the word) is centred; a long word shortens the tail so it stays 80 px clear of the grille's end.
             const auto f = geist (Weight::semibold, 54.0f);
             const auto make = [&] (const juce::String& s) { return lettering (s, f, 0.01f * 54.0f, 1.0f, 0.21f); };
             const auto name = fitted (word, maxWidth - 150.0f, [&] (const juce::String& s) { return make (s).getBounds().getWidth(); });
             const auto caps = capHeight (f);
             auto p = centred (make (name), grille, caps);
-            p.applyTransform (juce::AffineTransform::translation (40.0f, 0.0f)); // room for the tail on the left
+            p.applyTransform (juce::AffineTransform::translation (90.0f, 0.0f));
             const auto b = p.getBounds();
             const auto baseline = grille.getCentreY() + caps * 0.5f;
+            const auto room = juce::jlimit (0.0f, 1.0f, (b.getX() - 34.0f - grille.getX() - 80.0f) / 236.0f);
 
-            for (const auto& [rise, length, thickness] : { std::tuple<float, float, float> { 0.36f, 230.0f, 5.0f }, { 0.62f, 150.0f, 2.6f }, { 0.12f, 120.0f, 2.2f } })
+            for (const auto& [rise, length, thickness, gap] : { std::tuple<float, float, float, float> { 0.36f, 236.0f, 5.0f, 12.0f },
+                                                               { 0.64f, 150.0f, 2.6f, 34.0f }, { 0.10f, 170.0f, 2.2f, 24.0f } })
             {
-                // A streak: a sliver, round at its head (just short of the word) and fading to a point behind.
+                // A streak: a sliver, round at its head and fading to a point behind.
                 const auto y = baseline - caps * rise;
-                const auto headX = b.getX() + caps * rise * 0.21f - 12.0f; // follows the slant
+                const auto headX = b.getX() + caps * rise * 0.21f - gap; // follows the slant
+                const auto run = length * room;
                 juce::Path streak;
-                streak.startNewSubPath (headX - length, y);
-                streak.quadraticTo (headX - length * 0.5f, y - thickness * 0.5f, headX, y - thickness * 0.5f);
+                streak.startNewSubPath (headX - run, y);
+                streak.quadraticTo (headX - run * 0.5f, y - thickness * 0.5f, headX, y - thickness * 0.5f);
                 streak.addCentredArc (headX, y, thickness * 0.5f, thickness * 0.5f, 0.0f, 0.0f, juce::MathConstants<float>::pi);
-                streak.quadraticTo (headX - length * 0.5f, y + thickness * 0.5f, headX - length, y);
+                streak.quadraticTo (headX - run * 0.5f, y + thickness * 0.5f, headX - run, y);
                 streak.closeSubPath();
-                g.setGradientFill (juce::ColourGradient (juce::Colour (0x0067e8f9), headX - length, y, juce::Colour (0xffbff6ff), headX, y, false));
+                g.setGradientFill (juce::ColourGradient (juce::Colour (0x0067e8f9), headX - run, y, juce::Colour (0xffbff6ff), headX, y, false));
                 g.fillPath (streak);
             }
             juce::DropShadow (juce::Colour (0xff3fc8f0).withAlpha (0.55f), 16, {}).drawForPath (g, p);
@@ -575,8 +580,8 @@ juce::Image AmpHead::render (Material material, float scale, const juce::String&
             {
                 auto c = vertical (juce::Colour (0xff3d4043), juce::Colour (0xff2a2c2f), y, h);
                 c = shade (c, 0.10f * (noise (x / 18.0f, y / 18.0f, 21) - 0.5f) + 0.06f * (noise (x / 5.0f, y / 5.0f, 22) - 0.5f));
-                c = c.interpolatedWith (juce::Colour (0xff767c82), 0.75f * speck (x, y, 7.0f, 23, 0.16f, 0.9f));
-                return c.interpolatedWith (juce::Colour (0xff17181a), 0.7f * speck (x + 3.5f, y + 3.5f, 9.0f, 24, 0.12f, 0.9f));
+                c = c.interpolatedWith (juce::Colour (0xff6c7277), 0.5f * speck (x, y, 8.0f, 23, 0.09f, 0.8f));
+                return c.interpolatedWith (juce::Colour (0xff17181a), 0.55f * speck (x + 4.0f, y + 4.0f, 9.0f, 24, 0.10f, 0.8f));
             });
             break;
         case Material::comet:
@@ -626,7 +631,7 @@ juce::Image AmpHead::render (Material material, float scale, const juce::String&
             // Neutral graphite: a mid-dark grey gradient with the clean head's fine 3 px dot.
             fillPattern (g, head, radiusHead, scale, [h] (float x, float y)
             {
-                const auto base = vertical (juce::Colour (0xff4c5054), juce::Colour (0xff383b3f), y, h);
+                const auto base = vertical (juce::Colour (0xff60646a), juce::Colour (0xff4a4e53), y, h);
                 return blend (base, juce::Colours::black.withAlpha (0.12f * dot (x, y, 3.0f)));
             });
             break;
@@ -886,15 +891,15 @@ juce::Image AmpHead::render (Material material, float scale, const juce::String&
             break;
         case Material::lantern:
         {
-            // Oxblood cloth: a 4 px plain weave of two reds, a wheat thread every 16 px, and the lantern's glow, an
+            // Oxblood cloth: a 4 px plain weave of two reds, a faint wheat thread every 24 px, and the lantern's glow, an
             // amber light behind the cloth around the badge (an elliptical falloff, 300 x 70 px).
             const auto cx = gw * 0.5f, cy = gh * 0.5f;
             fillPattern (g, grille, radiusPanel, scale, [inset, cx, cy] (float x, float y)
             {
                 const auto i = (int) std::floor (x / 2.0f), j = (int) std::floor (y / 2.0f);
                 auto c = ((i + j) & 1) == 0 ? juce::Colour (0xff5e2025) : juce::Colour (0xff47161a);
-                if (std::fmod (x, 16.0f) < 1.0f)
-                    c = c.interpolatedWith (juce::Colour (0xffc9a66b), 0.30f);
+                if (std::fmod (x, 24.0f) < 1.0f)
+                    c = c.interpolatedWith (juce::Colour (0xffc9a66b), 0.18f);
                 const auto dx = (x - cx) / 300.0f, dy = (y - cy) / 70.0f;
                 c = blend (c, juce::Colour (0xffff9a2e).withAlpha (0.32f * std::exp (-(dx * dx + dy * dy) * 2.0f)));
                 return blend (c, inset (x, y));
@@ -1105,7 +1110,7 @@ void drawMiniHead (juce::Graphics& g, juce::Rectangle<float> box, Material mater
         }
         case Material::custom:
             // Neutral graphite, a darker panel.
-            body (juce::Colour (0xff4a4e52));
+            body (juce::Colour (0xff575b60));
             g.setColour (juce::Colour (0xff222426));
             g.fillRoundedRectangle (bar, 1.0f);
             break;
