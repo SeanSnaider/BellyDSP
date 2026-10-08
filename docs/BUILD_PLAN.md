@@ -89,7 +89,7 @@ The three-slot design this replaced (2026-10-01 to 10-07): all three slots ran a
 
 **Denormals.** Flush-to-zero is enabled for every callback with `juce::ScopedNoDenormals`. Test that a decaying reverb tail reaches silence without a CPU spike (Phase 5).
 
-**CPU budget.** The whole chain uses under 50% of the 2.67 ms callback deadline on Sean's Mac. A benchmark harness exists from Phase 2 so this is measured, not guessed.
+**CPU budget.** The whole chain uses under 50% of the 2.67 ms callback deadline on Sean's Mac. A benchmark harness exists from Phase 2 so this is measured, not guessed. Since 2026-10-08 the budget is set for weaker machines and checked block by block: see "CPU" under Global features.
 
 **Real-time enforcement.** The "Real-time safety" test runs the whole processor through 10 s of audio while models switch, IRs swap, bypass toggles, and knobs move. It counts heap allocations and frees (through macOS's malloc_logger hook, which sees every library) and blocking mutex locks (code compiled into the binary) on the audio thread. The count must stay at zero, and a positive control proves the detector catches all three. Apple's clang has no RealtimeSanitizer, which would otherwise be the tool.
 
@@ -681,6 +681,85 @@ Sean: "when combined they seem to get too chaotic", "the clipping is also really
 - Bloom's phaser and flanger lost 4 and 3 dB at their defaults (a 50% mix of a signal with a phase-turned copy keeps (1 - a)^2 + a^2 of its power). Their mix is now scaled by 1 / sqrt((1 - a)^2 + a^2) (`mixLevelHold`, Fade.h): -1.0 and -0.1 dB.
 Every other block was already within about 1 dB at its defaults; the audit now holds them there.
 
+### CPU (2026-10-08)
+
+Sean: "do a full check on cpu usage and minimize it while still keeping the realtime playability. I want this to be able to run on worse machines while still having the 48khz and 128 sample size smoothness on asio."
+
+**How it's measured.** `AmpSimProcessor::CpuProfile` and `Chain::Profile` time every stage of the callback and every slot of the chain, buffer by buffer, when a benchmark attaches them (the app never does; detached they cost a pointer test per stage). `tests/CpuProfile.*` runs the processor on 10 s of the tests' guitar DI in 128-sample buffers at 48 kHz and reports each block's mean, p99, and worst buffer, plus what isn't a block: the parameter reads and setters (MIDI, the amp choice, every block's knobs), the tuner's and analyzer's taps, the chain's own work (the DI snapshot, the stereo copy, the reorder dips; bypass fades and keep-running copies are counted in their block's row), and the meters, fades, and CPU meter after the chain. The "Full rig" tests print the tables and assert the budget; `ampsim_tests --bench` prints the same on any machine. Rigs: **defaults** (every parameter at its default, Glass, close mic 1 on the longest bundled IR, 1 s), **typical** (each factory preset as it loads), and **heaviest** (every block on at its heaviest: 8x drive with the Fuzz, the Screamer, the multivoicer Mono with 8 voices, four harmonies, Hall with shimmer, both EQs and compressors, both cuts, three mics on 1 s IRs with a stereo room, and the Gain between two steps: two models). Timing was taken with another agent's tone_bench benchmark running on the machine the whole time (it never stopped long enough), so before and after ran interleaved, back to back (main's binary, this branch's, main's, this branch's; the two passes agreed within 0.2% of the deadline), and the absolute numbers are a little high; on a quiet machine they were the same or lower.
+
+**The profile, before and after** (mean us per 128-sample buffer, and % of the 2.67 ms deadline; M5 Pro):
+
+| Block | Defaults | Tech Death | Midwest Emo | Heaviest |
+|---|---|---|---|---|
+| amp (NAM + tone) | 146 -> 72 | 162 -> 72 | 282 -> 144 (two models: Gain between steps) | 278 -> 145 (two models) |
+| overdrive | 52 -> 51 (off: it keeps running) | 51 -> 51 (off) | 52 -> 51 (off) | 180 -> 187 (Fuzz at 8x) |
+| boost | 0.3 (off, Clean) | 52 -> 52 (Screamer) | 0.3 (off) | 99 -> 95 (Screamer at 8x) |
+| cab | 15 -> 15 (1 s IR) | 16 -> 16 (1 s IR, both cuts) | 5 -> 5 (183 ms IR) | 47 -> 46 (p99 79; three mics, 1 s each) |
+| reverb | off | 12 -> 12 | 12 -> 12 | 25 -> 25 (p99 45) |
+| multivoicer | off | off | off | 38 -> 38 (p99 93; Mono, 8 voices) |
+| harmonizer | off | off | off | 12 -> 12 (p99 20; 4 voices) |
+| Bloom (keeps running while off) | 0.9 | 0.9 | 0.9 | 10 -> 10 |
+| delay, compressors, EQs, gates, limiter | 4 -> 4 | 4 -> 4 | 12 -> 12 | 21 -> 21 |
+| everything that isn't a block | 1.4 -> 1.4 | 1.4 -> 1.4 | 1.4 -> 1.4 | 1.5 -> 1.5 |
+| **total, mean** | **219 -> 146 us, 8.2 -> 5.5%** | **300 -> 211 us, 11.3 -> 7.9%** | **367 -> 228 us, 13.8 -> 8.6%** | **716 -> 586 us, 26.9 -> 22.0%** |
+| **total, p99** | **9.6 -> 5.9%** | **12.4 -> 8.5%** | **16.8 -> 9.0%** | **30.1 -> 25.0%** |
+
+The other factory presets: Modern Prog 8.7 / 10.3% -> 6.1 / 6.6% (mean / p99), Math Rock 8.2 / 9.8% -> 5.7 / 5.9%, Metal 9.5 / 10.4% -> 6.1 / 6.4%. No buffer over the deadline in any run.
+
+What isn't a block costs almost nothing: the parameter stage 0.9 to 1.1 us (0.04%), the taps 0.0 (nothing while the tuner and analyzer are off), the chain's own work 0.4 us, the meters and fades 0.1 us. The sample-rate guard is one atomic read on the audio thread and a once-a-second check on the message thread.
+
+**The message thread** (`ampsim_tests --bench-gui`: the editor on screen at 1280 x 760, the defaults playing in real time on another thread; the share of one core over 5 s per page): input 1.1%, Pre FX 1.5%, Amp 3.8% (the output spectrum), EQ 1.6%, Cab 1.8%, Post FX 1.7%, Output 0.7%, the tuner engaged 2.3%, Tone match 1.6% of one core; the other threads (JUCE's timers, the loader, the tuner's analysis) 1.0 to 2.6%. The meters, the analyzer, the tuner and the timers are light; on a 4x slower core the busiest page would take about 15% of one core, which isn't the audio thread's core. Not measured on Windows, where JUCE 8 draws with Direct2D (ASSUMPTIONS CPU6).
+
+**What changed** (output kept within a tolerance a test asserts; zero added latency; the real-time test still 0 allocations, 0 frees, 0 locks):
+
+- **The NAM tanh, vectorised** (`src/dsp/NamTanh.*`). `sample` showed `tanhf` as the hottest function in the app: NAM core's `ActivationTanh` calls `std::tanh` per element, 30720 times per buffer for a standard WaveNet. The app now puts Eigen's packet tanh (a [9/8] rational minimax approximation, 4 or 8 floats at a time) into NAM core's activation registry, without touching the submodule. Within 5 ulp of libm's tanhf (3.0e-7) over every float in [-12, 12], identical on 94.7%. A standard model: 145 -> 72 us per buffer, and its p99 181 -> 75 us (libm's tanh has slow paths that made spikes). Output: the example WaveNets within -112.4 dB of NAM core's render tool (the golden limit is -100 dB; the stock tanh is still bit-exact on 7 of 9 models, 14 of 18 renders, checked in the same test), every built-in step within -134.5 dB of the stock tanh (1.2e-6 at most per sample, about -118 dBFS), the tone_bench-style renders within -135 dB (ampsim_render on main against this branch, five rigs: max 2.1e-7). Far below audibility (ASSUMPTIONS CPU4); NAM_UPSTREAM.md 3 is the PR this should become.
+
+- Tried and reverted: the room mic on uniform partitioning instead of its 512-sample head and tail (JUCE's NonUniform). The tail's work every fourth buffer is the cab's p99 in the heaviest rig (79 us against a 46 us mean), but uniform cost more on average and at the p99 too (interleaved: the cab 55 -> 85 us mean, 121 -> 164 us p99 under load).
+
+**Checked and left alone** (no lossless saving worth having):
+
+- Blocks that are off cost nothing after their fade: the chain skips them, and the delay and reverb skip themselves once their tails have died. The exceptions are the blocks that keep running while off on purpose: Gate A (0.1 to 1.1 us), Bloom (0.9 us), and the boost and overdrive, whose circuits keep their capacitors charged (decision log 2026-10-02). The overdrive at its default Mid Drive costs 51 us while off, in every rig where it's off; cutting that changes the sound of switching it on (the options).
+- Coefficients: every knob-dependent filter already recomputes from smoothed values every 32 samples, never per sample (EQ, amp tone, drive tone and tight, the boost's filters); the amp tone and the EQs cost 1 to 3 us.
+- The drives: the circuits' Newton solves are 90% of their time, the halfband resamplers 7%; the solvers are converged to 1e-9 and any shortcut changes the output.
+- The convolutions: JUCE's uniform partitioned convolution at 128 samples uses a 512-point FFT (4x the block), already its cheapest; a 1 s close mic is 10 to 15 us.
+- Denormals: `juce::ScopedNoDenormals` around every callback (FTZ and DAZ on x86, FZ on arm64); the reverb decay test holds it.
+- The stereo path: one copy at the cab; blocks after it process both channels in place.
+- Compiler flags (ASSUMPTIONS CPU7): arm64 -O3 with LTO for our code, NAM core and demucs.cpp -O3; Windows MSVC /O2 /Ob2, JUCE's /Ox, /arch:AVX, /fp:precise. /fp:fast and -ffast-math stay off (they reorder float math: no longer bit-identical between builds, and they can break the NaN and denormal handling). Forcing Eigen's lazy small products (EIGEN_GEMM_TO_COEFFBASED_THRESHOLD) made a model 2.4x slower.
+
+**Options that change the sound** (measured, not applied; Sean decides):
+
+| Option | Saves (this Mac, per 128-sample buffer) | Costs (measured) |
+|---|---|---|
+| **Lite captures for the built-in amps** (NAM's lite WaveNet: 12 and 6 channels, fewer layers' worth of work) | A model 80 -> 56 us (30%; 0.9% of the deadline per model, 1.8% between steps). On a 5x laptop, 4.5% of the deadline per model | Monolith gain 5 (200 epochs, like the standard): validation ESR 0.00072 (standard 0.00051), held out on the tests' DI 0.0089 against the gray-box source (standard 0.0031), 0.0071 against the standard capture (-21.5 dB). Glass gain 5: validation 0.00014 (standard 0.00023), held out 0.0003 (the same as the standard), 0.0004 against the standard (-34 dB). Clean amps lose nothing measurable; the high-gain ones roughly triple their error. Retraining the 40 steps: about 7 h of the trainer on this Mac's GPU |
+| **Feather captures** (NAM's feather: 8 and 4 channels) | A model 80 -> 33 us (59%; 1.8% of the deadline per model) | Monolith: validation 0.00089, held out 0.0109 (3.5x the standard's), 0.0090 against the standard (-20.4 dB). Glass: validation 0.00029, held out 0.0006 (2x), -32.5 dB against the standard |
+| **The drives at 2x instead of 4x** (a third choice for `drive_oversampling`, or the default) | Per active drive at Drive and Tone noon: Mid Drive 56 -> 28 us, Distortion 91 -> 56, Transparent 101 -> 56, Fuzz 125 -> 80, the Screamer about half (1.0 to 1.7% of the deadline each) | Aliasing of full-drive tones up to 1.3 kHz: Mid Drive -47.4 dB (4x: -65.4), Distortion -34.7 (-52.3), Transparent -38.4 (-48.3), Fuzz -35.9 (-54.2); at 3 to 5 kHz 10 to 17 dB worse than 4x (-16 to -30 dB). The long-term spectrum on the DI stays within 0.23 to 0.53 dB of 4x in every octave. The plan's limit at 4x is -40 dB up to 1.3 kHz, so Distortion, Transparent, and Fuzz at 2x would fail it |
+| **Stop a drive while it's off**, and warm it up unheard on the live input when it's switched on (like an amp switch) | Everything an off drive costs: the overdrive's default Mid Drive 51 us (1.9% of the deadline) in every rig where it's off, which is every factory preset; about 140 us for an off Fuzz at 4x; an off Screamer boost 52 us | The switch lands a warm-up later, and the circuit's output differs from one that ran all along until its capacitors have caught up. Largest difference after switch-on (through the 10 ms fade), re. its peak, warm-ups 0 / 20 / 50 / 100 / 200 ms: Mid Drive -27 / -34 / -47 / -54 / -72 dB; Transparent -31 / -36 / -49 / -53 / -72; the Screamer -28 / -35 / -47 / -54 / -72; Distortion -7 / -8 / -16 / -31 / -60; Fuzz -4 / -5 / -9 / -18 / -28 (its bias network settles slowest). 200 ms makes it inaudible for every mode but the Fuzz |
+| **The Gain on the nearest step only** (no blend between two models) | Between steps, one model instead of two: 72 us (2.7% of the deadline); Midwest Emo's Glass at Gain 6.25 is the factory case | The Gain moves in five steps (0, 2.5, 5, 7.5, 10) instead of continuously, or each step's model takes the in-between Gains as an input trim (a single capture's compensated trim, AG8), which is extrapolation |
+| **A CPU saver mode** (a global setting, never in presets): the three above that keep the knobs' behaviour closest (drives stopped while off with a 200 ms warm-up, the drives at 2x, the nearest step) | Defaults 146 -> about 95 us (5.5% -> 3.6%); Midwest Emo 228 -> about 105 us (8.6% -> 4.0%); Tech Death 211 -> about 135 us (7.9% -> 5.0%); the heaviest rig 586 -> about 340 us (22.0% -> 12.8%: its 8x drives at 2x, one model). On a 5x laptop the factory presets' p99 would go from about 45% to about 25% of the deadline | The three costs together, only while it's on. The sums are of the measured block costs, not a measured mode (it isn't built) |
+| **The harmonizer and the multivoicer** (already measured; no change proposed) | On the defaults: the harmonizer 12 us (1 to 4 voices cost the same, the pitch tracking dominates; p99 20 us); the multivoicer Poly with its 4 voices 25 us (p99 68), 8 voices 31 (p99 72), Mono 4 voices 28 (p99 75), Mono 8 voices 38 (p99 86) | Their p99 is 2 to 3 times their mean (the analysis runs in bursts). Fewer multivoicer voices saves about 1.5 us each |
+| **Windows built for AVX2 with FMA** (`/arch:AVX2`; Eigen then uses FMA) | Not measured (no x86 machine here). Eigen's float GEMM gains most from FMA; NAM's matrix products are now the bulk of a model | The app would crash at launch on CPUs without AVX2: Intel before Haswell (2013) and AMD before Excavator (2015). A safer variant is two builds or a runtime choice of NAM core, which is real work |
+| **256-sample buffers on a weak machine** (no code) | The deadline doubles to 5.33 ms; the per-buffer cost a little less than doubles | 2.7 ms more latency each way |
+
+**The budget** (`tests/CpuProfile.h`, asserted by "Full rig", times `cpuBudgetScale()`; ASSUMPTIONS CPU1, CPU2). "Worse machines" means a 4-core x64 laptop from about 2017, taken as 3 to 5 times slower per core than the M5 Pro for this code (Sean's Windows PC measured 1.75x). An ASIO callback at 128 samples shouldn't use more than about 60% of its 2.67 ms at its p99, so the driver, Windows' DPC latency spikes, and the other threads keep their share. Targets on this Mac, mean / p99 of the deadline:
+
+| Rig | Budget | Measured | At 5x slower (p99) |
+|---|---|---|---|
+| Defaults | 7 / 10% | 5.5 / 5.9% (5.9 / 8.2% under the heaviest load seen) | 30% |
+| Every factory preset (typical) | 10 / 12% | 5.7 to 8.6% / 5.9 to 9.0% | 30 to 45% |
+| Heaviest | 25 / 30% | 22.0 / 25.0% | 125%: not on the old laptop |
+
+The heaviest rig is for faster machines: at 2x (Sean's PC) its p99 is about 50% of the deadline; on the old laptop it needs 256 samples or a lighter rig.
+
+**The benchmark on another machine.** In a Release build of the tests on the machine to check (Windows: `cmake -B build -G "Visual Studio 17 2022" -A x64`, `cmake --build build --config Release --target ampsim_tests`):
+
+```
+build\ampsim_tests_artefacts\Release\ampsim_tests.exe --bench          (macOS: build/ampsim_tests_artefacts/Release/ampsim_tests --bench)
+build\ampsim_tests_artefacts\Release\ampsim_tests.exe --bench 30       (30 s of DI per rig instead of 10)
+build\ampsim_tests_artefacts\Release\ampsim_tests.exe --bench-gui      (opens the editor; the message thread per page)
+```
+
+It prints the CPU, the instruction set the build targets, a per-block table for the defaults, each factory preset, and the heaviest rig, and a summary of each rig's mean and p99 against the 128-sample deadline. Read the summary: a p99 under 60% means that rig plays at ASIO 128 on that machine with room to spare. It runs in a high-priority process, not a real audio thread (ASSUMPTIONS CPU5), so its worst buffers overstate the app's.
+
 ### Presets and scenes
 
 Design settled in design review round 15.
@@ -892,3 +971,4 @@ The compiler is Apple clang from the command line tools (`xcode-select --install
 2026-10-08: Full amp heads for the five more built-in amps and a user's capture (Sean: heads like Glass and Monolith). Six more materials, Forge, Basalt, Comet, Quartz, Lantern, and Custom, each a complete look like the first three (body, panel, grille, badge, knob skin, mini), procedural and cached like them, from the existing bundled fonts only (condensed, widened, and slanted Geist as path transforms; Fraunces for Lantern's script). `materialForAmp` maps the eight built-in names to their materials and anything else to Custom, whose badge is the capture's name, elided when long. The art only: which material the head wears is the Amp page's call (ASSUMPTIONS UH20 to UH25).
 2026-10-08: Engine: only the selected amp runs (Sean chose it on 2026-10-07 over keeping three always-running slots). A switch keeps the outgoing amp playing while the incoming one warms up unheard for its receptive field (NAM's prewarm, 4096 samples at 128: 85.3 ms), then crossfades over 20 ms with the sin law, and the outgoing amp stops: click-free, about 0.1 s late. A switch during a warm-up retargets to the newest. Steady state is one model (two between gain steps); measured on the built-in amps, the full rig with every block on fell from 27.5% to 14.7% of the 128-sample deadline. All eight built-in sets stay loaded (about 200 MB), so a switch waits only for the warm-up. ASSUMPTIONS AS4 to AS7, AS12.
 2026-10-08: Amp page: one amp, picked from eight (Sean's choice of 2026-10-07). The slot tabs (and the amp picker of the same day) are gone; a shelf of mini heads, one per built-in amp in `builtInGainSets` order (Glass, Ember, Monolith, Lantern, Basalt, Comet, Forge, Quartz), then the player's own capture once loaded, picks the amp, and each amp remembers its own knobs. Parameter IDs kept: amp1_* to amp3_* are Glass's, Ember's, Monolith's; amp4_* to amp8_* the five more; amp9_* your capture; new `amp_model` chooses (amp_slot stays registered, unused). Old states, presets (format 2 to 3), scenes, MIDI mappings, and cab assignments migrate slot by slot to the amp each slot's capture was. ASSUMPTIONS AS1 to AS3, AS8 to AS11, AS13 to AS17.
+2026-10-08: CPU pass (Sean: "run on worse machines ... 48khz and 128 sample size smoothness on asio"; BUILD_PLAN "CPU", ASSUMPTIONS CPU1 to CPU8). NAM core's tanh is replaced, through its own activation registry and without touching the submodule, by Eigen's vectorised one: a standard model 145 -> 72 us per buffer, output within -112.4 dB of NAM core's render tool (limit -100 dB) and -134.5 dB of the stock tanh on every built-in step, so it counts as transparent, not a sound option. Defaults 8.2 -> 5.5% of the deadline, the factory presets 8.2-13.8% -> 5.7-8.6%, the heaviest rig 26.9 -> 22.0%. A budget for a 2017-class 4-core x64 laptop (3 to 5x slower per core) is asserted by Full rig: defaults 7 / 10%, every factory preset 10 / 12%, the heaviest 25 / 30% (mean / p99). Options that change the sound are measured and left for Sean: lite or feather captures, 2x drive oversampling, stopping switched-off drives, the Gain on the nearest step, a CPU saver mode combining them, AVX2 on Windows. `ampsim_tests --bench` and `--bench-gui` check another machine.
