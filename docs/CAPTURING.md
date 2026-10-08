@@ -1,6 +1,6 @@
 # Capturing your own gear
 
-How to turn your own amp, pedal, or preamp into a NAM capture that plays in BellyDSP's amp slots, and how
+How to turn your own amp, pedal, or preamp into a NAM capture that plays in BellyDSP as your own amp, and how
 it then ships to friends. Two tools do the work:
 
 - **`ampsim_capture`** (built with everything else by `cmake --build build -j`) plays NAM's standard test
@@ -25,7 +25,7 @@ so **amp only** captures are the ideal kind: the amp's sound without a speaker o
 | B. Mic'd amp, the whole rig | a mic and stand, a quiet-ish room, hearing protection | Cab **off** (the cab is in the capture) | `amp_cab` |
 | C. A pedal or preamp straight in | nothing extra | Cab on for a preamp; for a drive pedal, see below | `pedal` or `preamp` |
 
-A drive pedal captured alone is "the pedal", not "the pedal into an amp": in an amp slot it replaces the
+A drive pedal captured alone is "the pedal", not "the pedal into an amp": as your capture it replaces the
 amp. To use it as a pedal, capture it in front of the amp (setup A or B with the pedal in the chain,
 `--gear-type pedal_amp`), or use the app's own drive blocks.
 
@@ -177,7 +177,7 @@ The metadata: `--name` is what the capture is ("Crunch, amp only"), `--modeled-b
 Snaider, `--tone-type` and `--gear-type` as above. **Never put a brand or model name in any of them**: the
 file travels with the app, and the app never shows gear names (the script warns if it spots one).
 
-**7. Listen.** Open the app, load the `.nam` into an amp slot (setup B: switch the Cab off with its dot in
+**7. Listen.** Open the app, load the `.nam` as your capture (click the Amp page's grille) (setup B: switch the Cab off with its dot in
 the chain strip), and compare with the real amp at the same settings, same guitar, same volume. That's
 the real test; the ESR below is a guide.
 
@@ -200,9 +200,9 @@ the real test; the ESR below is a guide.
    DS32 placeholder; `content/licenses/CC-BY-4.0.txt` is the official legal code). Anyone may share and
    adapt them, commercially too, as long as they credit you. The app's code stays AGPL-3.0-or-later.
 3. Put it in a factory preset (to replace a built-in instead, see "Replacing a built-in capture" below):
-   open the app, load the preset, load the bundled capture into a slot from
+   open the app, load the preset, load the bundled capture as your capture from
    the app's own copy (`build/BellyDSP_artefacts/Release/Standalone/BellyDSP.app/Contents/Resources/content/models`,
-   after a build), Save the preset, and copy its `"amps"` entry (which now reads
+   after a build), Save the preset, and copy its `"amps"` entry for your capture (the ninth, which now reads
    `"factory:models/Crunch, amp only.nam"` with a hash) into `presets/factory/<preset>.json`.
 4. `cmake --build build -j && ctest --test-dir build --output-on-failure`: the tests check every factory
    preset loads its files with no warnings.
@@ -216,7 +216,7 @@ either (ASSUMPTIONS AG1). On a single capture the app's Gain is therefore an inp
 loudness-compensated so it changes the drive and not the volume (AG8), which is honest but limited.
 
 A **gain set** captures the knob: several captures of the same amp at different gain-knob settings, listed in
-a `gainset.json`. In an amp slot, the head's Gain moves across them: on a step, that capture plays; between two
+a `gainset.json`. Played as an amp, the head's Gain moves across them: on a step, that capture plays; between two
 steps, both play and the app blends them. Every step is loudness-normalized, so Gain changes the saturation
 and the Master stays the volume. The built-in amps are gain sets of five steps (0, 2.5, 5, 7.5, 10).
 
@@ -246,24 +246,24 @@ uv run --no-project python tools/train_gain_set.py --name "Crunch amp" --tone-ty
 
 It runs `tools/train_capture.sh` once per step (about 6 minutes each on this Mac; a step already trained is
 skipped, so a stopped run picks up where it was), names them "Crunch amp, gain 0" and so on, and writes
-`trained/Crunch amp/gainset.json`. Load that JSON into an amp slot (click the grille) and sweep Gain.
+`trained/Crunch amp/gainset.json`. Load that JSON as your capture (click the grille) and sweep Gain.
 
 The format, if you write one by hand (`src/dsp/GainSet.h`): `"format": "bellydsp-gain-set"`, `"version": 1`,
 `"name"`, optional `"description"` and `"tone_type"`, and `"steps"`, each `{ "gain": <0 to 10>, "file":
 "<a .nam next to the JSON>" }`, in ascending gain, 1 to 11 of them. The steps should be the same amp at the
 same input level: the app takes the input calibration from the first step's metadata.
 
-**What it costs.** Each step is a full model, but a slot only runs what it needs: one model on a step, two
+**What it costs.** Each step is a full model, but the playing amp only runs what it needs: one model on a step, two
 between steps, and briefly a third that warms up (85 ms for a standard WaveNet) before the knob reaches it.
-Prefer Gain settings on a step for presets you play live: that's one model per slot, like a single capture.
+Prefer Gain settings on a step for presets you play live: that's one model, like a single capture.
 
 ## Replacing a built-in capture
 
-BellyDSP ships three built-in amps, one per amp slot and named after its head: **Glass** (slot 1, clean to
-the edge of breakup), **Ember** (slot 2, light to heavy crunch), and **Monolith** (slot 3, tight high gain to
-a saturated lead). Each is a gain set in `content/models/<Amp>/` (five captures and a `gainset.json`). A fresh
-start loads them, the factory presets use them, and an amp's right-click menu has "Use the built-in capture"
-to put one back. For now they're stand-ins: trained from the project's own gray-box Python amp
+BellyDSP ships eight built-in amps, each with its own head on the Amp page's shelf: **Glass** (clean to the edge
+of breakup), **Ember** (light to heavy crunch), **Monolith** (tight high gain to a saturated lead), and Lantern,
+Basalt, Comet, Forge, and Quartz (BUILD_PLAN "More built-in amps"). Each is a gain set in
+`content/models/<Amp>/` (five captures and a `gainset.json`). A fresh start loads them all, and the factory
+presets use the first three. For now they're stand-ins: trained from the project's own gray-box Python amp
 (`prototypes/amp_sim.py`, each channel at five positions of its gain knob) by
 `tools/content/make_default_captures.py`, not from real gear (ASSUMPTIONS DS44 to DS49, AG2, AG3). Your own
 replace them:
