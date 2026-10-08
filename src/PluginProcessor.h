@@ -293,6 +293,12 @@ public:
     /// Any thread: the audio callback's time against its deadline (the buffer's duration), in percent,
     /// averaged over about 300 ms (ASSUMPTIONS U5).
     float getCpuLoad() const noexcept { return cpuLoad.load (std::memory_order_relaxed); }
+
+    /// The CPU saver (`cpu_saver`, BUILD_PLAN "CPU"): the drives' oversampling while it's on, and how long a drive it
+    /// stopped warms up unheard before it fades in (the stopping option measured -72 dB from an always-running Mid Drive,
+    /// Transparent, or Screamer after 200 ms; -60 dB for the Distortion, -28 dB for the Fuzz).
+    static constexpr int cpuSaverOversampling = 2;
+    static constexpr double cpuSaverWarmupSeconds = 0.200;
     static constexpr double cpuAverageSeconds = 0.3;
 
     /// What the EQ page's analyzer reads (ASSUMPTIONS U6, U11): nothing (the audio thread then writes
@@ -552,6 +558,7 @@ private:
     ampsim::Bloom::Order bloomOrder() const noexcept;
     params::OverdriveParameters overdriveParams;
     params::Raw driveOversampling;
+    std::atomic<float>* cpuSaver = nullptr; // cpu_saver (a global setting)
     std::atomic<float>* gateLink = nullptr;
     int gateALearnSeen = 0, gateBLearnSeen = 0;
     // The first switch-on's Learn (message thread): when it starts (0: not pending), whether it's running,

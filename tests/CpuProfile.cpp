@@ -22,11 +22,18 @@
  #include <sys/resource.h>
 #endif
 
+#if JUCE_MAC
+ #include <AudioToolbox/AudioWorkInterval.h>
+ #include <mach/mach_time.h>
+ #include <os/workgroup.h>
+#endif
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <iostream>
 #include <numeric>
+#include <optional>
 #include <thread>
 
 namespace testing::cpu
@@ -129,6 +136,89 @@ const char* buildTarget()
     return "x86-64 with SSE2";
    #endif
 }
+/// What tells the OS a real-time thread's deadline. On macOS a time-constraint thread alone isn't enough: with a
+/// short burst every 2.67 ms and sleep in between, the scheduler keeps it on a low clock (measured: every rig 3 to 4
+/// times its flat-out cost). Core Audio's IO thread belongs to the device's audio workgroup, which reports each cycle's
+/// deadline, so the cores run as fast as the deadline needs. This does the same with the API Apple provides for audio
+/// threads that run at their own cadence (AudioWorkInterval.h, macOS 11): AudioWorkIntervalCreate, os_workgroup_join,
+/// and os_workgroup_interval_start / finish around every buffer. Elsewhere it does nothing (Windows schedules a
+/// time-critical ASIO-priority thread without one).
+class WorkInterval
+{
+public:
+    WorkInterval()
+    {
+       #if JUCE_MAC
+        interval = AudioWorkIntervalCreate ("BellyDSP CPU profile", OS_CLOCK_MACH_ABSOLUTE_TIME, nullptr);
+        if (interval != nullptr)
+            joined = os_workgroup_join (interval, &token) == 0;
+        mach_timebase_info_data_t timebase {};
+        mach_timebase_info (&timebase);
+        periodTicks = (std::uint64_t) (1.0e9 * blockSize / fs * timebase.denom / timebase.numer);
+       #endif
+    }
+
+    ~WorkInterval()
+    {
+       #if JUCE_MAC
+        if (joined)
+            os_workgroup_leave (interval, &token);
+        if (interval != nullptr)
+            os_release (interval);
+       #endif
+    }
+
+    bool isJoined() const noexcept { return joined; }
+
+    /// Around each buffer: its start, and the deadline one period later.
+    void begin() noexcept
+    {
+       #if JUCE_MAC
+        if (joined)
+        {
+            const auto now = mach_absolute_time();
+            os_workgroup_interval_start (interval, now, now + periodTicks, nullptr);
+        }
+       #endif
+    }
+
+    void end() noexcept
+    {
+       #if JUCE_MAC
+        if (joined)
+            os_workgroup_interval_finish (interval, nullptr);
+       #endif
+    }
+
+private:
+   #if JUCE_MAC
+    os_workgroup_interval_t interval = nullptr;
+    os_workgroup_join_token_s token {};
+    std::uint64_t periodTicks = 0;
+   #endif
+    bool joined = false;
+};
+
+/// Runs `body` on a thread of its own and waits for it: a real-time audio thread (JUCE's startRealtimeThread, with the
+/// 128-sample period and deadline at 48 kHz) for device pacing, or the highest-priority ordinary thread (macOS: the
+/// user-interactive QoS class, which keeps it on a performance core) for flat out. Returns whether it got real-time
+/// scheduling.
+bool runOnProfileThread (bool realtimeThread, std::function<void()> body)
+{
+    struct Runner final : juce::Thread
+    {
+        explicit Runner (std::function<void()> b) : juce::Thread ("CPU profile"), work (std::move (b)) {}
+        void run() override { work(); }
+        std::function<void()> work;
+    };
+    Runner runner (std::move (body));
+    const auto options = juce::Thread::RealtimeOptions {}.withPeriodHz (fs / blockSize).withApproximateAudioProcessingTime (blockSize, fs);
+    const auto realtime = realtimeThread && runner.startRealtimeThread (options);
+    if (! realtime)
+        runner.startThread (juce::Thread::Priority::highest);
+    runner.waitForThreadToExit (-1);
+    return realtime;
+}
 } // namespace
 
 void settleLoads (AmpSimProcessor& p)
@@ -184,7 +274,11 @@ juce::String RigRun::summary() const
 juce::StringArray RigRun::table() const
 {
     juce::StringArray lines;
-    lines.add (name + ": " + summary() + " (" + juce::String (maxModels) + " NAM models running at most)");
+    lines.add (name + ": " + summary() + " (" + juce::String (maxModels) + " NAM models running at most; "
+               + (pacing == Pacing::flatOut ? juce::String ("flat out on a user-interactive thread")
+                                            : (realtime ? juce::String ("paced like a device on a real-time thread") : juce::String ("paced, but NOT real-time: the OS refused"))
+                                                  + (workgroup ? " in an audio work interval" : ""))
+               + ")");
     lines.add (pad ("  block / stage", 26) + "  mean us  % dl.   p99 us  % dl.  worst us");
     lines.add (row ("  parameters, MIDI", stages[(size_t) Stage::parameters]));
     lines.add (row ("  tuner + analyzer taps", stages[(size_t) Stage::taps]));
@@ -210,7 +304,8 @@ void waitForLoads (AmpSimProcessor& p)
         juce::Thread::sleep (5);
 }
 
-RigRun profile (AmpSimProcessor& p, const std::vector<float>& input, const juce::String& name, const std::function<void (size_t)>& beforeBlock)
+RigRun profile (AmpSimProcessor& p, const std::vector<float>& input, const juce::String& name, const std::function<void (size_t)>& beforeBlock,
+                Pacing pacing)
 {
     RigRun run;
     run.name = name;
@@ -227,30 +322,56 @@ RigRun profile (AmpSimProcessor& p, const std::vector<float>& input, const juce:
     p.setCpuProfile (&prof);
     juce::AudioBuffer<float> buffer (2, blockSize);
     juce::MidiBuffer midi;
-    for (size_t b = 0; b < numBuffers; ++b)
+
+    // The buffers run as a device would call them: on a real-time thread (macOS: a time-constraint thread with a
+    // 2.67 ms period in an audio work interval, as Core Audio's IO thread is; Windows: time-critical priority, as an
+    // ASIO thread), one buffer per 2.67 ms of wall time, sleeping in between. A normal-priority thread run flat out
+    // measured the p99 differently on an idle Mac and a busy one (the cores it lands on, their clock), which says
+    // nothing about the app's audio thread (2026-10-08).
+    const auto period = std::chrono::nanoseconds ((long long) (1.0e9 * blockSize / fs));
+    const auto device = pacing == Pacing::device;
+    run.pacing = pacing;
+    run.realtime = runOnProfileThread (device, [&]
     {
-        if (beforeBlock)
-            beforeBlock (b);
-        buffer.clear();
-        buffer.copyFrom (0, 0, input.data() + b * (size_t) blockSize, blockSize);
-        prof.clear();
-        rtcheck::begin();
-        p.processBlock (buffer, midi);
-        run.counts += rtcheck::end();
+        std::optional<WorkInterval> interval;
+        if (device)
+            interval.emplace();
+        run.workgroup = interval.has_value() && interval->isJoined();
+        auto next = std::chrono::steady_clock::now();
+        for (size_t b = 0; b < numBuffers; ++b)
+        {
+            if (interval)
+                interval->begin();
+            if (beforeBlock)
+                beforeBlock (b);
+            buffer.clear();
+            buffer.copyFrom (0, 0, input.data() + b * (size_t) blockSize, blockSize);
+            prof.clear();
+            rtcheck::begin();
+            p.processBlock (buffer, midi);
+            run.counts += rtcheck::end();
 
-        total.push_back (prof.totalMicros);
-        chainOwn.push_back (prof.chain.chainMicros);
-        parameters.push_back (prof.parametersMicros);
-        taps.push_back (prof.tapsMicros);
-        // Everything after the chain, plus the bits of the chain stage the chain itself didn't time (the DI recorder).
-        const auto chainTimed = std::accumulate (prof.chain.slotMicros.begin(), prof.chain.slotMicros.end(), prof.chain.chainMicros);
-        output.push_back (prof.outputMicros + std::max (0.0, prof.chainMicros - chainTimed));
-        for (size_t i = 0; i < ampsim::Chain::numSlots; ++i)
-            blocks[i].push_back (prof.chain.slotMicros[i]);
+            total.push_back (prof.totalMicros);
+            chainOwn.push_back (prof.chain.chainMicros);
+            parameters.push_back (prof.parametersMicros);
+            taps.push_back (prof.tapsMicros);
+            // Everything after the chain, plus the bits of the chain stage the chain itself didn't time (the DI recorder).
+            const auto chainTimed = std::accumulate (prof.chain.slotMicros.begin(), prof.chain.slotMicros.end(), prof.chain.chainMicros);
+            output.push_back (prof.outputMicros + std::max (0.0, prof.chainMicros - chainTimed));
+            for (size_t i = 0; i < ampsim::Chain::numSlots; ++i)
+                blocks[i].push_back (prof.chain.slotMicros[i]);
 
-        run.maxModels = std::max (run.maxModels, p.getChain().amp.getRunningModels());
-        run.maxAmps = std::max (run.maxAmps, p.getChain().amp.getRunningAmps());
-    }
+            run.maxModels = std::max (run.maxModels, p.getChain().amp.getRunningModels());
+            run.maxAmps = std::max (run.maxAmps, p.getChain().amp.getRunningAmps());
+
+            if (interval)
+            {
+                interval->end();
+                next += period;
+                std::this_thread::sleep_until (next);
+            }
+        }
+    });
     p.setCpuProfile (nullptr);
 
     run.buffers = (int) numBuffers;
@@ -335,8 +456,7 @@ void setHeaviest (AmpSimProcessor& p)
 
 int runBenchmark (double seconds)
 {
-    // As close to an audio thread as a plain program gets (on Windows the high priority class; ASIO and Core Audio
-    // run their callbacks higher still, so the worst buffers here overstate the app's).
+    // The process at high priority; each rig's buffers on a thread of their own (profile()).
     juce::Process::setPriority (juce::Process::HighPriority);
     const auto input = guitarDI ((int) (seconds * fs));
     std::cout << "BellyDSP CPU benchmark: " << juce::SystemStats::getCpuModel() << ", " << juce::SystemStats::getNumPhysicalCpus() << " cores ("
@@ -345,7 +465,7 @@ int runBenchmark (double seconds)
               << (juce::SystemStats::hasNeon() ? ", NEON" : "") << "\n"
               << "Built for " << buildTarget() << "\n"
               << "48 kHz, 128-sample buffers (the deadline is " << juce::String (deadlineMicros, 1) << " us), " << seconds
-              << " s of guitar DI per rig, in a high-priority process\n\n";
+              << " s of guitar DI per rig, flat out on a high-priority thread and then paced like a device on a real-time thread\n\n";
 
     std::vector<RigRun> runs;
     const auto show = [&runs] (const RigRun& run)
@@ -356,28 +476,91 @@ int runBenchmark (double seconds)
         runs.push_back (run);
     };
 
+    // Each rig twice: flat out (the per-block table; the work at full clock) and paced like a device (the summary's
+    // second pair: what the OS's power management makes of it).
+    std::vector<RigRun> paced;
+    const auto both = [&] (AmpSimProcessor& p, const juce::String& name)
+    {
+        show (profile (p, input, name));
+        paced.push_back (profile (p, input, name, {}, Pacing::device));
+    };
     {
         auto p = makeRig();
         setDefaults (*p);
-        show (profile (*p, input, "Defaults (Glass, one close mic on a 1 s IR, everything else off)"));
+        both (*p, "Defaults (Glass, one close mic on a 1 s IR, everything else off)");
         for (const auto& preset : presets::factoryPresets())
         {
             setFactoryPreset (*p, preset);
-            show (profile (*p, input, "Factory preset " + preset["name"].toString()));
+            both (*p, "Factory preset " + preset["name"].toString());
         }
     }
     {
         auto p = makeRig();
         setHeaviest (*p);
-        show (profile (*p, input, "Heaviest (every block on at its heaviest, three mics on 1 s IRs, the Gain between two steps)"));
+        both (*p, "Heaviest (every block on at its heaviest, three mics on 1 s IRs, the Gain between two steps)");
     }
 
-    std::cout << "Summary (mean / p99 of the 128-sample deadline; a real ASIO or Core Audio thread runs at a higher priority):\n";
-    for (const auto& run : runs)
+    std::cout << "Summary, mean / p99 of the 128-sample deadline: flat out (the work at full clock), then paced like a device "
+              << (paced.empty() || ! paced.front().realtime ? "(NOT on a real-time thread: the OS refused)" : "(a real-time thread)") << ":\n";
+    for (size_t i = 0; i < runs.size(); ++i)
+    {
+        const auto& run = runs[i];
         std::cout << "  " << pad (run.name.upToFirstOccurrenceOf (" (", false, false), 34) << num (run.meanPercent(), 1, 6) << "% / "
-                  << num (run.p99Percent(), 1, 5) << "%" << (run.over > 0 ? "   " + juce::String (run.over) + " buffers over the deadline" : juce::String())
-                  << "\n";
-    std::cout << "\nRule of thumb (BUILD_PLAN \"CPU\"): a p99 under 60% of the deadline leaves the driver and the GUI room at that buffer size.\n";
+                  << num (run.p99Percent(), 1, 5) << "%     paced " << num (paced[i].meanPercent(), 1, 5) << "% / " << num (paced[i].p99Percent(), 1, 5) << "%"
+                  << (run.over + paced[i].over > 0 ? "   " + juce::String (run.over + paced[i].over) + " buffers over the deadline" : juce::String()) << "\n";
+    }
+    std::cout << "\nRule of thumb (BUILD_PLAN \"CPU\"): a flat-out mean under 50% and p99 under 60% of the deadline leave the driver and the\n"
+                 "GUI room at that buffer size. The paced figures can be higher on an idle machine (the OS lowers the clock while the\n"
+                 "deadline is met) and should stay well under 100%.\n";
+    return 0;
+}
+
+int renderRigs (const juce::File& folder)
+{
+    folder.createDirectory();
+    const auto input = guitarDI ((int) (10.0 * fs));
+    const auto render = [&] (AmpSimProcessor& p, const juce::String& name)
+    {
+        // Prepared again once everything has loaded, so every block starts from its prepared state whatever the loads'
+        // timing did before (the LFOs' phases, the tails), and two runs or two builds start alike.
+        p.prepareToPlay (fs, blockSize);
+        juce::AudioBuffer<float> out (2, (int) input.size());
+        juce::AudioBuffer<float> buffer (2, blockSize);
+        juce::MidiBuffer midi;
+        for (int start = 0; start + blockSize <= (int) input.size(); start += blockSize)
+        {
+            buffer.clear();
+            buffer.copyFrom (0, 0, input.data() + start, blockSize);
+            p.processBlock (buffer, midi);
+            for (int ch = 0; ch < 2; ++ch)
+                out.copyFrom (ch, start, buffer, ch, 0, blockSize);
+        }
+        const auto file = folder.getChildFile (name + ".wav");
+        file.deleteFile();
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::OutputStream> stream (file.createOutputStream());
+        if (auto writer = std::unique_ptr<juce::AudioFormatWriter> (wav.createWriterFor (stream.get(), fs, 2, 32, {}, 0)))
+        {
+            stream.release();
+            writer->writeFromAudioSampleBuffer (out, 0, out.getNumSamples());
+        }
+        std::cout << file.getFullPathName() << "\n";
+    };
+    {
+        auto p = makeRig();
+        setDefaults (*p);
+        render (*p, "defaults");
+        for (const auto& preset : presets::factoryPresets())
+        {
+            setFactoryPreset (*p, preset);
+            render (*p, "preset " + preset["name"].toString());
+        }
+    }
+    {
+        auto p = makeRig();
+        setHeaviest (*p);
+        render (*p, "heaviest");
+    }
     return 0;
 }
 

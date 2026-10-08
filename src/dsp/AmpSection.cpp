@@ -87,7 +87,7 @@ void AmpSection::start (int index) noexcept
     auto& amp = amps[(size_t) index];
     auto& s = state[(size_t) index];
     amp.model.setGain (amp.inputTrim.getPosition());
-    amp.model.setBlend (NamAmp::Blend::exact);
+    amp.model.setBlend (nearestStepOnly ? NamAmp::Blend::nearest : NamAmp::Blend::exact);
     amp.model.restart();
     amp.tone.reset();
     amp.outputTrim.reset();
@@ -143,7 +143,8 @@ void AmpSection::process (juce::dsp::AudioBlock<float> block, const BlockContext
         auto channel = outputs.getSingleChannelBlock ((size_t) a);
         std::copy (input, input + numSamples, channel.getChannelPointer (0));
 
-        amp.model.setBlend (a == heard || a == selected ? NamAmp::Blend::exact : NamAmp::Blend::hold);
+        const auto live = nearestStepOnly ? NamAmp::Blend::nearest : NamAmp::Blend::exact;
+        amp.model.setBlend (a == heard || a == selected ? live : NamAmp::Blend::hold);
         amp.model.setGain (amp.inputTrim.getPosition());
         amp.model.process (channel, context);
         amp.tone.process (channel.getChannelPointer (0), (int) numSamples);

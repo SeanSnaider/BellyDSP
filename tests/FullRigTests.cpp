@@ -100,6 +100,10 @@ public:
     void profileAndBudget()
     {
         const auto input = guitarDI ((int) (10.0 * fs));
+        // The budget runs flat out on a user-interactive thread (cpu::Pacing: the work at full clock, what a slower machine
+        // scales); AMPSIM_CPU_PACING=device feeds them like a device instead. Device-paced runs of the defaults and the
+        // heaviest rig are printed below for comparison, not asserted.
+        const auto pacing = juce::SystemStats::getEnvironmentVariable ("AMPSIM_CPU_PACING", {}) == "device" ? cpu::Pacing::device : cpu::Pacing::flatOut;
         std::vector<cpu::RigRun> runs;
         const auto show = [&] (const cpu::RigRun& run)
         {
@@ -115,12 +119,14 @@ public:
         {
             auto p = cpu::makeRig();
             cpu::setDefaults (*p);
-            defaults = cpu::profile (*p, input, "Defaults (Glass, one close mic on a 1 s IR, everything else off)");
+            defaults = cpu::profile (*p, input, "Defaults (Glass, one close mic on a 1 s IR, everything else off)", {}, pacing);
             show (defaults);
+            const auto paced = cpu::profile (*p, input, "Defaults, paced like a device", {}, cpu::Pacing::device);
+            logMessage ("  -> " + paced.table()[0]);
             for (const auto& preset : presets::factoryPresets())
             {
                 expect (cpu::setFactoryPreset (*p, preset));
-                const auto run = cpu::profile (*p, input, "Factory preset " + preset["name"].toString());
+                const auto run = cpu::profile (*p, input, "Factory preset " + preset["name"].toString(), {}, pacing);
                 show (run);
                 if (run.total.mean > typical.total.mean)
                     typical = run;
@@ -129,8 +135,10 @@ public:
         {
             auto p = cpu::makeRig();
             cpu::setHeaviest (*p);
-            heaviest = cpu::profile (*p, input, "Heaviest (every block on at its heaviest, three mics on 1 s IRs, the Gain between two steps)");
+            heaviest = cpu::profile (*p, input, "Heaviest (every block on at its heaviest, three mics on 1 s IRs, the Gain between two steps)", {}, pacing);
             show (heaviest);
+            const auto paced = cpu::profile (*p, input, "Heaviest, paced like a device", {}, cpu::Pacing::device);
+            logMessage ("  -> " + paced.table()[0]);
             expectEquals (heaviest.maxModels, 2);
         }
         logMessage ("  -> the heaviest factory preset (typical): " + typical.name + ", " + typical.summary());

@@ -125,6 +125,19 @@ public:
     /// Audio thread, for tests: whether the slot is fully bypassed and being skipped.
     bool isFullyBypassed (Slot slot) const;
 
+    /// Audio thread, once per buffer before process(): the CPU saver for a block that keeps running while it's off
+    /// (the boost and the overdrive; BUILD_PLAN "CPU", the CPU saver). While `stop` is true the block stops running once
+    /// it's fully off. Switched on again, it first runs unheard on the live input for `warmupSamples` (from its reset
+    /// state) while the slot stays bypassed (the dry, exactly as before), and only then fades in with the usual 10 ms
+    /// bypass fade. With `stop` false a stopped block starts running again unheard at once, and a switch-on that comes
+    /// before it has warmed up waits out the rest. A block that's on, or fading, is never touched.
+    void setStopWhileOff (Slot slot, bool stop, int warmupSamples) noexcept;
+
+    /// Audio thread, for tests: whether the slot ran in the last process() call, and whether a switch-on is waiting for
+    /// its warm-up.
+    bool didRun (Slot slot) const noexcept { return bypass[(size_t) slot].ran; }
+    bool isWarmingUp (Slot slot) const noexcept { return bypass[(size_t) slot].pendingOn; }
+
     /// Any thread: asks for a new order. It must be a permutation of the section's default order;
     /// anything else is refused (returns false). The audio thread applies it with a dip.
     bool requestOrder (Section section, const std::vector<Slot>& order);
@@ -180,7 +193,17 @@ private:
         // no reset.
         bool keepRunning = false;
 
+        // The CPU saver (setStopWhileOff): a keep-running block stops while fully off, and a switch-on waits (still
+        // bypassed) until it has run `warmupSamples` on live input since it last started from rest.
+        bool stopWhileOff = false;
+        int warmupSamples = 0;
+        int warmed = maxWarmed; // samples run since it last started from rest (capped)
+        bool pendingOn = false; // switched on, warming up unheard
+        bool ran = false;       // ran in the last process() (for tests)
+        static constexpr int maxWarmed = 1 << 30;
+
         bool fullyOff() const { return bypassed && ! wet.isSmoothing(); }
+        bool runsWhileOff() const { return keepRunning && (! stopWhileOff || pendingOn); }
     };
 
     struct SectionState

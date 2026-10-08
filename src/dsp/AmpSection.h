@@ -88,6 +88,14 @@ public:
     /// The amp most recently selected (the one warming up, if a switch is under way).
     int getSelectedAmp() const noexcept { return selected; }
 
+    /// Audio thread, once per buffer: the CPU saver's Gain (BUILD_PLAN "CPU", the CPU saver). On, the amp heard plays the
+    /// gain set's step nearest its Gain, alone (NamAmp::Blend::nearest: one model), and a Gain crossing a midpoint
+    /// crosses to the next step as an unheard amp's does (the new step warms, then the position moves at the Gain's
+    /// slew under the blend law). Off, it blends exactly (two models between steps). Either way round the position
+    /// moves at the slew, so the change never jumps. A single capture is unaffected.
+    void setNearestStepOnly (bool nearestOnly) noexcept { nearestStepOnly = nearestOnly; }
+    bool isNearestStepOnly() const noexcept { return nearestStepOnly; }
+
     /// The amp being heard, or fading in: the selected one once its warm-up is done.
     int getHeardAmp() const noexcept { return heard; }
 
@@ -134,6 +142,7 @@ private:
     juce::AudioBuffer<float> ampOutputs; // one channel per amp
     int selected = 0; // the newest request
     int heard = 0;    // the amp whose position heads for 1
+    bool nearestStepOnly = false; // the CPU saver (setNearestStepOnly)
 };
 
 } // namespace ampsim
