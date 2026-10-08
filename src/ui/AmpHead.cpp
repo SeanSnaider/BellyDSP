@@ -398,10 +398,11 @@ void drawBadge (juce::Graphics& g, Material material, juce::Rectangle<float> gri
             // Motion: Geist 600 at 54 px, slanted 12 degrees, in ice white with a cyan glow; a comet's tail of three
             // tapering streaks runs in from the left towards the word, the longest at its x-height, their heads
             // staggered back from the slanted letters. The word sits 90 px right of centre so the mark (the tail and
-            // the word) is centred; a long word shortens the tail so it stays 80 px clear of the grille's end.
+            // the word) is centred; a long word is elided to the room that leaves (96 px clear of the right end, its glow
+            // included) and shortens the tail so it stays 80 px clear of the left end.
             const auto f = geist (Weight::semibold, 54.0f);
             const auto make = [&] (const juce::String& s) { return lettering (s, f, 0.01f * 54.0f, 1.0f, 0.21f); };
-            const auto name = fitted (word, maxWidth - 150.0f, [&] (const juce::String& s) { return make (s).getBounds().getWidth(); });
+            const auto name = fitted (word, grille.getWidth() - 2.0f * (90.0f + 96.0f), [&] (const juce::String& s) { return make (s).getBounds().getWidth(); });
             const auto caps = capHeight (f);
             auto p = centred (make (name), grille, caps);
             p.applyTransform (juce::AffineTransform::translation (90.0f, 0.0f));
