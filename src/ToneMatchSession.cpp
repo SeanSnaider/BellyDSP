@@ -32,7 +32,7 @@ void setPlain (AmpSimProcessor& p, const juce::String& id, float value)
         jassertfalse; // a parameter ID tone match writes must exist
 }
 
-/// Close mic 1's cab and the playing slot's cab assignment, as one undoable action, so Apply's undo
+/// Close mic 1's cab and the matched amp's cab assignment, as one undoable action, so Apply's undo
 /// puts the previous cab back along with the knobs. (Cab files aren't parameters, so the parameter
 /// tree's undo can't do it by itself.)
 class CabChange final : public juce::UndoableAction
@@ -68,13 +68,13 @@ private:
     int slot;
     juce::File next, previous, previousAssignment;
 };
-/// A slot's capture, as one undoable action (Apply loads a matched gain set that no slot holds into the playing
-/// slot; undo puts the slot's previous capture back, or empties it if it was empty).
+/// An amp's capture, as one undoable action (Apply loads a matched capture no amp holds into amp 9, your capture;
+/// undo puts the amp's previous capture back, or empties it if it was empty).
 class ModelChange final : public juce::UndoableAction
 {
 public:
     ModelChange (AmpSimProcessor& p, int slotToLoad, juce::File newModel)
-        : processor (p), slot (slotToLoad), next (std::move (newModel)), previous (p.getSlotCapture (slotToLoad))
+        : processor (p), slot (slotToLoad), next (std::move (newModel)), previous (p.getAmpCapture (slotToLoad))
     {
     }
 
@@ -302,7 +302,7 @@ juce::String ToneMatchSession::whyCantMatch() const
     if (separate && separator == nullptr)
         return "Separation isn't available in this build";
     if (modelsToSearch().empty())
-        return "No amps to search: the content folder has no gain sets and every amp slot is empty";
+        return "No amps to search: the content folder has no gain sets and no capture is loaded";
     if (builtInCabs().empty())
         return "The built-in cabs are missing";
     return {};
@@ -609,12 +609,12 @@ bool ToneMatchSession::apply()
     p.parameters.copyState();
     p.undoManager.beginNewTransaction ("Match tone");
 
-    // The amp: the slot that holds the matched amp already, or the playing slot with the matched gain set loaded
-    // into it (undoably); its Gain (the input trim) and its five tone knobs.
-    const auto slot = applySlot();
-    setPlain (p, AmpSimProcessor::slotParamId, (float) slot);
+    // The amp: the matched one chosen (amp_model), with its capture loaded if it isn't already (undoably: your capture,
+    // or a built-in amp a test left empty); its Gain (the input trim) and its five tone knobs. All in this one step.
+    const auto slot = applyAmp();
+    setPlain (p, AmpSimProcessor::ampModelParamId, (float) slot);
     setPlain (p, "amp_bypass", 0.0f);
-    if (p.getSlotCapture (slot) != r.model)
+    if (p.getAmpCapture (slot) != r.model)
         p.undoManager.perform (new ModelChange (p, slot, r.model));
     setPlain (p, AmpSimProcessor::ampParamId (slot, "input_trim"), (float) r.gainDb);
     for (size_t b = 0; b < ampsim::AmpTone::numBands; ++b)
@@ -726,24 +726,29 @@ float ToneMatchSession::masterNowDb (int slot) const
     return ampSim.parameters.getRawParameterValue (AmpSimProcessor::ampParamId (slot, "output_trim"))->load();
 }
 
-int ToneMatchSession::applySlot() const
+int ToneMatchSession::applyAmp() const
 {
     if (! resultReady)
-        return 0;
-    for (int s = 0; s < AmpSimProcessor::numAmpSlots; ++s)
-        if (result.model != juce::File() && ampSim.getSlotCapture (s) == result.model)
-            return s;
-    return juce::jlimit (0, AmpSimProcessor::numAmpSlots - 1,
-                         juce::roundToInt (ampSim.parameters.getRawParameterValue (AmpSimProcessor::slotParamId)->load()));
+        return ampSim.getSelectedAmp();
+    // The built-in amp whose gain set it is; else the amp holding it (the playing one first); else your capture.
+    for (int a = 0; a < presets::numBuiltInAmps; ++a)
+        if (result.model != juce::File() && result.model == presets::builtInCapture (a))
+            return a;
+    if (const auto playing = ampSim.getSelectedAmp(); result.model != juce::File() && ampSim.getAmpCapture (playing) == result.model)
+        return playing;
+    for (int a = 0; a < AmpSimProcessor::numAmps; ++a)
+        if (result.model != juce::File() && ampSim.getAmpCapture (a) == result.model)
+            return a;
+    return AmpSimProcessor::yourCaptureAmp;
 }
 
 std::vector<juce::File> ToneMatchSession::contentGainSets()
 {
-    // The built-ins first, in slot order (Glass, Ember, Monolith), then every other gain set in the content
-    // folder by name, so a new set joins the search by being there.
+    // The built-in amps first, in their order (Glass, Ember, Monolith, Lantern, Basalt, Comet, Forge, Quartz), then
+    // every other gain set in the content folder by name, so a new set joins the search by being there.
     std::vector<juce::File> out;
-    for (int s = 0; s < AmpSimProcessor::numAmpSlots; ++s)
-        if (const auto f = presets::builtInCapture (s); f.existsAsFile())
+    for (int a = 0; a < presets::numBuiltInAmps; ++a)
+        if (const auto f = presets::builtInCapture (a); f.existsAsFile())
             out.push_back (f);
     auto folders = platform::factoryContentFolder().getChildFile ("models").findChildFiles (juce::File::findDirectories, false);
     std::sort (folders.begin(), folders.end(), [] (const juce::File& a, const juce::File& b) { return a.getFileName() < b.getFileName(); });
@@ -756,8 +761,8 @@ std::vector<juce::File> ToneMatchSession::contentGainSets()
 std::vector<juce::File> ToneMatchSession::modelsToSearch() const
 {
     auto out = contentGainSets();
-    for (int s = 0; s < AmpSimProcessor::numAmpSlots; ++s)
-        if (const auto f = ampSim.getSlotCapture (s); f.existsAsFile() && std::find (out.begin(), out.end(), f) == out.end())
+    for (int s = 0; s < AmpSimProcessor::numAmps; ++s)
+        if (const auto f = ampSim.getAmpCapture (s); f.existsAsFile() && std::find (out.begin(), out.end(), f) == out.end())
             out.push_back (f);
     return out;
 }
@@ -826,7 +831,7 @@ ampsim::tonematch::ToneSettings ToneMatchSession::matchedSettings() const
 {
     using namespace ampsim;
     const auto& r = result;
-    const auto slot = applySlot();
+    const auto slot = applyAmp();
     tonematch::ToneSettings s;
     s.model = r.model;
     s.calibration = ampSim.getCaptureCalibration();
@@ -903,9 +908,9 @@ ampsim::tonematch::ToneSettings ToneMatchSession::currentSettings() const
     using namespace ampsim;
     auto& p = ampSim;
     const auto raw = [&p] (const juce::String& id) { return p.parameters.getRawParameterValue (id)->load(); };
-    const auto slot = juce::jlimit (0, AmpSimProcessor::numAmpSlots - 1, juce::roundToInt (raw (AmpSimProcessor::slotParamId)));
+    const auto slot = p.getSelectedAmp();
     tonematch::ToneSettings s;
-    s.model = p.getSlotCapture (slot);
+    s.model = p.getAmpCapture (slot);
     s.calibration = p.getCaptureCalibration();
     s.ampOn = raw ("amp_bypass") < 0.5f;
     s.gainDb = raw (AmpSimProcessor::ampParamId (slot, "input_trim"));

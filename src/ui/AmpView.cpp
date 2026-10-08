@@ -329,105 +329,121 @@ private:
     bool hovered = false;
 };
 
-// ---- The amp picker ------------------------------------------------------------------------------
+// ---- The amp shelf -------------------------------------------------------------------------------
 
-/// Right-aligned on the tabs' 20 px content line: "Amp" (12 px faint), the previous arrow, the playing slot's amp
-/// (15 px medium ink, like a tab's name) with a chevron, and the next arrow, in the top bar's preset-selector style.
-/// A click on the name or the chevron opens AmpView::ampMenu under it; the arrows call stepAmp.
-class AmpView::AmpPicker final : public juce::Component, public juce::SettableTooltipClient
+/// The shelf (AmpView::getShelf): "Amp" in 12 px faint on the 20 px content line, then the minis, then the playing
+/// amp's name (15 px medium ink, as a tab's) or the hovered one's name and description (ink-dim). The playing mini
+/// has a 2 px emerald underline 6 px under it, in the tabs' place.
+class AmpView::Shelf final : public juce::Component, public juce::SettableTooltipClient
 {
 public:
-    explicit AmpPicker (AmpView& v) : view (v)
-    {
-        addAndMakeVisible (previous);
-        addAndMakeVisible (next);
-        previous.setTooltip ("The previous built-in amp");
-        next.setTooltip ("The next built-in amp");
-        previous.onClick = [this] { view.stepAmp (-1); };
-        next.onClick = [this] { view.stepAmp (1); };
-        setTooltip ("The amp this slot plays: click for every built-in amp, or use the arrows");
-    }
+    explicit Shelf (AmpView& v) : view (v) { setRepaintsOnMouseActivity (false); }
 
-    void set (const juce::String& newName)
+    static constexpr float miniWidth = 30.0f, miniHeight = 20.0f, spacing = 12.0f, captureGap = 28.0f, line = 20.0f;
+
+    void set (int newPlaying, bool newShowCapture)
     {
-        if (newName != name)
+        if (newPlaying != playing || newShowCapture != showCapture)
         {
-            name = newName;
-            resized();
+            playing = newPlaying;
+            showCapture = newShowCapture;
             repaint();
         }
     }
 
-    juce::String name;
-    static constexpr float arrow = 20.0f, chevron = 10.0f, line = 20.0f;
+    bool shows (int amp) const { return amp >= 0 && (amp < AmpSimProcessor::numBuiltInAmps || (amp == AmpSimProcessor::yourCaptureAmp && showCapture)); }
 
-    /// The name and its chevron: what a click opens the menu on.
-    juce::Rectangle<float> nameArea() const
+    juce::Rectangle<float> miniBox (int amp) const
     {
-        const auto w = textWidth (nameFont(), name) + 6.0f + chevron;
-        return { (float) getWidth() - arrow - 6.0f - w, 0.0f, w, line };
+        auto x = textWidth (labelFont(), "Amp") + 14.0f;
+        x += (float) juce::jmin (amp, AmpSimProcessor::numBuiltInAmps) * (miniWidth + spacing);
+        if (amp >= AmpSimProcessor::numBuiltInAmps)
+            x += captureGap - spacing; // a small gap before your capture
+        return { x, (line - miniHeight) * 0.5f, miniWidth, miniHeight };
     }
 
-    void resized() override
+    int ampAt (juce::Point<float> p) const
     {
-        const auto n = nameArea();
-        next.setBounds (juce::Rectangle<float> ((float) getWidth() - arrow, 0.0f, arrow, line).toNearestInt());
-        previous.setBounds (juce::Rectangle<float> (n.getX() - 6.0f - arrow, 0.0f, arrow, line).toNearestInt());
+        for (int a = 0; a < AmpSimProcessor::numAmps; ++a)
+            if (shows (a) && miniBox (a).expanded (spacing * 0.5f, 6.0f).contains (p))
+                return a;
+        return -1;
+    }
+
+    juce::String text() const
+    {
+        if (hovered >= 0)
+        {
+            const auto description = view.ampDescription (hovered);
+            return AmpSimProcessor::ampName (hovered) + (description.isNotEmpty() ? ": " + description : juce::String());
+        }
+        return AmpSimProcessor::ampName (playing);
+    }
+
+    void setHovered (int amp)
+    {
+        if (amp != hovered)
+        {
+            hovered = amp;
+            setTooltip (amp >= 0 ? text() : juce::String());
+            setMouseCursor (amp >= 0 ? juce::MouseCursor::PointingHandCursor : juce::MouseCursor::NormalCursor);
+            repaint();
+        }
     }
 
     void paint (juce::Graphics& g) override
     {
-        const auto label = juce::String ("Amp");
-        const auto labelWidth = textWidth (labelFont(), label);
         g.setFont (labelFont());
         g.setColour (inkFaint);
-        g.drawText (label, juce::Rectangle<float> ((float) previous.getX() - 8.0f - labelWidth, 0.0f, labelWidth + 2.0f, line),
-                    juce::Justification::centredLeft, false);
+        g.drawText ("Amp", juce::Rectangle<float> (0.0f, 0.0f, textWidth (labelFont(), "Amp") + 2.0f, line), juce::Justification::centredLeft, false);
 
-        const auto n = nameArea();
-        g.setFont (nameFont());
-        g.setColour (ink);
-        g.drawText (name, n.withWidth (n.getWidth() - chevron - 6.0f + 2.0f), juce::Justification::centredLeft, false);
-
-        const auto cx = n.getRight() - chevron * 0.5f, cy = line * 0.5f;
-        juce::Path v;
-        v.startNewSubPath (cx - 4.0f, cy - 2.0f);
-        v.lineTo (cx, cy + 2.0f);
-        v.lineTo (cx + 4.0f, cy - 2.0f);
-        g.setColour (hovered ? ink : inkFaint);
-        g.strokePath (v, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-    }
-
-    void mouseMove (const juce::MouseEvent& e) override
-    {
-        const auto over = nameArea().contains (e.position);
-        if (over != hovered)
+        for (int a = 0; a < AmpSimProcessor::numAmps; ++a)
         {
-            hovered = over;
-            setMouseCursor (over ? juce::MouseCursor::PointingHandCursor : juce::MouseCursor::NormalCursor);
-            repaint();
+            if (! shows (a))
+                continue;
+            const auto box = miniBox (a);
+            {
+                // The ones not playing a little dimmer, so the playing one reads first; the hovered one at full.
+                const juce::Graphics::ScopedSaveState saved (g);
+                if (a != playing && a != hovered)
+                    g.beginTransparencyLayer (0.62f);
+                drawMiniAmp (g, box, AmpSimProcessor::ampName (a));
+                if (a != playing && a != hovered)
+                    g.endTransparencyLayer();
+            }
+            if (a == playing)
+            {
+                g.setColour (accent);
+                g.fillRect (juce::Rectangle<float> (box.getX(), box.getBottom() + 6.0f, box.getWidth(), 2.0f));
+            }
         }
+
+        const auto last = shows (AmpSimProcessor::yourCaptureAmp) ? AmpSimProcessor::yourCaptureAmp : AmpSimProcessor::numBuiltInAmps - 1;
+        const auto x = miniBox (last).getRight() + 18.0f;
+        const auto words = text();
+        g.setFont (hovered >= 0 ? geist (Weight::regular, 14.0f) : nameFont());
+        g.setColour (hovered >= 0 ? inkDim : ink);
+        g.drawText (words, juce::Rectangle<float> (x, 0.0f, (float) getWidth() - x, line), juce::Justification::centredLeft, true);
     }
 
-    void mouseExit (const juce::MouseEvent&) override
-    {
-        hovered = false;
-        repaint();
-    }
+    void mouseMove (const juce::MouseEvent& e) override { setHovered (ampAt (e.position)); }
+    void mouseExit (const juce::MouseEvent&) override { setHovered (-1); }
 
     void mouseUp (const juce::MouseEvent& e) override
     {
-        if (nameArea().contains (e.position) && ! e.mods.isPopupMenu())
-            showMenu (view.ampMenu(), this, &getLookAndFeel());
+        if (e.mods.isPopupMenu())
+            return; // the editor's right-click: MIDI learn for amp_model (the shelf is tagged with it)
+        if (const auto amp = ampAt (e.position); amp >= 0)
+            view.clickMini (amp);
     }
 
-    IconButton previous { "Previous amp", IconButton::Icon::left }, next { "Next amp", IconButton::Icon::right };
+    int playing = 0, hovered = -1;
+    bool showCapture = false;
 
 private:
     static juce::FontOptions nameFont() { return geist (Weight::medium, 15.0f); }
     static juce::FontOptions labelFont() { return geist (Weight::regular, 12.0f); }
     AmpView& view;
-    bool hovered = false;
 };
 
 /// The grille (and its badge): a click loads a capture; a right-click opens the capture menu.
@@ -547,31 +563,41 @@ private:
 
 // ---- AmpView -------------------------------------------------------------------------------------
 
-AmpView::AmpView (AmpSimProcessor& p) : ControlGroup (p), tabs (p), spectrum (p)
+Material materialForAmp (int amp)
 {
-    addAndMakeVisible (tabs);
-    std::vector<TabRow::Item> items;
-    for (int s = 0; s < AmpSimProcessor::numAmpSlots; ++s)
-        items.push_back ({ s, materialName (materialFor (s)), "PC " + juce::String (s + 1), {}, false });
-    tabs.iconWidth = 30;
-    tabs.iconHeight = 20;
-    tabs.drawIcon = [] (juce::Graphics& g, juce::Rectangle<float> box, int id) { drawMiniHead (g, box, materialFor (id)); };
-    tabs.setItems (items);
-    tagged (tabs, AmpSimProcessor::slotParamId); // a right-click on the tabs learns the slot
-    tabs.onSelect = [this] (int slot) { setAsGesture (state, AmpSimProcessor::slotParamId, (float) slot); };
+    // Glass, Ember, Monolith their own; the others borrow the nearest in character until their materials land:
+    // Lantern (power-amp breakup, edge to crunch) and Quartz (scooped, bright lead) Glass's, Comet (mids-forward
+    // lead) Ember's, Basalt and Forge (high gain) Monolith's, your capture Glass's.
+    static constexpr Material materials[] { Material::glass, Material::ember, Material::monolith, Material::glass, Material::monolith,
+                                            Material::ember, Material::monolith, Material::glass, Material::glass };
+    static_assert (std::size (materials) == (size_t) AmpSimProcessor::numAmps);
+    return materials[(size_t) juce::jlimit (0, AmpSimProcessor::numAmps - 1, amp)];
+}
+
+AmpView::AmpView (AmpSimProcessor& p) : ControlGroup (p), spectrum (p)
+{
+    shelf = std::make_unique<Shelf> (*this);
+    addAndMakeVisible (*shelf);
+    tagged (*shelf, AmpSimProcessor::ampModelParamId); // a right-click on the shelf learns the amp choice
+
+    // Each built-in amp's description, from its gainset.json (read once: the content folder doesn't change).
+    for (const auto& amp : presets::builtInGainSets())
+        for (int a = 0; a < AmpSimProcessor::numBuiltInAmps; ++a)
+            if (amp.file == presets::builtInCapture (a))
+                descriptions[(size_t) a] = amp.description;
 
     addAndMakeVisible (head);
     addAndMakeVisible (jewel);
     grille = std::make_unique<Grille> (*this);
     addAndMakeVisible (*grille);
 
-    // Each slot's seven knobs, in its own material's skin, shown only while the slot plays.
-    for (int s = 0; s < AmpSimProcessor::numAmpSlots; ++s)
+    // Each amp's seven knobs, in its material's skin, shown only while the amp plays.
+    for (int s = 0; s < AmpSimProcessor::numAmps; ++s)
         for (int k = 0; k < numKnobs; ++k)
         {
             const auto& spec = ampKnobs[(size_t) k];
             auto& knob = addKnob (AmpSimProcessor::ampParamId (s, spec.parameter), spec.caption, " dB", Knob::Size::normal);
-            knob.setSkin (skinFor (materialFor (s)));
+            knob.setSkin (skinFor (materialForAmp (s)));
             const auto range = spec.rangeDb;
             knob.setFormatter ([range] (float db) { return juce::String ((db + range) / (2.0f * range) * 10.0f, 1); });
             knob.setTooltip (juce::String (spec.caption) + (k == 0 ? ": with a gain set, moves across its captures, blending the two nearest; with a "
@@ -584,10 +610,6 @@ AmpView::AmpView (AmpSimProcessor& p) : ControlGroup (p), tabs (p), spectrum (p)
 
     gainStepDots = std::make_unique<GainSteps>();
     addAndMakeVisible (*gainStepDots);
-
-    builtIns = presets::builtInGainSets();
-    picker = std::make_unique<AmpPicker> (*this);
-    addAndMakeVisible (*picker);
 
     info = std::make_unique<InfoRow> (*this);
     addAndMakeVisible (*info);
@@ -621,15 +643,15 @@ AmpView::~AmpView()
 
 void AmpView::showSlot (int slot)
 {
-    slot = juce::jlimit (0, AmpSimProcessor::numAmpSlots - 1, slot);
+    slot = juce::jlimit (0, AmpSimProcessor::numAmps - 1, slot);
     if (slot == shownSlot)
         return;
     shownSlot = slot;
-    tabs.setSelected (slot);
-    head.setMaterial (materialFor (slot));
-    grille->setTooltip ("Click to load a .nam capture or a gain set into " + juce::String (materialName (materialFor (slot))) + " (amp slot " + juce::String (slot + 1)
-                        + "); right-click to reload or clear it");
-    for (int s = 0; s < AmpSimProcessor::numAmpSlots; ++s)
+    head.setMaterial (materialForAmp (slot));
+    head.setBadge (AmpSimProcessor::ampName (slot));
+    grille->setTooltip (slot == AmpSimProcessor::yourCaptureAmp ? "Click to load a capture of your own (a .nam or a gain set); right-click to reload or remove it"
+                                                              : "Click to load a capture of your own (a .nam or a gain set), played as your capture; right-click for more");
+    for (int s = 0; s < AmpSimProcessor::numAmps; ++s)
         for (auto* knob : knobs[(size_t) s])
             knob->setVisible (s == slot);
 }
@@ -644,75 +666,42 @@ juce::Component& AmpView::getGrille() noexcept
     return *grille;
 }
 
-juce::Component& AmpView::getPicker() noexcept
+juce::Component& AmpView::getShelf() noexcept
 {
-    return *picker;
+    return *shelf;
 }
 
-juce::String AmpView::getPickerText() const { return picker->name; }
-
-int AmpView::builtInIndex (int slot) const
+bool AmpView::yourCaptureLoaded() const
 {
-    const auto path = state.state.getProperty (AmpSimProcessor::modelPathKey (slot)).toString();
-    if (! juce::File::isAbsolutePath (path))
-        return -1;
-    const juce::File file (path);
-    for (size_t i = 0; i < builtIns.size(); ++i)
-        if (builtIns[i].file == file)
-            return (int) i;
-    return -1;
+    // Your capture's mini shows once one is loaded (or loading, or missing: something to pick and see why).
+    const auto path = state.state.getProperty (AmpSimProcessor::modelPathKey (AmpSimProcessor::yourCaptureAmp)).toString();
+    return path.isNotEmpty();
 }
 
-juce::String AmpView::slotAmpName (int slot)
+bool AmpView::isOnShelf (int amp) const { return shelf->shows (amp); }
+
+juce::Rectangle<int> AmpView::getMiniBounds (int amp) const
 {
-    if (const auto& set = setInfo (state.state.getProperty (AmpSimProcessor::modelPathKey (slot)).toString()); set.name.isNotEmpty())
-        return set.name;
-    return materialName (materialFor (slot));
+    return shelf->miniBox (amp).translated ((float) shelf->getX(), (float) shelf->getY()).getSmallestIntegerContainer();
 }
 
-juce::PopupMenu AmpView::ampMenu()
+void AmpView::clickMini (int amp)
 {
-    // Every built-in amp, the playing one ticked: the slot defaults, a line, then the others (builtInGainSets'
-    // order). A pick loads into the playing slot, which keeps its head; the badge and tab take the amp's name.
-    juce::PopupMenu menu;
-    const auto slot = shownSlot;
-    const auto current = builtInIndex (slot);
-    const juce::Component::SafePointer<AmpView> safe (this);
-    menu.addSectionHeader ("Built-in amps, into amp slot " + juce::String (slot + 1));
-    bool defaults = true;
-    for (size_t i = 0; i < builtIns.size(); ++i)
-    {
-        const auto& amp = builtIns[i];
-        const auto isDefault = amp.file == presets::builtInCapture (0) || amp.file == presets::builtInCapture (1) || amp.file == presets::builtInCapture (2);
-        if (defaults && ! isDefault && i > 0)
-            menu.addSeparator();
-        defaults = defaults && isDefault;
-        const auto file = amp.file;
-        menu.addItem (amp.name + (amp.description.isNotEmpty() ? ": " + amp.description : juce::String()), true, (int) i == current, [safe, slot, file]
-        {
-            if (safe != nullptr)
-                safe->ampSim.loadModel (slot, file);
-        });
-    }
-    menu.addSeparator();
-    menu.addItem ("Load a capture file...", [safe, slot]
-    {
-        if (safe != nullptr && safe->onLoadCapture)
-            safe->onLoadCapture (slot);
-    });
-    return menu;
-}
-
-void AmpView::stepAmp (int delta)
-{
-    // From a capture that isn't built in (or an empty slot), next starts at the first and previous at the last.
-    if (builtIns.empty() || shownSlot < 0)
+    if (! shelf->shows (amp))
         return;
-    const auto n = (int) builtIns.size();
-    const auto i = builtInIndex (shownSlot);
-    const auto to = i < 0 ? (delta > 0 ? 0 : n - 1) : ((i + delta) % n + n) % n;
-    ampSim.loadModel (shownSlot, builtIns[(size_t) to].file);
+    setAsGesture (state, AmpSimProcessor::ampModelParamId, (float) amp);
     refresh();
+}
+
+juce::String AmpView::getShelfText() const { return shelf->text(); }
+void AmpView::hoverMini (int amp) { shelf->setHovered (amp); }
+
+juce::String AmpView::ampDescription (int amp) const
+{
+    if (amp >= 0 && amp < AmpSimProcessor::numBuiltInAmps)
+        return descriptions[(size_t) amp];
+    const auto path = state.state.getProperty (AmpSimProcessor::modelPathKey (AmpSimProcessor::yourCaptureAmp)).toString();
+    return juce::File::isAbsolutePath (path) ? juce::File (path).getFileName() : juce::String();
 }
 
 juce::String AmpView::getVoiceText() const { return info->voice; }
@@ -739,7 +728,7 @@ const AmpView::SetInfo& AmpView::setInfo (const juce::String& path)
 
 const std::vector<float>& AmpView::gainSteps (int slot)
 {
-    return setInfo (state.state.getProperty (AmpSimProcessor::modelPathKey (juce::jlimit (0, AmpSimProcessor::numAmpSlots - 1, slot))).toString()).steps;
+    return setInfo (state.state.getProperty (AmpSimProcessor::modelPathKey (juce::jlimit (0, AmpSimProcessor::numAmps - 1, slot))).toString()).steps;
 }
 
 std::vector<float> AmpView::getShownGainSteps() const { return gainStepDots->getSteps(); }
@@ -772,7 +761,7 @@ juce::String AmpView::toneTypeOf (const juce::File& namFile)
 
 void AmpView::refresh()
 {
-    showSlot (juce::roundToInt (state.getRawParameterValue (AmpSimProcessor::slotParamId)->load()));
+    showSlot (ampSim.getSelectedAmp());
     updateGatePrompt();
 
     // The capture: lit while one is loaded; its voice from the metadata, its file.
@@ -814,20 +803,8 @@ void AmpView::refresh()
     info->set (voice, model, info->rate.isEmpty() ? juce::String ("48 kHz") : info->rate);
     updateGainSteps();
 
-    // The amp picker, the badge, and the tabs name the amp each slot plays.
-    juce::String picked;
-    if (file == juce::File() || line == "Empty")
-        picked = "None";
-    else if (const auto& set = setInfo (path); set.name.isNotEmpty())
-        picked = set.name;
-    else
-        picked = file.getFileNameWithoutExtension();
-    picker->set (picked);
-    head.setBadge (slotAmpName (shownSlot));
-    std::vector<TabRow::Item> items;
-    for (int s = 0; s < AmpSimProcessor::numAmpSlots; ++s)
-        items.push_back ({ s, slotAmpName (s), "PC " + juce::String (s + 1), {}, false });
-    tabs.setItems (items);
+    // The shelf: the playing amp underlined, your capture's mini once one is loaded.
+    shelf->set (shownSlot, yourCaptureLoaded());
 }
 
 void AmpView::pageShown()
@@ -918,9 +895,7 @@ void AmpView::paint (juce::Graphics& g)
 
 void AmpView::resized()
 {
-    tabs.setBounds (0, 0, getWidth(), tabsHeight);
-    constexpr int pickerWidth = 420; // room for "Amp", the arrows, and the longest name, right of the tabs
-    picker->setBounds (getWidth() - pickerWidth, 0, pickerWidth, (int) AmpPicker::line);
+    shelf->setBounds (0, 0, getWidth(), tabsHeight - 1); // where the tabs were: the 20 px line, the underline under it
     stageArea = { 0, stageTop, getWidth(), stageHeight };
 
     // The head, centred at the bottom of the stage.

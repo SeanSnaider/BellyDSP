@@ -9,9 +9,9 @@
 #include <map>
 
 /// Scenes (BUILD_PLAN "Presets and scenes"): 8 snapshots inside a preset, so one stomp moves a song from
-/// verse to chorus. A scene holds the active amp slot, every block's on/off switch, and a chosen set of
+/// verse to chorus. A scene holds the amp that plays, every block's on/off switch, and a chosen set of
 /// other parameters (delay mix or reverb level, say). Recalling one sets those parameters, so it takes
-/// effect as fast as they do (the amp slot's 20 ms crossfade, the blocks' 10 ms bypass fades, the knobs'
+/// effect as fast as they do (the amp switch: a warm-up of about 85 ms, then a 20 ms crossfade; the blocks' 10 ms bypass fades, the knobs'
 /// smoothing) and nothing reloads: it's instant from the footswitch. Everything a scene doesn't hold is
 /// left alone. Message thread only.
 ///
@@ -29,7 +29,7 @@ public:
         std::map<juce::String, float> values; // plain values
     };
 
-    /// Always in a scene: the amp slot, every block switch ("..._on" and the cab bypass), never a global
+    /// Always in a scene: the amp (amp_model; amp_slot until 2026-10-07), every block switch ("..._on" and the cab bypass), never a global
     /// setting.
     static bool isSwitch (const juce::String& parameterId);
 

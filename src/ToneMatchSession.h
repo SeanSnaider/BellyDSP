@@ -235,7 +235,7 @@ public:
     const MatchResult& getResult() const noexcept { return result; }
     juce::String getError() const { return error; }
 
-    /// The result as settings: amp_slot, that slot's Gain and tone, the post EQ (on, parametric, the five
+    /// The result as settings: amp_model (the matched amp), that amp's Gain and tone, the post EQ (on, parametric, the five
     /// bands, its cuts off), close mic 1's cab with close mic 2 and the room muted and the cab's cuts off,
     /// the amp, cab, and post section on; and the pre effects that color the tone before the amp switched
     /// off (preEffectsApplyTurnsOff; the noise gate is left as it is: ASSUMPTIONS TM19). One undo step (the
@@ -258,16 +258,17 @@ public:
     /// The cab files the search chooses from: the built-in IRs, sorted by path (as the prototype sorts them).
     static std::vector<juce::File> builtInCabs();
 
-    /// Every gain set in the content folder (content/models/<name>/gainset.json): the built-ins in slot order, then
-    /// the others by name, so a new set joins the search by being there.
+    /// Every gain set in the content folder (content/models/<name>/gainset.json): the built-in amps in their order,
+    /// then any others by name, so a new set joins the search by being there.
     static std::vector<juce::File> contentGainSets();
-    /// The amps the search chooses from: contentGainSets(), then each slot's own capture that isn't one of them.
+    /// The amps the search chooses from: contentGainSets(), then your capture (amp 9) if one is loaded (and any other
+    /// amp's capture that isn't one of them).
     std::vector<juce::File> modelsToSearch() const;
     /// A model's name for the page: a gain set's folder ("Ember"), a capture's file name.
     static juce::String modelName (const juce::File& model);
-    /// The slot Apply plays the result in: the slot that holds the matched amp already, otherwise the playing slot
-    /// (Apply loads the matched gain set into it).
-    int applySlot() const;
+    /// The amp Apply plays the result in (0 to 8): the built-in amp the matched gain set is, or the amp that holds
+    /// the matched capture; anything else is your capture (Apply loads it into amp 9).
+    int applyAmp() const;
 
     /// For tests: let the worker finish (or give up after timeoutMs). True if it finished.
     bool waitForMatch (int timeoutMs);
@@ -294,9 +295,9 @@ public:
     static int playerSource (int source) noexcept { return source == sourceTargetRaw ? ampsim::PreviewPlayer::sourceTargetRaw : source; }
 
     /// The settings the Match source plays: the result as Apply writes it (the values as the parameters
-    /// store them), with the matched slot's Master as it is now. The cab IR is left empty (the worker reads it).
+    /// store them), with the matched amp's Master as it is now. The cab IR is left empty (the worker reads it).
     ampsim::tonematch::ToneSettings matchedSettings() const;
-    /// The settings the Current source plays: what's set now (the playing slot, close mic 1's IR as it
+    /// The settings the Current source plays: what's set now (the playing amp, close mic 1's IR as it
     /// plays, the post EQ if its section and itself are on).
     ampsim::tonematch::ToneSettings currentSettings() const;
 
