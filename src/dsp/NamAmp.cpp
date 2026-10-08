@@ -393,6 +393,33 @@ void NamAmp::reset()
     }
 }
 
+void NamAmp::restart() noexcept
+{
+    if (fading)
+    {
+        fadePosition = fadeLength;
+        finishSwitchIfDone();
+    }
+
+    if (toRetire != nullptr && handoff.retire (toRetire))
+        toRetire = nullptr;
+
+    // A capture loaded while the amp wasn't running goes live now, with no fade: the amp is unheard until its
+    // warm-up is done. (If the last retired model hasn't been collected yet, the new one waits for the next
+    // buffer's pickUpNewModel() and its usual fade, which the warm-up hides as well.)
+    if (toRetire == nullptr)
+        if (auto* next = handoff.take())
+        {
+            if (current != nullptr && ! handoff.retire (current))
+                toRetire = current;
+            current = next;
+        }
+
+    // render() starts it again at the knob (startModel), as a newly loaded capture starts.
+    if (current != nullptr)
+        current->position = -1.0f;
+}
+
 bool NamAmp::isGainMoving() const noexcept
 {
     if (current == nullptr || current->steps.empty() || current->position < 0.0f)

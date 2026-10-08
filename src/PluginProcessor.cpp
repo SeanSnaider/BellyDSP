@@ -24,14 +24,14 @@ AmpSimProcessor::AmpSimProcessor()
     limiterOn = raw ("output_limit_on");
     limiterCeiling = raw ("output_limit_ceiling");
     cabBypass = raw ("cab_bypass");
-    ampSlot = raw (slotParamId);
+    ampModel = raw (ampModelParamId);
     ampBypass = raw ("amp_bypass");
     preFxOn = raw ("pre_fx_on");
     postFxOn = raw ("post_fx_on");
 
-    for (int s = 0; s < numAmpSlots; ++s)
+    for (int s = 0; s < numAmps; ++s)
     {
-        auto& p = slotParameters[(size_t) s];
+        auto& p = ampParameters[(size_t) s];
         p.inputTrim = raw (ampParamId (s, "input_trim"));
         p.outputTrim = raw (ampParamId (s, "output_trim"));
 
@@ -93,8 +93,8 @@ AmpSimProcessor::AmpSimProcessor()
 
     markCabFollowed();
 
-    // A fresh start: the amp slots start on their built-in captures, loaded on the loader thread.
-    fillFreshSlots();
+    // A fresh start: the amps start on their built-in captures, loaded on the loader thread.
+    fillFreshAmps();
 
     // The analyzer's ring and scratch are allocated once, here, never while audio runs.
     analyzerRing.prepare (analyzerRingSize);
@@ -145,7 +145,19 @@ juce::AudioProcessorValueTreeState::ParameterLayout AmpSimProcessor::createParam
     layout.add (std::make_unique<Float> (juce::ParameterID { "output_limit_ceiling", 1 }, "Output Limiter Ceiling",
                                          juce::NormalisableRange<float> (ampsim::OutputLimiter::minCeilingDb, ampsim::OutputLimiter::maxCeilingDb, 0.1f),
                                          ampsim::OutputLimiter::defaultCeilingDb, dB));
-    layout.add (std::make_unique<Choice> (juce::ParameterID { slotParamId, 1 }, "Amp Slot", juce::StringArray { "Amp 1", "Amp 2", "Amp 3" }, 0));
+    // The three-slot rig's choice (until 2026-10-07): registered still, since IDs are permanent, but read by nothing;
+    // a state, preset, scene, or MIDI mapping naming it is migrated to amp_model (presets::mapSlots).
+    layout.add (std::make_unique<Choice> (juce::ParameterID { slotParamId, 1 }, "Amp Slot (unused)", juce::StringArray { "Amp 1", "Amp 2", "Amp 3" }, 0));
+
+    // The amp that plays (BUILD_PLAN "Amp switching"): the built-in amps in the shelf's order, then the user's capture.
+    // APVTS saves a choice as its index (the denormalised value), presets and scenes as their plain value, the index
+    // too, so a choice appended later leaves every saved index meaning the same amp (ASSUMPTIONS AS2).
+    {
+        juce::StringArray amps;
+        for (int a = 0; a < numAmps; ++a)
+            amps.add (ampName (a));
+        layout.add (std::make_unique<Choice> (juce::ParameterID { ampModelParamId, 1 }, "Amp", amps, 0));
+    }
 
     // The signal chain's bypass dots (the UI handoff's bottom chain): the whole amp, and each effect
     // section as a unit. A section switch never touches its blocks' own switches: a block runs when its
@@ -167,9 +179,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout AmpSimProcessor::createParam
     layout.add (std::make_unique<Float> (juce::ParameterID { "tuner_a4", 1 }, "Tuner A4", juce::NormalisableRange<float> (430.0f, 450.0f, 0.1f), 440.0f,
                                          juce::AudioParameterFloatAttributes().withLabel ("Hz")));
 
-    for (int s = 0; s < numAmpSlots; ++s)
+    for (int s = 0; s < numAmps; ++s)
     {
-        const auto prefix = "Amp " + juce::String (s + 1) + " ";
+        const auto prefix = ampName (s) + " ";
         // The head's Gain knob. Its ID says input trim, which is what Gain was until 2026-10-04, and what it
         // still is for a single capture (loudness-compensated now); with a gain set it's the position across
         // the steps (AmpSection::GainKnob, BUILD_PLAN "Amp gain"). The stored value stays in dB, -24 to +24, so
@@ -276,9 +288,11 @@ void AmpSimProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     sampleRateOk = std::abs (sampleRate - ampsim::NamAmp::requiredSampleRate) < 0.5;
     preparedBlockSize = juce::jmax (1, samplesPerBlock);
 
-    // Start on the saved slot and cab settings without ramps: prepare() snaps fades to the targets.
-    lastSlotParameter = juce::roundToInt (ampSlot->load());
-    chain.amp.selectSlot (lastSlotParameter);
+    // Start on the saved amp and cab settings without ramps: prepare() snaps fades to the targets.
+    lastAmpParameter = getSelectedAmp();
+    chain.amp.selectAmp (lastAmpParameter);
+    for (int a = 0; a < numAmps; ++a)
+        chain.amp.amp (a).inputTrim.setGainDecibels (ampParameters[(size_t) a].inputTrim->load());
     applyCabParameters();
     applyEffectParameters();
     chain.setBypassed (ampsim::Chain::Slot::limiter, limiterOn->load() < 0.5f);
@@ -309,9 +323,10 @@ bool AmpSimProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 
 void AmpSimProcessor::handleMidi (const juce::MidiBuffer& midi)
 {
-    // Program change 0, 1, 2 (shown as 1, 2, 3 on most footswitches) selects amp slot 1, 2, 3. The
-    // switch happens here, on the audio thread, right away. The slot parameter catches up from the
-    // timer, because setting a parameter notifies listeners, which can lock and allocate.
+    // Program change 0 to 8 (shown as 1 to 9 on most footswitches) selects amp 1 to 9 (the shelf's order, then
+    // your capture). The switch starts here, on the audio thread, right away (it lands after the new amp's warm-up).
+    // The amp parameter catches up from the timer, because setting a parameter notifies listeners, which can lock
+    // and allocate.
     // Read the raw bytes rather than building MidiMessage objects, which keeps this path trivially
     // allocation-free.
     const auto tapController = juce::roundToInt (tapCc->load (std::memory_order_relaxed));
@@ -321,10 +336,11 @@ void AmpSimProcessor::handleMidi (const juce::MidiBuffer& midi)
     {
         const auto* data = metadata.data;
 
-        if (metadata.numBytes >= 2 && (data[0] & 0xf0) == 0xc0 && data[1] < numAmpSlots)
+        if (metadata.numBytes >= 2 && (data[0] & 0xf0) == 0xc0 && data[1] < numAmps)
         {
-            chain.amp.selectSlot (data[1]);
-            midiSlotRequest.store (data[1]);
+            chain.amp.selectAmp (data[1]);
+            lastAmpParameter = data[1]; // so the parameter's old value doesn't switch it back before the timer catches up
+            midiAmpRequest.store (data[1]);
         }
 
         // Tap tempo from the footswitch: the tap CC pressed (value 64 or more), timed to the sample.
@@ -717,16 +733,20 @@ void AmpSimProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         return;
     }
 
-    // The slot parameter changed (GUI, host, or the timer catching up with a footswitch).
-    const auto slotParameter = juce::roundToInt (ampSlot->load (std::memory_order_relaxed));
-
-    if (slotParameter != lastSlotParameter)
-    {
-        lastSlotParameter = slotParameter;
-        chain.amp.selectSlot (slotParameter);
-    }
-
     handleMidi (midi);
+
+    // The amp parameter changed (GUI, host, a scene, a preset). A footswitch's program change has already
+    // switched (handleMidi) and set lastAmpParameter, so the parameter's stale value until the timer writes the new
+    // one isn't a change.
+    if (midiAmpRequest.load (std::memory_order_relaxed) < 0)
+    {
+        const auto ampParameter = juce::jlimit (0, numAmps - 1, juce::roundToInt (ampModel->load (std::memory_order_relaxed)));
+        if (ampParameter != lastAmpParameter)
+        {
+            lastAmpParameter = ampParameter;
+            chain.amp.selectAmp (ampParameter);
+        }
+    }
 
     chain.inputGain.setGainDecibels (inputGainDb->load (std::memory_order_relaxed));
     chain.outputGain.setGainDecibels (outputGainDb->load (std::memory_order_relaxed));
@@ -736,14 +756,15 @@ void AmpSimProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     applyMatchCurveBypass();
 
     // The amp's bypass crossfades the amp section out to its own input with the chain's 10 ms bypass
-    // fade. The three captures keep running on a copy of that input meanwhile (Chain: keepRunning), so
-    // their history is current and switching the amp back on is as seamless as switching slots.
+    // fade. The selected amp keeps running on a copy of that input meanwhile (Chain: keepRunning), so
+    // its history is current and switching the amp back on is seamless.
     chain.setBypassed (ampsim::Chain::Slot::amp, ampBypass->load (std::memory_order_relaxed) >= 0.5f);
 
-    for (int s = 0; s < numAmpSlots; ++s)
+    // Every amp's knobs, whether it runs or not (its own settings, ready when it's chosen).
+    for (int s = 0; s < numAmps; ++s)
     {
-        auto& slot = chain.amp.slot (s);
-        const auto& p = slotParameters[(size_t) s];
+        auto& slot = chain.amp.amp (s);
+        const auto& p = ampParameters[(size_t) s];
         slot.inputTrim.setGainDecibels (p.inputTrim->load (std::memory_order_relaxed));
         slot.outputTrim.setGainDecibels (p.outputTrim->load (std::memory_order_relaxed));
 
@@ -894,7 +915,10 @@ void AmpSimProcessor::setStateInformation (const void* data, int sizeInBytes)
     if (xml == nullptr || ! xml->hasTagName (parameters.state.getType()))
         return;
 
-    parameters.replaceState (juce::ValueTree::fromXml (*xml));
+    // A state from the three-slot rig (no amp_model) becomes the nine amps first (ASSUMPTIONS AS3).
+    auto restored = juce::ValueTree::fromXml (*xml);
+    migrateSlotState (restored);
+    parameters.replaceState (restored);
     auto& state = parameters.state;
 
     // The tuner never comes back engaged: a session saved while tuning would otherwise open muted.
@@ -925,31 +949,36 @@ void AmpSimProcessor::setStateInformation (const void* data, int sizeInBytes)
     state.removeProperty (legacyModelPathKey, nullptr);
     state.removeProperty (legacyIRPathKey, nullptr);
 
-    // Reload the captures and IRs this state was saved with.
-    for (int s = 0; s < numAmpSlots; ++s)
+    // Reload the captures and IRs this state was saved with (not again where the amp already holds the file: the
+    // built-ins a fresh start began loading).
+    for (int s = 0; s < numAmps; ++s)
     {
         if (! state.hasProperty (modelPathKey (s)))
-            continue; // no entry: fillFreshSlots() below
+        {
+            if (s >= numBuiltInAmps && requestedModel[(size_t) s].file != juce::File())
+                unloadModel (s, "Empty", false); // no capture of your own in this state
+            continue; // no entry: fillFreshAmps() below
+        }
 
         const auto path = state.getProperty (modelPathKey (s)).toString();
         const auto local = juce::File::isAbsolutePath (path) ? juce::File (path) : juce::File(); // not the other OS's paths
         const auto moved = local != juce::File() ? presets::bundledElsewhere (local) : juce::File();
 
         if (local.existsAsFile())
-            loadModel (s, local);
+            loadModelIfChanged (s, local);
         else if (moved.existsAsFile())
-            loadModel (s, moved); // a built-in capture saved by a copy of the app installed somewhere else
+            loadModelIfChanged (s, moved); // a built-in capture saved by a copy of the app installed somewhere else
         else if (const auto replaced = presets::replacementForRetiredCapture (path); replaced.existsAsFile())
-            loadModel (s, replaced); // a built-in from before the gain sets: the set that replaced it
+            loadModelIfChanged (s, replaced); // a built-in from before the gain sets: the set that replaced it
         else if (presets::isSavedAbsolutePath (path))
             unloadModel (s, "Saved model is missing: " + path, true); // the saved path stays in the state
         else if (requestedModel[(size_t) s].file != juce::File())
             unloadModel (s, "Empty", false); // cleared on purpose: stop the built-in a fresh start began loading
     }
 
-    // Slots this state has no entry for (it was saved before the built-in captures existed) start on
-    // their built-ins, as on a fresh start. An empty entry is a slot cleared on purpose, and stays empty.
-    fillFreshSlots();
+    // Amps this state has no entry for (it was saved before they existed) start on their built-ins, as on a
+    // fresh start. An empty entry is an amp cleared on purpose, and stays empty.
+    fillFreshAmps();
 
     // The top bar remembers the last factory preset by name: a factory preset that was renamed (no band
     // names, 2026-10-03) is shown, and stepped from, under its new name.
@@ -976,9 +1005,103 @@ void AmpSimProcessor::setStateInformation (const void* data, int sizeInBytes)
     setMatchCurve (ampsim::MatchCurve::Curve::fromVar (juce::JSON::parse (state.getProperty (matchCurveKey).toString())));
 }
 
+juce::String AmpSimProcessor::ampName (int amp)
+{
+    return amp >= 0 && amp < numBuiltInAmps ? presets::builtInAmpName (amp) : juce::String ("Your capture");
+}
+
+void AmpSimProcessor::migrateSlotState (juce::ValueTree& state)
+{
+    // Only a state with no amp_model is from the slot rig. (A missing PARAM keeps whatever the parameter held, so
+    // everything the amps need is written here explicitly.)
+    for (const auto& child : state)
+        if (child.getProperty ("id").toString() == ampModelParamId)
+            return;
+
+    const auto param = [&state] (const juce::String& id) { return state.getChildWithProperty ("id", id); };
+
+    // Milestone 1's single slot ("modelPath") was slot 1.
+    if (state.hasProperty (legacyModelPathKey) && ! state.hasProperty (modelPathKey (0)))
+        state.setProperty (modelPathKey (0), state.getProperty (legacyModelPathKey), nullptr);
+    state.removeProperty (legacyModelPathKey, nullptr);
+
+    std::array<juce::String, 3> captures;
+    for (int k = 0; k < 3; ++k)
+        captures[(size_t) k] = state.getProperty (modelPathKey (k)).toString(); // no entry: empty, the head's built-in
+    const auto selectedSlot = param (slotParamId).isValid() ? juce::roundToInt ((double) param (slotParamId).getProperty ("value")) : 0;
+    const auto m = presets::mapSlots (captures, selectedSlot);
+
+    // The knobs and the amp choice. Every amp knob is written (an amp no slot became gets its defaults), because a
+    // PARAM missing from a restored state would keep the value the parameter had before.
+    juce::NamedValueSet values;
+    for (const auto& child : state)
+        if (child.hasType ("PARAM"))
+            values.set (child.getProperty ("id").toString(), child.getProperty ("value"));
+    presets::slotValuesToAmps (values, m);
+    for (int a = 0; a < numAmps; ++a)
+        for (const auto& name : presets::ampKnobNames())
+            if (! values.contains (ampParamId (a, name)))
+                values.set (ampParamId (a, name), 0.0f); // every amp knob's default is 0 dB
+    for (const auto& v : values)
+    {
+        auto child = param (v.name.toString());
+        if (! child.isValid())
+        {
+            child = juce::ValueTree ("PARAM");
+            child.setProperty ("id", v.name.toString(), nullptr);
+            state.appendChild (child, nullptr);
+        }
+        child.setProperty ("value", v.value, nullptr);
+    }
+    for (int k = 0; k < 3; ++k) // knobs of the slots' IDs that no amp kept (amp_* IDs left in `values` are the amps')
+        if (! values.contains (ampParamId (k, "input_trim")))
+            for (const auto& name : presets::ampKnobNames())
+                param (ampParamId (k, name)).setProperty ("value", 0.0f, nullptr);
+
+    // The captures: the built-in amps load their own sets (no entry: fillFreshAmps), amp 9 the kept capture of the
+    // user's own.
+    for (int k = 0; k < 3; ++k)
+        state.removeProperty (modelPathKey (k), nullptr);
+    if (m.yourCaptureSlot >= 0)
+        state.setProperty (modelPathKey (yourCaptureAmp), captures[(size_t) m.yourCaptureSlot], nullptr);
+
+    // Each slot's cab for "Follow amp choice" is its amp's now (the selected slot's wins a collision).
+    std::array<juce::var, 3> assigned;
+    for (int k = 0; k < 3; ++k)
+    {
+        assigned[(size_t) k] = state.getProperty (cabAssignKey (k));
+        state.removeProperty (cabAssignKey (k), nullptr);
+    }
+    for (int k = 0; k < 3; ++k)
+        if (k != m.selectedSlot && assigned[(size_t) k].toString().isNotEmpty())
+            state.setProperty (cabAssignKey (m.ampOf[(size_t) k]), assigned[(size_t) k], nullptr);
+    if (assigned[(size_t) m.selectedSlot].toString().isNotEmpty())
+        state.setProperty (cabAssignKey (m.ampOf[(size_t) m.selectedSlot]), assigned[(size_t) m.selectedSlot], nullptr);
+
+    // Scenes and MIDI mappings naming amp_slot or a slot's knob.
+    if (state.hasProperty (scenesKey))
+        state.setProperty (scenesKey, juce::JSON::toString (presets::slotScenesToAmps (juce::JSON::parse (state.getProperty (scenesKey).toString()), m), true), nullptr);
+    if (state.hasProperty (midiMapKey))
+        state.setProperty (midiMapKey, juce::JSON::toString (presets::slotMidiToAmps (juce::JSON::parse (state.getProperty (midiMapKey).toString()), m), true), nullptr);
+}
+
+void AmpSimProcessor::loadModelIfChanged (int amp, const juce::File& file)
+{
+    amp = juce::jlimit (0, numAmps - 1, amp);
+    const auto& requested = requestedModel[(size_t) amp];
+    const auto calibration = currentCalibration();
+    if (requested.file == file && requested.calibration.enabled == calibration.enabled
+        && std::abs (requested.calibration.interfaceInputDbu - calibration.interfaceInputDbu) < 1.0e-4)
+    {
+        parameters.state.setProperty (modelPathKey (amp), file.getFullPathName(), nullptr); // already there, or on its way
+        return;
+    }
+    loadModel (amp, file);
+}
+
 void AmpSimProcessor::loadModel (int slot, const juce::File& file)
 {
-    slot = juce::jlimit (0, numAmpSlots - 1, slot);
+    slot = juce::jlimit (0, numAmps - 1, slot);
     parameters.state.setProperty (modelPathKey (slot), file.getFullPathName(), nullptr);
     const auto request = startModelRequest (slot, "Loading " + file.getFileName() + "...", false);
 
@@ -987,7 +1110,7 @@ void AmpSimProcessor::loadModel (int slot, const juce::File& file)
 
     addLoaderJob ([this, slot, file, calibration, request]
     {
-        const auto result = chain.amp.slot (slot).model.loadModel (file, true, calibration);
+        const auto result = chain.amp.amp (slot).model.loadModel (file, true, calibration);
         finishModelRequest (slot, request, result.message, ! result.ok);
     });
 }
@@ -1043,18 +1166,18 @@ void AmpSimProcessor::setCabFollow (bool shouldFollow)
     parameters.state.setProperty (cabFollowKey, shouldFollow, nullptr);
     markCabFollowed();
     if (shouldFollow)
-        applyCabAssignment (lastFollowedSlot);
+        applyCabAssignment (lastFollowedAmp);
 }
 
 juce::File AmpSimProcessor::getCabAssignment (int slot) const
 {
-    const auto path = parameters.state.getProperty (cabAssignKey (juce::jlimit (0, numAmpSlots - 1, slot))).toString();
+    const auto path = parameters.state.getProperty (cabAssignKey (juce::jlimit (0, numAmps - 1, slot))).toString();
     return juce::File::isAbsolutePath (path) ? juce::File (path) : juce::File();
 }
 
 void AmpSimProcessor::setCabAssignment (int slot, const juce::File& fileOrPack)
 {
-    const auto key = cabAssignKey (juce::jlimit (0, numAmpSlots - 1, slot));
+    const auto key = cabAssignKey (juce::jlimit (0, numAmps - 1, slot));
     if (fileOrPack == juce::File())
         parameters.state.removeProperty (key, nullptr);
     else
@@ -1064,7 +1187,7 @@ void AmpSimProcessor::setCabAssignment (int slot, const juce::File& fileOrPack)
 void AmpSimProcessor::pickCab (const juce::File& fileOrPack)
 {
     loadCabIR (0, fileOrPack);
-    setCabAssignment (juce::roundToInt (ampSlot->load()), fileOrPack);
+    setCabAssignment (getSelectedAmp(), fileOrPack);
 }
 
 void AmpSimProcessor::applyCabAssignment (int slot)
@@ -1098,7 +1221,7 @@ presets::ApplyResult AmpSimProcessor::loadPreset (const juce::var& preset)
 
 void AmpSimProcessor::clearModel (int slot)
 {
-    slot = juce::jlimit (0, numAmpSlots - 1, slot);
+    slot = juce::jlimit (0, numAmps - 1, slot);
     parameters.state.setProperty (modelPathKey (slot), juce::String(), nullptr); // empty, not absent: cleared on purpose
     unloadModel (slot, "Empty", false);
 }
@@ -1108,40 +1231,46 @@ void AmpSimProcessor::unloadModel (int slot, const juce::String& statusAfter, bo
     requestedModel[(size_t) slot] = {};
     // Emptying can't fail, so the status it ends on is shown now, before the loader gets to it.
     startModelRequest (slot, statusAfter, isError);
-    addLoaderJob ([this, slot] { chain.amp.slot (slot).model.clearModel(); });
+    addLoaderJob ([this, slot] { chain.amp.amp (slot).model.clearModel(); });
 }
 
-void AmpSimProcessor::useBuiltInCapture (int slot)
+void AmpSimProcessor::loadYourCapture (const juce::File& file)
 {
-    slot = juce::jlimit (0, numAmpSlots - 1, slot);
-    if (const auto file = presets::builtInCapture (slot); file.existsAsFile())
-        loadModel (slot, file);
-    else
-        startModelRequest (slot, "The built-in capture is missing: " + file.getFullPathName(), true);
+    loadModel (yourCaptureAmp, file);
+    selectAmp (yourCaptureAmp);
 }
 
-void AmpSimProcessor::fillFreshSlots()
+void AmpSimProcessor::selectAmp (int amp)
+{
+    if (auto* param = parameters.getParameter (ampModelParamId))
+    {
+        param->beginChangeGesture();
+        param->setValueNotifyingHost (param->convertTo0to1 ((float) juce::jlimit (0, numAmps - 1, amp)));
+        param->endChangeGesture();
+    }
+}
+
+void AmpSimProcessor::fillFreshAmps()
 {
     if (! builtInCapturesForFreshSlots)
         return;
 
-    for (int s = 0; s < numAmpSlots; ++s)
+    // The amp that plays first, so it's heard as soon as possible (one set loads in about a second; all eight take
+    // several), then the rest in the shelf's order. All eight stay loaded, so a switch only waits for the warm-up
+    // (BUILD_PLAN "Amp switching": the memory and load times measured).
+    std::vector<int> order { getSelectedAmp() };
+    for (int a = 0; a < numBuiltInAmps; ++a)
+        if (a != order.front())
+            order.push_back (a);
+
+    for (const auto a : order)
     {
-        if (parameters.state.hasProperty (modelPathKey (s)))
-            continue; // a capture of its own, or cleared on purpose (an empty path)
+        if (a >= numBuiltInAmps || parameters.state.hasProperty (modelPathKey (a)))
+            continue; // your capture, a capture of its own, or cleared on purpose (an empty path)
 
         // A copy of the app without its content folder (a bare build) just starts empty, without a warning.
-        const auto file = presets::builtInCapture (s);
-        if (! file.existsAsFile())
-            continue;
-
-        const auto& requested = requestedModel[(size_t) s];
-        const auto calibration = currentCalibration();
-        if (requested.file == file && requested.calibration.enabled == calibration.enabled
-            && std::abs (requested.calibration.interfaceInputDbu - calibration.interfaceInputDbu) < 1.0e-4)
-            parameters.state.setProperty (modelPathKey (s), file.getFullPathName(), nullptr); // already on its way
-        else
-            loadModel (s, file);
+        if (const auto file = presets::builtInCapture (a); file.existsAsFile())
+            loadModelIfChanged (a, file);
     }
 }
 
@@ -1237,8 +1366,8 @@ void AmpSimProcessor::addLoaderJob (std::function<void()> job)
 
 void AmpSimProcessor::timerCallback()
 {
-    for (int s = 0; s < numAmpSlots; ++s)
-        chain.amp.slot (s).model.collectGarbage();
+    for (int s = 0; s < numAmps; ++s)
+        chain.amp.amp (s).model.collectGarbage();
 
     chain.cab.collectGarbage();
     chain.matchCurve.collectGarbage();
@@ -1311,17 +1440,22 @@ void AmpSimProcessor::timerCallback()
         tapPending = false;
     }
 
-    // A footswitch changed the slot on the audio thread; make the parameter (and the GUI) agree.
-    if (const auto slot = midiSlotRequest.exchange (-1); slot >= 0)
-        if (auto* param = parameters.getParameter (slotParamId))
-            param->setValueNotifyingHost (param->convertTo0to1 ((float) slot));
-
-    // Follow amp choice: a new slot brings its own cab into close mic 1.
-    if (const auto slot = juce::roundToInt (ampSlot->load()); slot != lastFollowedSlot)
+    // A footswitch changed the amp on the audio thread; make the parameter (and the GUI) agree. The request is
+    // cleared only after the parameter holds it, so the audio thread never reads the old value as a new change.
+    if (const auto amp = midiAmpRequest.load(); amp >= 0)
     {
-        lastFollowedSlot = slot;
+        if (auto* param = parameters.getParameter (ampModelParamId))
+            param->setValueNotifyingHost (param->convertTo0to1 ((float) amp));
+        auto expected = amp;
+        midiAmpRequest.compare_exchange_strong (expected, -1); // a newer press keeps its request for the next tick
+    }
+
+    // Follow amp choice: a new amp brings its own cab into close mic 1.
+    if (const auto amp = getSelectedAmp(); amp != lastFollowedAmp)
+    {
+        lastFollowedAmp = amp;
         if (isCabFollowing())
-            applyCabAssignment (slot);
+            applyCabAssignment (amp);
     }
 
     const auto now = juce::Time::getMillisecondCounterHiRes();
@@ -1359,7 +1493,7 @@ void AmpSimProcessor::timerCallback()
         appliedCalibration = pendingCalibration;
         ++calibrationReloads;
 
-        for (int s = 0; s < numAmpSlots; ++s)
+        for (int s = 0; s < numAmps; ++s)
             if (const auto path = parameters.state.getProperty (modelPathKey (s)).toString();
                 juce::File::isAbsolutePath (path) && juce::File (path).existsAsFile())
                 loadModel (s, juce::File (path));

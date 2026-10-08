@@ -27,7 +27,13 @@
 class AmpSimProcessor final : public juce::AudioProcessor, private juce::Timer
 {
 public:
-    static constexpr int numAmpSlots = ampsim::AmpSection::numSlots;
+    /// The amps (BUILD_PLAN "Amp switching", 2026-10-07): the eight built-in amps in the shelf's order (amp 1 Glass,
+    /// 2 Ember, 3 Monolith, 4 Lantern, 5 Basalt, 6 Comet, 7 Forge, 8 Quartz; presets::builtInAmpName) and the user's
+    /// own capture (amp 9). Only the selected one runs. Each has its own knobs (amp1_* .. amp9_*) and its own
+    /// capture file in the state (modelPathKey), so switching away and back restores both.
+    static constexpr int numAmps = ampsim::AmpSection::numAmps;
+    static constexpr int numBuiltInAmps = numAmps - 1;
+    static constexpr int yourCaptureAmp = numAmps - 1;
     static constexpr int numCabMics = ampsim::Cab::numCloseMics + 1; // close mic 1, close mic 2, room
     static constexpr int roomMic = ampsim::Cab::numCloseMics;
 
@@ -58,50 +64,68 @@ public:
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
-    /// Message thread. Loading happens on a background thread; watch getStatus() for the result.
-    void loadModel (int slot, const juce::File& file);
+    /// Message thread. Loading happens on a background thread; watch getStatus() for the result. Any amp can hold
+    /// any capture file (the tests use that); the app puts the built-in gain sets in amps 1 to 8 and the user's own
+    /// capture in amp 9 (loadYourCapture).
+    void loadModel (int amp, const juce::File& file);
+
+    /// Message thread: loadModel() unless the amp already holds this file with the current calibration (presets
+    /// and restored states, which name all nine amps: the built-ins aren't loaded again on every preset change).
+    void loadModelIfChanged (int amp, const juce::File& file);
+
+    /// The amp choice's names, in its order: the built-in amps, then "Your capture".
+    static juce::String ampName (int amp);
+
+    /// A state saved before 2026-10-07 (three slots, no amp_model): rewritten in place to the nine amps
+    /// (presets::mapSlots). Public for the tests; setStateInformation() runs it.
+    static void migrateSlotState (juce::ValueTree& state);
     void loadCabIR (int mic, const juce::File& file); // mic 0, 1: close mics; 2: room. A folder is a cab pack.
 
-    /// Message thread: empty an amp slot or a cab mic (queued behind any load already running). A cleared
-    /// slot is saved as an empty path, so it stays empty (it doesn't go back to its built-in capture).
-    void clearModel (int slot);
+    /// Message thread: empty an amp or a cab mic (queued behind any load already running). A cleared amp is
+    /// saved as an empty path, so it stays empty (it doesn't go back to its built-in capture). The app only
+    /// clears amp 9 (the capture menu's "Remove your capture").
+    void clearModel (int amp);
     void clearCabIR (int mic);
 
-    /// Message thread: put a slot's built-in capture back (presets::builtInCapture: Glass, Ember, Monolith).
-    void useBuiltInCapture (int slot);
+    /// Message thread: the user's own capture (Load a capture file, a right-click on the grille): loads it into
+    /// amp 9 and selects that amp.
+    void loadYourCapture (const juce::File& file);
 
-    /// Whether slots nobody has filled or cleared start on their built-in captures (BUILD_PLAN decision log
-    /// 2026-10-03; ASSUMPTIONS DS48): a fresh processor loads Glass, Ember, and Monolith on the loader
-    /// thread, and a restored state that has no entry for a slot (saved before the built-ins existed)
-    /// gets that slot's built-in. A slot cleared on purpose (Clear, or a preset with an empty slot) is
-    /// saved as an empty path and stays empty; a slot with its own capture keeps it. On in the app. The
-    /// test suite turns it off (TestMain), because its tests were written against empty slots, and turns
-    /// it back on where the built-ins are what's being tested.
+    /// Message thread: the amp choice (amp_model), 0 to 8, set as a gesture (undoable, the host told).
+    void selectAmp (int amp);
+    int getSelectedAmp() const noexcept { return juce::jlimit (0, numAmps - 1, juce::roundToInt (ampModel->load())); }
+
+    /// Whether amps nobody has filled or cleared start on their built-in captures (BUILD_PLAN decision log
+    /// 2026-10-03; ASSUMPTIONS DS48): a fresh processor loads the eight built-in gain sets on the loader thread
+    /// (the selected amp's first), and a restored state that has no entry for an amp (saved before the amp
+    /// existed) gets its built-in. An amp cleared on purpose is saved as an empty path and stays empty; an amp
+    /// with its own capture keeps it. On in the app. The test suite turns it off (TestMain), because its tests
+    /// were written against empty amps, and turns it back on where the built-ins are what's being tested.
     static inline bool builtInCapturesForFreshSlots = true;
 
     /// Tests only: every loader job (model and IR loads, clears, mic morphs) waits this long before it starts, to
     /// stand in for a slow or starved machine. 0 in the app.
     static inline std::atomic<int> loaderDelayMsForTests { 0 };
 
-    /// Message thread: "Follow amp choice" (the cab page). Each amp slot can have a cab assigned to it: the
-    /// IR file or cab pack last picked for close mic 1 while that slot was playing. While following,
-    /// switching slots (from the GUI, a footswitch, a scene, or the host) loads the new slot's cab into
-    /// close mic 1. Both are saved in the state and in presets (Presets.h: "cab_assign", "cab_follow").
+    /// Message thread: "Follow amp choice" (the cab page). Each amp can have a cab assigned to it: the IR file or
+    /// cab pack last picked for close mic 1 while that amp was playing. While following, switching amps (from the
+    /// GUI, a footswitch, a scene, or the host) loads the new amp's cab into close mic 1. Both are saved in the
+    /// state and in presets (Presets.h: "cab_assign", "cab_follow").
     bool isCabFollowing() const { return (bool) parameters.state.getProperty (cabFollowKey, true); }
     void setCabFollow (bool shouldFollow);
-    juce::File getCabAssignment (int slot) const;
-    void setCabAssignment (int slot, const juce::File& fileOrPack);
+    juce::File getCabAssignment (int amp) const;
+    void setCabAssignment (int amp, const juce::File& fileOrPack);
 
     /// Message thread: a cab picked on the cab page (from the library list, a dropped file, or the file
-    /// chooser): loads it into close mic 1 and assigns it to the slot that's playing.
+    /// chooser): loads it into close mic 1 and assigns it to the amp that's playing.
     void pickCab (const juce::File& fileOrPack);
 
-    /// Message thread: the slot change in effect now has been dealt with (a preset or a restored state
+    /// Message thread: the amp change in effect now has been dealt with (a preset or a restored state
     /// brings its own cab, which following mustn't replace).
-    void markCabFollowed() { lastFollowedSlot = juce::roundToInt (ampSlot->load()); }
+    void markCabFollowed() { lastFollowedAmp = getSelectedAmp(); }
 
     static inline const juce::Identifier cabFollowKey { "cabFollow" };
-    static juce::Identifier cabAssignKey (int slot) { return "cabAssign" + juce::String (slot + 1); }
+    static juce::Identifier cabAssignKey (int amp) { return "cabAssign" + juce::String (amp + 1); }
 
     /// Message thread: a close mic's cab pack positions (empty without a pack), for the position pad.
     std::vector<ampsim::CabPack::Point> getCabPackPoints (int mic) const { return chain.cab.getPackPoints (mic); }
@@ -238,8 +262,8 @@ public:
 
     struct Status
     {
-        std::array<juce::String, numAmpSlots> model { "Empty", "Empty", "Empty" };
-        std::array<bool, numAmpSlots> modelError {};
+        std::array<juce::String, numAmps> model = [] { std::array<juce::String, numAmps> a; a.fill ("Empty"); return a; }();
+        std::array<bool, numAmps> modelError {};
         std::array<juce::String, numCabMics> cab { "No IR", "No IR", "No IR" };
         std::array<bool, numCabMics> cabError {};
         juce::String alignment;
@@ -294,9 +318,9 @@ public:
     /// it while it records; the tone match page (message thread) starts, stops, and drains it.
     ampsim::tonematch::DiRecorder& getDiRecorder() noexcept { return diRecorder; }
 
-    /// What tone match needs from the processor: each slot's capture file (empty if the slot is empty) and
+    /// What tone match needs from the processor: each amp's capture file (empty if the amp is empty) and
     /// the input calibration the captures were loaded with. Message thread.
-    juce::File getSlotCapture (int slot) const { return requestedModel[(size_t) slot].file; }
+    juce::File getAmpCapture (int amp) const { return requestedModel[(size_t) amp].file; }
     ampsim::NamAmp::Calibration getCaptureCalibration() const { return currentCalibration(); }
 
     /// Tone match's A/B player at the end of the chain (PreviewPlayer.h). Its setters are atomics and a
@@ -347,15 +371,22 @@ public:
     void resetAB() { abSlots = {}; abOnB = false; }
 
     // Parameter IDs. Permanent once presets exist: never rename one, add a new ID instead.
-    static juce::String ampParamId (int slot, const juce::String& name) { return "amp" + juce::String (slot + 1) + "_" + name; }
+    // amp1_* .. amp3_* were the three slots' knobs until 2026-10-07; they are now Glass's, Ember's, and Monolith's
+    // (slot 1 always wore Glass, 2 Ember, 3 Monolith), amp4_* .. amp8_* the five more, amp9_* the user's capture.
+    static juce::String ampParamId (int amp, const juce::String& name) { return "amp" + juce::String (amp + 1) + "_" + name; }
     static juce::String cabParamId (int mic, const juce::String& name)
     {
         return "cab_" + (mic == roomMic ? juce::String ("room") : "mic" + juce::String (mic + 1)) + "_" + name;
     }
+    /// The amp choice (since 2026-10-07): 0 to 8, the amps in the shelf's order, then the user's capture. A choice
+    /// parameter, stored as its index, so choices appended later keep saved states, presets and scenes valid.
+    static inline const juce::String ampModelParamId { "amp_model" };
+    /// The three-slot rig's slot choice (until 2026-10-07). Kept registered (IDs are permanent), but nothing reads it
+    /// any more: a state, preset, scene, or MIDI mapping that names it is migrated to amp_model (presets::slotsToAmps).
     static inline const juce::String slotParamId { "amp_slot" };
 
     // Keys for the non-parameter state saved alongside the knobs.
-    static juce::Identifier modelPathKey (int slot) { return "amp" + juce::String (slot + 1) + "ModelPath"; }
+    static juce::Identifier modelPathKey (int amp) { return "amp" + juce::String (amp + 1) + "ModelPath"; }
     static juce::Identifier cabPathKey (int mic)
     {
         return mic == roomMic ? juce::Identifier ("cabRoomPath") : juce::Identifier ("cabMic" + juce::String (mic + 1) + "Path");
@@ -366,16 +397,16 @@ public:
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     void timerCallback() override;
-    void fillFreshSlots();
-    void unloadModel (int slot, const juce::String& statusAfter, bool isError); // empties the slot, leaves the state alone
+    void fillFreshAmps();
+    void unloadModel (int amp, const juce::String& statusAfter, bool isError); // empties the amp, leaves the state alone
 
     // Status lines are ordered by request (BUILD_PLAN decision log, 2026-10-05). Every load, clear, or status-only
     // change of a slot or mic starts a new request on the message thread, which numbers it and shows its status
     // at once ("Loading ...", "Saved model is missing: ..."). A loader job's result is shown only if its request
     // is still the newest for that slot or mic, so an older request finishing late never overwrites a newer
     // one's status, whatever the threads' timing. All under statusMutex.
-    std::uint64_t startModelRequest (int slot, const juce::String& text, bool isError);
-    void finishModelRequest (int slot, std::uint64_t request, const juce::String& text, bool isError);
+    std::uint64_t startModelRequest (int amp, const juce::String& text, bool isError);
+    void finishModelRequest (int amp, std::uint64_t request, const juce::String& text, bool isError);
     std::uint64_t startCabRequest (int mic, const juce::String& text, bool isError);
     std::uint64_t currentCabRequest (int mic) const;
     void finishCabRequest (int mic, std::uint64_t request, const juce::String& text, bool isError);
@@ -393,7 +424,7 @@ private:
     const std::unique_ptr<ampsim::Chain> chainStorage = std::make_unique<ampsim::Chain>();
     ampsim::Chain& chain = *chainStorage;
 
-    struct SlotParameters
+    struct AmpParameters
     {
         std::atomic<float>* inputTrim = nullptr;
         std::atomic<float>* outputTrim = nullptr;
@@ -417,12 +448,12 @@ private:
     std::atomic<float>* limiterOn = nullptr;
     std::atomic<float>* limiterCeiling = nullptr;
     std::atomic<float>* cabBypass = nullptr;
-    std::atomic<float>* ampSlot = nullptr;
+    std::atomic<float>* ampModel = nullptr;
     std::atomic<float>* ampBypass = nullptr;
     std::atomic<float>* preFxOn = nullptr;
     std::atomic<float>* postFxOn = nullptr;
     std::atomic<bool> gateOpen { true };
-    std::array<SlotParameters, numAmpSlots> slotParameters;
+    std::array<AmpParameters, numAmps> ampParameters;
     std::array<MicParameters, ampsim::Cab::numCloseMics> micParameters;
     std::atomic<float>* roomLevel = nullptr;
     std::atomic<float>* roomPreDelay = nullptr;
@@ -448,10 +479,10 @@ private:
     void updateMatchCurve (bool force);
     void applyMatchCurveBypass();
 
-    int lastSlotParameter = -1;              // audio thread: the slot parameter value last acted on
-    int lastFollowedSlot = -1;               // message thread: the slot whose cab "Follow amp choice" last applied
-    void applyCabAssignment (int slot);
-    std::atomic<int> midiSlotRequest { -1 }; // audio thread to timer: a footswitch picked this slot
+    int lastAmpParameter = -1;              // audio thread: the amp choice last acted on
+    int lastFollowedAmp = -1;               // message thread: the amp whose cab "Follow amp choice" last applied
+    void applyCabAssignment (int amp);
+    std::atomic<int> midiAmpRequest { -1 }; // audio thread to timer: a footswitch picked this amp
     std::array<int, ampsim::Cab::numCloseMics> loadedChannel { 0, 0 }; // message thread: channel each close mic was read with
 
     // Moving mics. packActive (the mic has a pack, so its position matters) is cleared by the message
@@ -474,7 +505,7 @@ private:
         juce::File file;
         ampsim::NamAmp::Calibration calibration;
     };
-    std::array<RequestedModel, numAmpSlots> requestedModel;
+    std::array<RequestedModel, numAmps> requestedModel;
     double pendingSinceMs = 0.0;
     int calibrationReloads = 0;
     std::atomic<float>* calibrateInput = nullptr;
@@ -580,7 +611,7 @@ private:
 
     mutable std::mutex statusMutex; // shared by the GUI and loader threads, never the audio thread
     Status status;
-    std::array<std::uint64_t, numAmpSlots> modelRequest {}; // the newest request per slot and mic (statusMutex)
+    std::array<std::uint64_t, numAmps> modelRequest {}; // the newest request per amp and mic (statusMutex)
     std::array<std::uint64_t, numCabMics> cabRequest {};
     std::atomic<int> loadsInFlight { 0 };
 
