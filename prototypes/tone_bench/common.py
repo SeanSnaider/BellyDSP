@@ -31,19 +31,25 @@ SR = 48000
 RENDER = REPO / "build/ampsim_render_artefacts/Release/ampsim_render"
 OUT = REPO / "build/tone_bench"
 CACHE = pathlib.Path(os.environ.get("TONE_BENCH_CACHE", OUT / "cache"))
+# The render cache's keys hold the content files' absolute paths (the gain sets, the IRs, and NAM's example models are
+# ampsim_render arguments). A second checkout sharing another one's cache (TONE_BENCH_CACHE) names that checkout here,
+# so the same files get the same keys; its content/ and NAM core's example_models/ must be the same as this one's.
+CONTENT_ROOT = pathlib.Path(os.environ.get("TONE_BENCH_CONTENT_ROOT", REPO))
 # The built-in gain sets first (in slot order), then every other gain set in the content folder by name, as the app
 # searches them (ToneMatchSession::contentGainSets): a new set joins the matcher (and the oracle) by being there.
 _BUILT_IN = ["Glass", "Ember", "Monolith"]
-_OTHERS = sorted(p.parent.name for p in (REPO / "content/models").glob("*/gainset.json") if p.parent.name not in _BUILT_IN)
+_OTHERS = sorted(p.parent.name for p in (CONTENT_ROOT / "content/models").glob("*/gainset.json") if p.parent.name not in _BUILT_IN)
 tm.AMPS = _BUILT_IN + _OTHERS
-GAIN_SETS = [REPO / "content/models" / a / "gainset.json" for a in tm.AMPS]
-IRS = REPO / "content/irs"
-NAM_EXAMPLES = REPO / "third_party/NeuralAmpModelerCore/example_models"
+GAIN_SETS = [CONTENT_ROOT / "content/models" / a / "gainset.json" for a in tm.AMPS]
+IRS = CONTENT_ROOT / "content/irs"
+NAM_EXAMPLES = CONTENT_ROOT / "third_party/NeuralAmpModelerCore/example_models"
 
 # The matcher as the app runs it: the built-in amps are gain sets (tone_match.py's own golden fixtures still
 # use the old single captures), and its renders go to our cache.
 tm.MODEL_FILES = GAIN_SETS
 tm.CACHE = CACHE / "matcher_renders"
+tm.CAB_FILES = sorted(IRS.glob("*/*.wav"))
+tm.DEFAULT_CAB = IRS / tm.DEFAULT_CAB.relative_to(tm.REPO / "content/irs")
 
 TONE_ORDER = ["clean", "overdrive", "crunch", "hi_gain", "fuzz"]
 
@@ -55,7 +61,7 @@ def use_all_amps():
     searches all of them either way (tone_match.py's range(len(MODEL_FILES))); this only changes the order, which
     the oracle's coverage report (coverage.md) was written against. Returns the names."""
     extra = []
-    for js in sorted((REPO / "content/models").glob("*/gainset.json")):
+    for js in sorted((CONTENT_ROOT / "content/models").glob("*/gainset.json")):
         name = js.parent.name
         if name in tm.AMPS[:3]:
             continue

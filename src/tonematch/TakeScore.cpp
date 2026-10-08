@@ -248,12 +248,18 @@ Score score (const TakeNotes& tn, const Analysis& target, const std::vector<floa
              const std::array<double, 5>& tone, const std::array<Equalizer::Band, Equalizer::numParametricBands>* eq, double spectral,
              const Weights& w)
 {
+    const auto ca = Analysis::of (candidate);
+    return scoreOf (tn, target, ca.features[1], ca.features[3], noteMeasures (ampRender, tn.takeOnsets, tn.lengths), ltasBins (candidate), tone, eq,
+                    spectral, w);
+}
+
+Score scoreOf (const TakeNotes& tn, const Analysis& target, double flux, double crest, const NoteMeasures& m, const std::vector<double>& candidateLtasBins,
+               const std::array<double, 5>& tone, const std::array<Equalizer::Band, Equalizer::numParametricBands>* eq, double spectral, const Weights& w)
+{
     Score s;
     s.spectral = spectral;
-    const auto ca = Analysis::of (candidate);
-    s.flux = std::abs (target.features[1] - ca.features[1]);
-    s.crest = std::abs (target.features[3] - ca.features[3]);
-    const auto m = noteMeasures (ampRender, tn.takeOnsets, tn.lengths);
+    s.flux = std::abs (target.features[1] - flux);
+    s.crest = std::abs (target.features[3] - crest);
     double num = 0.0, den = 0.0;
     for (size_t k = 0; k < m.attack.size(); ++k)
     {
@@ -263,7 +269,7 @@ Score score (const TakeNotes& tn, const Analysis& target, const std::vector<floa
     s.attack = den > 0.0 ? num / den : 0.0;
     s.spread = std::abs (stdDev (tn.target.level) - stdDev (m.level));
     const auto filter = linearPower (tone, eq);
-    s.erb = loudnessDistance (tn.erbDb, bandsDb (ltasBins (candidate), &filter), tn.erbWeights);
+    s.erb = loudnessDistance (tn.erbDb, bandsDb (candidateLtasBins, &filter), tn.erbWeights);
     s.total = spectral + w.flux * s.flux + w.crest * s.crest + w.attack * s.attack + w.spread * s.spread + w.erb * s.erb;
     return s;
 }

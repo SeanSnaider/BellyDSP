@@ -108,4 +108,11 @@ Score score (const TakeNotes& notes, const Analysis& target, const std::vector<f
              const std::array<double, 5>& tone, const std::array<Equalizer::Band, Equalizer::numParametricBands>* eq, double spectral,
              const Weights& weights = {});
 
+/// The same from the candidate's measures (prototypes/tone_match.py, take_score_of): its flux and crest
+/// (Analysis::features[1] and [3] of the render through the cab), its notes (noteMeasures of the amp render), and
+/// ltasBins of the render through the cab. The search keeps these per candidate, so S costs no render or analysis.
+Score scoreOf (const TakeNotes& notes, const Analysis& target, double flux, double crest, const NoteMeasures& candidateNotes,
+               const std::vector<double>& candidateLtasBins, const std::array<double, 5>& tone,
+               const std::array<Equalizer::Band, Equalizer::numParametricBands>* eq, double spectral, const Weights& weights = {});
+
 } // namespace ampsim::tonematch::take

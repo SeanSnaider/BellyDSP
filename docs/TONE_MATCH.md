@@ -729,6 +729,70 @@ The C++ matcher with all of it on the 6 s fixture: 47 renders, 22 s with the tes
 - **Remaining gap** (DEV medians): the matcher 0.422, the best configuration in its own search space by the true score (the pools) 0.395, the oracle in space 0.325 (Round 1's L3), with BellyDSP's pedal and compressor 0.252 (L4). TEST: 0.512 against the pools' best 0.527 (the matcher's refinements and the curve go past the pools' 4 dB grid and 5-band EQ), L3 0.358, L4 0.327. So the objective still leaves about 0.03 to 0.1 inside the space on DEV, and coverage (amps, cabs) the rest.
 - **Round 3, in order:** (1) the new gain sets (high gain and lead are the worst styles, and the oracle wanted more than +24 dB in a third of the cases); they join the search automatically, and the benchmark should be re-run when they land (the pools too, so the score's weights can be refitted on them). (2) Harmonics and crest got worse while the spectra improved: add a harmonic-distribution term measured on the take's sustained notes (the benchmark's harm facet has 0.1 weight but moved by 1.2) and refit the weights on pools that include pedal variants. (3) The pedal search is weak: refine the chosen pedal's Drive and Tone (two more renders each), and require a margin over no pedal, judged on pools with pedal variants rather than guessed. (4) Fit the curve's amount per match rather than a fixed 50% (for example from how much of the take's difference from the target is between notes). (5) Real takes: everything here is synthetic; TM.11 below.
 
+### Round 2: eight amps
+
+2026-10-08 (ASSUMPTIONS TM81 to TM85). Five more built-in gain sets (Lantern, Basalt, Comet, Forge, Quartz) joined the search, and the final Round 2 configuration (`any_fx_curve`) got worse on DEV: median 0.465 against 0.422 with the three amps. The question was whether the search was losing the right candidate or the score was preferring the wrong one. Answer: both happen, but **the score is what decides it**. A search that never loses S's winner ends up no closer to the hidden rigs, so the gate (DEV at least 0.422) can't be met by changing the search. The wider search is in the prototype and the C++ (golden-tested), switched off.
+
+**Where the search lost S's winner.** A correct search over more amps can't end with a worse value of its own objective S (the take-aware score). With eight amps it did, on 7 of 30 DEV cases (5 of 20 on TEST). `tone_match.match(trace=...)` records every candidate, so on the eight cases the search lost could be traced (`matcher.CONFIGS["any_fx_curve_r2"]` reproduces the eight-amp run exactly: S 27.738 on high_gain_07, 90.834 on clean_07):
+
+- *The shortlist cut* (4 cases). S only saw the old score's 16 best candidates. The three-amp winner was still a candidate, at old-score rank 21, 27, 36, and 98 of 328 (clean_07, crunch_00, crunch_01, high_gain_07).
+- *Never refined, no pedal tried* (3 cases: edge_07, lead_00, lead_06). All three of these winners had a pedal in front of an amp that wasn't among the old score's 2 best, so its Gain was never refined and no pedal was tried in front of it.
+- *A different target* (high_gain_06). The first match decides whether Auto cleans up the stem, and the eight-amp match decided differently.
+
+**The exhaustive search** (`any_fx_curve_all`) refines every amp, tries the pedals in front of every amp, and fits and scores all of the roughly 950 candidates with S. That gives each case's S optimum within the search space. Its picks against the hidden rigs:
+
+| DEV, 30 cases | median | mean | against three amps | Wilcoxon p |
+|---|---|---|---|---|
+| three amps (`dev_r2_curve50`) | **0.422** | 0.469 | | |
+| eight amps, the Round 2 search (`dev_r2_amps`) | 0.465 | 0.477 | 12 better, 12 worse | 0.57 |
+| eight amps, the wide search (`dev_r2_wide`) | 0.455 | 0.492 | 12 better, 11 worse | 0.44 |
+| eight amps, S's optimum (`dev_r2_all`) | 0.463 | 0.483 | 12 better, 13 worse | 0.44 |
+
+"Better" and "worse" mean by more than 0.005. The wide search against the Round 2 eight-amp search: 9 better and 8 worse (p = 0.52). S's optimum against the Round 2 search: 10 better and 9 worse (p = 0.75). So even the perfect search over eight amps sits at 0.463. When its pick differs from the three-amp pick, the hidden rig is closer about as often as further (12 and 13). On TEST the Round 2 eight-amp search (`test_r2_amps`) has median 0.528 and mean 0.538, against the three amps' 0.512 and 0.574: 13 better, 6 worse, p = 0.24. The wide search wasn't run on TEST, because it failed the DEV gate.
+
+**The score's preferences.** S's optimum chooses Lantern 8 times, Glass 5, Quartz 5, Ember 3, Basalt 3, Monolith 2, Comet 2, Forge 2. The in-space oracle (Round 1's L3 with every amp; the coverage study's `dev_all_amps`) chooses Ember 10, Quartz 9, Lantern 6, Comet 3, Glass 1, Basalt 1.
+
+- *Basalt.* S chose it 3 times, the oracle never did, and it was further than the three-amp pick each time (mean +0.118).
+- *Quartz.* S chose it 5 times, the oracle agreed twice, and it was further 3 times (+0.060).
+- *Lantern.* S chose it 8 times, the oracle agreed 4 times, and on average it was as close as the three-amp pick (+0.000). S has no clear Lantern bias of its own, unlike the old score over the amps three at a time (Lantern 10 of 30, `run_all_amps`).
+- *Ember* is the oracle's most frequent amp, and S picks it only 3 times.
+
+In 7 cases S's optimum is the oracle's amp, and in 4 more the oracle's amp is within 0.3 of it (S runs from 15 to 200), so S can't tell those amps apart.
+
+**Which terms drive it.** These are the weighted term differences between S's optimum and the three-amp pick, on the 24 cases where they differ with the same target:
+
+| Group | spectral | flux | crest | attack | spread | ERB | total |
+|---|---|---|---|---|---|---|---|
+| the pick is truly worse (12) | +0.11 | -0.08 | -0.39 | -1.82 | -0.51 | -0.38 | -3.07 |
+| the pick is truly closer (12) | -0.21 | -0.30 | -0.01 | -2.24 | +0.23 | -0.94 | -3.46 |
+
+The attack term carries most of S's preference for the new pick in both groups, and the margin is about the same whichever way the truth goes. So S's weights, fitted on pools of the three amps (Round 2, item 3), don't rank the new amps.
+
+**The wide search.** It's cheap to make the search find S's winner. S_pre is S without its expensive part: the linear tone fit instead of the polished one, and no match EQ in the ERB term. It's computed from measures every candidate keeps when it's scored (flux, crest, the attack and level of its notes, its long-term ERB power), so it costs no render and no fit. Simulated on the exhaustive traces (`tone_bench/search_study.py`; each design's candidates are a subset of the exhaustive run's, so its pick follows from the trace):
+
+| Design (every amp's Gain refined unless noted) | S worse than three amps | at S's optimum | shortlist |
+|---|---|---|---|
+| the Round 2 search (refine 2) | 6 of 28 | 11 of 30 | 16 |
+| the old score's best 4 or 8 per amp as well | 7 or 6 | 12 or 14 | 38 to 72 |
+| S_pre's 16 best as well | 5 | 16 | 19 to 32 |
+| that, and the pedals in front of S_pre's best amp too | **1** (crunch_01, +2.3) | 21 | 19 to 32 |
+| that, but Gain refined for S_pre's 3 best amps only | 2 | 20 | 19 to 32 |
+
+The last two rows count S worse than three amps among the 28 cases with the same target. The run of the chosen design (`any_fx_curve_wide`: `TAKE_REFINE_ALL`, `TAKE_PRE_SHORTLIST = 16`, `PEDAL_SLOTS_PRE = 1`) matched the simulation. Its S was worse than three amps' only on crunch_01 (+2.34), and never worse than the eight-amp Round 2 search's. Its true score is in the table above. A variant with the match EQ's target curve in S_pre (`PRE_WITH_EQ_TARGET`) is traced but wasn't needed.
+
+**Time.** Measured with the C++ matcher on the 6 s fixture, the app's settings after a take (`tests/ToneMatchTakeScoreTests.cpp`, one run each, other agents' builds on the machine):
+
+| | three amps | eight amps |
+|---|---|---|
+| the Round 2 search | 47 renders, 16 fitted, 18.6 s | 82 renders, 16 fitted, 23.5 s |
+| the wide search | 71 renders, 27 fitted, 28.4 s | 124 renders, 27 fitted, 50.0 s |
+
+The renders scale with the take, so with a 30 s take the wide search over eight amps would take minutes. That's a second reason it stays off. In the prototype on the benchmark, with the renders cached, the wide search takes 18.5 s per case at the median (mean 22.1, max 44.9).
+
+**What it takes to pass.** The score has to be refitted with the new amps in its pools (Round 3, item 1): pool.py's candidate pools over all eight gain sets, then S's weights fitted again on DEV, with the attack term the first suspect. After that the wide search is the one to gate, because it finds what S prefers. Until then the defaults are the Round 2 search. In the C++ that's `MatchSettings::takeRefinesEverySlot`, `takePedalSlotsByPre`, and `takePreShortlist`, all off; in the prototype it's the `tone_match.py` knobs.
+
+C++: `take::scoreOf` (S from a candidate's measures; `take::score` calls it), and `ToneMatcher::match` with the take's notes paired before the grid. When the wide search is on, every candidate keeps its take measures and S_pre, and the pedals go in front of the amps in both lists. Golden: `tone_match.py take-golden` adds the wide search over the three built-ins and over every content gain set. The C++ finds the prototype's amp, Gain, cab, pedal, and post-compressor decision, with the same number of candidates, renders, and fitted candidates, and S within 0.003 (29.2004 against 29.2013, 26.6209 against 26.6235). The earlier goldens didn't change: the fixture's other values are byte-identical.
+
 ## Not verified (only Sean can)
 
 - How a match sounds, on anything. Every number here is a measurement on synthetic guitars.
