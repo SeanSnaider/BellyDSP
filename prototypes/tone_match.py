@@ -920,6 +920,20 @@ def screen_cabs(y_analysis, target_ltas_or_residual, w, count):
 EQ_RIDGE = 0.005             # the same idea as TONE_RIDGE, per dB of band gain
 
 
+def match_eq_target(residual, w):
+    """The curve the match EQ fits (fit_match_eq's comment): the residual's weighted mean removed, scaled toward 0 dB
+    by each band's confidence, capped at +-12 dB; dB per coarse band."""
+    confidence = w / WEIGHTS
+    return np.clip((residual - weighted_mean(residual, w)) * confidence, -EQ_CAP_DB, EQ_CAP_DB)
+
+
+def match_eq_target_on_erb(residual, w):
+    """match_eq_target interpolated on log frequency onto the ERB analysis's bins (held flat beyond the bands): what a
+    perfect match EQ would add, for S_pre."""
+    lf = np.log2(np.maximum(ERB_FREQS, 1.0))
+    return np.interp(lf, np.log2(COARSE_CENTRES), match_eq_target(residual, w))
+
+
 def fit_match_eq(residual, w):
     """The match EQ: the post EQ's five parametric bands (low shelf, three peaks, high shelf) fitted to
     the residual left after the amp, Gain, tone, and cab (already smoothed, smooth_bands), capped at
@@ -929,8 +943,7 @@ def fit_match_eq(residual, w):
     # Where the target had next to nothing (low confidence; band_weights), there's no evidence for a
     # correction, so the curve to fit is scaled toward 0 dB by the band's confidence: the EQ stays flat
     # there instead of cutting 10 dB where the reference simply played notes the target didn't.
-    confidence = w / WEIGHTS
-    sm = np.clip((residual - weighted_mean(residual, w)) * confidence, -EQ_CAP_DB, EQ_CAP_DB)
+    sm = match_eq_target(residual, w)
 
     starts = [100.0, 400.0, 1000.0, 3000.0, 8000.0]
 
@@ -1125,13 +1138,17 @@ def take_score(tn, target_analysis, amp_render, cand_y, tone, eq, spectral):
                          tone, eq, spectral)
 
 
-def take_score_of(tn, target_analysis, flux, crest, notes, erb_bins, tone, eq, spectral):
+def take_score_of(tn, target_analysis, flux, crest, notes, erb_bins, tone, eq, spectral, extra_db=None):
     """take_score from the candidate's measures: its flux and crest (Analysis), its notes' attack and level
-    (note_measures of the amp render), and its long-term power on the ERB analysis's bins (erb_ltas_bins)."""
+    (note_measures of the amp render), and its long-term power on the ERB analysis's bins (erb_ltas_bins).
+    extra_db: a further linear correction (dB on ERB_FREQS) after the tone and EQ, for S_pre (match_eq_target_on_erb)."""
     att, lev = notes
     attack = float(np.sum(tn.weight * np.abs(tn.attack - att)) / np.sum(tn.weight))
     spread = abs(float(np.std(tn.level)) - float(np.std(lev)))
-    erb = loudness_distance(tn.erb_db, db((erb_bins * linear_power_on(ERB_FREQS, tone, eq)) @ ERB_MATRIX), tn.erb_weights)
+    h = linear_power_on(ERB_FREQS, tone, eq)
+    if extra_db is not None:
+        h = h * 10.0 ** (extra_db / 10.0)
+    erb = loudness_distance(tn.erb_db, db((erb_bins * h) @ ERB_MATRIX), tn.erb_weights)
     terms = dict(spectral=spectral, flux=abs(target_analysis.flux - flux), crest=abs(target_analysis.crest - crest),
                  attack=attack, spread=spread, erb=erb)
     return spectral + sum(TAKE_WEIGHTS[k] * terms[k] for k in TAKE_WEIGHTS), terms
@@ -1261,6 +1278,7 @@ def linear_power_bins(tone, eq):
 TAKE_PER_AMP = 0             # the shortlist also holds each amp's best this many by the old score
 TAKE_PRE_SHORTLIST = 0       # and the best this many by S_pre
 TAKE_REFINE_ALL = False      # with a take, every amp's Gain is refined (else REFINE_SLOTS)
+PRE_WITH_EQ_TARGET = False   # S_pre with the match EQ's target curve as the EQ
 PEDAL_SLOTS = 1              # the pedals are tried in front of this many amps (the best by the old score)
 PEDAL_SLOTS_PRE = 0          # and, with a take, in front of this many more (the best by S_pre)
 
@@ -1319,12 +1337,18 @@ def match(target_x, di_x, mode="anything", log=print, workers=8, band_seconds=No
     notes_of = {}
 
     def pre(c):
-        """The candidate's take-aware score with its polished tone and no match EQ (S_pre; the comment above
-        TAKE_PRE_SHORTLIST): every term of S but the match EQ's effect on D_erb, from measures kept when it was scored."""
+        """S_pre (the comment above TAKE_PRE_SHORTLIST): the candidate's take-aware score with its linear tone fit (not
+        polished) and no match EQ, from measures kept when it was scored: S but for the polish and the EQ in D_erb."""
         if c.pre is None:
-            tone, _ = fit_tone(c.residual, w, polish=True)
-            c.pre = take_score_of(tn, target.analysis, c.flux, c.crest, notes_of[c.render_key], c.erb_bins, tone, [], c.spectral)[0]
+            extra = match_eq_target_on_erb(c.residual - tone_db(c.tone, COARSE_CENTRES), w) if PRE_WITH_EQ_TARGET else None
+            c.pre = take_score_of(tn, target.analysis, c.flux, c.crest, notes_of[c.render_key], c.erb_bins, c.tone, [], c.spectral, extra)[0]
         return c.pre
+
+    def pre_both(c):
+        """(S_pre without the EQ, S_pre with the EQ's target curve), for the trace."""
+        r = c.residual - tone_db(c.tone, COARSE_CENTRES)
+        args = (tn, target.analysis, c.flux, c.crest, notes_of[c.render_key], c.erb_bins, c.tone, [], c.spectral)
+        return take_score_of(*args)[0], take_score_of(*args, match_eq_target_on_erb(r, w))[0]
 
     def evaluate(slot, gain, cabs=None, pedal=None):
         y = amp(slot, gain, pedal)
@@ -1422,7 +1446,7 @@ def match(target_x, di_x, mode="anything", log=print, workers=8, band_seconds=No
         plain = [x[0] for x in scored if getattr(x[1], "pedal", None) is None]
         take_terms["best_without_pedal"] = min(plain) if plain else None
         if trace is not None:
-            trace["scored"] = [(c.slot, c.gain, c.cab.name, pedal_key(getattr(c, "pedal", None)), c.total(), s, pre(c)) for s, c, _, _ in scored]
+            trace["scored"] = [(c.slot, c.gain, c.cab.name, pedal_key(getattr(c, "pedal", None)), c.total(), s) + pre_both(c) for s, c, _, _ in scored]
         ranked = [best] + [s[1] for s in sorted(scored, key=lambda s: s[0]) if s[1] is not best]
         log(f"  take-aware score on {len(scored)} shortlisted ({len(tn.o)} note pairs): {AMPS[best.slot]} {best.gain:+.1f} at {sc:.2f}")
     else:

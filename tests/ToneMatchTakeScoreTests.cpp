@@ -330,6 +330,39 @@ public:
             logMessage ("  -> the old score alone: slot " + juce::String (old.slot + 1) + " at " + juce::String (old.gainDb, 1) + " dB, "
                         + old.cab.getFileNameWithoutExtension());
         }
+
+        beginTest ("the search over every content gain set (the app's, after a take) is never worse by its own score than over the three built-ins");
+        {
+            // A search over a superset of the amps can't end with a worse take-aware score S (docs/TONE_MATCH.md, "Round 2:
+            // eight amps": with the shortlist cut by the old score, it did on 8 of 30 DEV cases). The app's settings after a
+            // take: the take-aware score, the pedals and the post compressor, the match curve. S is the winner's before the
+            // post compressor (which is chosen on the finished match).
+            auto all = platform::factoryContentFolder().getChildFile ("models").findChildFiles (juce::File::findDirectories, false);
+            std::sort (all.begin(), all.end(), [] (const juce::File& a, const juce::File& b) { return a.getFileName() < b.getFileName(); });
+            MatchSettings s;
+            s.mode = Mode::anything;
+            for (int i = 0; i < 3; ++i)
+                s.models.push_back (gainSet (i));
+            for (const auto& d : all)
+                if (const auto f = d.getChildFile ("gainset.json"); f.existsAsFile() && std::find (s.models.begin(), s.models.end(), f) == s.models.end())
+                    s.models.push_back (f);
+            s.cabs = builtInCabs();
+            s.takeIsLinedUp = true;
+            s.searchPedals = true;
+            s.fitCurve = true;
+            const auto everyAmp = ToneMatcher::match (target, takeDi, s, noCancel);
+            const auto amps = (int) s.models.size();
+            s.models.resize (3);
+            const auto three = ToneMatcher::match (target, takeDi, s, noCancel);
+            expect (everyAmp.ok && three.ok && everyAmp.takeScored && three.takeScored);
+            expectGreaterOrEqual (amps, 8);
+            expectLessOrEqual (everyAmp.takeScore.total, three.takeScore.total + 1.0e-9);
+            logMessage ("  -> " + juce::String (amps) + " amps: slot " + juce::String (everyAmp.slot + 1) + " at " + juce::String (everyAmp.gainDb, 1) + " dB, S "
+                        + juce::String (everyAmp.takeScore.total, 4) + ", " + juce::String (everyAmp.renders) + " renders, " + juce::String (everyAmp.candidates)
+                        + " candidates, " + juce::String (everyAmp.runtimeSeconds, 1) + " s; the three built-ins: slot " + juce::String (three.slot + 1) + " at "
+                        + juce::String (three.gainDb, 1) + " dB, S " + juce::String (three.takeScore.total, 4) + ", " + juce::String (three.renders)
+                        + " renders, " + juce::String (three.runtimeSeconds, 1) + " s (the take is " + juce::String ((double) takeDi.size() / sampleRate, 1) + " s)");
+        }
     }
 };
 

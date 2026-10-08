@@ -82,7 +82,15 @@ struct MatchSettings
     std::array<double, 2> refineSteps { 3.0, 1.5 };
     double gainMin = -24.0, gainMax = 24.0; ///< amp*_input_trim's range
     int cabsPerAmp = 4;
-    int refineSlots = 2;
+    int refineSlots = 2;                ///< the slots (best by the old score) whose Gain is refined; with a take, see below
+    /// With a take (the take-aware score decides; docs/TONE_MATCH.md, "Round 2: eight amps"): how far the search looks,
+    /// so it scales with the number of amps. The old score ranks the amps differently from S, so with eight amps the
+    /// three-amp search's winner was often never refined, never had the pedals tried in front of it, or ranked below
+    /// the old score's 16 best (prototypes/tone_match.py, TAKE_REFINE_ALL, PEDAL_SLOTS_PRE, TAKE_PRE_SHORTLIST).
+    bool takeRefinesEverySlot = true;   ///< every slot's Gain refined, not refineSlots
+    int pedalSlots = 1;                 ///< the pedals in front of this many amps, the best by the old score
+    int takePedalSlotsByPre = 1;        ///< and in front of this many more, the best by S_pre (take::scoreOf without the EQ)
+    int takePreShortlist = 16;          ///< the shortlist: the old score's take::shortlist best and S_pre's this many best
     /// Same part: > 0 when the DI is a play-along take, recorded lined up with the target (the session
     /// trims it so its sample 0 is the target's), so DTW only searches this far either side of that
     /// alignment (align's band; playAlongBandSeconds). 0: unconstrained, as for a take played on its own.
@@ -137,6 +145,7 @@ struct MatchResult
     int renders = 0, candidates = 0;
     bool takeScored = false;            ///< the take-aware score chose the winner
     int notePairs = 0;                  ///< the note pairs it compared
+    int shortlisted = 0;                ///< the candidates it scored (fitted completely)
     take::Score takeScore;              ///< the winner's terms
 
     struct RunnerUp
@@ -255,9 +264,14 @@ public:
         std::array<double, 5> tone {};
         double spectral = 0.0, distortion = 0.0;
         double total() const { return spectral + lambda * distortion; }
+        /// With a take: take::ltasBins of the render through the cab (for S), and S_pre, the take-aware score with the
+        /// linear tone fit and no match EQ (the search's prefilter).
+        std::vector<double> takeLtasBins;
+        double pre = 0.0;
     };
+    /// takeLtasBins: also keep take::ltasBins of the render through the cab in the candidate.
     static Candidate score (int slot, double gainDb, int cab, const std::vector<float>& ampOutput, const std::vector<float>& ir,
-                            const Analysis& target, Mode mode, const Alignment* alignment);
+                            const Analysis& target, Mode mode, const Alignment* alignment, bool takeLtasBins = false);
 };
 
 } // namespace ampsim::tonematch

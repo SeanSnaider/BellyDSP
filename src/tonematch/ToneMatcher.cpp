@@ -469,13 +469,16 @@ std::vector<double> ToneMatcher::cabPowerOnBins (const std::vector<float>& ir)
 }
 
 ToneMatcher::Candidate ToneMatcher::score (int slot, double gainDb, int cab, const std::vector<float>& ampOutput, const std::vector<float>& ir,
-                                           const Analysis& target, Mode mode, const Alignment* alignment)
+                                           const Analysis& target, Mode mode, const Alignment* alignment, bool takeLtasBins)
 {
     Candidate c;
     c.slot = slot;
     c.gainDb = gainDb;
     c.cab = cab;
-    c.analysis = Analysis::of (convolve (ampOutput, ir)); // exactly what the cab does, up to its level
+    const auto y = convolve (ampOutput, ir); // exactly what the cab does, up to its level
+    c.analysis = Analysis::of (y);
+    if (takeLtasBins)
+        c.takeLtasBins = take::ltasBins (y);
     if (! c.analysis.ok)
     {
         c.spectral = c.distortion = 1.0e9;
@@ -553,8 +556,24 @@ MatchResult ToneMatcher::match (const std::vector<float>& targetSignal, const st
         cabBins.push_back (cabPowerOnBins (irs.back()));
     }
 
+    // A play-along take: its notes paired with the target's, first, because with enough of them the take-aware score
+    // decides and the search looks wider (MatchSettings::takeRefinesEverySlot, takePedalSlotsByPre, takePreShortlist).
+    take::TakeNotes takeNotes;
+    if (settings.takeIsLinedUp)
+    {
+        report (0.01, "Pairing your notes with the target's");
+        const auto bandFrames = (int) std::ceil (playAlongBandSeconds * sampleRate / hop);
+        takeNotes = take::TakeNotes::of (targetSignal, informed::alignNotes (reference, targetSignal, bandFrames, cancel));
+        if (cancelled())
+            return result;
+    }
+    const auto takeAware = takeNotes.usable();
+
     // Renders, keyed by (slot, Gain in thousandths of a dB, pedal: an index into `pedals`, -1 for none).
     std::map<std::tuple<int, int, int>, std::vector<float>> renders;
+    // With a take: each render's note measures (take::noteMeasures at the take's onsets), for S and S_pre.
+    std::map<std::tuple<int, int, int>, take::NoteMeasures> noteMeasuresOf;
+    std::mutex noteMeasuresLock;
     auto key = [] (int s, double g, int p = -1) { return std::make_tuple (s, (int) std::lround (g * 1000.0), p); };
     std::atomic<bool> renderFailed { false };
     std::vector<Pedal> pedals;
@@ -663,6 +682,18 @@ MatchResult ToneMatcher::match (const std::vector<float>& targetSignal, const st
                 return; // the result is discarded anyway
             const auto& [s, g, cabs] = jobs[(size_t) i];
             chosenCabs[(size_t) i] = cabs.empty() ? screen (s, g) : cabs;
+            if (takeAware)
+            {
+                const auto k = key (s, g, pedalOf.empty() ? pedalIndex : pedalOf[(size_t) i]);
+                {
+                    const std::lock_guard<std::mutex> lock (noteMeasuresLock); // worker threads only, never audio
+                    if (noteMeasuresOf.count (k) > 0)
+                        return;
+                }
+                auto m = take::noteMeasures (renders.at (k), takeNotes.takeOnsets, takeNotes.lengths);
+                const std::lock_guard<std::mutex> lock (noteMeasuresLock);
+                noteMeasuresOf[k] = std::move (m);
+            }
         });
         std::vector<std::tuple<int, double, int, int>> work;
         for (size_t j = 0; j < jobs.size(); ++j)
@@ -679,8 +710,12 @@ MatchResult ToneMatcher::match (const std::vector<float>& targetSignal, const st
                 return;
             const auto [s, g, c, p] = work[(size_t) i];
             auto cand = score (s, g, c, renders.at (key (s, g, p)), irs[(size_t) c], target, settings.mode,
-                               settings.mode == Mode::samePart ? &alignments.at (s) : nullptr);
+                               settings.mode == Mode::samePart ? &alignments.at (s) : nullptr, takeAware);
             cand.pedal = p;
+            if (takeAware)
+                cand.pre = take::scoreOf (takeNotes, target, cand.analysis.features[1], cand.analysis.features[3], noteMeasuresOf.at (key (s, g, p)),
+                                          cand.takeLtasBins, cand.tone, nullptr, cand.spectral)
+                               .total;
             {
                 const std::lock_guard<std::mutex> lock (candidatesLock); // worker threads only, never audio
                 candidates[{ s, (int) std::lround (g * 1000.0), c, p }] = std::move (cand);
@@ -699,17 +734,20 @@ MatchResult ToneMatcher::match (const std::vector<float>& targetSignal, const st
         return result;
 
     // 3. Gain, coarse to fine, for the best slots, with each slot's best cabs.
-    auto bestFor = [&] (int slot) -> const Candidate* {
+    //    With a take, every slot (MatchSettings::takeRefinesEverySlot): the slots the old score ranks low are often
+    //    the take-aware score's best.
+    auto bestFor = [&] (int slot, bool byPre = false) -> const Candidate* {
         const Candidate* best = nullptr;
         for (const auto& [k, c] : candidates)
-            if (c.slot == slot && (best == nullptr || c.total() < best->total()))
+            if (c.slot == slot && c.pedal < 0 && (best == nullptr || (byPre ? c.pre < best->pre : c.total() < best->total())))
                 best = &c;
         return best;
     };
 
     auto slotOrder = slots;
     std::stable_sort (slotOrder.begin(), slotOrder.end(), [&] (int a, int b) { return bestFor (a)->total() < bestFor (b)->total(); });
-    const auto refineCount = juce::jmin (settings.refineSlots, (int) slotOrder.size());
+    const auto refineCount = takeAware && settings.takeRefinesEverySlot ? (int) slotOrder.size()
+                                                                        : juce::jmin (settings.refineSlots, (int) slotOrder.size());
     double fraction = 0.70;
     const auto refineEnd = settings.searchPedals ? 0.80 : 0.92;
     const auto fractionStep = (refineEnd - 0.70) / juce::jmax (1, refineCount * (int) settings.refineSteps.size());
@@ -754,58 +792,72 @@ MatchResult ToneMatcher::match (const std::vector<float>& targetSignal, const st
         }
     }
 
-    // 3b. The pedals in front of the best amp, at its best cabs (pedalVariants; prototypes/tone_match.py, the
-    //     pedal search). They join the candidates, so the scores decide whether one is used at all.
+    // 3b. The pedals in front of the best amps, at their best cabs (pedalVariants; prototypes/tone_match.py, the
+    //     pedal search): the pedalSlots best by the old score and, with a take, the takePedalSlotsByPre best by S_pre.
+    //     They join the candidates, so the scores decide whether one is used at all.
     if (settings.searchPedals)
     {
-        const Candidate* s0 = nullptr;
-        for (const auto& [k, c] : candidates)
-            if (s0 == nullptr || c.total() < s0->total())
-                s0 = &c;
-        const auto slot = s0->slot;
-        const auto gain = s0->gainDb;
-        std::map<int, double> bestPerCab;
-        for (const auto& [k, c] : candidates)
-            if (c.slot == slot)
-            {
-                auto it = bestPerCab.find (c.cab);
-                if (it == bestPerCab.end() || c.total() < it->second)
-                    bestPerCab[c.cab] = c.total();
-            }
-        std::vector<std::pair<double, int>> order;
-        for (const auto& [cab, t] : bestPerCab)
-            order.push_back ({ t, cab });
-        std::stable_sort (order.begin(), order.end(), [] (const auto& a, const auto& b) { return a.first < b.first; });
-        std::vector<int> cabs;
-        for (int i = 0; i < juce::jmin (settings.cabsPerAmp, (int) order.size()); ++i)
-            cabs.push_back (order[(size_t) i].second);
+        auto byOld = slots;
+        std::stable_sort (byOld.begin(), byOld.end(), [&] (int a, int b) { return bestFor (a)->total() < bestFor (b)->total(); });
+        std::vector<int> pedalSlots (byOld.begin(), byOld.begin() + juce::jlimit (0, (int) byOld.size(), settings.pedalSlots));
+        if (takeAware)
+        {
+            auto byPre = slots;
+            std::stable_sort (byPre.begin(), byPre.end(), [&] (int a, int b) { return bestFor (a, true)->pre < bestFor (b, true)->pre; });
+            for (int i = 0; i < juce::jmin (settings.takePedalSlotsByPre, (int) byPre.size()); ++i)
+                if (std::find (pedalSlots.begin(), pedalSlots.end(), byPre[(size_t) i]) == pedalSlots.end())
+                    pedalSlots.push_back (byPre[(size_t) i]);
+        }
 
-        const auto variants = pedalVariants (reference, gain, settings);
-        std::vector<std::pair<int, double>> jobs;
-        std::vector<int> pedalOf;
-        std::vector<std::tuple<int, double, std::vector<int>>> evalJobs;
-        for (const auto& [pedal, g] : variants)
+        const auto span = 0.13 / juce::jmax (1, (int) pedalSlots.size());
+        for (size_t n = 0; n < pedalSlots.size(); ++n)
         {
-            pedalOf.push_back ((int) pedals.size());
-            pedals.push_back (pedal);
-            jobs.push_back ({ slot, g });
-            evalJobs.push_back ({ slot, g, cabs });
+            const auto slot = pedalSlots[n];
+            const auto gain = bestFor (slot)->gainDb;
+            std::map<int, double> bestPerCab;
+            for (const auto& [k, c] : candidates)
+                if (c.slot == slot)
+                {
+                    auto it = bestPerCab.find (c.cab);
+                    if (it == bestPerCab.end() || c.total() < it->second)
+                        bestPerCab[c.cab] = c.total();
+                }
+            std::vector<std::pair<double, int>> order;
+            for (const auto& [cab, t] : bestPerCab)
+                order.push_back ({ t, cab });
+            std::stable_sort (order.begin(), order.end(), [] (const auto& a, const auto& b) { return a.first < b.first; });
+            std::vector<int> cabs;
+            for (int i = 0; i < juce::jmin (settings.cabsPerAmp, (int) order.size()); ++i)
+                cabs.push_back (order[(size_t) i].second);
+
+            const auto variants = pedalVariants (reference, gain, settings);
+            std::vector<std::pair<int, double>> jobs;
+            std::vector<int> pedalOf;
+            std::vector<std::tuple<int, double, std::vector<int>>> evalJobs;
+            for (const auto& [pedal, g] : variants)
+            {
+                pedalOf.push_back ((int) pedals.size());
+                pedals.push_back (pedal);
+                jobs.push_back ({ slot, g });
+                evalJobs.push_back ({ slot, g, cabs });
+            }
+            const auto from = 0.80 + span * (double) n;
+            renderAll (jobs, from, from + span * 0.8, pedalOf);
+            if (cancelled())
+                return result;
+            if (renderFailed)
+            {
+                result.error = "A capture failed to load.";
+                return result;
+            }
+            evaluate (evalJobs, from + span * 0.8, from + span, -1, pedalOf);
+            if (cancelled())
+                return result;
         }
-        renderAll (jobs, 0.80, 0.90, pedalOf);
-        if (cancelled())
-            return result;
-        if (renderFailed)
-        {
-            result.error = "A capture failed to load.";
-            return result;
-        }
-        evaluate (evalJobs, 0.90, 0.93, -1, pedalOf);
-        if (cancelled())
-            return result;
     }
 
-    // 4. The best candidate: polish its tone, fit the match EQ. With a play-along take, the old score's shortlist
-    //    is fitted completely and the take-aware score (TakeScore.h) picks among it.
+    // 4. The best candidate: polish its tone, fit the match EQ. With a play-along take, the shortlist is fitted
+    //    completely and the take-aware score (TakeScore.h) picks among it.
     report (0.93, "Fitting the match EQ");
     std::vector<const Candidate*> ranked;
     for (const auto& [k, c] : candidates)
@@ -831,29 +883,29 @@ MatchResult ToneMatcher::match (const std::vector<float>& targetSignal, const st
         return f;
     };
 
-    take::TakeNotes takeNotes;
-    if (settings.takeIsLinedUp)
-    {
-        report (0.94, "Pairing your notes with the target's");
-        const auto bandFrames = (int) std::ceil (playAlongBandSeconds * sampleRate / hop);
-        takeNotes = take::TakeNotes::of (targetSignal, informed::alignNotes (reference, targetSignal, bandFrames, cancel));
-        if (cancelled())
-            return result;
-    }
     const Candidate* chosen = ranked.front();
     Finished fin;
-    if (takeNotes.usable())
+    if (takeAware)
     {
-        const auto count = juce::jmin (take::shortlist, (int) ranked.size());
+        // The shortlist (prototypes/tone_match.py, shortlist): the old score's take::shortlist best and S_pre's
+        // takePreShortlist best, in the old score's order, each fitted completely and scored by S.
+        auto byPre = ranked;
+        std::stable_sort (byPre.begin(), byPre.end(), [] (const Candidate* a, const Candidate* b) { return a->pre < b->pre; });
+        const std::set<const Candidate*> keep (byPre.begin(), byPre.begin() + juce::jlimit (0, (int) byPre.size(), settings.takePreShortlist));
+        std::vector<const Candidate*> shortlisted;
+        for (size_t i = 0; i < ranked.size(); ++i)
+            if ((int) i < take::shortlist || keep.count (ranked[i]) > 0)
+                shortlisted.push_back (ranked[i]);
+        const auto count = (int) shortlisted.size();
         std::vector<Finished> fins ((size_t) count);
         parallelFor (count, threads, [&] (int i, int) {
             if (cancel.load())
                 return;
-            const auto& c = *ranked[(size_t) i];
+            const auto& c = *shortlisted[(size_t) i];
             fins[(size_t) i] = finish (c);
-            const auto& amp = renders.at (key (c.slot, c.gainDb, c.pedal));
-            fins[(size_t) i].score = take::score (takeNotes, target, amp, convolve (amp, irs[(size_t) c.cab]), fins[(size_t) i].tone, &fins[(size_t) i].eq,
-                                                  c.spectral);
+            fins[(size_t) i].score = take::scoreOf (takeNotes, target, c.analysis.features[1], c.analysis.features[3],
+                                                    noteMeasuresOf.at (key (c.slot, c.gainDb, c.pedal)), c.takeLtasBins, fins[(size_t) i].tone,
+                                                    &fins[(size_t) i].eq, c.spectral);
         });
         if (cancelled())
             return result;
@@ -862,15 +914,18 @@ MatchResult ToneMatcher::match (const std::vector<float>& targetSignal, const st
         std::stable_sort (order.begin(), order.end(), [&] (int a, int b) { return fins[(size_t) a].score.total < fins[(size_t) b].score.total; });
         std::vector<const Candidate*> reranked;
         for (auto i : order)
-            reranked.push_back (ranked[(size_t) i]);
-        for (size_t i = (size_t) count; i < ranked.size(); ++i)
-            reranked.push_back (ranked[i]);
+            reranked.push_back (shortlisted[(size_t) i]);
+        const std::set<const Candidate*> scored (shortlisted.begin(), shortlisted.end());
+        for (auto* c : ranked)
+            if (scored.count (c) == 0)
+                reranked.push_back (c);
         chosen = reranked.front();
         fin = std::move (fins[(size_t) order.front()]);
         ranked = std::move (reranked);
         result.takeScored = true;
         result.notePairs = (int) takeNotes.takeOnsets.size();
         result.takeScore = fin.score;
+        result.shortlisted = count;
     }
     else
         fin = finish (*chosen);
