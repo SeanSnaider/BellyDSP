@@ -260,6 +260,10 @@ public:
     /// True while a model or IR load (or a moving mic's re-morph) is still running. Used by the tests.
     bool isLoading() const { return loadsInFlight.load() > 0; }
 
+    /// True while anything that's heard now is still loading: everything on the loader but the captures of the amps
+    /// that aren't playing. A preset fades back in once this is false.
+    bool isLoadingWhatPlays() const;
+
     struct Status
     {
         std::array<juce::String, numAmps> model = [] { std::array<juce::String, numAmps> a; a.fill ("Empty"); return a; }();
@@ -614,6 +618,7 @@ private:
     std::array<std::uint64_t, numAmps> modelRequest {}; // the newest request per amp and mic (statusMutex)
     std::array<std::uint64_t, numCabMics> cabRequest {};
     std::atomic<int> loadsInFlight { 0 };
+    std::array<std::atomic<int>, numAmps> modelJobs {}; // per amp: its loads and clears queued or running
 
     // Declared last so it's destroyed first: its jobs use the chain and the status above.
     juce::ThreadPool loader { 1 };

@@ -1108,11 +1108,25 @@ void AmpSimProcessor::loadModel (int slot, const juce::File& file)
     const auto calibration = currentCalibration();
     requestedModel[(size_t) slot] = { file, calibration };
 
+    ++modelJobs[(size_t) slot];
     addLoaderJob ([this, slot, file, calibration, request]
     {
         const auto result = chain.amp.amp (slot).model.loadModel (file, true, calibration);
         finishModelRequest (slot, request, result.message, ! result.ok);
+        --modelJobs[(size_t) slot];
     });
+}
+
+bool AmpSimProcessor::isLoadingWhatPlays() const
+{
+    // Everything on the loader but the captures of the amps that aren't playing: those are heard only after a
+    // switch, and a switch's warm-up runs whatever the amp holds by then.
+    int otherAmps = 0;
+    const auto playing = getSelectedAmp();
+    for (int a = 0; a < numAmps; ++a)
+        if (a != playing)
+            otherAmps += modelJobs[(size_t) a].load();
+    return loadsInFlight.load() - otherAmps > 0;
 }
 
 void AmpSimProcessor::loadCabIR (int mic, const juce::File& file)
@@ -1231,7 +1245,12 @@ void AmpSimProcessor::unloadModel (int slot, const juce::String& statusAfter, bo
     requestedModel[(size_t) slot] = {};
     // Emptying can't fail, so the status it ends on is shown now, before the loader gets to it.
     startModelRequest (slot, statusAfter, isError);
-    addLoaderJob ([this, slot] { chain.amp.amp (slot).model.clearModel(); });
+    ++modelJobs[(size_t) slot];
+    addLoaderJob ([this, slot]
+    {
+        chain.amp.amp (slot).model.clearModel();
+        --modelJobs[(size_t) slot];
+    });
 }
 
 void AmpSimProcessor::loadYourCapture (const juce::File& file)
@@ -1472,7 +1491,7 @@ void AmpSimProcessor::timerCallback()
         presetStageMs = now;
     }
     else if (presetStage == PresetStage::loading
-             && ((! isLoading() && now - presetStageMs >= presetSettleMs) || now - presetStageMs >= presetTimeoutMs))
+             && ((! isLoadingWhatPlays() && now - presetStageMs >= presetSettleMs) || now - presetStageMs >= presetTimeoutMs))
     {
         presetMute = false;
         presetStage = PresetStage::idle;
@@ -1493,10 +1512,13 @@ void AmpSimProcessor::timerCallback()
         appliedCalibration = pendingCalibration;
         ++calibrationReloads;
 
-        for (int s = 0; s < numAmps; ++s)
-            if (const auto path = parameters.state.getProperty (modelPathKey (s)).toString();
-                juce::File::isAbsolutePath (path) && juce::File (path).existsAsFile())
-                loadModel (s, juce::File (path));
+        // The amp that plays first (one loader thread: the other eight sets take several seconds behind it).
+        const auto playing = getSelectedAmp();
+        for (int i = 0; i < numAmps; ++i)
+            if (const auto s = i == 0 ? playing : (i <= playing ? i - 1 : i);
+                juce::File::isAbsolutePath (parameters.state.getProperty (modelPathKey (s)).toString())
+                && juce::File (parameters.state.getProperty (modelPathKey (s)).toString()).existsAsFile())
+                loadModel (s, juce::File (parameters.state.getProperty (modelPathKey (s)).toString()));
     }
 
     for (int m = 0; m < ampsim::Cab::numCloseMics; ++m)

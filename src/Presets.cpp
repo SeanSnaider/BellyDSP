@@ -562,15 +562,17 @@ ApplyResult apply (AmpSimProcessor& processor, const juce::var& saved)
     };
 
     // Each amp's capture. One the amp already holds (the built-in amps, nearly always) isn't loaded again: nine
-    // reloads would keep a preset change waiting seconds for the same models.
+    // reloads would keep a preset change waiting seconds for the same models. The amp the preset plays goes on the
+    // (one) loader first, then the cab, then the other amps, which the preset's fade-in doesn't wait for
+    // (AmpSimProcessor::isLoadingWhatPlays).
     const auto* amps = preset.getProperty ("amps", {}).getArray();
-    for (int a = 0; a < AmpSimProcessor::numAmps; ++a)
+    const auto loadAmp = [&] (int a)
     {
         const auto ref = amps != nullptr && a < amps->size() ? FileRef::fromVar (amps->getReference (a)) : FileRef {};
         if (ref.path.isEmpty())
         {
             processor.clearModel (a);
-            continue;
+            return;
         }
         const auto r = resolve (ref, "models");
         describe ((a == AmpSimProcessor::yourCaptureAmp ? juce::String ("Your capture") : builtInAmpName (a) + "'s capture"), ref, r);
@@ -578,7 +580,9 @@ ApplyResult apply (AmpSimProcessor& processor, const juce::var& saved)
             processor.loadModelIfChanged (a, r.file);
         else
             processor.clearModel (a);
-    }
+    };
+    const auto playing = processor.getSelectedAmp();
+    loadAmp (playing);
 
     const auto cab = preset.getProperty ("cab", {});
     for (int m = 0; m < AmpSimProcessor::numCabMics; ++m)
@@ -596,6 +600,10 @@ ApplyResult apply (AmpSimProcessor& processor, const juce::var& saved)
         else
             processor.clearCabIR (m);
     }
+
+    for (int a = 0; a < AmpSimProcessor::numAmps; ++a)
+        if (a != playing)
+            loadAmp (a);
 
     // Follow amp choice. A preset made before it existed assigns nothing and follows (the default); the
     // preset's own close mic 1 is what plays now, so the amp it selects counts as followed already.

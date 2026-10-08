@@ -355,7 +355,7 @@ public:
 
     juce::Rectangle<float> miniBox (int amp) const
     {
-        auto x = textWidth (labelFont(), "Amp") + 14.0f;
+        auto x = std::ceil (textWidth (labelFont(), "Amp")) + 14.0f; // whole pixels, so the minis sit exactly 12 apart
         x += (float) juce::jmin (amp, AmpSimProcessor::numBuiltInAmps) * (miniWidth + spacing);
         if (amp >= AmpSimProcessor::numBuiltInAmps)
             x += captureGap - spacing; // a small gap before your capture

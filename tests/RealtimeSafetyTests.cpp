@@ -519,7 +519,7 @@ public:
             expect (takeExact, "the take must be the input from one sample on, in order");
             expectGreaterThan (countInBlocks, 150, "the count-ins must have played during the measurement");
             expect (! session.isPlayingAlong());
-            for (int i = 0; i < 2000 && p.isLoading(); ++i) // the last design may still be on the loader
+            for (int i = 0; i < 15000 && p.isLoading(); ++i) // the last design may still be on the loader, behind the calibration change's reload of all nine amps
                 juce::Thread::sleep (2);
             const auto matchBuilds = p.getMatchCurveBuildCount() - matchBuildsBefore;
             expectGreaterThan (matchBuilds, 4, "the match curve must have been designed for its curves and amounts during the measurement");

@@ -253,7 +253,7 @@ private:
     juce::AudioBuffer<float> stepOutputs; // one channel per step of a set (GainSet::maxSteps)
 
     // Written by prepare(), read by the loader thread.
-    std::atomic<int> loaderMaxBlockSize { 4096 };
+    std::atomic<int> loaderMaxBlockSize { 512 }; // until prepare() says: a model's buffers grow with it (NAM sizes them per block), and nine amps sit loaded
 };
 
 } // namespace ampsim

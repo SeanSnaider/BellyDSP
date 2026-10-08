@@ -243,7 +243,7 @@ public:
             p.setCabAssignment (2, irB);
             p.setCabFollow (false);
             const auto preset = p.capturePreset ("Assigned");
-            expect (preset["cab_assign"].isArray() && preset["cab_assign"].size() == 3);
+            expect (preset["cab_assign"].isArray() && preset["cab_assign"].size() == AmpSimProcessor::numAmps);
 
             AmpSimProcessor q;
             expect (q.loadPreset (juce::JSON::parse (juce::JSON::toString (preset))).ok);

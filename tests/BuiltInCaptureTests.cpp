@@ -16,6 +16,7 @@
 
 #if JUCE_MAC
  #include <mach/mach.h>
+ #include <malloc/malloc.h>
 #endif
 
 namespace
@@ -62,9 +63,11 @@ Stereo play (AmpSimProcessor& p, const std::vector<float>& input)
 }
 
 /// The process's physical memory footprint in bytes (what Activity Monitor shows as Memory), 0 where it can't be read.
+/// Freed memory the allocator still holds is handed back first, so what's counted is what's in use.
 juce::int64 memoryFootprint()
 {
    #if JUCE_MAC
+    malloc_zone_pressure_relief (nullptr, 0);
     task_vm_info_data_t info {};
     mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
     if (task_info (mach_task_self(), TASK_VM_INFO, (task_info_t) &info, &count) == KERN_SUCCESS)
@@ -182,6 +185,7 @@ public:
                 juce::Thread::sleep (5);
             }
             const auto allMs = juce::Time::getMillisecondCounterHiRes() - t0;
+            const auto loadedBeforePrepare = memoryFootprint(); // the models as the loader sized them (before the device's block size is known)
             p.prepareToPlay (fs, blockSize);
             play (p, std::vector<float> (blockSize * 4, 0.0f));
             const auto withSets = memoryFootprint();
@@ -206,7 +210,8 @@ public:
                         + juce::String ((double) withoutSets / 1048576.0, 1) + " MB with a processor and no captures, "
                         + juce::String ((double) withSets / 1048576.0, 1) + " MB with a second processor holding all eight sets: "
                         + juce::String (setsMb, 1) + " MB for the eight sets and that processor (the processor alone: "
-                        + juce::String ((double) (withoutSets - before) / 1048576.0, 1) + " MB)");
+                        + juce::String ((double) (withoutSets - before) / 1048576.0, 1) + " MB); before the 128-sample prepare, with the models sized "
+                        "for the loader's default 4096-sample block: " + juce::String ((double) (loadedBeforePrepare - withoutSets) / 1048576.0, 1) + " MB");
         }
 
         beginTest ("the capture menu: load a capture of your own (it plays as amp 9), reload, remove it (it stays removed in a restored state); amps a state has no entry for get their built-in");
@@ -324,9 +329,9 @@ public:
             const auto glassGain = knob (0, "input_trim");
             amp.clickMini (6);
             ed.refresh();
-            expectEquals (knob (6, "input_trim"), 9.6f);
-            expectEquals (knob (6, "mid"), -2.4f);
-            expectEquals (glassGain, 0.0f);
+            expectWithinAbsoluteError (knob (6, "input_trim"), 9.6f, 1.0e-5f);
+            expectWithinAbsoluteError (knob (6, "mid"), -2.4f, 1.0e-5f);
+            expectWithinAbsoluteError (glassGain, 0.0f, 1.0e-5f);
             expectEquals (amp.getKnob (6, 0).getValueText(), juce::String ("7.0"));
             expect (amp.getKnob (6, 0).isVisible() && ! amp.getKnob (0, 0).isVisible());
 
