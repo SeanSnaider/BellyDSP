@@ -211,7 +211,7 @@ public:
                         + juce::String ((double) withSets / 1048576.0, 1) + " MB with a second processor holding all eight sets: "
                         + juce::String (setsMb, 1) + " MB for the eight sets and that processor (the processor alone: "
                         + juce::String ((double) (withoutSets - before) / 1048576.0, 1) + " MB); before the 128-sample prepare, with the models sized "
-                        "for the loader's default 4096-sample block: " + juce::String ((double) (loadedBeforePrepare - withoutSets) / 1048576.0, 1) + " MB");
+                        "for the loader's default 512-sample block: " + juce::String ((double) (loadedBeforePrepare - withoutSets) / 1048576.0, 1) + " MB");
         }
 
         beginTest ("the capture menu: load a capture of your own (it plays as amp 9), reload, remove it (it stays removed in a restored state); amps a state has no entry for get their built-in");
