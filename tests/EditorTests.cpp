@@ -9,6 +9,8 @@
 #include "platform/AppInfo.h"
 #include "TestHelpers.h"
 
+#include <set>
+
 namespace
 {
 using namespace testing;
@@ -106,6 +108,92 @@ juce::File writePack (const juce::File& folder)
     return folder;
 }
 
+/// The mean colour of an image over a rectangle (device pixels), alpha ignored.
+juce::Colour meanColour (const juce::Image& image, juce::Rectangle<int> area)
+{
+    area = area.getIntersection (image.getBounds());
+    double r = 0, g = 0, b = 0;
+    const juce::Image::BitmapData data (image, juce::Image::BitmapData::readOnly);
+    for (int y = area.getY(); y < area.getBottom(); ++y)
+        for (int x = area.getX(); x < area.getRight(); ++x)
+        {
+            const auto c = data.getPixelColour (x, y);
+            r += c.getRed();
+            g += c.getGreen();
+            b += c.getBlue();
+        }
+    const auto n = juce::jmax (1.0, (double) area.getWidth() * area.getHeight());
+    return juce::Colour ((juce::uint8) juce::roundToInt (r / n), (juce::uint8) juce::roundToInt (g / n), (juce::uint8) juce::roundToInt (b / n));
+}
+
+/// WCAG 2's contrast ratio between two colours (relative luminance of the linearised sRGB).
+double contrastRatio (juce::Colour a, juce::Colour b)
+{
+    const auto luminance = [] (juce::Colour c)
+    {
+        const auto lin = [] (double v)
+        {
+            v /= 255.0;
+            return v <= 0.04045 ? v / 12.92 : std::pow ((v + 0.055) / 1.055, 2.4);
+        };
+        return 0.2126 * lin (c.getRed()) + 0.7152 * lin (c.getGreen()) + 0.0722 * lin (c.getBlue());
+    };
+    const auto la = luminance (a), lb = luminance (b);
+    return (juce::jmax (la, lb) + 0.05) / (juce::jmin (la, lb) + 0.05);
+}
+
+/// How far apart two colours are (Euclidean, 0 to 255 per channel).
+double colourDistance (juce::Colour a, juce::Colour b)
+{
+    return std::sqrt (juce::square ((double) a.getRed() - b.getRed()) + juce::square ((double) a.getGreen() - b.getGreen())
+                      + juce::square ((double) a.getBlue() - b.getBlue()));
+}
+
+/// Whether two images have the same pixels over a rectangle.
+bool samePixels (const juce::Image& a, const juce::Image& b, juce::Rectangle<int> area)
+{
+    const juce::Image::BitmapData da (a, juce::Image::BitmapData::readOnly), db (b, juce::Image::BitmapData::readOnly);
+    for (int y = area.getY(); y < area.getBottom(); ++y)
+        for (int x = area.getX(); x < area.getRight(); ++x)
+            if (da.getPixelColour (x, y) != db.getPixelColour (x, y))
+                return false;
+    return true;
+}
+
+/// A material's head as the Amp page shows it, alone: the art, the lit jewel, and the seven knobs in its skin,
+/// laid out as AmpView::resized lays them out on the panel.
+struct DressedHead final : juce::Component
+{
+    DressedHead (AmpSimProcessor& p, ui::Material material, const juce::String& badge)
+    {
+        head.setMaterial (material);
+        head.setBadge (badge);
+        addAndMakeVisible (head);
+        jewel.setLit (true);
+        addAndMakeVisible (jewel);
+        const std::array<std::pair<const char*, const char*>, 7> specs { { { "Gain", "input_trim" }, { "Bass", "bass" }, { "Middle", "mid" }, { "Treble", "treble" },
+                                                                           { "Presence", "presence" }, { "Depth", "depth" }, { "Master", "output_trim" } } };
+        const auto panel = ui::AmpHead::panelBox();
+        const auto knobsLeft = panel.getX() + 22.0f + 96.0f + 20.0f, knobsWidth = panel.getRight() - 22.0f - knobsLeft;
+        const auto css = ui::Knob::cssSize (ui::Knob::Size::normal);
+        for (size_t k = 0; k < specs.size(); ++k)
+        {
+            auto knob = std::make_unique<ui::Knob> (p.parameters, AmpSimProcessor::ampParamId (0, specs[k].second), specs[k].first, " dB", ui::Knob::Size::normal,
+                                                    ui::skinFor (material));
+            knob->setCssPosition (juce::roundToInt (knobsLeft + (knobsWidth - (float) css.x) * (float) k / 6.0f), juce::roundToInt (panel.getCentreY() - (float) css.y * 0.5f));
+            addAndMakeVisible (*knob);
+            knobs.push_back (std::move (knob));
+        }
+        setSize (ui::AmpHead::headWidth + ui::AmpHead::margin.getLeftAndRight(), ui::AmpHead::headHeight + ui::AmpHead::margin.getTopAndBottom());
+        head.setBounds (getLocalBounds());
+        jewel.setBounds (juce::Rectangle<int> (30, 30).withCentre ({ juce::roundToInt (panel.getX() + 22.0f + 9.0f), juce::roundToInt (panel.getCentreY()) }));
+    }
+
+    ui::AmpHead head;
+    ui::PilotJewel jewel;
+    std::vector<std::unique_ptr<ui::Knob>> knobs;
+};
+
 class EditorTests final : public juce::UnitTest
 {
 public:
@@ -171,9 +259,10 @@ public:
             expectEquals (amp.getKnob (2, 0).getValueText(), juce::String ("7.5"));
             expectEquals (amp.getKnob (1, 6).getValueText(), juce::String ("5.0")); // Master at unity
 
-            // The three heads' art alone, at 2x (proof of the procedural textures).
-            for (int m = 0; m < 3; ++m)
-                expect (savePng (ui::AmpHead::render ((ui::Material) m, 2.0f), proofDir().getChildFile ("amp_head_" + juce::String (names[(size_t) m]) + ".png")));
+            // Every head's art alone, at 2x (proof of the procedural textures): the three slots' and the six more.
+            for (int m = 0; m < ui::numMaterials; ++m)
+                expect (savePng (ui::AmpHead::render ((ui::Material) m, 2.0f),
+                                 proofDir().getChildFile ("amp_head_" + juce::String (ui::materialName ((ui::Material) m)).toLowerCase() + ".png")));
 
             // The head is drawn once per material at a scale, then only drawn from the cache.
             const auto renders = amp.getHead().getRenderCount();
@@ -213,6 +302,186 @@ public:
             logMessage ("  -> knobs read 3.5 / 6.5 (Glass gain, treble), 7.5 (Monolith gain), 5.0 (Ember master at unity); the head art rendered "
                         + juce::String (renders) + " times for 3 materials and 8 snapshots; program change 2 moved the page to Ember: "
                         + (followedPc ? "yes" : "no") + "; an empty slot's jewel is dark");
+        }
+
+        beginTest ("amp heads: nine materials (the slots' three, the five more built-in amps', a user capture's), each a full head, a mini, and a knob skin; "
+                   "names map to them; a long name is elided; the art is cached; the Amp page wearing each new one");
+        {
+            using ui::Material;
+            AmpSimProcessor p;
+            p.loadModel (0, taggedCapture ("wavenet_a1_standard.nam", "hi_gain", "materials_high_gain.nam"));
+            waitForLoads (p);
+            p.prepareToPlay (fs, blockSize);
+            const auto lower = [] (Material m) { return juce::String (ui::materialName (m)).toLowerCase(); };
+
+            // Names to materials: each built-in amp's own (any case), anything else Custom; the slots' mapping unchanged.
+            for (int m = 0; m < ui::numMaterials - 1; ++m)
+            {
+                expect (ui::materialForAmp (ui::materialName ((Material) m)) == (Material) m, ui::materialName ((Material) m));
+                expect (ui::materialForAmp (juce::String (ui::materialName ((Material) m)).toUpperCase()) == (Material) m);
+            }
+            for (const auto* other : { "", "Custom", "My bedroom capture", "Forged", "glass_clean" })
+                expect (ui::materialForAmp (other) == Material::custom, other);
+            for (int s = 0; s < 3; ++s)
+                expect (ui::materialFor (s) == (Material) s);
+            expect (ui::materialFor (7) == Material::monolith);
+
+            // Each its own knob skin.
+            std::set<int> skins;
+            for (int m = 0; m < ui::numMaterials; ++m)
+                skins.insert ((int) ui::skinFor ((Material) m));
+            expectEquals ((int) skins.size(), ui::numMaterials);
+
+            // The heads at 2x, measured: the mean colour of the body (its left margin), the panel, and the grille, and the
+            // knob labels' contrast against the panel under them.
+            const auto at2x = [] (juce::Rectangle<float> r) { return (r * 2.0f).toNearestInt(); };
+            const auto panel = ui::AmpHead::panelBox(), grille = ui::AmpHead::grilleBox();
+            const auto bodyStrip = juce::Rectangle<float> ((float) ui::AmpHead::headBox().getX() + 3.0f, panel.getY(), 10.0f, grille.getBottom() - panel.getY());
+            const auto css = ui::Knob::cssSize (ui::Knob::Size::normal);
+            const auto labelStrip = juce::Rectangle<float> (panel.getX() + 140.0f, panel.getCentreY() + (float) css.y * 0.5f - 16.0f, panel.getWidth() - 162.0f, 16.0f);
+            std::vector<std::array<juce::Colour, 3>> looks;
+            juce::StringArray measured;
+            for (int m = 0; m < ui::numMaterials; ++m)
+            {
+                const auto material = (Material) m;
+                const auto art = ui::AmpHead::render (material, 2.0f);
+                looks.push_back ({ meanColour (art, at2x (bodyStrip)), meanColour (art, at2x (panel.reduced (8.0f))), meanColour (art, at2x (grille.reduced (8.0f))) });
+                const auto label = ui::theme::knobSkin (ui::skinFor (material)).label;
+                const auto ratio = contrastRatio (label, meanColour (art, at2x (labelStrip)));
+                expect (ratio >= 4.5, juce::String (ui::materialName (material)) + " labels at " + juce::String (ratio, 2) + ":1");
+                measured.add (juce::String (ui::materialName (material)) + ": body #" + looks.back()[0].toDisplayString (false) + ", panel #"
+                              + looks.back()[1].toDisplayString (false) + ", grille #" + looks.back()[2].toDisplayString (false) + ", knob labels "
+                              + juce::String (ratio, 1) + ":1 on the panel");
+            }
+            // Distinct: every pair of heads differs clearly in body, panel, or grille colour (the largest of the three
+            // distances).
+            double closest = 1.0e9;
+            juce::String closestPair;
+            for (size_t a = 0; a < looks.size(); ++a)
+                for (size_t b = a + 1; b < looks.size(); ++b)
+                {
+                    double d = 0.0;
+                    for (size_t part = 0; part < 3; ++part)
+                        d = juce::jmax (d, colourDistance (looks[a][part], looks[b][part]));
+                    if (d < closest)
+                    {
+                        closest = d;
+                        closestPair = juce::String (ui::materialName ((Material) a)) + " and " + ui::materialName ((Material) b);
+                    }
+                }
+            expectGreaterThan (closest, 24.0);
+
+            // A long name on any head is elided: the grille's 72 px at each end are the same as with a short word.
+            const auto longName = juce::String ("My bedroom capture through the old head, the second take, the one with more mids");
+            for (int m = 0; m < ui::numMaterials; ++m)
+            {
+                const auto shortArt = ui::AmpHead::render ((Material) m, 1.0f, "Amp"), longArt = ui::AmpHead::render ((Material) m, 1.0f, longName);
+                const auto g = grille.toNearestInt();
+                expect (samePixels (shortArt, longArt, g.withWidth (72)) && samePixels (shortArt, longArt, g.withTrimmedLeft (g.getWidth() - 72)),
+                        juce::String (ui::materialName ((Material) m)) + ": the long name reaches the grille's ends");
+            }
+            expect (savePng (ui::AmpHead::render (Material::custom, 2.0f, longName), proofDir().getChildFile ("amp_head_custom_long_name.png")));
+            expect (savePng (ui::AmpHead::render (Material::custom, 2.0f, "Bedroom capture"), proofDir().getChildFile ("amp_head_custom_named.png")));
+
+            // The minis: one source per look (drawMiniAmp by name is drawMiniHead by material), each its own.
+            const auto mini = [] (std::function<void (juce::Graphics&)> draw)
+            {
+                juce::Image image (juce::Image::ARGB, 32 * 6, 22 * 6, true);
+                juce::Graphics g (image);
+                g.addTransform (juce::AffineTransform::scale (6.0f));
+                draw (g);
+                return image;
+            };
+            const auto miniBox = juce::Rectangle<float> (1.0f, 1.0f, 30.0f, 20.0f);
+            std::vector<juce::Image> minis;
+            for (int m = 0; m < ui::numMaterials; ++m)
+            {
+                minis.push_back (mini ([&] (juce::Graphics& g) { ui::drawMiniHead (g, miniBox, (Material) m); }));
+                const auto amp = m == (int) Material::custom ? juce::String ("Bedroom capture") : juce::String (ui::materialName ((Material) m));
+                const auto byName = mini ([&] (juce::Graphics& g) { ui::drawMiniAmp (g, miniBox, amp); });
+                expect (samePixels (minis.back(), byName, minis.back().getBounds()), ui::materialName ((Material) m));
+            }
+            for (size_t a = 0; a < minis.size(); ++a)
+                for (size_t b = a + 1; b < minis.size(); ++b)
+                    expect (! samePixels (minis[a], minis[b], minis[a].getBounds()));
+
+            // The contact sheet: each head at 2x as the Amp page dresses it (its jewel and seven knobs in its skin), its
+            // mini at 6x and its name under it, three to a row.
+            {
+                constexpr int cols = 3, cellW = 2144, headH = 716, footH = 150, gap = 40;
+                const auto rows = (ui::numMaterials + cols - 1) / cols;
+                juce::Image sheet (juce::Image::RGB, cols * cellW + (cols + 1) * gap, rows * (headH + footH) + (rows + 1) * gap, true);
+                juce::Graphics g (sheet);
+                g.fillAll (ui::theme::bg);
+                for (int m = 0; m < ui::numMaterials; ++m)
+                {
+                    const auto material = (Material) m;
+                    DressedHead dressed (p, material, {});
+                    const auto x = gap + (m % cols) * (cellW + gap), y = gap + (m / cols) * (headH + footH + gap);
+                    g.drawImageAt (dressed.createComponentSnapshot (dressed.getLocalBounds(), true, 2.0f), x, y);
+                    g.drawImageAt (minis[(size_t) m], x + 112, y + headH + 4);
+                    g.setColour (ui::theme::ink);
+                    g.setFont (ui::theme::geist (ui::theme::Weight::medium, 44.0f));
+                    g.drawText (ui::materialName (material), x + 112 + 32 * 6 + 36, y + headH + 10, 800, 60, juce::Justification::centredLeft, false);
+                    g.setColour (ui::theme::inkDim);
+                    g.setFont (ui::theme::geist (ui::theme::Weight::regular, 30.0f));
+                    g.drawText ("Skin::" + lower (material) + ", its mini at 6x", x + 112 + 32 * 6 + 36, y + headH + 72, 900, 40, juce::Justification::centredLeft, false);
+                }
+                expect (savePng (sheet, proofDir().getChildFile ("amp_heads_all.png")));
+            }
+
+            // The art is cached: one render per material (and per badge) at a scale, none for a repaint that changes neither.
+            {
+                ui::AmpHead head;
+                head.setBounds (0, 0, ui::AmpHead::headWidth + ui::AmpHead::margin.getLeftAndRight(), ui::AmpHead::headHeight + ui::AmpHead::margin.getTopAndBottom());
+                for (int m = 0; m < ui::numMaterials; ++m)
+                {
+                    head.setMaterial ((Material) m);
+                    for (int i = 0; i < 3; ++i)
+                        head.createComponentSnapshot (head.getLocalBounds(), true, 2.0f);
+                }
+                expectEquals (head.getRenderCount(), ui::numMaterials);
+                head.setBadge ("Bedroom capture");
+                head.createComponentSnapshot (head.getLocalBounds(), true, 2.0f);
+                head.setBadge ("Bedroom capture");
+                head.createComponentSnapshot (head.getLocalBounds(), true, 2.0f);
+                expectEquals (head.getRenderCount(), ui::numMaterials + 1);
+                expectEquals (head.getBadge(), juce::String ("Bedroom capture"));
+            }
+
+            // The Amp page with each new material on the head (the page still has slots, so the test dresses slot 1's
+            // head and knobs directly), then back.
+            std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+            auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
+            ed.showPage (ui::PageId::amp);
+            auto& amp = ed.getAmpView();
+            setParam (p, AmpSimProcessor::slotParamId, 0.0f);
+            play (p, 0.6, [&] { amp.getSpectrum().update(); });
+            ed.refresh();
+            juce::StringArray pages;
+            for (int m = (int) Material::forge; m < ui::numMaterials; ++m)
+            {
+                const auto material = (Material) m;
+                amp.getHead().setMaterial (material);
+                amp.getHead().setBadge (material == Material::custom ? juce::String ("Bedroom capture") : juce::String (ui::materialName (material)));
+                for (int k = 0; k < ui::AmpView::numKnobs; ++k)
+                    amp.getKnob (0, k).setSkin (ui::skinFor (material));
+                const auto file = proofDir().getChildFile ("editor_amp_" + lower (material) + ".png");
+                expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), file));
+                pages.add (file.getFileName());
+            }
+            amp.getHead().setMaterial (ui::materialFor (0));
+            for (int k = 0; k < ui::AmpView::numKnobs; ++k)
+                amp.getKnob (0, k).setSkin (ui::skinFor (ui::materialFor (0)));
+            ed.refresh();
+            expect (amp.getHead().getMaterial() == Material::glass);
+
+            for (const auto& line : measured)
+                logMessage ("  -> " + line);
+            logMessage ("  -> the closest pair of looks: " + closestPair + ", " + juce::String (closest, 1)
+                        + " apart (the largest of the body, panel, and grille mean colour distances)");
+            logMessage ("  -> build/proof/amp_head_<material>.png for all nine, amp_heads_all.png, amp_head_custom_named.png, amp_head_custom_long_name.png, "
+                        + pages.joinIntoString (", "));
         }
 
         beginTest ("cab page: the library lists packs and IRs; a pick loads close mic 1, assigns it, and stops following; mics move on packs only; compared with the handoff");

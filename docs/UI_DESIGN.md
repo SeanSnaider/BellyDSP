@@ -2,14 +2,14 @@
 
 **The design source of truth is the UI handoff in `docs/ui/amp-ui-handoff/`**: `UI_HANDOFF.md` (the spec), `ui_reference.html` (the exact CSS and JS values; it wins over the spec), and `screenshots/` (2x renders at 1280 x 760). The earlier proposal that lived in this file (a blue accent, section colours, a two-row chain strip, a scenes bar along the bottom) is retired; ASSUMPTIONS U1 to U22 describe that first GUI, and the H entries (the "Phase 11: UI handoff" table) describe this one.
 
-Everything is still drawn in code with JUCE's Graphics and one LookAndFeel: no artwork or trade dress from other products, and no real product or amp names in the UI (the three heads' names, Glass, Ember, and Monolith, are invented).
+Everything is still drawn in code with JUCE's Graphics and one LookAndFeel: no artwork or trade dress from other products, and no real product or amp names in the UI (the heads' names, Glass, Ember, Monolith, Forge, Basalt, Comet, Quartz, and Lantern, are invented, and so are their looks).
 
 ## Where this build follows the handoff
 
 - **Tokens.** Every colour, the four knob skins, the radii, and the layout sizes are in `src/ui/Theme.h`, named as in the reference's `:root` (`bg`, `surface`, `line` as `line1`, `line-2` as `line2`, `ink`, `ink-dim`, `ink-faint`, `accent`, `accent-dim`).
 - **Type.** Geist 300 to 600 and Fraunces SemiBold Italic, bundled (UH10).
 - **Window.** The 1280 x 760 canvas, scaled and letterboxed; radius 12 with a 1 px line border; top bar 56, main area padded 18 / 40 / 16, signal chain 72 (UH11).
-- **Components.** The knob (one widget, four skins, 64 and 52 px), the toggle, the top bar, the chain blocks with their icons and bypass dots, the amp tabs with their minis, the amp head in three materials, the info row, the shared strip, the cab page, and the tuner page, at the reference's sizes. `tests/EditorTests.cpp` renders each designed page at 2x next to its screenshot in `build/proof/compare_<page>.png`.
+- **Components.** The knob (one widget, four skins, 64 and 52 px), the toggle, the top bar, the chain blocks with their icons and bypass dots, the amp tabs with their minis, the amp head in nine materials (the slots' three, one for each of the five more built-in amps, and Custom for a user's capture; ASSUMPTIONS UH20 to UH25), the info row, the shared strip, the cab page, and the tuner page, at the reference's sizes. `tests/EditorTests.cpp` renders each designed page at 2x next to its screenshot in `build/proof/compare_<page>.png`.
 
 ## Where this build differs, deliberately
 
