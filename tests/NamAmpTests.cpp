@@ -4,6 +4,7 @@
 #include "TestHelpers.h"
 #include "dsp/Loudness.h"
 #include "dsp/NamAmp.h"
+#include "dsp/NamTanh.h"
 #include "dsp/ReferenceSignals.h"
 #include "Presets.h"
 
@@ -118,7 +119,7 @@ public:
                 expect (loaded.contains (name), juce::String (name) + " must load");
         }
 
-        beginTest ("matches NeuralAmpModelerCore's own render tool on two stimuli (limit -100 dB)");
+        beginTest ("matches NeuralAmpModelerCore's own render tool on two stimuli (limit -100 dB), with NAM core's stock tanh and with the app's vectorised one");
         {
             expect (namRenderTool().existsAsFile(), "nam_render wasn't built");
 
@@ -128,41 +129,97 @@ public:
             const auto richFile = tempDir().getChildFile ("rich_stimulus.wav");
             expect (writeWav (richFile, richStimulus()));
 
-            for (const auto& file : exampleModels())
+            // nam_render always runs NAM core's stock tanh (std::tanh per element). Our slot runs it too in the first
+            // pass, which checks the integration itself (bit-exact on 8 of the 9 models); the second pass is the app as
+            // it ships, with the vectorised tanh (NamTanh.h, BUILD_PLAN "CPU").
+            using ampsim::namtanh::Tanh;
+            for (const auto mode : { Tanh::stock, Tanh::vectorised })
             {
-                juce::StringArray results;
+                ampsim::namtanh::use (mode);
+                const juce::String modeName = mode == Tanh::stock ? "stock tanh" : "vectorised tanh";
+                double worstDb = -400.0;
+                int bitExact = 0, compared = 0;
 
-                for (const auto& stimulus : { exampleInputFile(), richFile })
+                for (const auto& file : exampleModels())
                 {
-                    ampsim::NamAmp amp;
-                    if (! amp.loadModel (file, false).ok)
-                        continue;
+                    juce::StringArray results;
 
-                    const auto reference = tempDir().getChildFile ("ref_" + file.getFileNameWithoutExtension() + "_"
-                                                                   + stimulus.getFileNameWithoutExtension() + ".wav");
-                    if (! renderWithOfficialTool (file, stimulus, reference))
+                    for (const auto& stimulus : { exampleInputFile(), richFile })
                     {
-                        results.add (stimulus.getFileName() + ": official tool refused it");
-                        continue;
+                        ampsim::NamAmp amp;
+                        if (! amp.loadModel (file, false).ok)
+                            continue;
+
+                        const auto reference = tempDir().getChildFile ("ref_" + file.getFileNameWithoutExtension() + "_"
+                                                                       + stimulus.getFileNameWithoutExtension() + ".wav");
+                        if (! renderWithOfficialTool (file, stimulus, reference))
+                        {
+                            results.add (stimulus.getFileName() + ": official tool refused it");
+                            continue;
+                        }
+
+                        const auto refBuffer = readWav (reference);
+                        const std::vector<float> expected (refBuffer.getReadPointer (0), refBuffer.getReadPointer (0) + refBuffer.getNumSamples());
+                        const auto stimulusBuffer = readWav (stimulus);
+                        const std::vector<float> in (stimulusBuffer.getReadPointer (0), stimulusBuffer.getReadPointer (0) + stimulusBuffer.getNumSamples());
+
+                        amp.prepare (fs, blockSize);
+                        const auto ours = runAmp (amp, in);
+                        const auto error = relativeErrorDb (ours, expected);
+                        worstDb = std::max (worstDb, error);
+                        ++compared;
+                        bitExact += ours == expected ? 1 : 0;
+
+                        expectEquals ((int) expected.size(), (int) ours.size());
+                        expectLessThan (error, -100.0, file.getFileName() + " on " + stimulus.getFileName() + ", " + modeName);
+                        results.add ((stimulus == richFile ? juce::String ("rich stimulus ") : juce::String ("NAM example input "))
+                                     + dB (error) + " (max difference " + juce::String (maxAbsDifference (ours, expected), 9) + ")");
                     }
 
-                    const auto refBuffer = readWav (reference);
-                    const std::vector<float> expected (refBuffer.getReadPointer (0), refBuffer.getReadPointer (0) + refBuffer.getNumSamples());
-                    const auto stimulusBuffer = readWav (stimulus);
-                    const std::vector<float> in (stimulusBuffer.getReadPointer (0), stimulusBuffer.getReadPointer (0) + stimulusBuffer.getNumSamples());
-
-                    amp.prepare (fs, blockSize);
-                    const auto ours = runAmp (amp, in);
-                    const auto error = relativeErrorDb (ours, expected);
-
-                    expectEquals ((int) expected.size(), (int) ours.size());
-                    expectLessThan (error, -100.0, file.getFileName() + " on " + stimulus.getFileName());
-                    results.add ((stimulus == richFile ? juce::String ("rich stimulus ") : juce::String ("NAM example input "))
-                                 + dB (error) + " (max difference " + juce::String (maxAbsDifference (ours, expected), 9) + ")");
+                    logMessage ("  -> " + modeName + ", " + file.getFileName() + " vs. official: " + results.joinIntoString ("; "));
                 }
-
-                logMessage ("  -> " + file.getFileName() + " vs. official: " + results.joinIntoString ("; "));
+                logMessage ("  -> " + modeName + ": " + juce::String (bitExact) + " of " + juce::String (compared) + " renders bit-exact, the worst "
+                            + dB (worstDb) + " relative to the official render");
             }
+            ampsim::namtanh::use (Tanh::vectorised);
+        }
+
+        beginTest ("the vectorised tanh against NAM core's stock one on every built-in step: the guitar DI as is and 12 dB hotter, relative error under -100 dB");
+        {
+            using ampsim::namtanh::Tanh;
+            auto steps = juce::File (AMPSIM_SOURCE_DIR).getChildFile ("content/models").findChildFiles (juce::File::findFiles, true, "*.nam");
+            steps.sort();
+            expectGreaterOrEqual (steps.size(), 40);
+            const auto di = guitarDI ((int) (4.0 * fs));
+            std::vector<float> hot (di);
+            for (auto& v : hot)
+                v *= 4.0f; // +12 dB: the DI at +6 dBFS peaks, pushing the network's activations deep into the tanh
+            double worstDb = -400.0, worstDifference = 0.0;
+            juce::String worstName;
+            for (const auto& file : steps)
+                for (const std::vector<float>* x : { &di, (const std::vector<float>*) &hot })
+                {
+                    std::vector<float> outputs[2];
+                    for (const auto mode : { Tanh::stock, Tanh::vectorised })
+                    {
+                        ampsim::namtanh::use (mode);
+                        ampsim::NamAmp amp;
+                        expect (amp.loadModel (file, false).ok);
+                        amp.prepare (fs, blockSize);
+                        outputs[mode == Tanh::stock ? 0 : 1] = runAmp (amp, *x);
+                    }
+                    const auto error = relativeErrorDb (outputs[1], outputs[0]);
+                    expectLessThan (error, -100.0, file.getFileName());
+                    worstDifference = std::max (worstDifference, maxAbsDifference (outputs[1], outputs[0]));
+                    if (error > worstDb)
+                    {
+                        worstDb = error;
+                        worstName = file.getParentDirectory().getFileName() + "/" + file.getFileName() + (x == &hot ? " (+12 dB)" : "");
+                    }
+                }
+            ampsim::namtanh::use (Tanh::vectorised);
+            logMessage ("  -> " + juce::String (steps.size()) + " built-in steps, 2 levels each: the vectorised tanh against the stock one, worst "
+                        + dB (worstDb) + " relative (" + worstName + "), largest sample difference " + juce::String (worstDifference, 9));
         }
 
         beginTest ("normalizes every model to -18 LUFS on the reference DI, measured rather than taken from the file");

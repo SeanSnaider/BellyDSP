@@ -4,6 +4,12 @@
 // ampsim_tests: every test in tests/, run with JUCE's UnitTest framework.
 //
 //   ampsim_tests [--proof-dir <dir>] [--only <test name substring>] [--skip <substring>]...
+//   ampsim_tests --bench [seconds]
+//   ampsim_tests --bench-gui [seconds per page]
+//
+// --bench runs no tests: it prints the CPU profile of the defaults, every factory preset, and the heaviest rig on
+// this machine, block by block, at 48 kHz and 128-sample buffers (tests/CpuProfile.h; BUILD_PLAN "CPU"). --bench-gui
+// opens the editor on screen with the defaults rig playing and reports the message thread's CPU on each page.
 //
 // Measurements are logged on lines starting with "->". They're collected into <proof-dir>/summary.txt
 // along with the rendered WAVs and editor snapshots the tests write there.
@@ -15,6 +21,7 @@
 // Every subtest's duration is printed when it ends, and the summary lists the slowest. If the process
 // crashes, the crash handler prints "CRASH in <the subtest that was running>" and a stack backtrace.
 
+#include "CpuProfile.h"
 #include "PluginProcessor.h"
 #include "TestHelpers.h"
 #include "platform/AppSettings.h"
@@ -142,6 +149,27 @@ int main (int argc, char* argv[])
 
     // Starts JUCE's message manager, which the editor snapshot test needs.
     juce::ScopedJuceInitialiser_GUI juce;
+
+    // The benchmarks (no tests): `--bench [seconds]`, 10 s of DI per rig by default; `--bench-gui [seconds]`, 5 s per page.
+    for (int i = 1; i < argc; ++i)
+        if (juce::String (argv[i]) == "--bench-gui")
+        {
+            AmpSimProcessor::builtInCapturesForFreshSlots = false;
+            const auto settingsFile = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ampsim_bench_settings.json");
+            settingsFile.deleteFile();
+            platform::settings::setFileForTests (settingsFile);
+            const auto seconds = i + 1 < argc ? juce::String (argv[i + 1]).getDoubleValue() : 0.0;
+            return testing::cpu::runGuiBenchmark (seconds > 0.0 ? juce::jlimit (1.0, 600.0, seconds) : 5.0);
+        }
+        else if (juce::String (argv[i]) == "--bench")
+        {
+            AmpSimProcessor::builtInCapturesForFreshSlots = false;
+            const auto settingsFile = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ampsim_bench_settings.json");
+            settingsFile.deleteFile();
+            platform::settings::setFileForTests (settingsFile);
+            const auto seconds = i + 1 < argc ? juce::jlimit (1.0, 600.0, juce::String (argv[i + 1]).getDoubleValue()) : 10.0;
+            return testing::cpu::runBenchmark (i + 1 < argc && juce::String (argv[i + 1]).getDoubleValue() > 0.0 ? seconds : 10.0);
+        }
 
     juce::String only;
     auto& skips = testing::skipPatterns();

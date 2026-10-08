@@ -144,6 +144,28 @@ public:
     Block& blockFor (Slot slot);
     const Block& blockFor (Slot slot) const;
 
+    /// CPU profiling, for benchmarks only (tests/FullRigTests.cpp and `ampsim_tests --bench`; BUILD_PLAN "CPU").
+    /// While a profile is attached, process() adds each slot's time to it in microseconds: the block itself, its
+    /// bypass crossfade, the copy a block that keeps running while off works on, and the stereo copy made in front
+    /// of it. `chainMicros` is the rest of the chain's own work: the DI snapshot, the stereo copy when the cab is
+    /// off, and the sections' reorder dips. Times add up over process() calls; the caller clears them between
+    /// buffers. Reading the clock is a few tens of nanoseconds and never allocates or locks. Detached (nullptr,
+    /// always in the app) it costs one test per slot.
+    struct Profile
+    {
+        std::array<double, numSlots> slotMicros {};
+        double chainMicros = 0.0;
+
+        void clear() noexcept
+        {
+            slotMicros.fill (0.0);
+            chainMicros = 0.0;
+        }
+    };
+
+    /// The thread that calls process(), between buffers: attach (or detach, with nullptr) a profile.
+    void setProfile (Profile* newProfile) noexcept { profile = newProfile; }
+
 private:
     struct BypassState
     {
@@ -175,6 +197,8 @@ private:
     static void unpack (Section section, std::uint64_t packed, SectionState& state);
 
     void runBlock (Slot slot, juce::dsp::AudioBlock<float>& io, const BlockContext& context, bool& stereoCopied);
+    void runBlockUntimed (Slot slot, juce::dsp::AudioBlock<float>& io, const BlockContext& context, bool& stereoCopied);
+    void processUntimed (juce::dsp::AudioBlock<float> io);
     void runSection (Section section, juce::dsp::AudioBlock<float>& io, const BlockContext& context, bool& stereoCopied);
 
     std::array<BypassState, numSlots> bypass;
@@ -183,6 +207,7 @@ private:
     juce::AudioBuffer<float> dry; // a block's input, kept while its bypass crossfades
     juce::AudioBuffer<float> sectionDry; // a section's input, kept while it reorders
     std::vector<float> dipGain, blockGain; // a reorder's fade for this buffer: the section's, and each block input's
+    Profile* profile = nullptr; // benchmarks only (setProfile)
 
 public:
     Chain();

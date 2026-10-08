@@ -527,6 +527,7 @@ public:
         modeSwitching();
         realTime();
         cpu();
+        cpuOptions();
     }
 
 private:
@@ -1469,6 +1470,155 @@ private:
         }
         expectLessThan (worstMean, 0.05 * deadlineMicros * cpuBudgetScale());
         logMessage ("  -> mean per 128-sample block (% of the 2.67 ms deadline): " + results.joinIntoString ("; "));
+    }
+
+    /// Options that would cut the drives' CPU but change their sound (BUILD_PLAN "CPU", the options): measured here,
+    /// applied nowhere. Sean decides.
+    void cpuOptions()
+    {
+        beginTest ("CPU options, measured and not applied: 2x oversampling instead of 4x, and stopping a switched-off drive (warm start on switch-on)");
+
+        const auto x = guitarDI ((int) (4.0 * fs));
+        const auto timeIt = [&] (auto& block)
+        {
+            std::vector<float> buffer ((size_t) blockSize);
+            std::vector<double> micros;
+            for (size_t start = 0; start + blockSize <= x.size(); start += blockSize)
+            {
+                std::copy (x.begin() + (long) start, x.begin() + (long) start + blockSize, buffer.begin());
+                float* c[1] = { buffer.data() };
+                juce::ScopedNoDenormals noDenormals;
+                const auto t0 = std::chrono::steady_clock::now();
+                block.process (juce::dsp::AudioBlock<float> (c, 1, (size_t) blockSize), {});
+                micros.push_back (std::chrono::duration<double, std::micro> (std::chrono::steady_clock::now() - t0).count());
+            }
+            return std::accumulate (micros.begin(), micros.end(), 0.0) / (double) micros.size();
+        };
+
+        // 1. 2x: the CPU, the aliasing of full-drive tones (as "aliasing" measures it), and the waveform's distance
+        //    from 4x on the guitar DI at the app's default Drive and Tone (noon).
+        const auto binHz = fs / 8192.0;
+        const auto oddBin = [binHz] (double f)
+        {
+            auto k = (int) std::round (f / binHz);
+            return (k % 2 == 0 ? k + 1 : k) * binHz;
+        };
+        for (const auto& info : overdriveModes())
+        {
+            juce::StringArray row;
+            double cpu[9] {};
+            for (const auto factor : { 2, 4 })
+            {
+                Overdrive o;
+                o.setSettings (overdriveSettings (info.mode, 0.5f, 0.5f, factor));
+                o.prepare (fs, blockSize);
+                cpu[factor] = timeIt (o);
+            }
+            double guitarRange[9] {}, upper[9] {};
+            for (const auto factor : { 2, 4 })
+            {
+                guitarRange[factor] = upper[factor] = -400.0;
+                for (const auto f : { 500.0, 1000.0, 1300.0, 3000.0, 5000.0 })
+                {
+                    const auto tone = oddBin (f);
+                    const auto a = inharmonicDb (toDouble (renderOverdrive (overdriveSettings (info.mode, 1.0f, 0.5f, factor), sineWave (tone, 0.25, (int) (0.6 * fs)))), tone);
+                    (tone <= 1310.0 ? guitarRange[factor] : upper[factor]) = std::max (tone <= 1310.0 ? guitarRange[factor] : upper[factor], a);
+                }
+            }
+            // The two factors' resampling filters have different group delays, so the waveforms aren't comparable
+            // sample by sample: compare the long-term spectra instead, octave by octave (125 Hz to 16 kHz).
+            const auto longTerm = [] (const std::vector<float>& y)
+            {
+                const auto yd = toDouble (y);
+                std::vector<double> sum;
+                for (size_t end = 64; end + 8192 + 64 < yd.size(); end += 8192)
+                {
+                    const auto p = powerSpectrum (yd, 13, end);
+                    if (sum.empty())
+                        sum.assign (p.size(), 0.0);
+                    for (size_t k = 0; k < p.size(); ++k)
+                        sum[k] += p[k];
+                }
+                std::vector<double> bands;
+                for (double lo = 88.4; lo < 16000.0; lo *= 2.0)
+                {
+                    double e = 0.0;
+                    for (size_t k = (size_t) (lo / (fs / 8192.0)); k < sum.size() && (double) k * fs / 8192.0 < 2.0 * lo; ++k)
+                        e += sum[k];
+                    bands.push_back (10.0 * std::log10 (e + 1.0e-30));
+                }
+                return bands;
+            };
+            const auto at4 = longTerm (renderOverdrive (overdriveSettings (info.mode, 0.5f, 0.5f, 4), x));
+            const auto at2 = longTerm (renderOverdrive (overdriveSettings (info.mode, 0.5f, 0.5f, 2), x));
+            double spectrumDifference = 0.0, topOctave = 0.0;
+            for (size_t b = 0; b < at4.size(); ++b)
+            {
+                spectrumDifference = std::max (spectrumDifference, std::abs (at2[b] - at4[b]));
+                topOctave = at2[b] - at4[b];
+            }
+            logMessage ("  -> " + juce::String (info.name) + ", 2x instead of 4x: " + juce::String (cpu[2], 1) + " us instead of " + juce::String (cpu[4], 1)
+                        + " us per buffer (saves " + juce::String (100.0 * (cpu[4] - cpu[2]) / deadlineMicros, 2) + "% of the deadline); aliasing of full-drive tones "
+                        + "up to 1.3 kHz " + juce::String (guitarRange[2], 1) + " dB (4x: " + juce::String (guitarRange[4], 1) + "), at 3 to 5 kHz "
+                        + juce::String (upper[2], 1) + " dB (4x: " + juce::String (upper[4], 1) + "); the DI at Drive and Tone noon: its long-term spectrum within "
+                        + juce::String (spectrumDifference, 2) + " dB of 4x in every octave from 125 Hz to 16 kHz (the 8 to 16 kHz octave "
+                        + juce::String (topOctave, 2) + " dB)");
+        }
+
+        // 2. Stop a drive that's off and start it cold when it's switched on, after running it unheard on the live input
+        //    for a warm-up (like an amp switch, BUILD_PLAN "Amp switching"). Saved: everything an off drive costs now (it
+        //    keeps running so its capacitors hold their charge; decision log 2026-10-02). The cost: the switch lands a
+        //    warm-up late, and until the cold circuit has caught up its output differs from one that ran all along.
+        //    Measured: switched on at 2 s into the DI, through the chain's 10 ms linear fade-in, against the always-running
+        //    circuit faded in the same way; the largest difference after the fade starts, re. the running output's peak.
+        const int switchAt = (int) (2.0 * fs), fade = (int) (0.010 * fs), after = (int) (0.5 * fs);
+        for (const auto& info : overdriveModes())
+        {
+            const auto settings = overdriveSettings (info.mode, 0.8f, 0.5f, 4);
+            const auto running = renderOverdrive (settings, std::vector<float> (x.begin(), x.begin() + switchAt + after));
+            double peak = 0.0;
+            for (int n = switchAt; n < switchAt + after; ++n)
+                peak = std::max (peak, (double) std::abs (running[(size_t) n]));
+            juce::StringArray results;
+            for (const auto warmupMs : { 0, 20, 50, 100, 200 })
+            {
+                const int warm = warmupMs * (int) fs / 1000;
+                const std::vector<float> fromCold (x.begin() + switchAt - warm, x.begin() + switchAt + after);
+                const auto cold = renderOverdrive (settings, fromCold);
+                double worst = 0.0;
+                for (int n = 0; n < after; ++n)
+                {
+                    const auto w = juce::jmin (1.0, (double) n / (double) fade);
+                    worst = std::max (worst, w * std::abs ((double) cold[(size_t) (warm + n)] - (double) running[(size_t) (switchAt + n)]));
+                }
+                results.add (juce::String (warmupMs) + " ms warm-up " + dB (20.0 * std::log10 (std::max (1.0e-20, worst / peak))));
+            }
+            logMessage ("  -> " + juce::String (info.name) + " at Drive 0.8, stopped while off: the largest difference after switch-on re. its peak, "
+                        + results.joinIntoString ("; "));
+        }
+        for (const auto& [mode, name] : std::vector<std::pair<Boost::Mode, const char*>> { { Boost::Mode::screamer, "Boost Screamer" } })
+        {
+            Boost::Settings s;
+            s.mode = mode;
+            const auto running = renderBoost (s, std::vector<float> (x.begin(), x.begin() + switchAt + after));
+            double peak = 0.0;
+            for (int n = switchAt; n < switchAt + after; ++n)
+                peak = std::max (peak, (double) std::abs (running[(size_t) n]));
+            juce::StringArray results;
+            for (const auto warmupMs : { 0, 20, 50, 100, 200 })
+            {
+                const int warm = warmupMs * (int) fs / 1000;
+                const auto cold = renderBoost (s, std::vector<float> (x.begin() + switchAt - warm, x.begin() + switchAt + after));
+                double worst = 0.0;
+                for (int n = 0; n < after; ++n)
+                {
+                    const auto w = juce::jmin (1.0, (double) n / (double) fade);
+                    worst = std::max (worst, w * std::abs ((double) cold[(size_t) (warm + n)] - (double) running[(size_t) (switchAt + n)]));
+                }
+                results.add (juce::String (warmupMs) + " ms warm-up " + dB (20.0 * std::log10 (std::max (1.0e-20, worst / peak))));
+            }
+            logMessage ("  -> " + juce::String (name) + ", stopped while off: the largest difference after switch-on re. its peak, " + results.joinIntoString ("; "));
+        }
     }
 };
 

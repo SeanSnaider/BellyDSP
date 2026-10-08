@@ -126,7 +126,7 @@ For a release tag, the Windows workflow also adds its installer, the installer's
 
 ## Every release
 
-0. **Run the full suite on Windows**, on Sean's Windows PC at this commit (`ampsim_tests.exe --proof-dir build\proof` in a Release build). CI on the public repo skips the five slowest groups and the CPU benchmarks (ASSUMPTIONS DS54), so this is where they run on Windows. CPU-budget checks there fail by machine speed alone (the PC needed about 1.75x the Mac's time on 2026-10-05): read their numbers, don't treat them as regressions unless they moved.
+0. **Run the full suite on Windows**, on Sean's Windows PC at this commit (`ampsim_tests.exe --proof-dir build\proof` in a Release build). CI on the public repo skips the five slowest groups and the CPU benchmarks (ASSUMPTIONS DS54), so this is where they run on Windows. CPU-budget checks there fail by machine speed alone (the PC needed about 1.75x the Mac's time on 2026-10-05): read their numbers, don't treat them as regressions unless they moved. Also run `ampsim_tests.exe --bench` there and compare its summary with the last release's (BUILD_PLAN "CPU").
 1. **Set the version and write the notes**, on `main`: put the new version in `VERSION` and write `release-notes/<version>.md` (see `release-notes/README.md`). Commit both ("Release 0.1.1").
 2. **Push `main` to both repos**: `git push origin main` and `git push public main`. The second is what makes the source public; the release refuses until it's done.
 3. **Release**:

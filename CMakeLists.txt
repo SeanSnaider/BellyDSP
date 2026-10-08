@@ -184,6 +184,7 @@ set(AMPSIM_DSP_SOURCES
     src/dsp/ReferenceSignals.cpp
     src/dsp/Chain.cpp
     src/dsp/NamAmp.cpp
+    src/dsp/NamTanh.cpp
     src/dsp/GainSet.cpp
     src/dsp/CabIR.cpp
     src/dsp/CutFilter.cpp
@@ -537,6 +538,7 @@ target_sources(ampsim_tests PRIVATE
     tests/HarmonyTests.cpp
     tests/HarmonizerTests.cpp
     tests/FullRigTests.cpp
+    tests/CpuProfile.cpp
     tests/GateTests.cpp
     tests/OversamplerTests.cpp
     tests/DriveTests.cpp

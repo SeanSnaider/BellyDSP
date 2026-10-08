@@ -3,7 +3,9 @@
 
 #include "AllocationTracking.h"
 #include "BuiltInCaptures.h"
+#include "CpuProfile.h"
 #include "PluginProcessor.h"
+#include "Presets.h"
 #include "TestHelpers.h"
 
 #include <algorithm>
@@ -88,6 +90,95 @@ public:
 
         beginTest ("the same on the eight built-in amps (standard WaveNet gain sets, all loaded, one playing), as the app starts");
         rig (true);
+
+        beginTest ("the CPU profile, block by block: the defaults, the factory presets, the heaviest rig; the budget for weaker machines (BUILD_PLAN \"CPU\")");
+        profileAndBudget();
+    }
+
+    /// Every block's cost (mean, p99, worst) on the defaults, each factory preset, and the heaviest rig, and the budget
+    /// they're held to (BUILD_PLAN "CPU").
+    void profileAndBudget()
+    {
+        const auto input = guitarDI ((int) (10.0 * fs));
+        std::vector<cpu::RigRun> runs;
+        const auto show = [&] (const cpu::RigRun& run)
+        {
+            for (const auto& line : run.table())
+                logMessage ("  -> " + line);
+            expectEquals (run.counts.allocations, 0L);
+            expectEquals (run.counts.frees, 0L);
+            expectEquals (run.counts.blockingLocks, 0L);
+            runs.push_back (run);
+        };
+
+        cpu::RigRun defaults, typical, heaviest;
+        {
+            auto p = cpu::makeRig();
+            cpu::setDefaults (*p);
+            defaults = cpu::profile (*p, input, "Defaults (Glass, one close mic on a 1 s IR, everything else off)");
+            show (defaults);
+            for (const auto& preset : presets::factoryPresets())
+            {
+                expect (cpu::setFactoryPreset (*p, preset));
+                const auto run = cpu::profile (*p, input, "Factory preset " + preset["name"].toString());
+                show (run);
+                if (run.total.mean > typical.total.mean)
+                    typical = run;
+            }
+        }
+        {
+            auto p = cpu::makeRig();
+            cpu::setHeaviest (*p);
+            heaviest = cpu::profile (*p, input, "Heaviest (every block on at its heaviest, three mics on 1 s IRs, the Gain between two steps)");
+            show (heaviest);
+            expectEquals (heaviest.maxModels, 2);
+        }
+        logMessage ("  -> the heaviest factory preset (typical): " + typical.name + ", " + typical.summary());
+
+        // The budget for weaker machines (cpu::Budget: BUILD_PLAN "CPU").
+        const auto check = [this] (const cpu::RigRun& run, const cpu::Budget& budget, const juce::String& what)
+        {
+            expectLessThan (run.meanPercent(), budget.meanPercent * cpuBudgetScale(), what + ": the mean");
+            expectLessThan (run.p99Percent(), budget.p99Percent * cpuBudgetScale(), what + ": the p99");
+            logMessage ("  -> budget, " + what + ": mean " + juce::String (run.meanPercent(), 1) + "% (limit " + juce::String (budget.meanPercent * cpuBudgetScale(), 1)
+                        + "%), p99 " + juce::String (run.p99Percent(), 1) + "% (limit " + juce::String (budget.p99Percent * cpuBudgetScale(), 1) + "%)");
+        };
+        check (defaults, cpu::defaultsBudget, "defaults");
+        for (const auto& run : runs)
+            if (run.name.startsWith ("Factory preset"))
+                check (run, cpu::typicalBudget, run.name.fromFirstOccurrenceOf ("Factory preset ", false, false) + " (typical)");
+        check (heaviest, cpu::heaviestBudget, "heaviest");
+
+        // What the pitch blocks cost when they're on (BUILD_PLAN "CPU", the options), on top of the defaults.
+        {
+            auto p = cpu::makeRig();
+            cpu::setDefaults (*p);
+            const auto base = cpu::profile (*p, input, "defaults");
+            juce::StringArray lines;
+            const auto add = [&] (const juce::String& name, std::initializer_list<std::pair<const char*, float>> params, ampsim::Chain::Slot slot)
+            {
+                for (const auto& [id, value] : params)
+                    cpu::setParam (*p, id, value);
+                cpu::settleLoads (*p);
+                const auto run = cpu::profile (*p, input, name);
+                const auto& b = run.blocks[(size_t) slot];
+                expectEquals (run.counts.allocations, 0L);
+                lines.add (name + ": the block " + juce::String (b.mean, 1) + " us mean (" + juce::String (100.0 * b.mean / deadlineMicros, 2) + "%), p99 "
+                           + juce::String (b.p99, 1) + " us, worst " + juce::String (b.worst, 1) + " us; the whole callback " + juce::String (run.meanPercent(), 1)
+                           + "% (+" + juce::String (run.meanPercent() - base.meanPercent(), 1) + "), p99 " + juce::String (run.p99Percent(), 1) + "%");
+            };
+            using S = ampsim::Chain::Slot;
+            add ("harmonizer, 1 voice", { { "harm_on", 1 } }, S::harmonizer);
+            add ("harmonizer, 2 voices", { { "harm_v2_on", 1 } }, S::harmonizer);
+            add ("harmonizer, 4 voices", { { "harm_v3_on", 1 }, { "harm_v4_on", 1 } }, S::harmonizer);
+            cpu::setParam (*p, "harm_on", 0);
+            add ("multivoicer Poly, its default 4 voices", { { "mv_on", 1 } }, S::multivoicer);
+            add ("multivoicer Poly, 8 voices", { { "mv_voices", 8 } }, S::multivoicer);
+            add ("multivoicer Mono, 8 voices", { { "mv_engine", 1 } }, S::multivoicer);
+            add ("multivoicer Mono, 4 voices", { { "mv_voices", 4 } }, S::multivoicer);
+            for (const auto& line : lines)
+                logMessage ("  -> on the defaults, " + line);
+        }
     }
 
     /// Defaults, everything on, and the heaviest settings, timed. builtIns: the eight built-in amps the app starts
