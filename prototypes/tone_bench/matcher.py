@@ -45,6 +45,12 @@ CONFIGS = {
     "any_auto_take_fx": dict(mode="anything", cleanup="auto", score="take", pedals=True),
     "any_fx_curve": dict(mode="anything", cleanup="auto", score="take", pedals=True, curve="replace"),
     "any_fx_curve_eq": dict(mode="anything", cleanup="auto", score="take", pedals=True, curve="on_top"),
+    # The search's breadth (docs/TONE_MATCH.md, "Round 2: eight amps"): tone_match's REFINE_SLOTS, TAKE_SHORTLIST,
+    # TAKE_PER_AMP, PEDAL_SLOTS for this configuration only; trace keeps every scored candidate in the result.
+    "any_fx_curve_r2": dict(mode="anything", cleanup="auto", score="take", pedals=True, curve="replace",
+                            search=dict(REFINE_SLOTS=2, TAKE_SHORTLIST=16, TAKE_PER_AMP=0, PEDAL_SLOTS=1)),
+    "any_fx_curve_all": dict(mode="anything", cleanup="auto", score="take", pedals=True, curve="replace", trace=True,
+                             search=dict(REFINE_SLOTS=None, TAKE_SHORTLIST=10 ** 6, TAKE_PER_AMP=0, PEDAL_SLOTS=10 ** 6)),
 }
 
 
@@ -64,14 +70,29 @@ def use_split(split):
 def run(target, take, config, split, workers=4, separated=False):
     """The matcher in this configuration. separated: the target is a separated stem (the app's "Separate the
     guitar first"), which the auto cleanup needs to know."""
+    knobs = CONFIGS[config].get("search", {})
+    saved = {k: getattr(tm, k) for k in knobs}
+    try:
+        for k, v in knobs.items():
+            setattr(tm, k, v)
+        return _run(target, take, config, split, workers, separated)
+    finally:
+        for k, v in saved.items():
+            setattr(tm, k, v)
+
+
+def _run(target, take, config, split, workers, separated):
     use_split(split)
     c = CONFIGS[config]
     band = tm.PLAY_ALONG_BAND_SECONDS if c["mode"] == "same" else None
 
     def match(t):
         notes = lt.align_notes(take, t, band_seconds=tm.PLAY_ALONG_BAND_SECONDS) if c.get("score") == "take" else None
-        return tm.match(t, take, c["mode"], log=lambda *a: None, workers=workers, band_seconds=band, take_notes=notes,
-                        pedals=c.get("pedals", False), curve=c.get("curve"))
+        trace = {} if c.get("trace") else None
+        r = tm.match(t, take, c["mode"], log=lambda *a: None, workers=workers, band_seconds=band, take_notes=notes,
+                     pedals=c.get("pedals", False), curve=c.get("curve"), trace=trace)
+        r["trace"] = trace
+        return r
 
     t, notes, excess = target, None, None
     if c["cleanup"] == "auto":

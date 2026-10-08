@@ -1238,7 +1238,24 @@ def linear_power_bins(tone, eq):
     return linear_power_on(FREQS, tone, eq)
 
 
-def match(target_x, di_x, mode="anything", log=print, workers=8, band_seconds=None, take_notes=None, pedals=False, curve=None):
+TAKE_PER_AMP = 0             # the shortlist also holds each amp's best this many by the old score
+PEDAL_SLOTS = 1              # the pedals are tried in front of this many amps (the best by the old score)
+
+
+def shortlist(ranked):
+    """The candidates the take-aware score sees, in `ranked`'s order (the old score's): its TAKE_SHORTLIST best, and
+    each amp's TAKE_PER_AMP best (a pedal variant counts for the amp behind it)."""
+    out, per_slot = [], {}
+    for i, c in enumerate(ranked):
+        n = per_slot.get(c.slot, 0)
+        if i < TAKE_SHORTLIST or n < TAKE_PER_AMP:
+            out.append(c)
+        per_slot[c.slot] = n + 1
+    return out
+
+
+def match(target_x, di_x, mode="anything", log=print, workers=8, band_seconds=None, take_notes=None, pedals=False, curve=None,
+          trace=None):
     """Find slot, Gain, tone, cab, and match EQ for di_x to sound like target_x. Returns a dict.
     band_seconds (same part): the DI was recorded playing along, lined up with the target; DTW stays
     within this far of that alignment (band_limits). None: unconstrained.
@@ -1298,7 +1315,8 @@ def match(target_x, di_x, mode="anything", log=print, workers=8, band_seconds=No
         return min((c for c in cands.values() if c.slot == slot), key=Candidate.total)
 
     slot_order = sorted(range(len(MODEL_FILES)), key=lambda s: best_for(s).total())
-    for s in slot_order[:REFINE_SLOTS]:
+    refined = slot_order[:REFINE_SLOTS] if REFINE_SLOTS is not None else slot_order
+    for s in refined:
         cabs = sorted({str(c.cab) for c in cands.values() if c.slot == s},
                       key=lambda cb: min(c.total() for c in cands.values() if c.slot == s and str(c.cab) == cb))[:CABS_PER_AMP]
         cabs = [pathlib.Path(c) for c in cabs]
@@ -1311,21 +1329,27 @@ def match(target_x, di_x, mode="anything", log=print, workers=8, band_seconds=No
                 evaluate(s, g, cabs)
     log(f"  refined Gain by {time.time() - t0:.1f} s ({len(renders)} renders)")
 
+    pedal_slots = []
     if pedals:
-        # 2b. The pedals in front of the best amp, at its best cabs (search_pedals).
-        s0 = min(cands.values(), key=Candidate.total)
-        cabs = sorted({str(c.cab) for c in cands.values() if c.slot == s0.slot},
-                      key=lambda cb: min(c.total() for c in cands.values() if c.slot == s0.slot and str(c.cab) == cb))[:CABS_PER_AMP]
-        cabs = [pathlib.Path(c) for c in cabs]
-        variants = pedal_variants(di_x, s0.gain)
-        for y, (p, g) in zip(render_many([(di_x, s0.slot, g, p) for p, g in variants], workers), variants):
-            renders[(s0.slot, round(g, 3), pedal_key(p))] = y
-        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
-            list(pool.map(lambda pg: evaluate(s0.slot, pg[1], cabs, pg[0]), variants))
-        log(f"  {len(variants)} pedal variants in front of {AMPS[s0.slot]} by {time.time() - t0:.1f} s")
+        # 2b. The pedals in front of the best amps, at their best cabs (search_pedals).
+        pedal_slots = sorted(range(len(MODEL_FILES)), key=lambda s: best_for(s).total())[:PEDAL_SLOTS]
+        for slot in pedal_slots:
+            s0 = best_for(slot)
+            cabs = sorted({str(c.cab) for c in cands.values() if c.slot == s0.slot},
+                          key=lambda cb: min(c.total() for c in cands.values() if c.slot == s0.slot and str(c.cab) == cb))[:CABS_PER_AMP]
+            cabs = [pathlib.Path(c) for c in cabs]
+            variants = pedal_variants(di_x, s0.gain)
+            for y, (p, g) in zip(render_many([(di_x, s0.slot, g, p) for p, g in variants], workers), variants):
+                renders[(s0.slot, round(g, 3), pedal_key(p))] = y
+            with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+                list(pool.map(lambda pg: evaluate(s0.slot, pg[1], cabs, pg[0]), variants))
+            log(f"  {len(variants)} pedal variants in front of {AMPS[s0.slot]} by {time.time() - t0:.1f} s")
 
     ranked = sorted(cands.values(), key=Candidate.total)
     w = target.analysis.weights
+    if trace is not None:
+        trace.update(refined=list(refined), pedal_slots=list(pedal_slots),
+                     cands=[(c.slot, c.gain, c.cab.name, pedal_key(getattr(c, "pedal", None)), c.total()) for c in ranked])
 
     def finish(c):
         """The candidate's polished tone and match EQ: (tone, spectral after the tone, residual, eq, eq target)."""
@@ -1339,7 +1363,7 @@ def match(target_x, di_x, mode="anything", log=print, workers=8, band_seconds=No
     if tn is not None and tn.usable():
         # 3. The take-aware score on the shortlist (each fitted completely), the best by it wins.
         scored = []
-        for c in ranked[:TAKE_SHORTLIST]:
+        for c in shortlist(ranked):
             fin = finish(c)
             sc, terms = take_score(tn, target.analysis, amp(c.slot, c.gain, getattr(c, "pedal", None)), c.y, fin[0], fin[3], c.spectral)
             scored.append((sc, c, fin, terms))
@@ -1347,6 +1371,8 @@ def match(target_x, di_x, mode="anything", log=print, workers=8, band_seconds=No
         take_terms = dict(take_terms, total=sc)
         plain = [x[0] for x in scored if getattr(x[1], "pedal", None) is None]
         take_terms["best_without_pedal"] = min(plain) if plain else None
+        if trace is not None:
+            trace["scored"] = [(c.slot, c.gain, c.cab.name, pedal_key(getattr(c, "pedal", None)), c.total(), s) for s, c, _, _ in scored]
         ranked = [best] + [s[1] for s in sorted(scored, key=lambda s: s[0]) if s[1] is not best]
         log(f"  take-aware score on {len(scored)} shortlisted ({len(tn.o)} note pairs): {AMPS[best.slot]} {best.gain:+.1f} at {sc:.2f}")
     else:
@@ -1383,7 +1409,7 @@ def match(target_x, di_x, mode="anything", log=print, workers=8, band_seconds=No
         "runner_up": [(AMPS[c.slot], c.gain, c.cab.name, round(c.total(), 2)) for c in ranked[1:4]],
         "eq_target": eq_target.tolist(), "residual": residual.tolist(),
         "path": paths[best.slot].tolist() if mode == "same" else [],
-        "take_terms": take_terms,
+        "take_terms": take_terms, "shortlisted": len(scored) if take_terms is not None else 0,
         "pedal": getattr(best, "pedal", None), "post_comp": comp, "post_comp_scores": comp_scores, "match_curve": curve_points, "match_curve_amount": CURVE_AMOUNT_PERCENT if curve_points else None,
     }
     return result

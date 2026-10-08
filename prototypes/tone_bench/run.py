@@ -120,7 +120,9 @@ def evaluate_case(spec, specs, split, configs, diagnose, workers):
     row["configs"] = {}
     targets = {}
     for cfg in configs:
+        tm0 = time.time()
         r, used = mt.run(data["target"], take, cfg, split, workers, separated=spec["production"] == "mix")
+        matcher_seconds = round(time.time() - tm0, 1)
         s = mt.result_settings(r)
         y = mt.render_settings(ev, s)
         f = mx.facets(ref, y)
@@ -129,7 +131,11 @@ def evaluate_case(spec, specs, split, configs, diagnose, workers):
         row["configs"][cfg] = dict(facets=f, settings=s, label=describe(s), closeness=r["closeness"], notes=r["notes"], bleed_excess_db=r.get("bleed_excess_db"),
                                    objective=mt.objective(used, take, mode, band, s["slot"], s["gain"], s["cab"]),
                                    matcher_spectral_after_eq=r["spectral_error_after_eq_db"], matcher_distortion=r["distortion_distance"],
-                                   take_terms=r.get("take_terms"), post_comp_scores=r.get("post_comp_scores"))
+                                   take_terms=r.get("take_terms"), post_comp_scores=r.get("post_comp_scores"),
+                                   matcher_seconds=matcher_seconds, renders=r.get("renders"), candidates=r.get("candidates"),
+                                   shortlisted=r.get("shortlisted"))
+        if r.get("trace"):
+            row["configs"][cfg]["trace"] = r["trace"]
         targets[cfg] = used
         if cfg == configs[0]:
             # The linear shortcut (oracle.apply_linear) against the real render, on this result: same signal?
