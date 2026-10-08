@@ -216,17 +216,22 @@ public:
             expectEquals (note, juce::String ("Apply sets these in one undo step: the compressors, boost, and overdrive as the match has them (it uses none), "
                                               "the pre EQ off (on now: compressor, boost, pre EQ). The gate stays as it is."));
 
+            // The search covers every gain set in the content folder, so r.slot indexes that list, not the slots: Apply
+            // plays the result in the slot holding the matched amp, or loads it into the playing slot (applySlot).
+            const auto slot = session.applySlot();
+            const auto captureBefore = p.getSlotCapture (slot);
             page.apply();
             waitForLoads (p);
             const auto after = snapshotOf (p);
-            expectEquals ((int) getParam (p, AmpSimProcessor::slotParamId), r.slot);
-            expectWithinAbsoluteError (getParam (p, AmpSimProcessor::ampParamId (r.slot, "input_trim")), (float) r.gainDb, 0.051f);
-            expectWithinAbsoluteError (getParam (p, AmpSimProcessor::ampParamId (r.slot, "mid")), (float) r.tone[2], 0.051f);
+            expectEquals ((int) getParam (p, AmpSimProcessor::slotParamId), slot);
+            expectEquals (p.getSlotCapture (slot).getFullPathName(), r.model.getFullPathName());
+            expectWithinAbsoluteError (getParam (p, AmpSimProcessor::ampParamId (slot, "input_trim")), (float) r.gainDb, 0.051f);
+            expectWithinAbsoluteError (getParam (p, AmpSimProcessor::ampParamId (slot, "mid")), (float) r.tone[2], 0.051f);
             expectEquals ((int) getParam (p, "eq_post_mode"), 1);
             expectWithinAbsoluteError (getParam (p, "eq_post_b3_gain"), r.eq[2].gainDb, 0.051f);
             expectWithinAbsoluteError (getParam (p, "eq_post_b3_freq"), r.eq[2].frequency, r.eq[2].frequency * 0.01f);
             expectEquals (cabPath (p), r.cab.getFullPathName());
-            expectEquals (p.getCabAssignment (r.slot).getFullPathName(), r.cab.getFullPathName());
+            expectEquals (p.getCabAssignment (slot).getFullPathName(), r.cab.getFullPathName());
             expect (getParam (p, "cab_mic2_mute") > 0.5f && getParam (p, "cab_room_mute") > 0.5f);
             for (const auto* id : { "comp_pre_on", "boost_on", "od_on", "eq_pre_on" })
                 expect (getParam (p, id) < 0.5f, juce::String (id) + " must be off after Apply");
@@ -241,19 +246,21 @@ public:
             const auto undone = snapshotOf (p);
             expectEquals (undone, before);
             expectEquals (cabPath (p), cabBefore);
+            expectEquals (p.getSlotCapture (slot).getFullPathName(), captureBefore.getFullPathName());
             const auto canUndoMore = p.undoManager.canUndo();
             expect (! canUndoMore, "Apply must be a single undo step");
             p.undoManager.redo();
             waitForLoads (p);
             expectEquals (cabPath (p), r.cab.getFullPathName());
-            expectEquals ((int) getParam (p, AmpSimProcessor::slotParamId), r.slot);
+            expectEquals ((int) getParam (p, AmpSimProcessor::slotParamId), slot);
+            expectEquals (p.getSlotCapture (slot).getFullPathName(), r.model.getFullPathName());
             expect (getParam (p, "boost_on") < 0.5f && getParam (p, "comp_pre_on") < 0.5f && getParam (p, "eq_pre_on") < 0.5f);
 
             page.discard();
             expect (! session.hasResult() && ! page.getApplyButton().isEnabled());
 
             logMessage ("  -> recorded " + juce::String (recorded, 3) + " s of DI through processBlock, sample-exact; matched the fixtures' 7 s target (Ember +5 dB, "
-                        "Modern 4x12, dynamic, 75 W, var. 2) in anything mode: " + ampSimSlotName (p, r.slot) + " " + juce::String (r.gainDb, 1)
+                        "Modern 4x12, dynamic, 75 W, var. 2) in anything mode: " + ToneMatchSession::modelName (r.model) + " " + juce::String (r.gainDb, 1)
                         + " dB, " + r.cab.getFileNameWithoutExtension() + ", closeness " + juce::String (r.closeness, 0) + ", "
                         + juce::String (r.runtimeSeconds, 1) + " s; the page showed " + juce::String (100.0 * midProgress, 0) + "% progress "
                         + juce::String (midMs, 0) + " ms in");
@@ -470,7 +477,6 @@ public:
         }
     }
 
-    static juce::String ampSimSlotName (AmpSimProcessor& p, int slot) { return p.getSlotCapture (slot).getFileNameWithoutExtension(); }
 };
 
 static ToneMatchAppTests toneMatchAppTests;
