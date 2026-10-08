@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Sean Snaider
 
-// The built-in captures (content/models: Glass, Ember, Monolith; BUILD_PLAN decision log 2026-10-03) and the
-// renamed factory presets: a fresh start loads them, the factory presets use them, the capture menu puts
-// one back, a cleared slot stays empty, old preset names still resolve, and renders for Sean's ears.
+// The built-in amps (content/models; BUILD_PLAN decision log 2026-10-03, "More built-in amps", "Amp switching") and
+// the renamed factory presets: a fresh start loads all eight (timed, and its memory measured), the shelf picks one,
+// the capture menu loads and removes a capture of your own, old preset names still resolve, and renders for Sean's ears.
 
 #include "BuiltInCaptures.h"
 #include "PluginEditor.h"
@@ -14,13 +14,18 @@
 
 #include <map>
 
+#if JUCE_MAC
+ #include <mach/mach.h>
+ #include <malloc/malloc.h>
+#endif
+
 namespace
 {
 using namespace testing;
 
 void waitForLoads (AmpSimProcessor& p)
 {
-    for (int i = 0; i < 4000 && p.isLoading(); ++i)
+    for (int i = 0; i < 12000 && p.isLoading(); ++i) // eight gain sets take seconds on a busy machine
         juce::Thread::sleep (5);
 }
 
@@ -57,14 +62,30 @@ Stereo play (AmpSimProcessor& p, const std::vector<float>& input)
     return out;
 }
 
-/// Whether each slot's model is running (the audio thread's view, after a buffer has picked up the loads).
-std::array<bool, 3> running (AmpSimProcessor& p)
+/// The process's physical memory footprint in bytes (what Activity Monitor shows as Memory), 0 where it can't be read.
+/// Freed memory the allocator still holds is handed back first, so what's counted is what's in use.
+juce::int64 memoryFootprint()
 {
-    play (p, std::vector<float> (blockSize, 0.0f));
-    std::array<bool, 3> r {};
-    for (int s = 0; s < 3; ++s)
-        r[(size_t) s] = p.getChain().amp.slot (s).model.hasModel();
-    return r;
+   #if JUCE_MAC
+    malloc_zone_pressure_relief (nullptr, 0);
+    task_vm_info_data_t info {};
+    mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
+    if (task_info (mach_task_self(), TASK_VM_INFO, (task_info_t) &info, &count) == KERN_SUCCESS)
+        return (juce::int64) info.phys_footprint;
+   #endif
+    return 0;
+}
+
+/// A copy of an example capture whose metadata names its tone.
+juce::File taggedCapture (const juce::String& source, const juce::String& toneType, const juce::String& fileName)
+{
+    auto json = juce::JSON::parse (exampleModel (source).loadFileAsString());
+    auto* metadata = new juce::DynamicObject();
+    metadata->setProperty ("tone_type", toneType);
+    json.getDynamicObject()->setProperty ("metadata", juce::var (metadata));
+    const auto file = tempDir().getChildFile (fileName);
+    file.replaceWithText (juce::JSON::toString (json, true));
+    return file;
 }
 
 bool savePng (const juce::Image& image, const juce::File& file)
@@ -96,7 +117,6 @@ public:
     {
         const std::array<const char*, 3> names { "Glass", "Ember", "Monolith" };
         const std::array<const char*, 3> toneTypes { "clean", "crunch", "hi_gain" };
-        const std::array<const char*, 3> voices { "Clean", "Crunch", "High gain" };
 
         beginTest ("the three built-in captures ship in the content folder with their metadata and manifest entries");
         {
@@ -145,53 +165,56 @@ public:
             logMessage ("  -> content/models: " + described.joinIntoString (", ") + "; each with a CC BY 4.0 manifest entry");
         }
 
-        beginTest ("a fresh processor and editor start on Glass, Ember, and Monolith, loaded off the audio thread, with no warnings");
+        beginTest ("a fresh processor starts with all eight built-in amps loaded off the audio thread (the playing one first), only Glass running, no warnings: the load time and the memory measured");
         {
+            const auto before = memoryFootprint();
+            std::unique_ptr<AmpSimProcessor> bare;
+            bare = std::make_unique<AmpSimProcessor>(); // built-ins off: the processor alone
+            bare->prepareToPlay (fs, blockSize);
+            const auto withoutSets = memoryFootprint();
+
             WithBuiltInCaptures builtIns;
+            const auto t0 = juce::Time::getMillisecondCounterHiRes();
             AmpSimProcessor p;
             const auto loadingAtOnce = p.isLoading(); // the constructor only queued them
-            waitForLoads (p);
+            double firstMs = -1.0;
+            for (int i = 0; i < 12000 && p.isLoading(); ++i)
+            {
+                if (firstMs < 0.0 && ! p.getStatus().model[0].startsWith ("Loading"))
+                    firstMs = juce::Time::getMillisecondCounterHiRes() - t0;
+                juce::Thread::sleep (5);
+            }
+            const auto allMs = juce::Time::getMillisecondCounterHiRes() - t0;
+            const auto loadedBeforePrepare = memoryFootprint(); // the models as the loader sized them (before the device's block size is known)
             p.prepareToPlay (fs, blockSize);
+            play (p, std::vector<float> (blockSize * 4, 0.0f));
+            const auto withSets = memoryFootprint();
             expect (loadingAtOnce);
             const auto status = p.getStatus();
-            const auto on = running (p);
-            for (int s = 0; s < 3; ++s)
+            for (int a = 0; a < AmpSimProcessor::numBuiltInAmps; ++a)
             {
-                expectEquals (modelPath (p, s), presets::builtInCapture (s).getFullPathName());
-                expect (! status.modelError[(size_t) s] && status.model[(size_t) s] != "Empty", status.model[(size_t) s]);
-                expect (on[(size_t) s]);
+                expectEquals (modelPath (p, a), presets::builtInCapture (a).getFullPathName());
+                expect (! status.modelError[(size_t) a] && status.model[(size_t) a].startsWith (presets::builtInAmpName (a)), status.model[(size_t) a]);
+                expect (p.getChain().amp.isRunning (a) == (a == 0), presets::builtInAmpName (a));
             }
+            expectEquals (status.model[(size_t) AmpSimProcessor::yourCaptureAmp], juce::String ("Empty"));
             expect (status.warning.isEmpty(), status.warning);
-
-            std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
-            auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
-            ed.showPage (ui::PageId::amp);
-            auto& amp = ed.getAmpView();
-            const auto input = guitarDI ((int) (1.0 * fs));
-            juce::StringArray rows;
-            proofDir().getChildFile ("default_captures").createDirectory();
-            for (int s = 0; s < 3; ++s)
-            {
-                setParam (p, AmpSimProcessor::slotParamId, (float) s);
-                const auto out = play (p, input);
-                amp.getSpectrum().update();
-                ed.refresh();
-                expectEquals (amp.getVoiceText(), juce::String (voices[(size_t) s]));
-                expectEquals (amp.getModelText(), juce::String (names[(size_t) s]) + " (built in, gain set)");
-                expectEquals (amp.getRateText(), juce::String ("48 kHz"));
-                expect (amp.getJewel().isLit());
-                expect (ed.getStatusText().isEmpty(), ed.getStatusText());
-                expect (rms (out.left) > 1.0e-3);
-                const auto file = proofDir().getChildFile ("default_captures/editor_amp_" + juce::String (names[(size_t) s]).toLowerCase() + ".png");
-                expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), file));
-                rows.add ("\"" + amp.getVoiceText() + "  Model " + amp.getModelText() + "  " + amp.getRateText() + "\"");
-            }
-            logMessage ("  -> a fresh start: slots 1 to 3 loaded " + juce::String (names[0]) + ", " + names[1] + ", " + names[2]
-                        + " on the loader thread (still loading when the constructor returned), no errors or warnings; the amp page's info rows: "
-                        + rows.joinIntoString (", ") + "; snapshots in default_captures/editor_amp_*.png");
+            expectGreaterThan (firstMs, 0.0);
+            const auto setsMb = (double) (withSets - withoutSets) / (1024.0 * 1024.0);
+            if (withSets > 0)
+                expectLessThan (setsMb, 300.0, "preloading every built-in amp must stay under about 300 MB");
+            logMessage ("  -> load times on the loader thread: Glass (the playing amp, queued first) ready " + juce::String (firstMs / 1000.0, 2)
+                        + " s after the constructor, all eight sets (40 standard WaveNets, each measured on 4 s of the reference DI) "
+                        + juce::String (allMs / 1000.0, 2) + " s");
+            logMessage ("  -> memory (the process's physical footprint): " + juce::String ((double) before / 1048576.0, 1) + " MB at the start, "
+                        + juce::String ((double) withoutSets / 1048576.0, 1) + " MB with a processor and no captures, "
+                        + juce::String ((double) withSets / 1048576.0, 1) + " MB with a second processor holding all eight sets: "
+                        + juce::String (setsMb, 1) + " MB for the eight sets and that processor (the processor alone: "
+                        + juce::String ((double) (withoutSets - before) / 1048576.0, 1) + " MB); before the 128-sample prepare, with the models sized "
+                        "for the loader's default 512-sample block: " + juce::String ((double) (loadedBeforePrepare - withoutSets) / 1048576.0, 1) + " MB");
         }
 
-        beginTest ("the capture menu's \"Use the built-in capture\" puts a slot's own back; a cleared slot stays empty when the state is restored");
+        beginTest ("the capture menu: load a capture of your own (it plays as amp 9), reload, remove it (it stays removed in a restored state); amps a state has no entry for get their built-in");
         {
             WithBuiltInCaptures builtIns;
             AmpSimProcessor p;
@@ -199,86 +222,68 @@ public:
             p.prepareToPlay (fs, blockSize);
             std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
+            const auto yours = AmpSimProcessor::yourCaptureAmp;
 
-            p.loadModel (1, exampleModel ("A2.nam"));
-            waitForLoads (p);
-            const auto replaced = modelPath (p, 1) == exampleModel ("A2.nam").getFullPathName();
+            setParam (p, AmpSimProcessor::ampModelParamId, 1.0f);
             const auto menu = ed.captureMenu (1);
-            const auto* use = findItem (menu, "Use the built-in capture");
-            expect (use != nullptr);
-            const auto label = use != nullptr ? use->text : juce::String();
-            const auto enabledWhileReplaced = use != nullptr && use->isEnabled;
-            if (use != nullptr && use->action)
-                use->action();
-            waitForLoads (p);
-            const auto restored = modelPath (p, 1) == presets::builtInCapture (1).getFullPathName();
-            const auto menuOnBuiltIn = ed.captureMenu (1);
-            const auto* useAgain = findItem (menuOnBuiltIn, "Use the built-in capture");
-            expect (replaced && enabledWhileReplaced && restored);
-            expectEquals (label, juce::String ("Use the built-in capture (Ember)"));
-            expect (useAgain != nullptr && ! useAgain->isEnabled); // already on it
-            expect (! p.getStatus().modelError[1]);
+            juce::StringArray items;
+            for (juce::PopupMenu::MenuItemIterator it (menu); it.next();)
+                items.add (it.getItem().text + (it.getItem().isEnabled ? "" : " (greyed)"));
+            const auto* remove = findItem (menu, "Remove your capture");
+            expect (findItem (menu, "Load a capture of your own") != nullptr && findItem (menu, "Reload gainset.json") != nullptr);
+            expect (remove != nullptr && ! remove->isEnabled, "nothing to remove yet");
+            expect (findItem (menu, "Built-in amps") == nullptr, "the shelf picks the built-in amps now");
 
-            // Clear slot 3 from the menu: saved as an empty path, and it stays empty in a restored state, even
-            // though the restoring processor started loading Monolith before the state arrived.
-            const auto clearMenu = ed.captureMenu (2);
-            const auto* clear = findItem (clearMenu, "Clear the slot");
-            expect (clear != nullptr && clear->isEnabled);
-            if (clear != nullptr && clear->action)
-                clear->action();
+            p.loadYourCapture (exampleModel ("A2.nam"));
             waitForLoads (p);
-            expect (p.parameters.state.hasProperty (AmpSimProcessor::modelPathKey (2)) && modelPath (p, 2).isEmpty());
-            p.loadModel (0, exampleModel ("lstm.nam"));
+            expectEquals (p.getSelectedAmp(), yours);
+            expectEquals (modelPath (p, yours), exampleModel ("A2.nam").getFullPathName());
+            const auto withCapture = ed.captureMenu (yours);
+            const auto* removeNow = findItem (withCapture, "Remove your capture");
+            expect (removeNow != nullptr && removeNow->isEnabled);
+            if (removeNow != nullptr && removeNow->action)
+                removeNow->action();
             waitForLoads (p);
+            expectEquals (p.getSelectedAmp(), 0, "removed while it played: Glass plays");
+            expect (p.parameters.state.hasProperty (AmpSimProcessor::modelPathKey (yours)) && modelPath (p, yours).isEmpty());
+            expectEquals (p.getStatus().model[(size_t) yours], juce::String ("Empty"));
+
             juce::MemoryBlock saved;
             p.getStateInformation (saved);
-
             AmpSimProcessor q;
             q.setStateInformation (saved.getData(), (int) saved.getSize());
             waitForLoads (q);
-            q.prepareToPlay (fs, blockSize);
-            const auto on = running (q);
-            expectEquals (modelPath (q, 0), exampleModel ("lstm.nam").getFullPathName()); // its own capture, untouched
+            expect (modelPath (q, yours).isEmpty());
+            expectEquals (q.getStatus().model[(size_t) yours], juce::String ("Empty"));
             expectEquals (modelPath (q, 1), presets::builtInCapture (1).getFullPathName());
-            expect (modelPath (q, 2).isEmpty());
-            expect (on[0] && on[1] && ! on[2]);
-            expectEquals (q.getStatus().model[2], juce::String ("Empty"));
 
-            // A state saved before the built-ins existed has no entries for its unused slots: they get theirs.
+            // A state with no entries for amps 4 to 8 (saved before they existed, with amp_model already there): they get theirs.
             auto xml = juce::AudioProcessor::getXmlFromBinary (saved.getData(), (int) saved.getSize());
-            xml->removeAttribute (AmpSimProcessor::modelPathKey (1).toString());
-            xml->removeAttribute (AmpSimProcessor::modelPathKey (2).toString());
+            for (int a = 3; a < AmpSimProcessor::numBuiltInAmps; ++a)
+                xml->removeAttribute (AmpSimProcessor::modelPathKey (a).toString());
+            // Monolith saved by a copy of the app somewhere else (a dev build, or an install since moved), and Ember as the
+            // single file it was before the gain sets: both found in this copy's content folder.
+            xml->setAttribute (AmpSimProcessor::modelPathKey (2).toString(), "/nowhere/Old BellyDSP.app/Contents/Resources/content/models/Monolith/gainset.json");
+            xml->setAttribute (AmpSimProcessor::modelPathKey (1).toString(), "/nowhere/Old BellyDSP.app/Contents/Resources/content/models/Ember.nam");
             juce::MemoryBlock old;
             juce::AudioProcessor::copyXmlToBinary (*xml, old);
             AmpSimProcessor r;
             r.setStateInformation (old.getData(), (int) old.getSize());
             waitForLoads (r);
-            r.prepareToPlay (fs, blockSize);
-            const auto onOld = running (r);
-            expectEquals (modelPath (r, 0), exampleModel ("lstm.nam").getFullPathName());
-            expectEquals (modelPath (r, 1), presets::builtInCapture (1).getFullPathName());
-            expectEquals (modelPath (r, 2), presets::builtInCapture (2).getFullPathName());
-            expect (onOld[0] && onOld[1] && onOld[2]);
-
-            // Saved by a copy of the app somewhere else (a dev build, or an install since moved): the built-in
-            // is found in this copy's content folder.
-            const auto elsewhere = juce::File ("/nowhere/Old BellyDSP.app/Contents/Resources/content/models/Monolith.nam");
-            xml->setAttribute (AmpSimProcessor::modelPathKey (2).toString(), elsewhere.getFullPathName());
-            juce::MemoryBlock movedState;
-            juce::AudioProcessor::copyXmlToBinary (*xml, movedState);
-            AmpSimProcessor m;
-            m.setStateInformation (movedState.getData(), (int) movedState.getSize());
-            waitForLoads (m);
-            expectEquals (modelPath (m, 2), presets::builtInCapture (2).getFullPathName());
-            expect (! m.getStatus().modelError[2], m.getStatus().model[2]);
+            juce::StringArray loaded;
+            for (int a = 0; a < AmpSimProcessor::numBuiltInAmps; ++a)
+            {
+                expectEquals (modelPath (r, a), presets::builtInCapture (a).getFullPathName());
+                expect (! r.getStatus().modelError[(size_t) a], r.getStatus().model[(size_t) a]);
+                loaded.add (presets::builtInAmpName (a));
+            }
             expect (presets::bundledElsewhere (juce::File ("/nowhere/content/models/Nope.nam")) == juce::File());
-            logMessage ("  -> slot 2 swapped to A2, then the menu's \"" + label + "\" loaded Ember again (and greys out while it's on); slot 3 cleared from the menu "
-                        "is saved as an empty path: a restored state keeps lstm in slot 1, Ember in slot 2, and slot 3 empty (\"" + q.getStatus().model[2]
-                        + "\"); a state with no entries for slots 2 and 3 (saved before the built-ins) gets Ember and Monolith there; Monolith saved by an app at \""
-                        + elsewhere.getFullPathName() + "\" loads from this one's content folder");
+            logMessage ("  -> the menu on Ember: " + items.joinIntoString (" | ") + "; a capture of your own loaded as amp 9 and played; removed from the menu: Glass plays, "
+                        "amp 9 saved as an empty path and empty after a restore; a state without amps 4 to 8, Monolith saved by another copy of the app and "
+                        "Ember as its old single file: " + loaded.joinIntoString (", ") + " all loaded from this copy's content folder");
         }
 
-        beginTest ("the capture menu's \"Built-in amps\" lists every built-in gain set and loads any of them into any slot, which keeps its head and shows the set's name");
+        beginTest ("the amp shelf: the eight built-in amps in order (each with its description), a click plays one, hovering names it, your capture's mini after a gap once loaded, each amp keeps its own knobs; snapshots with each amp playing");
         {
             WithBuiltInCaptures builtIns;
             AmpSimProcessor p;
@@ -288,222 +293,89 @@ public:
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
             ed.showPage (ui::PageId::amp);
             auto& amp = ed.getAmpView();
+            ed.refresh();
 
-            // The list: the slot defaults in slot order, then the others by tone type, then name.
+            // The list: the built-in amps in the shelf's (and amp_model's) order, each with a description.
             const auto sets = presets::builtInGainSets();
             juce::StringArray listed;
             for (const auto& s : sets)
                 listed.add (s.name);
             expect (listed == juce::StringArray { "Glass", "Ember", "Monolith", "Lantern", "Basalt", "Comet", "Forge", "Quartz" }, listed.joinIntoString (", "));
-            for (const auto& s : sets)
-                expect (s.file.existsAsFile() && presets::isBundled (s.file) && s.description.isNotEmpty(), s.name);
-
-            const auto subMenuOf = [] (const juce::PopupMenu& menu) -> const juce::PopupMenu*
+            for (int a = 0; a < AmpSimProcessor::numBuiltInAmps; ++a)
             {
-                for (juce::PopupMenu::MenuItemIterator it (menu); it.next();)
-                    if (it.getItem().text == "Built-in amps")
-                        return it.getItem().subMenu.get();
-                return nullptr;
-            };
-            const auto headerOf = [] (const juce::PopupMenu& menu)
-            {
-                for (juce::PopupMenu::MenuItemIterator it (menu); it.next();)
-                    if (it.getItem().isSectionHeader)
-                        return it.getItem().text;
-                return juce::String();
-            };
-
-            // On a fresh start slot 2 plays Ember: the submenu lists all eight, Ember ticked.
-            const auto menu = ed.captureMenu (1);
-            const auto* sub = subMenuOf (menu);
-            expect (sub != nullptr);
-            juce::StringArray items, ticked;
-            if (sub != nullptr)
-                for (juce::PopupMenu::MenuItemIterator it (*sub); it.next();)
-                {
-                    items.add (it.getItem().text);
-                    if (it.getItem().isTicked)
-                        ticked.add (it.getItem().text);
-                }
-            expectEquals (items.size(), (int) sets.size());
-            expect (ticked.size() == 1 && ticked[0].startsWith ("Ember: "), ticked.joinIntoString (", "));
-
-            // Each of the five more, into slots 1, 2, 3, 1, 2 from that slot's menu: it plays, the info row shows
-            // its name, and the slot keeps its head (the menu's header still names the slot's material).
-            juce::StringArray rows;
-            const auto input = guitarDI ((int) (1.0 * fs));
-            proofDir().getChildFile ("default_captures").createDirectory();
-            for (size_t i = 3; i < sets.size(); ++i)
-            {
-                const auto slot = (int) (i - 3) % 3;
-                const auto slotMenu = ed.captureMenu (slot);
-                const auto header = headerOf (slotMenu);
-                const juce::PopupMenu::Item* pick = nullptr;
-                if (const auto* list = subMenuOf (slotMenu))
-                    for (juce::PopupMenu::MenuItemIterator it (*list); it.next();)
-                        if (it.getItem().text.startsWith (sets[i].name + ": "))
-                            pick = &it.getItem();
-                expect (pick != nullptr && pick->isEnabled && ! pick->isTicked, sets[i].name + ": the menu item"); 
-                if (pick != nullptr && pick->action)
-                    pick->action();
-                waitForLoads (p);
-                expectEquals (modelPath (p, slot), sets[i].file.getFullPathName());
-                expect (! p.getStatus().modelError[(size_t) slot], p.getStatus().model[(size_t) slot]);
-                setParam (p, AmpSimProcessor::slotParamId, (float) slot);
-                const auto out = play (p, input);
-                ed.refresh();
-                expectEquals (amp.getModelText(), sets[i].name + " (built in, gain set)");
-                expectEquals (headerOf (ed.captureMenu (slot)), header);
-                expect (header.startsWith (juce::String (ui::materialName (ui::materialFor (slot)))), header);
-                expect (rms (out.left) > 1.0e-3, sets[i].name + ": plays, rms " + juce::String (rms (out.left)));
-                const auto menuAfter = ed.captureMenu (slot); // kept alive: the submenu pointer points into it
-                const auto* again = subMenuOf (menuAfter);
-                bool nowTicked = false;
-                if (again != nullptr)
-                    for (juce::PopupMenu::MenuItemIterator it (*again); it.next();)
-                        nowTicked = nowTicked || (it.getItem().isTicked && it.getItem().text.startsWith (sets[i].name + ": "));
-                expect (nowTicked, sets[i].name + ": ticked after");
-                const auto png = proofDir().getChildFile ("default_captures/editor_amp_builtin_" + sets[i].name.toLowerCase() + ".png");
-                expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), png));
-                rows.add (sets[i].name + " in slot " + juce::String (slot + 1) + " (" + header + "): \"" + amp.getVoiceText() + "  Model " + amp.getModelText() + "\"");
+                expectEquals (AmpSimProcessor::ampName (a), listed[a]);
+                expect (amp.ampDescription (a).isNotEmpty(), listed[a]);
             }
-            logMessage ("  -> Built-in amps: " + items.joinIntoString (" | ") + "; loaded from the menu: " + rows.joinIntoString ("; ")
-                        + "; snapshots in default_captures/editor_amp_builtin_*.png");
+
+            // The layout: "Amp", then the minis 12 px apart in a row at the top left; no tabs; your capture's not shown yet.
+            const auto first = amp.getMiniBounds (0), second = amp.getMiniBounds (1), last = amp.getMiniBounds (7);
+            expectEquals (second.getX() - first.getRight(), 12);
+            expect (first.getX() > 0 && first.getX() < 60 && first.getY() >= 0 && last.getBottom() <= 33, first.toString());
+            expect (! amp.isOnShelf (AmpSimProcessor::yourCaptureAmp));
+            expectEquals (amp.getShelfText(), juce::String ("Glass"));
+
+            // Hovering names the amp and says what it is.
+            amp.hoverMini (5);
+            const auto hover = amp.getShelfText();
+            expect (hover.startsWith ("Comet: ") && hover.length() > 12, hover);
+            amp.hoverMini (-1);
+
+            // Each amp keeps its own knobs: Gain and Middle set on Forge, Glass's left alone; away and back finds them.
+            const auto knob = [&p] (int a, const char* name) { return getParam (p, AmpSimProcessor::ampParamId (a, name)); };
+            amp.clickMini (6); // Forge
+            setParam (p, AmpSimProcessor::ampParamId (6, "input_trim"), 9.6f);
+            setParam (p, AmpSimProcessor::ampParamId (6, "mid"), -2.4f);
+            amp.clickMini (0);
+            const auto glassGain = knob (0, "input_trim");
+            amp.clickMini (6);
+            ed.refresh();
+            expectWithinAbsoluteError (knob (6, "input_trim"), 9.6f, 1.0e-5f);
+            expectWithinAbsoluteError (knob (6, "mid"), -2.4f, 1.0e-5f);
+            expectWithinAbsoluteError (glassGain, 0.0f, 1.0e-5f);
+            expectEquals (amp.getKnob (6, 0).getValueText(), juce::String ("7.0"));
+            expect (amp.getKnob (6, 0).isVisible() && ! amp.getKnob (0, 0).isVisible());
+
+            // A click on each mini plays that amp: the head, badge, and knobs follow; snapshots of the page and the shelf.
+            const auto folder = proofDir().getChildFile ("amp_shelf");
+            folder.createDirectory();
+            const auto input = guitarDI ((int) (0.5 * fs));
+            juce::StringArray shots;
+            const auto snapshot = [&] (int a)
+            {
+                amp.clickMini (a);
+                play (p, input);
+                amp.getSpectrum().update();
+                ed.refresh();
+                expectEquals (p.getSelectedAmp(), a);
+                expectEquals (amp.getShownAmp(), a);
+                expect (amp.getHead().getMaterial() == ui::materialForAmp (a));
+                expect (amp.getKnob (a, 0).isVisible());
+                expect (amp.getJewel().isLit());
+                const auto name = AmpSimProcessor::ampName (a).toLowerCase().replaceCharacter (' ', '_');
+                const auto shelfArea = editor->getLocalArea (&amp.getShelf(), amp.getShelf().getLocalBounds());
+                expect (savePng (editor->createComponentSnapshot (shelfArea, true, 2.0f), folder.getChildFile ("shelf_" + name + ".png")));
+                expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), folder.getChildFile ("editor_amp_" + name + ".png")));
+                shots.add (name);
+            };
+            for (int a = 0; a < AmpSimProcessor::numBuiltInAmps; ++a)
+                snapshot (a);
+
+            // Your capture: its mini joins the shelf after a gap once one is loaded, and plays like any other.
+            p.loadYourCapture (taggedCapture ("wavenet.nam", "crunch", "Bedroom capture.nam"));
+            waitForLoads (p);
+            ed.refresh();
+            expect (amp.isOnShelf (AmpSimProcessor::yourCaptureAmp));
+            const auto gap = amp.getMiniBounds (AmpSimProcessor::yourCaptureAmp).getX() - amp.getMiniBounds (7).getRight();
+            expectGreaterThan (gap, 12);
+            snapshot (AmpSimProcessor::yourCaptureAmp);
+            expectEquals (amp.getHead().getBadge(), juce::String ("Bedroom capture"));
+            expectEquals (amp.getShelfText(), juce::String ("Your capture"));
+            logMessage ("  -> shelf: " + listed.joinIntoString (", ") + " in a row 12 px apart from x " + juce::String (first.getX()) + "; hovering Comet: \"" + hover
+                        + "\"; Forge kept Gain 7.0 and Middle -2.4 dB across a trip to Glass (Glass's Gain untouched); your capture's mini " + juce::String (gap)
+                        + " px after Quartz's once loaded; snapshots amp_shelf/shelf_<amp>.png and amp_shelf/editor_amp_<amp>.png for " + shots.joinIntoString (", "));
         }
 
-        beginTest ("the amp picker right of the tabs: lists every built-in amp, loads the pick into the playing slot, its arrows step through them and wrap, and the badge and the picker name the amp");
-        {
-            WithBuiltInCaptures builtIns;
-            AmpSimProcessor p;
-            waitForLoads (p);
-            p.prepareToPlay (fs, blockSize);
-            std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
-            auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
-            ed.showPage (ui::PageId::amp);
-            ed.refresh();
-            auto& amp = ed.getAmpView();
-            const auto sets = presets::builtInGainSets();
-            const auto snap = [&] (const juce::String& name)
-            {
-                proofDir().getChildFile ("default_captures").createDirectory();
-                expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f),
-                                 proofDir().getChildFile ("default_captures/editor_amp_picker_" + name + ".png")));
-            };
-
-            // Fresh: slot 1 plays Glass; the picker and the badge say so, and the picker sits on the tabs' row,
-            // right of the last tab, inside the page.
-            expectEquals (amp.getPickerText(), juce::String ("Glass"));
-            expectEquals (amp.getHead().getBadge(), juce::String ("Glass"));
-            const auto pickerBounds = amp.getPicker().getBounds();
-            const auto lastTab = amp.getTabs().getTab (AmpSimProcessor::numAmpSlots - 1);
-            expect (amp.getPicker().isVisible() && amp.getLocalBounds().contains (pickerBounds));
-            expect (lastTab != nullptr && pickerBounds.getX() > lastTab->getRight(), "the picker clears the tabs");
-            snap ("glass");
-
-            // The menu: a header, the eight amps (the three slot defaults, a line, the other five), Glass ticked,
-            // a line, and "Load a capture file...".
-            const auto menu = amp.ampMenu();
-            juce::StringArray items, ticked;
-            int separators = 0, header = 0;
-            std::map<juce::String, std::function<void()>> actions;
-            for (juce::PopupMenu::MenuItemIterator it (menu); it.next();)
-            {
-                const auto& item = it.getItem();
-                if (item.isSeparator)
-                    ++separators;
-                else if (item.isSectionHeader)
-                    ++header;
-                else
-                {
-                    items.add (item.text);
-                    if (item.isTicked)
-                        ticked.add (item.text);
-                    actions[item.text] = item.action;
-                }
-            }
-            expectEquals (header, 1);
-            expectEquals (separators, 2);
-            expectEquals (items.size(), (int) sets.size() + 1);
-            for (size_t i = 0; i < sets.size(); ++i)
-                expect (items[(int) i].startsWith (sets[i].name + ": "), items[(int) i]);
-            expectEquals (items[items.size() - 1], juce::String ("Load a capture file..."));
-            expect (ticked.size() == 1 && ticked[0].startsWith ("Glass: "), ticked.joinIntoString (", "));
-
-            // A pick from the menu loads into the playing slot (slot 1 here) and plays.
-            const auto comet = std::find_if (sets.begin(), sets.end(), [] (const presets::BuiltInAmp& a) { return a.name == "Comet"; });
-            expect (comet != sets.end());
-            for (const auto& [text, action] : actions)
-                if (text.startsWith ("Comet: ") && action)
-                    action();
-            waitForLoads (p);
-            ed.refresh();
-            expectEquals (modelPath (p, 0), comet->file.getFullPathName());
-            expect (! p.getStatus().modelError[0], p.getStatus().model[0]);
-            expectEquals (amp.getPickerText(), juce::String ("Comet"));
-            expectEquals (amp.getHead().getBadge(), juce::String ("Comet"));
-            expectEquals (amp.slotAmpName (0), juce::String ("Comet"));
-            expect (rms (play (p, guitarDI ((int) (0.5 * fs))).left) > 1.0e-3, "Comet plays");
-            snap ("comet");
-
-            // The arrows: next from Comet is the amp after it; previous twice from the first amp wraps to the last.
-            juce::StringArray stepped;
-            const auto indexOf = [&] (const juce::String& path)
-            {
-                for (size_t i = 0; i < sets.size(); ++i)
-                    if (sets[i].file.getFullPathName() == path)
-                        return (int) i;
-                return -1;
-            };
-            const auto cometIndex = indexOf (comet->file.getFullPathName());
-            amp.stepAmp (1);
-            waitForLoads (p);
-            ed.refresh();
-            expectEquals (indexOf (modelPath (p, 0)), (cometIndex + 1) % (int) sets.size());
-            stepped.add (amp.getPickerText());
-            p.loadModel (0, sets.front().file);
-            waitForLoads (p);
-            ed.refresh();
-            amp.stepAmp (-1);
-            waitForLoads (p);
-            ed.refresh();
-            expectEquals (indexOf (modelPath (p, 0)), (int) sets.size() - 1);
-            stepped.add (amp.getPickerText());
-            expectEquals (amp.getHead().getBadge(), sets.back().name);
-
-            // Another slot: the picker follows the playing slot; slot 2 still plays Ember on its own head.
-            setParam (p, AmpSimProcessor::slotParamId, 1.0f);
-            ed.refresh();
-            expectEquals (amp.getPickerText(), juce::String ("Ember"));
-            expectEquals (amp.getHead().getBadge(), juce::String ("Ember"));
-            amp.stepAmp (1);
-            waitForLoads (p);
-            ed.refresh();
-            expectEquals (indexOf (modelPath (p, 1)), indexOf (presets::builtInCapture (1).getFullPathName()) + 1);
-            expectEquals (indexOf (modelPath (p, 0)), (int) sets.size() - 1); // slot 1 untouched
-            snap ("slot2_stepped");
-
-            // A capture that isn't built in: the picker shows its file, the badge keeps the slot's material, and
-            // next starts at the first built-in amp.
-            const auto own = presets::builtInCapture (2).getParentDirectory().getChildFile ("Monolith, gain 5.nam"); // one step on its own
-            expect (own.existsAsFile(), own.getFullPathName());
-            {
-                p.loadModel (1, own);
-                waitForLoads (p);
-                ed.refresh();
-                expectEquals (amp.getPickerText(), own.getFileNameWithoutExtension());
-                expectEquals (amp.getHead().getBadge(), juce::String ("Ember"));
-                amp.stepAmp (1);
-                waitForLoads (p);
-                ed.refresh();
-                expectEquals (modelPath (p, 1), sets.front().file.getFullPathName());
-            }
-            logMessage ("  -> the picker at x " + juce::String (pickerBounds.getX()) + " to " + juce::String (pickerBounds.getRight()) + " of "
-                        + juce::String (amp.getWidth()) + " (the last tab ends at " + juce::String (lastTab != nullptr ? lastTab->getRight() : -1)
-                        + "); menu: " + items.joinIntoString (" | ") + "; next from Comet: " + stepped[0] + "; previous from Glass: " + stepped[1]
-                        + "; snapshots default_captures/editor_amp_picker_*.png");
-        }
-
-        beginTest ("factory presets: renamed, and each loads the built-in captures and its bundled cab with no warnings");
+        beginTest ("factory presets: renamed, and each loads the built-in amps and its bundled cab with no warnings; its scenes choose among the amps");
         {
             const auto factory = presets::factoryPresets();
             expectEquals (factory.size(), 5);
@@ -519,24 +391,25 @@ public:
                 waitForLoads (p);
                 p.runHousekeeping();
                 p.prepareToPlay (fs, blockSize);
-                const auto on = running (p);
                 const auto name = preset["name"].toString();
                 expect (p.getPresetWarnings().isEmpty(), name + ": " + p.getPresetWarnings().joinIntoString ("; "));
                 const auto status = p.getStatus();
-                for (int s = 0; s < 3; ++s)
+                expectEquals ((int) preset["format_version"], presets::formatVersion);
+                for (int s = 0; s < AmpSimProcessor::numBuiltInAmps; ++s)
                 {
                     expectEquals (presets::FileRef::fromVar (preset["amps"][s]).path, presets::builtInCapturePath (s));
                     expectEquals (modelPath (p, s), presets::builtInCapture (s).getFullPathName());
-                    expect (! status.modelError[(size_t) s] && on[(size_t) s], name + " slot " + juce::String (s + 1) + ": " + status.model[(size_t) s]);
+                    expect (! status.modelError[(size_t) s] && status.model[(size_t) s] != "Empty", name + " amp " + juce::String (s + 1) + ": " + status.model[(size_t) s]);
                 }
+                expect (presets::FileRef::fromVar (preset["amps"][AmpSimProcessor::yourCaptureAmp]).path.isEmpty());
                 expect (! status.cabError[0] && status.cab[0] != "No IR", status.cab[0]);
                 expect (juce::File (p.parameters.state.getProperty (AmpSimProcessor::cabPathKey (0)).toString()).isAChildOf (platform::factoryContentFolder()));
-                expect (preset["notes"].toString().contains ("built-in gain sets"));
+                expect (preset["notes"].toString().contains ("built-in") && ! preset["notes"].toString().containsIgnoreCase ("slot"), preset["notes"].toString());
                 juce::StringArray sceneSlots;
                 for (int i = 0; i < 3; ++i)
                 {
                     expect (p.recallScene (i));
-                    sceneSlots.add (p.getScenes().get (i).name + " " + names[(size_t) juce::roundToInt (getParam (p, AmpSimProcessor::slotParamId))]);
+                    sceneSlots.add (p.getScenes().get (i).name + " " + AmpSimProcessor::ampName (juce::roundToInt (getParam (p, AmpSimProcessor::ampModelParamId))));
                 }
                 lines.add (name + " (" + sceneSlots.joinIntoString (", ") + "; close mic 1 \""
                            + juce::File (p.parameters.state.getProperty (AmpSimProcessor::cabPathKey (0)).toString()).getFileNameWithoutExtension() + "\")");
@@ -545,7 +418,7 @@ public:
             // Tech Death's Boost is off (Monolith has a boost built in), still set up as the Screamer at +6 dB.
             AmpSimProcessor tech;
             expect (tech.loadPreset (factory[2]).ok);
-            expect (getParam (tech, "boost_on") == 0.0f && getParam (tech, "boost_mode") == 2.0f && getParam (tech, "amp_slot") == 2.0f);
+            expect (getParam (tech, "boost_on") == 0.0f && getParam (tech, "boost_mode") == 2.0f && getParam (tech, "amp_model") == 2.0f);
             logMessage ("  -> " + lines.joinIntoString ("; ") + ". No warnings. Tech Death's Boost is off (Monolith has its boost built in)");
         }
 
@@ -607,7 +480,7 @@ public:
                     AmpSimProcessor p;
                     p.loadCabIR (0, cab);
                     waitForLoads (p);
-                    setParam (p, AmpSimProcessor::slotParamId, (float) s);
+                    setParam (p, AmpSimProcessor::ampModelParamId, (float) s);
                     setParam (p, "cab_bypass", withCab ? 0.0f : 1.0f);
                     p.prepareToPlay (fs, blockSize);
                     const auto out = play (p, input);

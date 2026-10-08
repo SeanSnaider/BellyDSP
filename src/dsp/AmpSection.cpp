@@ -6,86 +6,158 @@
 namespace ampsim
 {
 
-void AmpSection::selectSlot (int index)
+void AmpSection::selectAmp (int index)
 {
-    index = juce::jlimit (0, numSlots - 1, index);
-
-    if (index == selected)
-        return;
-
-    selected = index;
-
-    for (int s = 0; s < numSlots; ++s)
-        position[(size_t) s].setTargetValue (s == selected ? 1.0f : 0.0f);
+    selected = juce::jlimit (0, numAmps - 1, index);
 }
 
-bool AmpSection::isSwitching() const noexcept
+bool AmpSection::isFading() const noexcept
 {
-    for (const auto& p : position)
-        if (p.isSmoothing())
+    for (const auto& s : state)
+        if (s.position.isSmoothing())
             return true;
 
     return false;
+}
+
+int AmpSection::getRunningAmps() const noexcept
+{
+    int n = 0;
+    for (const auto& s : state)
+        n += s.running ? 1 : 0;
+    return n;
+}
+
+int AmpSection::getRunningModels() const noexcept
+{
+    int n = 0;
+    for (int a = 0; a < numAmps; ++a)
+        if (state[(size_t) a].running)
+            n += amps[(size_t) a].model.getRunningSteps();
+    return n;
 }
 
 bool AmpSection::isLoadingModel() const noexcept
 {
-    for (const auto& s : slots)
-        if (s.model.isSwitching())
+    for (const auto& a : amps)
+        if (a.model.isSwitching())
             return true;
 
     return false;
 }
 
+int AmpSection::warmupSamplesFor (int index, int blockSize) const noexcept
+{
+    const auto samples = amps[(size_t) juce::jlimit (0, numAmps - 1, index)].model.getWarmupSamples();
+    const auto block = juce::jmax (1, blockSize);
+    return (samples + block - 1) / block * block;
+}
+
 void AmpSection::prepare (double sampleRate, int maxBlockSize)
 {
-    slotOutputs.setSize (numSlots, maxBlockSize);
+    ampOutputs.setSize (numAmps, maxBlockSize);
+    ampOutputs.clear();
 
-    for (int s = 0; s < numSlots; ++s)
+    // prepare() snaps every switch: the selected amp is heard at once, warm (its models were just prewarmed), and
+    // nothing else runs.
+    heard = selected;
+
+    for (int a = 0; a < numAmps; ++a)
     {
-        auto& slot = slots[(size_t) s];
-        slot.model.setGain (slot.inputTrim.getPosition());
-        slot.model.setBlend (s == selected ? NamAmp::Blend::exact : NamAmp::Blend::nearest); // the fades snap below
-        slot.model.prepare (sampleRate, maxBlockSize);
-        slot.tone.prepare (sampleRate);
-        slot.outputTrim.prepare (sampleRate, maxBlockSize);
+        auto& amp = amps[(size_t) a];
+        auto& s = state[(size_t) a];
+        amp.model.setGain (amp.inputTrim.getPosition());
+        amp.model.setBlend (NamAmp::Blend::exact);
+        amp.model.prepare (sampleRate, maxBlockSize);
+        amp.tone.prepare (sampleRate);
+        amp.outputTrim.prepare (sampleRate, maxBlockSize);
 
-        position[(size_t) s].reset (sampleRate, switchSeconds);
-        position[(size_t) s].setCurrentAndTargetValue (s == selected ? 1.0f : 0.0f);
+        s.position.reset (sampleRate, switchSeconds);
+        s.position.setCurrentAndTargetValue (a == heard ? 1.0f : 0.0f);
+        s.running = a == heard;
+        s.warmed = a == heard ? maxWarmed : 0;
     }
+}
+
+void AmpSection::start (int index) noexcept
+{
+    // An amp that hasn't been running: its models' history is stale, so it starts over on the live input from
+    // here (NamAmp::restart: the Gain at the knob, the steps it needs running), with its tone filters cleared and
+    // its knobs snapped (nobody hears it until the warm-up is done, so there's nothing to smooth).
+    auto& amp = amps[(size_t) index];
+    auto& s = state[(size_t) index];
+    amp.model.setGain (amp.inputTrim.getPosition());
+    amp.model.setBlend (NamAmp::Blend::exact);
+    amp.model.restart();
+    amp.tone.reset();
+    amp.outputTrim.reset();
+    s.running = true;
+    s.warmed = 0;
 }
 
 void AmpSection::process (juce::dsp::AudioBlock<float> block, const BlockContext& context)
 {
     const auto numSamples = block.getNumSamples();
     const auto* input = block.getChannelPointer (0);
-    auto outputs = juce::dsp::AudioBlock<float> (slotOutputs).getSubBlock (0, numSamples);
+    auto outputs = juce::dsp::AudioBlock<float> (ampOutputs).getSubBlock (0, numSamples);
 
-    // Every slot runs every buffer, selected or not, so its model's history stays current. Only the selected
-    // slot blends a gain set's steps exactly; one fading out after a switch holds what it plays until it's
-    // silent, and then (and every slot that isn't heard) plays only its nearest step: one model. Its fade
-    // position is read at the start of the buffer, so a slot is "silent" only once its fade has reached 0
-    // and stays there for the whole buffer (BUILD_PLAN "Amp gain", ASSUMPTIONS AG15 to AG18).
-    for (size_t s = 0; s < (size_t) numSlots; ++s)
+    // 1. A switch under way (BUILD_PLAN "Amp switching"). The selected amp starts if it isn't running, and once
+    //    it has run for its warm-up the ramps head for it: it fades in over 20 ms, everything else out. Checked at
+    //    the start of a buffer, so the warm-up is a whole number of buffers.
+    if (selected != heard)
     {
-        auto& slot = slots[s];
-        auto channel = outputs.getSingleChannelBlock (s);
-        std::copy (input, input + numSamples, channel.getChannelPointer (0));
+        auto& incoming = state[(size_t) selected];
+        if (! incoming.running)
+            start (selected);
 
-        const auto heard = position[s].getCurrentValue() > 0.0f; // not selected, so its fade heads for 0
-        slot.model.setBlend ((int) s == selected ? NamAmp::Blend::exact : heard ? NamAmp::Blend::hold : NamAmp::Blend::nearest);
-        slot.model.setGain (slot.inputTrim.getPosition());
-        slot.model.process (channel, context);
-        slot.tone.process (channel.getChannelPointer (0), (int) numSamples);
-        slot.outputTrim.process (channel, context);
+        if (incoming.warmed >= amps[(size_t) selected].model.getWarmupSamples())
+        {
+            heard = selected;
+            for (int a = 0; a < numAmps; ++a)
+                state[(size_t) a].position.setTargetValue (a == heard ? 1.0f : 0.0f);
+        }
     }
 
+    // 2. What runs: the amp heard, the one warming up (the newest request), and any still fading out. Anything
+    //    else stops: an amp a newer switch overtook while it warmed, and one whose fade has reached 0.
+    for (int a = 0; a < numAmps; ++a)
+    {
+        auto& s = state[(size_t) a];
+        if (s.running && a != heard && a != selected && s.position.getCurrentValue() <= 0.0f && ! s.position.isSmoothing())
+        {
+            s.running = false;
+            s.warmed = 0;
+        }
+    }
+
+    // 3. Run them. The heard amp and the one warming blend their gain sets exactly; one fading out holds what it
+    //    plays until it's silent (NamAmp::Blend::hold: nothing audible changes during its fade, and a model it
+    //    was warming for a blend it hadn't reached stops).
+    for (int a = 0; a < numAmps; ++a)
+    {
+        auto& s = state[(size_t) a];
+        if (! s.running)
+            continue;
+
+        auto& amp = amps[(size_t) a];
+        auto channel = outputs.getSingleChannelBlock ((size_t) a);
+        std::copy (input, input + numSamples, channel.getChannelPointer (0));
+
+        amp.model.setBlend (a == heard || a == selected ? NamAmp::Blend::exact : NamAmp::Blend::hold);
+        amp.model.setGain (amp.inputTrim.getPosition());
+        amp.model.process (channel, context);
+        amp.tone.process (channel.getChannelPointer (0), (int) numSamples);
+        amp.outputTrim.process (channel, context);
+        s.warmed = (int) juce::jmin ((juce::int64) maxWarmed, (juce::int64) s.warmed + (juce::int64) numSamples);
+    }
+
+    // 4. The mix. Settled: the heard amp's output as it is. Fading: sum sin(pi/2 p) of each amp still audible.
     auto* out = block.getChannelPointer (0);
 
-    if (! isSwitching())
+    if (! isFading())
     {
-        std::copy (outputs.getChannelPointer ((size_t) selected),
-                   outputs.getChannelPointer ((size_t) selected) + numSamples, out);
+        const auto* src = outputs.getChannelPointer ((size_t) heard);
+        std::copy (src, src + numSamples, out);
         return;
     }
 
@@ -93,11 +165,14 @@ void AmpSection::process (juce::dsp::AudioBlock<float> block, const BlockContext
     {
         float sum = 0.0f;
 
-        for (size_t s = 0; s < (size_t) numSlots; ++s)
+        for (size_t a = 0; a < (size_t) numAmps; ++a)
         {
-            const auto p = position[s].getNextValue();
+            auto& s = state[a];
+            if (! s.running)
+                continue;
+            const auto p = s.position.getNextValue();
             if (p > 0.0f)
-                sum += std::sin (juce::MathConstants<float>::halfPi * p) * outputs.getChannelPointer (s)[n];
+                sum += std::sin (juce::MathConstants<float>::halfPi * p) * outputs.getChannelPointer (a)[n];
         }
 
         out[n] = sum;
@@ -106,13 +181,26 @@ void AmpSection::process (juce::dsp::AudioBlock<float> block, const BlockContext
 
 void AmpSection::reset()
 {
-    for (int s = 0; s < numSlots; ++s)
+    // Real-time safe: finishes any switch at once (the selected amp heard), clears every running amp's tone filters.
+    heard = selected;
+    for (int a = 0; a < numAmps; ++a)
     {
-        auto& slot = slots[(size_t) s];
-        slot.model.reset();
-        slot.tone.reset();
-        slot.outputTrim.reset();
-        position[(size_t) s].setCurrentAndTargetValue (s == selected ? 1.0f : 0.0f);
+        auto& amp = amps[(size_t) a];
+        auto& s = state[(size_t) a];
+        if (s.running || a == heard)
+        {
+            amp.model.reset();
+            amp.tone.reset();
+            amp.outputTrim.reset();
+        }
+        if (a == heard && ! s.running)
+            start (a);
+        if (a != heard)
+        {
+            s.running = false;
+            s.warmed = 0;
+        }
+        s.position.setCurrentAndTargetValue (a == heard ? 1.0f : 0.0f);
     }
 }
 

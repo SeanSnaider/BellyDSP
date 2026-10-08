@@ -192,7 +192,7 @@ std::vector<float> ToneMatcher::renderAmp (const juce::File& model, const NamAmp
                                            double gainDb, const std::atomic<bool>& cancel, const Pedal& pedal)
 {
     // A private amp section, built here and dropped at the end: the chain's own amp block, the capture in
-    // its first slot (selected), the other slots empty. Settings go in before prepare(), which snaps the
+    // its first amp (selected), the other amps empty. Settings go in before prepare(), which snaps the
     // smoothers and installs the model with no fade, as ampsim_render does.
     // Cancelled already: return before loading the capture, and let the load itself stop at the flag. A load
     // measures the capture's loudness (a gain set's five steps: seconds of rendering), and before this every grid
@@ -201,10 +201,10 @@ std::vector<float> ToneMatcher::renderAmp (const juce::File& model, const NamAmp
     if (cancel.load (std::memory_order_relaxed))
         return {};
     auto section = std::make_unique<AmpSection>();
-    if (! section->slot (0).model.loadModel (model, true, calibration, &cancel).ok)
+    if (! section->amp (0).model.loadModel (model, true, calibration, &cancel).ok)
         return {};
 
-    section->slot (0).inputTrim.setGainDecibels ((float) gainDb);
+    section->amp (0).inputTrim.setGainDecibels ((float) gainDb);
     section->prepare (sampleRate, renderBlock);
 
     auto out = renderPedal (pedal, di, cancel);
@@ -230,7 +230,7 @@ std::vector<float> ToneMatcher::renderTone (const ToneSettings& settings, const 
     if (settings.ampOn && settings.model != juce::File())
     {
         auto section = std::make_unique<AmpSection>();
-        auto& slot = section->slot (0);
+        auto& slot = section->amp (0);
         if (! slot.model.loadModel (settings.model, true, settings.calibration, &cancel).ok)
             return {};
         slot.inputTrim.setGainDecibels (settings.gainDb);

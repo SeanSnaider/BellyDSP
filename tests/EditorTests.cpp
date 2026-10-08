@@ -209,7 +209,7 @@ public:
             logMessage ("  -> bundled fonts loaded: " + juce::String (ui::theme::bundledFontsLoaded() ? "yes" : "no") + " (Geist 300/400/500/600, Fraunces SemiBold Italic)");
         }
 
-        beginTest ("amp page: each slot wears its head, its own knobs, its capture's voice; the UI follows program changes; compared with the handoff");
+        beginTest ("amp page: each amp wears its head, its own knobs, its capture's voice; the UI follows program changes; compared with the handoff");
         {
             AmpSimProcessor p;
             p.loadModel (0, taggedCapture ("wavenet_a1_standard.nam", "clean", "glass_clean.nam"));
@@ -236,12 +236,12 @@ public:
             juce::StringArray files, seen;
             for (int s = 0; s < 3; ++s)
             {
-                setParam (p, AmpSimProcessor::slotParamId, (float) s);
+                setParam (p, AmpSimProcessor::ampModelParamId, (float) s);
                 play (p, 0.6, [&] { amp.getSpectrum().update(); });
                 ed.refresh();
                 ed.getTopBar().updateMeters (p.takePeaks(), 1.0 / 30.0); // what the meter timer does
-                expectEquals (amp.getShownSlot(), s);
-                expect (amp.getHead().getMaterial() == ui::materialFor (s));
+                expectEquals (amp.getShownAmp(), s);
+                expect (amp.getHead().getMaterial() == ui::materialForAmp (s));
                 expect (amp.getKnob (s, 0).isVisible() && ! amp.getKnob ((s + 1) % 3, 0).isVisible());
                 expect (amp.getJewel().isLit());
                 expectEquals (amp.getVoiceText(), juce::String (voices[(size_t) s]));
@@ -271,29 +271,29 @@ public:
             expectEquals (amp.getHead().getRenderCount(), renders);
 
             // A program change from the footswitch: the page follows (the audio thread switches, the timer
-            // writes the slot, the page shows it at its next refresh).
+            // writes the amp, the page shows it at its next refresh).
             juce::AudioBuffer<float> buffer (2, blockSize);
             juce::MidiBuffer midi;
             midi.addEvent (juce::MidiMessage::programChange (1, 1), 0);
             p.processBlock (buffer, midi);
             p.runHousekeeping();
             ed.refresh();
-            const auto followedPc = amp.getShownSlot() == 1 && amp.getTabs().getSelected() == 1;
+            const auto followedPc = amp.getShownAmp() == 1 && amp.getShelfText() == "Ember";
             expect (followedPc);
 
-            // A click on a tab switches the slot; the slot's knobs come back with their own values.
-            auto& tab = *amp.getTabs().getTab (0);
-            const auto middle = tab.getLocalBounds().getCentre().toFloat().withY (10.0f);
-            tab.mouseDown (mouseEvent (tab, middle, middle));
-            tab.mouseUp (mouseEvent (tab, middle, middle));
+            // A click on Glass's mini on the shelf switches the amp; its knobs come back with their own values.
+            auto& shelf = amp.getShelf();
+            const auto middle = (amp.getMiniBounds (0).getCentre() - shelf.getPosition()).toFloat();
+            shelf.mouseDown (mouseEvent (shelf, middle, middle));
+            shelf.mouseUp (mouseEvent (shelf, middle, middle));
             ed.refresh();
-            expectEquals ((int) getParam (p, AmpSimProcessor::slotParamId), 0);
+            expectEquals ((int) getParam (p, AmpSimProcessor::ampModelParamId), 0);
             expectEquals (amp.getKnob (0, 0).getValueText(), juce::String ("3.5"));
 
-            // An empty slot: a dark jewel and "No capture loaded".
+            // An empty amp: a dark jewel and "No capture loaded".
             p.clearModel (2);
             waitForLoads (p);
-            setParam (p, AmpSimProcessor::slotParamId, 2.0f);
+            setParam (p, AmpSimProcessor::ampModelParamId, 2.0f);
             ed.refresh();
             expect (! amp.getJewel().isLit());
             expectEquals (amp.getVoiceText(), juce::String ("No capture loaded"));
@@ -301,7 +301,7 @@ public:
             logMessage ("  -> " + files.joinIntoString (", ") + "; info rows: " + seen.joinIntoString ("; "));
             logMessage ("  -> knobs read 3.5 / 6.5 (Glass gain, treble), 7.5 (Monolith gain), 5.0 (Ember master at unity); the head art rendered "
                         + juce::String (renders) + " times for 3 materials and 8 snapshots; program change 2 moved the page to Ember: "
-                        + (followedPc ? "yes" : "no") + "; an empty slot's jewel is dark");
+                        + (followedPc ? "yes" : "no") + "; a click on Glass's mini went back to Glass with its own knobs; an empty amp's jewel is dark");
         }
 
         beginTest ("amp heads: nine materials (the slots' three, the five more built-in amps', a user capture's), each a full head, a mini, and a knob skin; "
@@ -322,9 +322,10 @@ public:
             }
             for (const auto* other : { "", "Custom", "My bedroom capture", "Forged", "glass_clean" })
                 expect (ui::materialForAmp (other) == Material::custom, other);
-            for (int s = 0; s < 3; ++s)
-                expect (ui::materialFor (s) == (Material) s);
-            expect (ui::materialFor (7) == Material::monolith);
+            // The amps' materials (AmpView): each built-in amp its own, your capture Custom.
+            for (int a = 0; a < AmpSimProcessor::numBuiltInAmps; ++a)
+                expect (ui::materialForAmp (a) == ui::materialForAmp (AmpSimProcessor::ampName (a)), AmpSimProcessor::ampName (a));
+            expect (ui::materialForAmp (AmpSimProcessor::yourCaptureAmp) == Material::custom);
 
             // Each its own knob skin.
             std::set<int> skins;
@@ -449,30 +450,30 @@ public:
                 expectEquals (head.getBadge(), juce::String ("Bedroom capture"));
             }
 
-            // The Amp page with each new material on the head (the page still has slots, so the test dresses slot 1's
-            // head and knobs directly), then back.
+            // The Amp page playing each of the five more amps and your capture: the head wears its material, the badge its
+            // name (your capture's, the capture's name), its knobs its skin.
+            p.loadModel (AmpSimProcessor::yourCaptureAmp, taggedCapture ("wavenet.nam", "crunch", "Bedroom capture.nam"));
+            waitForLoads (p);
             std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
             ed.showPage (ui::PageId::amp);
             auto& amp = ed.getAmpView();
-            setParam (p, AmpSimProcessor::slotParamId, 0.0f);
             play (p, 0.6, [&] { amp.getSpectrum().update(); });
-            ed.refresh();
             juce::StringArray pages;
-            for (int m = (int) Material::forge; m < ui::numMaterials; ++m)
+            for (int a = 3; a < AmpSimProcessor::numAmps; ++a)
             {
-                const auto material = (Material) m;
-                amp.getHead().setMaterial (material);
-                amp.getHead().setBadge (material == Material::custom ? juce::String ("Bedroom capture") : juce::String (ui::materialName (material)));
-                for (int k = 0; k < ui::AmpView::numKnobs; ++k)
-                    amp.getKnob (0, k).setSkin (ui::skinFor (material));
+                setParam (p, AmpSimProcessor::ampModelParamId, (float) a);
+                play (p, 0.2, [&] { amp.getSpectrum().update(); });
+                ed.refresh();
+                const auto material = amp.getHead().getMaterial();
+                expect (material == ui::materialForAmp (a));
+                expectEquals (amp.getHead().getBadge(), a == AmpSimProcessor::yourCaptureAmp ? juce::String ("Bedroom capture") : AmpSimProcessor::ampName (a));
+                expect (amp.getKnob (a, 0).isVisible() && amp.getKnob (a, 0).getSkin() == ui::skinFor (material));
                 const auto file = proofDir().getChildFile ("editor_amp_" + lower (material) + ".png");
                 expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), file));
                 pages.add (file.getFileName());
             }
-            amp.getHead().setMaterial (ui::materialFor (0));
-            for (int k = 0; k < ui::AmpView::numKnobs; ++k)
-                amp.getKnob (0, k).setSkin (ui::skinFor (ui::materialFor (0)));
+            setParam (p, AmpSimProcessor::ampModelParamId, 0.0f);
             ed.refresh();
             expect (amp.getHead().getMaterial() == Material::glass);
 
@@ -557,7 +558,7 @@ public:
             // Follow back on, then switching to a slot with a cab assigned loads it.
             p.setCabAssignment (1, library.getChildFile ("4x12 vintage.wav"));
             p.setCabFollow (true);
-            setParam (p, AmpSimProcessor::slotParamId, 1.0f);
+            setParam (p, AmpSimProcessor::ampModelParamId, 1.0f);
             p.runHousekeeping();
             ed.refresh();
             expectEquals (p.parameters.state.getProperty (AmpSimProcessor::cabPathKey (0)).toString(), library.getChildFile ("4x12 vintage.wav").getFullPathName());

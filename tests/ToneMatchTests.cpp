@@ -90,12 +90,12 @@ std::vector<float> renderChain (const std::vector<float>& di, int slot, float ga
                                 const std::vector<ampsim::Equalizer::Band>& eq = {})
 {
     ampsim::Chain chain;
-    chain.amp.slot (0).model.loadModel (model (slot), true);
+    chain.amp.amp (0).model.loadModel (model (slot), true);
     if (cab != juce::File())
         chain.cab.loadCloseMic (0, cab);
-    chain.amp.slot (0).inputTrim.setGainDecibels (gainDb);
+    chain.amp.amp (0).inputTrim.setGainDecibels (gainDb);
     for (int b = 0; b < 5; ++b)
-        chain.amp.slot (0).tone.setGainDb ((ampsim::AmpTone::Band) b, tone[(size_t) b]);
+        chain.amp.amp (0).tone.setGainDb ((ampsim::AmpTone::Band) b, tone[(size_t) b]);
     if (! eq.empty())
     {
         ampsim::Equalizer::Settings settings;

@@ -611,10 +611,11 @@ void AmpSimEditor::showAbout()
 
 // ---- Captures ---------------------------------------------------------------------------------------
 
-void AmpSimEditor::loadCapture (int slot)
+void AmpSimEditor::loadCapture (int)
 {
-    chooseFile ("Choose a NAM capture, or a gain set's gainset.json, for " + juce::String (ui::materialName (ui::materialFor (slot))) + " (amp slot " + juce::String (slot + 1) + ")", "*.nam;*.json",
-                AmpSimProcessor::modelPathKey (slot), [this, slot] (const juce::File& f) { ampSim.loadModel (slot, f); });
+    // Whichever amp plays, a file loaded here is your capture (amp 9), which then plays.
+    chooseFile ("Choose a NAM capture, or a gain set's gainset.json, to play as your capture", "*.nam;*.json",
+                AmpSimProcessor::modelPathKey (AmpSimProcessor::yourCaptureAmp), [this] (const juce::File& f) { ampSim.loadYourCapture (f); });
 }
 
 void AmpSimEditor::showCaptureMenu (int slot, juce::Component& near)
@@ -622,43 +623,31 @@ void AmpSimEditor::showCaptureMenu (int slot, juce::Component& near)
     ui::showMenu (captureMenu (slot), &near, &lookAndFeel, true);
 }
 
-juce::PopupMenu AmpSimEditor::captureMenu (int slot)
+juce::PopupMenu AmpSimEditor::captureMenu (int amp)
 {
-    // The old slot card's functions, on a right-click at the grille or the model's name (UH12).
+    // The old slot card's functions, on a right-click at the grille or the model's name (UH12), for the amps
+    // (AS10): load your own capture, reload the playing amp's file, remove your capture.
     juce::PopupMenu menu;
     const auto safe = juce::Component::SafePointer<AmpSimEditor> (this);
-    const auto path = ampSim.parameters.state.getProperty (AmpSimProcessor::modelPathKey (slot)).toString();
+    amp = juce::jlimit (0, AmpSimProcessor::numAmps - 1, amp);
+    const auto path = ampSim.parameters.state.getProperty (AmpSimProcessor::modelPathKey (amp)).toString();
     const auto file = juce::File::isAbsolutePath (path) ? juce::File (path) : juce::File();
-    menu.addSectionHeader (juce::String (ui::materialName (ui::materialFor (slot))) + ", amp slot " + juce::String (slot + 1));
-    menu.addItem ("Load capture...", [safe, slot] { if (safe != nullptr) safe->loadCapture (slot); });
-    menu.addItem ("Reload " + (file != juce::File() ? file.getFileName() : juce::String ("the capture")), file.existsAsFile(), false, [safe, slot, file]
+    const auto own = ampSim.parameters.state.getProperty (AmpSimProcessor::modelPathKey (AmpSimProcessor::yourCaptureAmp)).toString();
+    menu.addSectionHeader (AmpSimProcessor::ampName (amp));
+    menu.addItem ("Load a capture of your own...", [safe, amp] { if (safe != nullptr) safe->loadCapture (amp); });
+    menu.addItem ("Reload " + (file != juce::File() ? file.getFileName() : juce::String ("the capture")), file.existsAsFile(), false, [safe, amp, file]
     {
         if (safe != nullptr)
-            safe->ampSim.loadModel (slot, file);
+            safe->ampSim.loadModel (amp, file);
     });
-    const auto builtIn = presets::builtInCapture (slot);
-    menu.addItem ("Use the built-in capture (" + presets::builtInCaptureName (slot) + ")", builtIn.existsAsFile() && file != builtIn, false, [safe, slot]
+    menu.addItem ("Remove your capture", own.isNotEmpty(), false, [safe]
     {
-        if (safe != nullptr)
-            safe->ampSim.useBuiltInCapture (slot);
-    });
-    // Every built-in amp (each a gain set), for any slot: the slot keeps its head and shows the set's name.
-    // The one playing is ticked.
-    juce::PopupMenu builtIns;
-    for (const auto& amp : presets::builtInGainSets())
-    {
-        const auto setFile = amp.file;
-        builtIns.addItem (amp.name + (amp.description.isNotEmpty() ? ": " + amp.description : juce::String()), true, file == setFile, [safe, slot, setFile]
-        {
-            if (safe != nullptr)
-                safe->ampSim.loadModel (slot, setFile);
-        });
-    }
-    menu.addSubMenu ("Built-in amps", builtIns, builtIns.getNumItems() > 0);
-    menu.addItem ("Clear the slot (the DI passes through)", file != juce::File(), false, [safe, slot]
-    {
-        if (safe != nullptr)
-            safe->ampSim.clearModel (slot);
+        if (safe == nullptr)
+            return;
+        // Removed while it plays: Glass plays instead (an empty amp would pass the DI through).
+        if (safe->ampSim.getSelectedAmp() == AmpSimProcessor::yourCaptureAmp)
+            safe->ampSim.selectAmp (0);
+        safe->ampSim.clearModel (AmpSimProcessor::yourCaptureAmp);
     });
     return menu;
 }

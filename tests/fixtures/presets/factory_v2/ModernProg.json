@@ -1,10 +1,9 @@
 {
-  "format_version": 3,
+  "format_version": 2,
   "name": "Modern Prog",
-  "notes": "It plays the built-in amps Glass (clean to the edge of breakup), Ember (light to heavy crunch), and Monolith (tight high gain to a saturated lead, with a Screamer boost built in): stand-ins until your own. Scenes: Clean on Glass at Gain 2.5 (bright), Crunch on Ember at 5, Lead on Monolith at 7.5 with the Boost on. Close mic 1 starts on a built-in vintage 4x12 IR (pick another on the Cab page). Load a capture of your own on the Amp page to play it as your capture; these settings are starting points to tune by ear.",
+  "notes": "Slots 1 to 3 start on the built-in gain sets, Glass (clean to the edge of breakup), Ember (light to heavy crunch), and Monolith (tight high gain to a saturated lead, with a Screamer boost built in): stand-ins until your own. Scenes: Clean on Glass at Gain 2.5 (bright), Crunch on Ember at 5, Lead on Monolith at 7.5 with the Boost on. Close mic 1 starts on a built-in vintage 4x12 IR (pick another on the Cab page). Swap in your own captures; these settings are starting points to tune by ear.",
   "parameters": {
     "amp_slot": 0,
-    "amp_model": 0,
     "gate_a_threshold": -55.0,
     "gate_b_threshold": -55.0,
     "comp_pre_on": 1,
@@ -54,48 +53,18 @@
   "amps": [
     {
       "path": "factory:models/Glass/gainset.json",
-      "hash": "",
-      "size": 0
+      "hash": "fnv1a64:910d7b5e1dbb7d3d",
+      "size": 707
     },
     {
       "path": "factory:models/Ember/gainset.json",
-      "hash": "",
-      "size": 0
+      "hash": "fnv1a64:8ab3c14a7c2fe381",
+      "size": 708
     },
     {
       "path": "factory:models/Monolith/gainset.json",
-      "hash": "",
-      "size": 0
-    },
-    {
-      "path": "factory:models/Lantern/gainset.json",
-      "hash": "",
-      "size": 0
-    },
-    {
-      "path": "factory:models/Basalt/gainset.json",
-      "hash": "",
-      "size": 0
-    },
-    {
-      "path": "factory:models/Comet/gainset.json",
-      "hash": "",
-      "size": 0
-    },
-    {
-      "path": "factory:models/Forge/gainset.json",
-      "hash": "",
-      "size": 0
-    },
-    {
-      "path": "factory:models/Quartz/gainset.json",
-      "hash": "",
-      "size": 0
-    },
-    {
-      "path": "",
-      "hash": "",
-      "size": 0
+      "hash": "fnv1a64:13aa6684a718af14",
+      "size": 734
     }
   ],
   "cab": {
@@ -148,7 +117,7 @@
       {
         "name": "Clean",
         "values": {
-          "amp_model": 0,
+          "amp_slot": 0,
           "chorus_on": 1,
           "delay_on": 1,
           "boost_on": 0,
@@ -159,7 +128,7 @@
       {
         "name": "Crunch",
         "values": {
-          "amp_model": 1,
+          "amp_slot": 1,
           "chorus_on": 0,
           "delay_on": 1,
           "boost_on": 0,
@@ -170,7 +139,7 @@
       {
         "name": "Lead",
         "values": {
-          "amp_model": 2,
+          "amp_slot": 2,
           "chorus_on": 0,
           "delay_on": 1,
           "boost_on": 1,

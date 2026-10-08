@@ -23,7 +23,7 @@ void setParam (AmpSimProcessor& p, const juce::String& id, float plainValue)
 
 void waitForLoads (AmpSimProcessor& p)
 {
-    for (int i = 0; i < 4000 && p.isLoading(); ++i)
+    for (int i = 0; i < 12000 && p.isLoading(); ++i) // the eight built-in sets take seconds on a busy machine
         juce::Thread::sleep (5);
 }
 
@@ -83,15 +83,16 @@ public:
 
     void runTest() override
     {
-        beginTest ("the whole rig at once: three captures, three mics, every block on, 128-sample buffers: CPU against the deadline, and nothing allocated on the audio thread");
+        beginTest ("the whole rig at once: three captures loaded (the selected one runs), three mics, every block on, 128-sample buffers: CPU against the deadline, and nothing allocated on the audio thread");
         rig (false);
 
-        beginTest ("the same on the built-in captures (Glass, Ember, Monolith: three standard WaveNets), as the app starts");
+        beginTest ("the same on the eight built-in amps (standard WaveNet gain sets, all loaded, one playing), as the app starts");
         rig (true);
     }
 
-    /// Defaults, everything on, and the heaviest settings, timed. builtIns: the three slots run the built-in
-    /// captures the app starts with; otherwise NAM's example models (A1 standard, A2, LSTM).
+    /// Defaults, everything on, and the heaviest settings, timed. builtIns: the eight built-in amps the app starts
+    /// with; otherwise NAM's example models (A1 standard, A2, LSTM) in amps 1 to 3. Only the selected amp runs
+    /// (BUILD_PLAN "Amp switching").
     void rig (bool builtIns)
     {
         const auto irA = tempDir().getChildFile ("rig_ir_a.wav"), irB = tempDir().getChildFile ("rig_ir_b.wav"), room = tempDir().getChildFile ("rig_room.wav");
@@ -120,10 +121,10 @@ public:
         p.prepareToPlay (fs, blockSize);
         const auto input = guitarDI ((int) (10.0 * fs));
         if (builtIns)
-            for (int s = 0; s < 3; ++s)
+            for (int s = 0; s < AmpSimProcessor::numBuiltInAmps; ++s)
                 expect (p.parameters.state.getProperty (AmpSimProcessor::modelPathKey (s)).toString() == presets::builtInCapture (s).getFullPathName());
 
-        // Defaults: three captures running, the cab, the EQs (flat), everything else off.
+        // Defaults: the selected amp running, the cab, the EQs (flat), everything else off.
         const auto bare = play (p, input);
 
         // Everything on.
@@ -143,55 +144,48 @@ public:
         p.runHousekeeping();
         const auto heaviest = play (p, input);
 
-        // Gain sets (BUILD_PLAN "Amp gain"): the built-ins run one step model per slot on a step (the three runs
-        // above, at the default Gain 5). Between steps the selected slot runs two and the others their nearest step
-        // (one each), and while the selected slot's Gain moves it can run a third, warming ahead. The heaviest
-        // settings again with every slot between two steps, then with all three Gains sweeping 0 to 10 and back at
-        // once (more than a scene change does), then between steps again with the slot switching every 0.25 s
-        // (each switch warms the new slot's second step, and drops the old one's).
+        // Gain sets (BUILD_PLAN "Amp gain") with one amp at a time (BUILD_PLAN "Amp switching"): the playing amp runs
+        // one step model on a step (the three runs above, at the default Gain 5), two between steps, and up to three
+        // while its Gain moves (warming ahead). The heaviest settings again with the Gain between two steps, then with
+        // it sweeping 0 to 10 and back, then between steps with the amp switching every 0.25 s through all eight
+        // (each switch runs the incoming amp's two steps beside the outgoing one's two for the warm-up and the fade).
         Timing between, sweeping, switching;
-        std::array<int, 4> slotMaxModels {};
-        int maxTotalBetween = 0, maxTotalSweeping = 0, maxTotalSwitching = 0;
-        const auto totalModels = [&]
-        {
-            int total = 0;
-            for (int s = 0; s < 3; ++s)
-                total += p.getChain().amp.slot (s).model.getRunningSteps();
-            return total;
-        };
+        int maxBetween = 0, maxSweeping = 0, maxSwitching = 0, maxAmpsSwitching = 0, minBetween = 99;
+        const auto models = [&] { return p.getChain().amp.getRunningModels(); };
         if (builtIns)
         {
             using GainKnob = ampsim::AmpSection::GainKnob;
-            for (int s = 0; s < 3; ++s)
+            for (int s = 0; s < AmpSimProcessor::numBuiltInAmps; ++s)
                 setParam (p, AmpSimProcessor::ampParamId (s, "input_trim"), GainKnob::dbForPosition (6.25f));
             p.runHousekeeping();
-            play (p, std::vector<float> (blockSize * 80, 0.0f)); // reach the positions (and the selected slot's warm-up)
-            between = play (p, input, [&] (size_t) { maxTotalBetween = std::max (maxTotalBetween, totalModels()); });
+            play (p, std::vector<float> (blockSize * 80, 0.0f)); // reach the position (and its second step's warm-up)
+            between = play (p, input, [&] (size_t)
+            {
+                maxBetween = std::max (maxBetween, models());
+                minBetween = std::min (minBetween, models());
+            });
             sweeping = play (p, input, [&] (size_t block)
             {
                 const auto phase = std::fmod ((double) block * blockSize / fs, 1.6) / 1.6; // 0 -> 10 -> 0 every 1.6 s
                 const auto position = (float) (10.0 * (phase < 0.5 ? 2.0 * phase : 2.0 - 2.0 * phase));
-                for (int s = 0; s < 3; ++s)
-                {
-                    setParam (p, AmpSimProcessor::ampParamId (s, "input_trim"), GainKnob::dbForPosition (s == 1 ? 10.0f - position : position));
-                    slotMaxModels[(size_t) s] = std::max (slotMaxModels[(size_t) s], p.getChain().amp.slot (s).model.getRunningSteps());
-                }
-                maxTotalSweeping = std::max (maxTotalSweeping, totalModels());
+                setParam (p, AmpSimProcessor::ampParamId (0, "input_trim"), GainKnob::dbForPosition (position));
+                maxSweeping = std::max (maxSweeping, models());
             });
-            for (int s = 0; s < 3; ++s)
-                setParam (p, AmpSimProcessor::ampParamId (s, "input_trim"), GainKnob::dbForPosition (6.25f));
+            setParam (p, AmpSimProcessor::ampParamId (0, "input_trim"), GainKnob::dbForPosition (6.25f));
             play (p, std::vector<float> (blockSize * 80, 0.0f));
             switching = play (p, input, [&] (size_t block)
             {
-                if (block % 94 == 0) // every 0.25 s: slots 1, 2, 3, 1, ...
-                    setParam (p, AmpSimProcessor::slotParamId, (float) ((block / 94) % 3));
-                maxTotalSwitching = std::max (maxTotalSwitching, totalModels());
+                if (block % 94 == 0) // every 0.25 s: amps 1, 2, ... 8, 1, ...
+                    setParam (p, AmpSimProcessor::ampModelParamId, (float) ((block / 94) % AmpSimProcessor::numBuiltInAmps));
+                maxSwitching = std::max (maxSwitching, models());
+                maxAmpsSwitching = std::max (maxAmpsSwitching, p.getChain().amp.getRunningAmps());
             });
-            setParam (p, AmpSimProcessor::slotParamId, 0.0f);
-            expectEquals (slotMaxModels[0], ampsim::NamAmp::maxRunningSteps, "the selected slot's sweep warms ahead");
-            expectLessOrEqual (std::max (slotMaxModels[1], slotMaxModels[2]), ampsim::NamAmp::maxRunningStepsUnheard);
-            expectEquals (maxTotalBetween, 4, "between steps: two for the selected slot, one each for the others");
-            expectLessOrEqual (maxTotalSwitching, 5);
+            setParam (p, AmpSimProcessor::ampModelParamId, 0.0f);
+            expectEquals (maxBetween, 2, "between steps: the playing amp's two");
+            expectEquals (minBetween, 2);
+            expectEquals (maxSweeping, ampsim::NamAmp::maxRunningSteps, "a sweep warms ahead");
+            expectEquals (maxAmpsSwitching, 2);
+            expectLessOrEqual (maxSwitching, 4);
             expectLessThan (between.mean, 0.6 * deadlineMicros * cpuBudgetScale());
             expectLessThan (sweeping.mean, 0.7 * deadlineMicros * cpuBudgetScale());
             expectLessThan (switching.mean, 0.6 * deadlineMicros * cpuBudgetScale());
@@ -205,19 +199,18 @@ public:
         }
         expectLessThan (everything.mean, 0.6 * deadlineMicros * cpuBudgetScale());
 
-        const juce::String captures = builtIns ? "the built-in Glass, Ember, Monolith" : "A1 standard, A2, LSTM";
-        logMessage ("  -> three captures (" + captures + ") and three mics, everything else at its defaults: " + bare.describe());
+        const juce::String captures = builtIns ? "the eight built-in amps loaded, Glass playing" : "A1 standard, A2, LSTM loaded, A1 playing";
+        logMessage ("  -> " + captures + ", three mics, everything else at its defaults: " + bare.describe());
         logMessage ("  -> " + captures + ", every block on (both gates, both compressors, Screamer boost, Distortion at 4x, harmonizer with 2 voices, multivoicer 4 voices, "
                     "Bloom with all three, Tri chorus, tape delay, Hall with 50% shimmer): " + everything.describe());
         logMessage ("  -> " + captures + ", the heaviest settings (8x drive with the Fuzz, multivoicer Mono with 8 voices, 4 harmonies): " + heaviest.describe());
         if (builtIns)
         {
-            logMessage ("  -> the heaviest settings with every Gain between two steps (the selected slot blends two, the others play their nearest step; "
-                        + juce::String (maxTotalBetween) + " models in all): " + between.describe());
-            logMessage ("  -> the heaviest settings with all three Gains sweeping 0 to 10 and back every 1.6 s (models per slot at most " + juce::String (slotMaxModels[0]) + "/"
-                        + juce::String (slotMaxModels[1]) + "/" + juce::String (slotMaxModels[2]) + ", " + juce::String (maxTotalSweeping) + " in all): " + sweeping.describe());
-            logMessage ("  -> the heaviest settings with every Gain between two steps and the slot switching every 0.25 s (at most " + juce::String (maxTotalSwitching)
-                        + " models in all): " + switching.describe());
+            logMessage ("  -> the heaviest settings with the Gain between two steps (" + juce::String (maxBetween) + " models running): " + between.describe());
+            logMessage ("  -> the heaviest settings with the Gain sweeping 0 to 10 and back every 1.6 s (at most " + juce::String (maxSweeping) + " models): "
+                        + sweeping.describe());
+            logMessage ("  -> the heaviest settings with the Gains between two steps and the amp switching every 0.25 s through all eight (at most "
+                        + juce::String (maxAmpsSwitching) + " amps and " + juce::String (maxSwitching) + " models running): " + switching.describe());
         }
         logMessage ("  -> all the runs: 0 allocations, 0 frees, 0 blocking locks on the audio thread (" + juce::String (bare.counts.allocations + everything.counts.allocations
                     + heaviest.counts.allocations) + " counted). Timed on a normal-priority test thread, with other builds running on the machine: the "

@@ -226,11 +226,215 @@ juce::var migrateV1toV2 (const juce::var& v1)
     return v2;
 }
 
+const juce::StringArray& ampKnobNames()
+{
+    static const juce::StringArray names { "input_trim", "depth", "bass", "mid", "treble", "presence", "output_trim" };
+    return names;
+}
+
+int builtInAmpFor (const juce::String& path)
+{
+    // "factory:models/Glass/gainset.json", or a saved absolute path from either OS ending in
+    // .../content/models/Glass/gainset.json (any copy of the app, isSavedAbsolutePath), with either separator; and the
+    // pre-gain-set single files the first three replaced (content/models/Glass.nam).
+    const auto normalised = path.replaceCharacter ('\\', '/');
+    for (int amp = 0; amp < numBuiltInAmps; ++amp)
+    {
+        const auto set = "models/" + builtInAmpName (amp) + "/gainset.json";
+        const auto old = "models/" + builtInAmpName (amp) + ".nam";
+        for (const auto& tail : { set, old })
+            if (normalised == factoryPrefix + tail || (isSavedAbsolutePath (path) && normalised.endsWith ("/content/" + tail)))
+                return amp;
+    }
+    return -1;
+}
+
+SlotMapping mapSlots (const std::array<juce::String, 3>& captures, int selectedSlot)
+{
+    SlotMapping m;
+    m.selectedSlot = juce::jlimit (0, 2, selectedSlot);
+
+    // The capture of the user's own that becomes amp 9: the selected slot's if it holds one, else the lowest slot's.
+    const auto isOwn = [&captures] (int k) { return captures[(size_t) k].isNotEmpty() && builtInAmpFor (captures[(size_t) k]) < 0; };
+    if (isOwn (m.selectedSlot))
+        m.yourCaptureSlot = m.selectedSlot;
+    else
+        for (int k = 0; k < 3 && m.yourCaptureSlot < 0; ++k)
+            if (isOwn (k))
+                m.yourCaptureSlot = k;
+
+    for (int k = 0; k < 3; ++k)
+    {
+        const auto& path = captures[(size_t) k];
+        const auto builtIn = builtInAmpFor (path);
+        m.ampOf[(size_t) k] = path.isEmpty() ? k                     // empty: the built-in its head wore
+                            : builtIn >= 0   ? builtIn                // a built-in gain set
+                                             : numBuiltInAmps;        // a capture of the user's own: amp 9
+    }
+    return m;
+}
+
+namespace
+{
+juce::Identifier knobId (int amp, const juce::String& name) { return "amp" + juce::String (amp + 1) + "_" + name; }
+
+/// The slots in the order their knobs are written into the amps' IDs: the others first, `winner` last, so where two
+/// slots become one amp, the winner's values are the ones left.
+std::array<int, 3> writeOrder (int winner)
+{
+    std::array<int, 3> order {};
+    size_t i = 0;
+    for (int k = 0; k < 3; ++k)
+        if (k != winner)
+            order[i++] = k;
+    order[2] = winner;
+    return order;
+}
+
+/// Moves slot knobs to amp knobs in a set of values (plain values by parameter ID), `winner` winning collisions.
+void moveKnobs (juce::NamedValueSet& values, const SlotMapping& m, int winner)
+{
+    std::array<juce::NamedValueSet, 3> old;
+    for (int k = 0; k < 3; ++k)
+        for (const auto& name : ampKnobNames())
+            if (const auto* v = values.getVarPointer (knobId (k, name)))
+            {
+                old[(size_t) k].set (name, *v);
+                values.remove (knobId (k, name));
+            }
+
+    for (const auto k : writeOrder (winner))
+        for (const auto& property : old[(size_t) k])
+            values.set (knobId (m.ampOf[(size_t) k], property.name.toString()), property.value);
+}
+
+/// The old ID a slot-era parameter had, as the amp-era one: amp_slot is amp_model, a slot's knob its amp's knob.
+juce::String movedId (const juce::String& id, const SlotMapping& m)
+{
+    if (id == "amp_slot")
+        return "amp_model";
+    for (int k = 0; k < 3; ++k)
+        for (const auto& name : ampKnobNames())
+            if (id == knobId (k, name).toString())
+                return knobId (m.ampOf[(size_t) k], name).toString();
+    return id;
+}
+} // namespace
+
+void slotValuesToAmps (juce::NamedValueSet& values, const SlotMapping& m)
+{
+    moveKnobs (values, m, m.selectedSlot);
+    values.set ("amp_model", m.ampOf[(size_t) m.selectedSlot]);
+}
+
+juce::var slotScenesToAmps (const juce::var& scenes, const SlotMapping& m)
+{
+    if (! scenes.isObject())
+        return scenes;
+    auto out = scenes.clone();
+    auto* root = out.getDynamicObject();
+
+    juce::Array<juce::var> chosen;
+    if (const auto* ids = scenes.getProperty ("parameters", {}).getArray())
+        for (const auto& id : *ids)
+            chosen.addIfNotAlreadyThere (movedId (id.toString(), m));
+    root->setProperty ("parameters", chosen);
+
+    if (auto* list = out.getProperty ("list", {}).getArray())
+        for (auto& entry : *list)
+            if (auto* values = entry.getProperty ("values", {}).getDynamicObject())
+            {
+                auto& set = values->getProperties();
+                const auto sceneSlot = set.contains ("amp_slot") ? juce::jlimit (0, 2, juce::roundToInt ((double) set["amp_slot"])) : m.selectedSlot;
+                moveKnobs (set, m, sceneSlot);
+                if (set.contains ("amp_slot"))
+                {
+                    set.remove ("amp_slot");
+                    set.set ("amp_model", m.ampOf[(size_t) sceneSlot]);
+                }
+            }
+    return out;
+}
+
+juce::var slotMidiToAmps (const juce::var& midi, const SlotMapping& m)
+{
+    auto out = midi.clone();
+    if (auto* list = out.getArray())
+        for (auto& entry : *list)
+            if (auto* mapping = entry.getDynamicObject())
+            {
+                const auto id = mapping->getProperty ("parameter").toString();
+                mapping->setProperty ("parameter", movedId (id, m));
+                if (id == "amp_slot")
+                    for (const auto* bound : { "min", "max" })
+                        if (mapping->hasProperty (bound))
+                            mapping->setProperty (bound, m.ampOf[(size_t) juce::jlimit (0, 2, juce::roundToInt ((double) mapping->getProperty (bound)))]);
+            }
+    return out;
+}
+
+juce::var migrateV2toV3 (const juce::var& v2)
+{
+    // Three slots, each any capture, to nine amps (Presets.h, slotsToAmps). The slots' captures decide which amp each
+    // becomes; the built-in amps play their own sets (a path with no hash, so retrained captures under the same names
+    // never warn), amp 9 the one capture of the user's own that's kept (its reference as it was, hash and all).
+    auto v3 = v2.clone();
+    auto* object = v3.getDynamicObject();
+    object->setProperty ("format_version", 3);
+
+    std::array<juce::String, 3> captures;
+    std::array<FileRef, 3> refs;
+    if (const auto* list = v2.getProperty ("amps", {}).getArray())
+        for (int k = 0; k < juce::jmin (3, list->size()); ++k)
+        {
+            refs[(size_t) k] = FileRef::fromVar (list->getReference (k));
+            captures[(size_t) k] = refs[(size_t) k].path;
+        }
+
+    const auto parameters = v2.getProperty ("parameters", {});
+    const auto m = mapSlots (captures, juce::roundToInt ((double) parameters.getProperty ("amp_slot", 0)));
+
+    if (const auto* values = parameters.getDynamicObject())
+    {
+        auto* moved = new juce::DynamicObject (*values);
+        slotValuesToAmps (moved->getProperties(), m);
+        object->setProperty ("parameters", juce::var (moved));
+    }
+
+    juce::Array<juce::var> amps;
+    for (int amp = 0; amp < numBuiltInAmps; ++amp)
+        amps.add (FileRef { builtInCapturePath (amp), {}, 0 }.toVar());
+    amps.add ((m.yourCaptureSlot >= 0 ? refs[(size_t) m.yourCaptureSlot] : FileRef {}).toVar());
+    object->setProperty ("amps", amps);
+
+    // Each slot's cab for "Follow amp choice" is now its amp's (the selected slot's wins a collision).
+    if (const auto* assigned = v2.getProperty ("cab_assign", {}).getArray())
+    {
+        std::array<juce::var, numBuiltInAmps + 1> perAmp;
+        perAmp.fill (FileRef {}.toVar());
+        for (const auto k : writeOrder (m.selectedSlot))
+            if (k < assigned->size() && FileRef::fromVar (assigned->getReference (k)).path.isNotEmpty())
+                perAmp[(size_t) m.ampOf[(size_t) k]] = assigned->getReference (k);
+        juce::Array<juce::var> list;
+        for (const auto& v : perAmp)
+            list.add (v);
+        object->setProperty ("cab_assign", list);
+    }
+
+    if (v2.hasProperty ("scenes"))
+        object->setProperty ("scenes", slotScenesToAmps (v2.getProperty ("scenes", {}), m));
+    if (v2.hasProperty ("midi"))
+        object->setProperty ("midi", slotMidiToAmps (v2.getProperty ("midi", {}), m));
+    return v3;
+}
+
 juce::var migrate (const juce::var& preset)
 {
     auto current = preset;
     if ((int) current.getProperty ("format_version", 0) == 1)
         current = migrateV1toV2 (current);
+    if ((int) current.getProperty ("format_version", 0) == 2)
+        current = migrateV2toV3 (current);
     return current;
 }
 
@@ -256,9 +460,17 @@ juce::var capture (AmpSimProcessor& processor, const juce::String& name)
     const auto refFor = [] (const juce::String& path, const char* kind)
     { return juce::File::isAbsolutePath (path) ? makeRef (juce::File (path), kind).toVar() : FileRef {}.toVar(); };
 
+    // A built-in amp playing its own gain set is saved as the factory path alone: no hash, so a preset never warns
+    // that a built-in "has changed" when its captures are retrained under the same name.
     juce::Array<juce::var> amps;
-    for (int s = 0; s < AmpSimProcessor::numAmpSlots; ++s)
-        amps.add (refFor (state.getProperty (AmpSimProcessor::modelPathKey (s)).toString(), "models"));
+    for (int a = 0; a < AmpSimProcessor::numAmps; ++a)
+    {
+        const auto path = state.getProperty (AmpSimProcessor::modelPathKey (a)).toString();
+        if (a < numBuiltInAmps && juce::File::isAbsolutePath (path) && juce::File (path) == builtInCapture (a))
+            amps.add (FileRef { builtInCapturePath (a), {}, 0 }.toVar());
+        else
+            amps.add (refFor (path, "models"));
+    }
     root->setProperty ("amps", amps);
 
     auto* cab = new juce::DynamicObject();
@@ -266,10 +478,10 @@ juce::var capture (AmpSimProcessor& processor, const juce::String& name)
         cab->setProperty (micKeys[m], refFor (state.getProperty (AmpSimProcessor::cabPathKey (m)).toString(), "irs"));
     root->setProperty ("cab", juce::var (cab));
 
-    // Follow amp choice: each slot's cab, and whether switching slots loads it.
+    // Follow amp choice: each amp's cab, and whether switching amps loads it.
     juce::Array<juce::var> assigned;
-    for (int s = 0; s < AmpSimProcessor::numAmpSlots; ++s)
-        assigned.add (refFor (state.getProperty (AmpSimProcessor::cabAssignKey (s)).toString(), "irs"));
+    for (int a = 0; a < AmpSimProcessor::numAmps; ++a)
+        assigned.add (refFor (state.getProperty (AmpSimProcessor::cabAssignKey (a)).toString(), "irs"));
     root->setProperty ("cab_assign", assigned);
     root->setProperty ("cab_follow", processor.isCabFollowing());
 
@@ -349,22 +561,28 @@ ApplyResult apply (AmpSimProcessor& processor, const juce::var& saved)
             result.warnings.add (what + " has changed since the preset was saved: " + r.file.getFullPathName());
     };
 
+    // Each amp's capture. One the amp already holds (the built-in amps, nearly always) isn't loaded again: nine
+    // reloads would keep a preset change waiting seconds for the same models. The amp the preset plays goes on the
+    // (one) loader first, then the cab, then the other amps, which the preset's fade-in doesn't wait for
+    // (AmpSimProcessor::isLoadingWhatPlays).
     const auto* amps = preset.getProperty ("amps", {}).getArray();
-    for (int s = 0; s < AmpSimProcessor::numAmpSlots; ++s)
+    const auto loadAmp = [&] (int a)
     {
-        const auto ref = amps != nullptr && s < amps->size() ? FileRef::fromVar (amps->getReference (s)) : FileRef {};
+        const auto ref = amps != nullptr && a < amps->size() ? FileRef::fromVar (amps->getReference (a)) : FileRef {};
         if (ref.path.isEmpty())
         {
-            processor.clearModel (s);
-            continue;
+            processor.clearModel (a);
+            return;
         }
         const auto r = resolve (ref, "models");
-        describe ("Amp " + juce::String (s + 1) + "'s capture", ref, r);
+        describe ((a == AmpSimProcessor::yourCaptureAmp ? juce::String ("Your capture") : builtInAmpName (a) + "'s capture"), ref, r);
         if (r.found && r.file.existsAsFile())
-            processor.loadModel (s, r.file);
+            processor.loadModelIfChanged (a, r.file);
         else
-            processor.clearModel (s);
-    }
+            processor.clearModel (a);
+    };
+    const auto playing = processor.getSelectedAmp();
+    loadAmp (playing);
 
     const auto cab = preset.getProperty ("cab", {});
     for (int m = 0; m < AmpSimProcessor::numCabMics; ++m)
@@ -383,21 +601,25 @@ ApplyResult apply (AmpSimProcessor& processor, const juce::var& saved)
             processor.clearCabIR (m);
     }
 
+    for (int a = 0; a < AmpSimProcessor::numAmps; ++a)
+        if (a != playing)
+            loadAmp (a);
+
     // Follow amp choice. A preset made before it existed assigns nothing and follows (the default); the
-    // preset's own close mic 1 is what plays now, so the slot it selects counts as followed already.
+    // preset's own close mic 1 is what plays now, so the amp it selects counts as followed already.
     const auto* assigned = preset.getProperty ("cab_assign", {}).getArray();
-    for (int s = 0; s < AmpSimProcessor::numAmpSlots; ++s)
+    for (int a = 0; a < AmpSimProcessor::numAmps; ++a)
     {
-        const auto ref = assigned != nullptr && s < assigned->size() ? FileRef::fromVar (assigned->getReference (s)) : FileRef {};
+        const auto ref = assigned != nullptr && a < assigned->size() ? FileRef::fromVar (assigned->getReference (a)) : FileRef {};
         auto file = juce::File();
         if (ref.path.isNotEmpty())
         {
             const auto r = resolve (ref, "irs");
-            describe ("Amp " + juce::String (s + 1) + "'s cab", ref, r);
+            describe ("Amp " + juce::String (a + 1) + "'s cab", ref, r);
             if (r.found)
                 file = r.file;
         }
-        processor.setCabAssignment (s, file);
+        processor.setCabAssignment (a, file);
     }
     processor.parameters.state.setProperty (AmpSimProcessor::cabFollowKey, (bool) preset.getProperty ("cab_follow", true), nullptr);
     processor.markCabFollowed();
@@ -451,15 +673,16 @@ juce::String currentFactoryPresetName (const juce::String& name)
     return name;
 }
 
-juce::String builtInCaptureName (int slot)
+juce::String builtInAmpName (int amp)
 {
-    static const char* names[] = { "Glass", "Ember", "Monolith" };
-    return names[juce::jlimit (0, 2, slot)];
+    static const char* names[] = { "Glass", "Ember", "Monolith", "Lantern", "Basalt", "Comet", "Forge", "Quartz" };
+    static_assert (std::size (names) == (size_t) numBuiltInAmps);
+    return names[juce::jlimit (0, numBuiltInAmps - 1, amp)];
 }
 
-juce::String builtInCapturePath (int slot)
+juce::String builtInCapturePath (int amp)
 {
-    return factoryPrefix + "models/" + builtInCaptureName (slot) + "/gainset.json";
+    return factoryPrefix + "models/" + builtInAmpName (amp) + "/gainset.json";
 }
 
 juce::File replacementForRetiredCapture (const juce::String& path)
@@ -468,11 +691,11 @@ juce::File replacementForRetiredCapture (const juce::String& path)
     // on one OS can be loaded on the other, and "/Applications/BellyDSP.app/..." isn't absolute to Windows,
     // found by the first Windows CI run) ending in .../content/models/Glass.nam, with either separator.
     const auto normalised = path.replaceCharacter ('\\', '/');
-    for (int slot = 0; slot < 3; ++slot)
+    for (int amp = 0; amp < 3; ++amp) // only the first three ever shipped as single files
     {
-        const auto old = "models/" + builtInCaptureName (slot) + ".nam";
+        const auto old = "models/" + builtInAmpName (amp) + ".nam";
         if (normalised == factoryPrefix + old || (isSavedAbsolutePath (path) && normalised.endsWith ("/content/" + old)))
-            return builtInCapture (slot);
+            return builtInCapture (amp);
     }
     return {};
 }
@@ -484,9 +707,9 @@ bool isSavedAbsolutePath (const juce::String& path)
     return juce::File::isAbsolutePath (path) || posix || windows;
 }
 
-juce::File builtInCapture (int slot)
+juce::File builtInCapture (int amp)
 {
-    return resolvePath (builtInCapturePath (slot));
+    return resolvePath (builtInCapturePath (amp));
 }
 
 std::vector<BuiltInAmp> builtInGainSets()
@@ -501,15 +724,15 @@ std::vector<BuiltInAmp> builtInGainSets()
         if (json.existsAsFile() && ampsim::GainSet::read (json, set, error))
             sets.push_back ({ set.name.isNotEmpty() ? set.name : dir.getFileName(), set.description, set.toneType, json });
     }
-    // The slot defaults first in slot order, then by tone type, then name.
+    // The built-in amps in their order, then any other set by tone type, then name.
     const auto rank = [] (const BuiltInAmp& a)
     {
-        for (int slot = 0; slot < 3; ++slot)
-            if (a.file == builtInCapture (slot))
-                return slot;
+        for (int amp = 0; amp < numBuiltInAmps; ++amp)
+            if (a.file == builtInCapture (amp))
+                return amp;
         static const juce::StringArray tones { "clean", "overdrive", "crunch", "hi_gain", "fuzz" };
         const auto t = tones.indexOf (a.toneType);
-        return 3 + (t < 0 ? tones.size() : t);
+        return numBuiltInAmps + (t < 0 ? tones.size() : t);
     };
     std::sort (sets.begin(), sets.end(), [&] (const BuiltInAmp& a, const BuiltInAmp& b)
     {

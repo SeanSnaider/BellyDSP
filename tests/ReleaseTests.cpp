@@ -188,7 +188,7 @@ public:
             const auto irRef = presets::FileRef::fromVar (saved["cab"]["mic1"]);
             expectEquals (ampRef.path, juce::String ("factory:models/Starter Clean.nam"));
             expectEquals (irRef.path, juce::String ("factory:irs/Starter 2x12.wav"));
-            expectEquals ((int) saved["format_version"], 2);
+            expectEquals ((int) saved["format_version"], presets::formatVersion);
 
             // Loading resolves them against the content folder.
             const auto direct = presets::resolve (ampRef, "models");

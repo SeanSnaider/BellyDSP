@@ -170,6 +170,18 @@ public:
     /// finishes a switch that's in progress.
     void reset() override;
 
+    /// Audio thread: the amp section starts running this amp again after it was stopped (BUILD_PLAN "Amp
+    /// switching"). Its models' history is stale, so the next process() starts the capture over as a new one
+    /// starts (the Gain jumps to the knob, the step models it needs there run), and the caller keeps it unheard
+    /// for getWarmupSamples(). A capture switch in progress is finished, and a capture waiting in the mailbox
+    /// is taken now, without a fade (nobody hears it yet). Real-time safe.
+    void restart() noexcept;
+
+    /// Audio thread: how long the capture must run on live input before its output is exact: the longest
+    /// receptive field of its models (NAM's prewarm length, 4093 samples for a standard WaveNet). 0 with no
+    /// capture (passthrough needs no history).
+    int getWarmupSamples() const noexcept { return hasModel() ? current->warmupSamples : 0; }
+
     /// Audio thread, for tests and meters: true while a model switch is crossfading.
     bool isSwitching() const noexcept { return fading; }
 
@@ -241,7 +253,7 @@ private:
     juce::AudioBuffer<float> stepOutputs; // one channel per step of a set (GainSet::maxSteps)
 
     // Written by prepare(), read by the loader thread.
-    std::atomic<int> loaderMaxBlockSize { 4096 };
+    std::atomic<int> loaderMaxBlockSize { 512 }; // until prepare() says: a model's buffers grow with it (NAM sizes them per block), and nine amps sit loaded
 };
 
 } // namespace ampsim

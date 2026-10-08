@@ -51,15 +51,19 @@ private:
     bool active = false;
 };
 
-/// The Amp page (handoff 4.5): the amp tabs (30 x 20 minis, names, PC numbers), the 290 px stage with its
-/// faint emerald glow and the 960 x 262 head of the playing slot, the info row (the capture's voice from
-/// its metadata, its file or "Glass (built in)" for a bundled one, and 48 kHz or a message), the output
-/// spectrum, and the shared strip (Input,
+/// The head's material for an amp (0 to 8): each built-in amp its own (materialForAmp by name), your capture Custom.
+Material materialForAmp (int amp);
+
+/// The Amp page (handoff 4.5, with the shelf of 2026-10-07 where the tabs were): the amp shelf (one mini head per
+/// built-in amp, then your capture's once one is loaded), the 290 px stage with its faint emerald glow and the
+/// 960 x 262 head of the playing amp, the info row (the capture's voice from its metadata, its file or "Glass (built
+/// in, gain set)" for a bundled one, and 48 kHz or a message), the output spectrum, and the shared strip (Input,
 /// Gate with its open light, Output).
 ///
-/// Each slot's seven knobs are its own parameters (ASSUMPTIONS UH3): Gain is amp*_input_trim, Master
-/// its output trim, the rest its tone bands; all show 0 to 10 with one decimal (5.0 is 0 dB). Switching
-/// slots (a tab, the footswitch, a scene) swaps the head's materials and its knobs.
+/// Each amp's seven knobs are its own parameters (ASSUMPTIONS UH3, AS1): Gain is amp*_input_trim, Master its output
+/// trim, the rest its tone bands; all show 0 to 10 with one decimal (5.0 is 0 dB). Switching amps (the shelf, the
+/// footswitch, a scene, a preset) swaps the head's material, its badge, and its knobs, so each amp comes back with
+/// its knobs as they were.
 ///
 /// Gain (BUILD_PLAN "Amp gain"; ASSUMPTIONS AG9) shows its position, 0 to 10 with one decimal, while dragged or
 /// hovered, like the other knobs. With a gain set loaded it moves across the set's captures, and small dots just
@@ -71,31 +75,37 @@ public:
     explicit AmpView (AmpSimProcessor& processor);
     ~AmpView() override;
 
-    /// A click on the grille, the badge, or the model's name: load a capture into the slot. A right-click
-    /// there: the capture menu (load, reload, clear).
-    std::function<void (int slot)> onLoadCapture;
-    std::function<void (int slot, juce::Component& near)> onCaptureMenu;
+    /// A click on the grille, the badge, or the model's name: load a capture of your own (amp 9). A right-click
+    /// there: the capture menu (load, reload, remove your capture).
+    std::function<void (int amp)> onLoadCapture;
+    std::function<void (int amp, juce::Component& near)> onCaptureMenu;
 
-    /// The amp picker right of the tabs (Sean, 2026-10-07: "I can't find the new amps"): its menu lists every
-    /// built-in amp (presets::builtInGainSets) and loads the one picked into the playing slot; its arrows step
-    /// through them, wrapping around. The capture menu (a right-click on the grille) keeps reload and clear.
-    juce::PopupMenu ampMenu();
-    void stepAmp (int delta);
-    juce::String getPickerText() const;
-    juce::Component& getPicker() noexcept;
-    /// The name the slot's tab and badge show: a gain set's name (any slot can play any built-in amp), else
-    /// the slot's material.
-    juce::String slotAmpName (int slot);
+    /// The shelf (Sean, 2026-10-07: "one amp, picked from 8"): at the top left, a faint "Amp", then a 30 x 20 mini
+    /// head per built-in amp (ui::drawMiniAmp) 12 px apart in the shelf's order, and after a small gap your capture's
+    /// once one is loaded. The playing amp has an emerald underline and its name shown after the minis; hovering a
+    /// mini shows its name and description there (and as a tooltip). A click plays that amp (amp_model, one undo
+    /// step); a right-click learns MIDI for amp_model.
+    juce::Component& getShelf() noexcept;
+    /// For tests: whether an amp's mini is on the shelf, its bounds in the page, and a click on it.
+    bool isOnShelf (int amp) const;
+    juce::Rectangle<int> getMiniBounds (int amp) const;
+    void clickMini (int amp);
+    /// What the shelf shows after the minis: the playing amp's name, or the hovered one's name and description.
+    juce::String getShelfText() const;
+    /// For tests: the shelf's hover, as the mouse would set it (-1: none).
+    void hoverMini (int amp);
+    /// An amp's name ("Glass", "Your capture") and description (a built-in's from its gainset.json; your capture's
+    /// file name).
+    juce::String ampDescription (int amp) const;
 
     /// The message shown where "48 kHz" sits (empty: the rate).
     void setStatus (const juce::String& message);
 
-    int getShownSlot() const noexcept { return shownSlot; }
-    TabRow& getTabs() noexcept { return tabs; }
+    int getShownAmp() const noexcept { return shownSlot; }
     AmpHead& getHead() noexcept { return head; }
     PilotJewel& getJewel() noexcept { return jewel; }
     SpectrumView& getSpectrum() noexcept { return spectrum; }
-    Knob& getKnob (int slot, int index) { return *knobs[(size_t) slot][(size_t) index]; }
+    Knob& getKnob (int amp, int index) { return *knobs[(size_t) amp][(size_t) index]; }
     juce::Component& getGrille() noexcept;
     bool isGateLightOn() const noexcept { return gateOpen; }
     /// The gate's first switch-on, as the strip shows it beside the Gate group (empty: nothing shown).
@@ -111,9 +121,9 @@ public:
     /// "tone_type", or empty. Never the gear's make or model (no product names in the UI).
     static juce::String toneTypeOf (const juce::File& namFile);
 
-    /// The Gain positions of a slot's gain set's steps (empty for a single capture or an empty slot), read
+    /// The Gain positions of an amp's gain set's steps (empty for a single capture or an empty amp), read
     /// from its gainset.json once per path.
-    const std::vector<float>& gainSteps (int slot);
+    const std::vector<float>& gainSteps (int amp);
 
     /// For tests: the step dots as drawn now (the positions, and which are lit).
     std::vector<float> getShownGainSteps() const;
@@ -129,21 +139,20 @@ public:
 
 private:
     class InfoRow;
-    class AmpPicker;
+    class Shelf;
     class Grille;
     class GateLight;
     class GainSteps;
     void updateGainSteps();
     void updateGatePrompt();
     void timerCallback() override;
-    void showSlot (int slot);
+    void showSlot (int amp);
 
-    TabRow tabs;
     AmpHead head;
     PilotJewel jewel;
     std::unique_ptr<Grille> grille;
     std::unique_ptr<InfoRow> info;
-    std::array<std::array<Knob*, numKnobs>, AmpSimProcessor::numAmpSlots> knobs {};
+    std::array<std::array<Knob*, numKnobs>, AmpSimProcessor::numAmps> knobs {};
     SpectrumView spectrum;
     Knob *input = nullptr, *threshold = nullptr, *release = nullptr, *output = nullptr;
     Switch* gateOn = nullptr; // the strip's Gate group: Gate A's own switch (gate_a_on), under the group's name
@@ -164,9 +173,9 @@ private:
     std::map<juce::String, SetInfo> gainSets; // capture path -> its set's name and steps (empty: not a set)
     const SetInfo& setInfo (const juce::String& path);
     std::unique_ptr<GainSteps> gainStepDots;
-    std::unique_ptr<AmpPicker> picker;
-    std::vector<presets::BuiltInAmp> builtIns; // read once: the content folder doesn't change while the app runs
-    int builtInIndex (int slot) const;         ///< the built-in amp the slot plays, or -1
+    std::unique_ptr<Shelf> shelf;
+    std::array<juce::String, AmpSimProcessor::numBuiltInAmps> descriptions; // read once from the built-ins' JSON
+    bool yourCaptureLoaded() const;
 };
 
 } // namespace ui
