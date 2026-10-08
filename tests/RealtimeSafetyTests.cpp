@@ -467,7 +467,9 @@ public:
 
             expect (ampWasBypassed, "the amp bypass must have reached the audio thread");
             expect (sectionsWereBypassed, "the section switches must have reached the audio thread");
-            expectGreaterThan (modelFadeBlocks, 16, "the model loads must have crossfaded during the measurement");
+            // Loads into the playing amp crossfade (20 ms, about 8 buffers each: the one at 200 and the calibration change's reload);
+            // a load into a stopped amp goes live at its next start, unheard, without one.
+            expectGreaterThan (modelFadeBlocks, 12, "the model loads must have crossfaded during the measurement");
             expectGreaterThan (slotSwitchBlocks, 16, "the amp switches must have warmed and crossfaded during the measurement");
             expectGreaterThan (warmingBlocks, 100, "incoming amps must have warmed up during the measurement");
             expectGreaterThan (gainMovingBlocks, 250, "the Gain drags must have moved the captures during the measurement");

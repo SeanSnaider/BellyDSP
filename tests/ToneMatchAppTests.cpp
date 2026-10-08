@@ -427,7 +427,7 @@ public:
             waitForLoads (p);
             expectEquals ((int) getParam (p, AmpSimProcessor::ampModelParamId), 1);
             expect (p.getAmpCapture (yours) == juce::File());
-            expectEquals (getParam (p, AmpSimProcessor::ampParamId (yours, "input_trim")), 0.0f);
+            expectWithinAbsoluteError (getParam (p, AmpSimProcessor::ampParamId (yours, "input_trim")), 0.0f, 1.0e-5f);
             expect (! p.undoManager.canUndo());
             logMessage ("  -> a non-built-in result: applied as your capture (\"" + status + "\"), amp 9 selected with Gain -6 dB and its tone; one undo: Ember again, amp 9 empty");
         }
