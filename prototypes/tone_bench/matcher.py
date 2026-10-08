@@ -48,7 +48,8 @@ CONFIGS = {
     # The search's breadth (docs/TONE_MATCH.md, "Round 2: eight amps"): tone_match's REFINE_SLOTS, TAKE_SHORTLIST,
     # TAKE_PER_AMP, PEDAL_SLOTS for this configuration only; trace keeps every scored candidate in the result.
     "any_fx_curve_r2": dict(mode="anything", cleanup="auto", score="take", pedals=True, curve="replace",
-                            search=dict(REFINE_SLOTS=2, TAKE_SHORTLIST=16, TAKE_PER_AMP=0, PEDAL_SLOTS=1)),
+                            search=dict(REFINE_SLOTS=2, TAKE_SHORTLIST=16, TAKE_PER_AMP=0, PEDAL_SLOTS=1, TAKE_PRE_SHORTLIST=0,
+                                        TAKE_REFINE_ALL=False, PEDAL_SLOTS_PRE=0)),
     "any_fx_curve_all": dict(mode="anything", cleanup="auto", score="take", pedals=True, curve="replace", trace=True,
                              search=dict(REFINE_SLOTS=None, TAKE_SHORTLIST=10 ** 6, TAKE_PER_AMP=0, PEDAL_SLOTS=10 ** 6)),
 }

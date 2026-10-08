@@ -859,15 +859,20 @@ class Target:
         self.analysis = Analysis(x)
 
 
+def through_cab(y, cab):
+    """The amp render y through the cab IR (a path): exactly what the cab does, up to level."""
+    _, ir = read_wav(cab)
+    ir = (ir[:, 0] if ir.ndim == 2 else ir)[:SR]
+    return sps.fftconvolve(y, ir)[: len(y)]
+
+
 class Candidate:
     """One (slot, Gain, cab): the amp render convolved with the cab IR, analysed. In same-part mode it
     also holds the aligned dB differences."""
 
     def __init__(self, slot, gain, cab, y, target, mode, path):
         self.slot, self.gain, self.cab = slot, gain, cab
-        _, ir = read_wav(cab)
-        ir = (ir[:, 0] if ir.ndim == 2 else ir)[:SR]
-        self.y = sps.fftconvolve(y, ir)[: len(y)]                     # exactly what the cab does, up to level
+        self.y = through_cab(y, cab)
         self.analysis = Analysis(self.y)
         ta = target.analysis
         self.nl = nonlinear_distance(ta.features(), self.analysis.features())
@@ -888,6 +893,14 @@ class Candidate:
 
     def total(self):
         return self.spectral + LAMBDA * self.nl
+
+    def lighten(self):
+        """Drops the render and its frame-by-frame analysis (tens of MB on a long take; the search holds hundreds of
+        candidates), keeping the long-term spectrum per bin. The render is through_cab(amp render, cab) again."""
+        self.ltas_bins = self.analysis.ltas_bins
+        self.flux, self.crest = self.analysis.flux, self.analysis.crest
+        self.y = self.analysis = None
+        return self
 
 
 def screen_cabs(y_analysis, target_ltas_or_residual, w, count):
@@ -1108,11 +1121,18 @@ def take_score(tn, target_analysis, amp_render, cand_y, tone, eq, spectral):
     """S (the comment above) of one candidate: amp_render the take through the amp, cand_y the same through the
     cab, tone and eq its fitted linear part, spectral its old spectral error. Returns (S, its terms)."""
     ca = Analysis(cand_y)
-    att, lev = note_measures(amp_render, tn.o, tn.L)
+    return take_score_of(tn, target_analysis, ca.flux, ca.crest, note_measures(amp_render, tn.o, tn.L), erb_ltas_bins(cand_y),
+                         tone, eq, spectral)
+
+
+def take_score_of(tn, target_analysis, flux, crest, notes, erb_bins, tone, eq, spectral):
+    """take_score from the candidate's measures: its flux and crest (Analysis), its notes' attack and level
+    (note_measures of the amp render), and its long-term power on the ERB analysis's bins (erb_ltas_bins)."""
+    att, lev = notes
     attack = float(np.sum(tn.weight * np.abs(tn.attack - att)) / np.sum(tn.weight))
     spread = abs(float(np.std(tn.level)) - float(np.std(lev)))
-    erb = loudness_distance(tn.erb_db, db((erb_ltas_bins(cand_y) * linear_power_on(ERB_FREQS, tone, eq)) @ ERB_MATRIX), tn.erb_weights)
-    terms = dict(spectral=spectral, flux=abs(target_analysis.flux - ca.flux), crest=abs(target_analysis.crest - ca.crest),
+    erb = loudness_distance(tn.erb_db, db((erb_bins * linear_power_on(ERB_FREQS, tone, eq)) @ ERB_MATRIX), tn.erb_weights)
+    terms = dict(spectral=spectral, flux=abs(target_analysis.flux - flux), crest=abs(target_analysis.crest - crest),
                  attack=attack, spread=spread, erb=erb)
     return spectral + sum(TAKE_WEIGHTS[k] * terms[k] for k in TAKE_WEIGHTS), terms
 
@@ -1239,16 +1259,23 @@ def linear_power_bins(tone, eq):
 
 
 TAKE_PER_AMP = 0             # the shortlist also holds each amp's best this many by the old score
+TAKE_PRE_SHORTLIST = 0       # and the best this many by S_pre
+TAKE_REFINE_ALL = False      # with a take, every amp's Gain is refined (else REFINE_SLOTS)
 PEDAL_SLOTS = 1              # the pedals are tried in front of this many amps (the best by the old score)
+PEDAL_SLOTS_PRE = 0          # and, with a take, in front of this many more (the best by S_pre)
 
 
-def shortlist(ranked):
-    """The candidates the take-aware score sees, in `ranked`'s order (the old score's): its TAKE_SHORTLIST best, and
-    each amp's TAKE_PER_AMP best (a pedal variant counts for the amp behind it)."""
+def shortlist(ranked, pre=None):
+    """The candidates the take-aware score sees, in `ranked`'s order (the old score's): its TAKE_SHORTLIST best, each
+    amp's TAKE_PER_AMP best (a pedal variant counts for the amp behind it), and the TAKE_PRE_SHORTLIST best by
+    pre(c) (S_pre)."""
+    keep = set()
+    if TAKE_PRE_SHORTLIST and pre is not None:
+        keep = {id(c) for c in sorted(ranked, key=pre)[:TAKE_PRE_SHORTLIST]}
     out, per_slot = [], {}
     for i, c in enumerate(ranked):
         n = per_slot.get(c.slot, 0)
-        if i < TAKE_SHORTLIST or n < TAKE_PER_AMP:
+        if i < TAKE_SHORTLIST or n < TAKE_PER_AMP or id(c) in keep:
             out.append(c)
         per_slot[c.slot] = n + 1
     return out
@@ -1286,6 +1313,19 @@ def match(target_x, di_x, mode="anything", log=print, workers=8, band_seconds=No
             paths[s] = p
             log(f"  aligned against {AMPS[s]}: {len(p)} steps, mean chroma distance {c:.3f}")
 
+    w = target.analysis.weights
+    tn = TakeNotes(target_x, take_notes) if take_notes else None
+    take_aware = tn is not None and tn.usable()
+    notes_of = {}
+
+    def pre(c):
+        """The candidate's take-aware score with its polished tone and no match EQ (S_pre; the comment above
+        TAKE_PRE_SHORTLIST): every term of S but the match EQ's effect on D_erb, from measures kept when it was scored."""
+        if c.pre is None:
+            tone, _ = fit_tone(c.residual, w, polish=True)
+            c.pre = take_score_of(tn, target.analysis, c.flux, c.crest, notes_of[c.render_key], c.erb_bins, tone, [], c.spectral)[0]
+        return c.pre
+
     def evaluate(slot, gain, cabs=None, pedal=None):
         y = amp(slot, gain, pedal)
         if cabs is None:
@@ -1297,12 +1337,17 @@ def match(target_x, di_x, mode="anything", log=print, workers=8, band_seconds=No
             else:
                 ref = target.analysis.ltas
             cabs = screen_cabs(ya, ref, target.analysis.weights, CABS_PER_AMP)
+        rk = (slot, round(gain, 3), pedal_key(pedal))
+        if take_aware and rk not in notes_of:
+            notes_of[rk] = note_measures(y, tn.o, tn.L)
         out = []
         for cab in cabs:
             key = (slot, round(gain, 3), str(cab), pedal_key(pedal))
             if key not in cands:
-                cands[key] = Candidate(slot, gain, cab, y, target, mode, paths.get(slot))
-                cands[key].pedal = pedal
+                c = Candidate(slot, gain, cab, y, target, mode, paths.get(slot))
+                c.pedal, c.render_key, c.pre = pedal, rk, None
+                c.erb_bins = erb_ltas_bins(c.y) if take_aware else None
+                cands[key] = c.lighten()
             out.append(cands[key])
         return out
 
@@ -1310,12 +1355,13 @@ def match(target_x, di_x, mode="anything", log=print, workers=8, band_seconds=No
         list(pool.map(lambda sg: evaluate(*sg), [(s, g) for s in range(len(MODEL_FILES)) for g in GAIN_GRID]))
     log(f"  scored {len(cands)} (slot, Gain, cab) candidates by {time.time() - t0:.1f} s")
 
-    # 2. Coarse to fine on Gain, for the best slots, keeping each slot's best cabs.
-    def best_for(slot):
-        return min((c for c in cands.values() if c.slot == slot), key=Candidate.total)
+    # 2. Coarse to fine on Gain, for the best slots, keeping each slot's best cabs. With a take (the take-aware score
+    #    decides), every slot: the slots the old score ranks low are often the take-aware score's best.
+    def best_for(slot, key=Candidate.total):
+        return min((c for c in cands.values() if c.slot == slot and getattr(c, "pedal", None) is None), key=key)
 
     slot_order = sorted(range(len(MODEL_FILES)), key=lambda s: best_for(s).total())
-    refined = slot_order[:REFINE_SLOTS] if REFINE_SLOTS is not None else slot_order
+    refined = slot_order if (take_aware and TAKE_REFINE_ALL) or REFINE_SLOTS is None else slot_order[:REFINE_SLOTS]
     for s in refined:
         cabs = sorted({str(c.cab) for c in cands.values() if c.slot == s},
                       key=lambda cb: min(c.total() for c in cands.values() if c.slot == s and str(c.cab) == cb))[:CABS_PER_AMP]
@@ -1331,8 +1377,13 @@ def match(target_x, di_x, mode="anything", log=print, workers=8, band_seconds=No
 
     pedal_slots = []
     if pedals:
-        # 2b. The pedals in front of the best amps, at their best cabs (search_pedals).
+        # 2b. The pedals in front of the best amps, at their best cabs (search_pedals). With a take, the amps best by
+        #     S_pre (PEDAL_SLOTS_PRE of them) as well as by the old score (PEDAL_SLOTS).
         pedal_slots = sorted(range(len(MODEL_FILES)), key=lambda s: best_for(s).total())[:PEDAL_SLOTS]
+        if take_aware:
+            for s in sorted(range(len(MODEL_FILES)), key=lambda s: pre(best_for(s, pre)))[:PEDAL_SLOTS_PRE]:
+                if s not in pedal_slots:
+                    pedal_slots.append(s)
         for slot in pedal_slots:
             s0 = best_for(slot)
             cabs = sorted({str(c.cab) for c in cands.values() if c.slot == s0.slot},
@@ -1346,10 +1397,10 @@ def match(target_x, di_x, mode="anything", log=print, workers=8, band_seconds=No
             log(f"  {len(variants)} pedal variants in front of {AMPS[s0.slot]} by {time.time() - t0:.1f} s")
 
     ranked = sorted(cands.values(), key=Candidate.total)
-    w = target.analysis.weights
     if trace is not None:
         trace.update(refined=list(refined), pedal_slots=list(pedal_slots),
-                     cands=[(c.slot, c.gain, c.cab.name, pedal_key(getattr(c, "pedal", None)), c.total()) for c in ranked])
+                     cands=[(c.slot, c.gain, c.cab.name, pedal_key(getattr(c, "pedal", None)), c.total(), pre(c) if take_aware else None)
+                            for c in ranked])
 
     def finish(c):
         """The candidate's polished tone and match EQ: (tone, spectral after the tone, residual, eq, eq target)."""
@@ -1359,20 +1410,19 @@ def match(target_x, di_x, mode="anything", log=print, workers=8, band_seconds=No
         return tone, spectral, residual, eq, eq_target
 
     take_terms = None
-    tn = TakeNotes(target_x, take_notes) if take_notes else None
-    if tn is not None and tn.usable():
+    scored = []
+    if take_aware:
         # 3. The take-aware score on the shortlist (each fitted completely), the best by it wins.
-        scored = []
-        for c in shortlist(ranked):
+        for c in shortlist(ranked, pre):
             fin = finish(c)
-            sc, terms = take_score(tn, target.analysis, amp(c.slot, c.gain, getattr(c, "pedal", None)), c.y, fin[0], fin[3], c.spectral)
+            sc, terms = take_score_of(tn, target.analysis, c.flux, c.crest, notes_of[c.render_key], c.erb_bins, fin[0], fin[3], c.spectral)
             scored.append((sc, c, fin, terms))
         sc, best, fin, take_terms = min(scored, key=lambda s: s[0])
         take_terms = dict(take_terms, total=sc)
         plain = [x[0] for x in scored if getattr(x[1], "pedal", None) is None]
         take_terms["best_without_pedal"] = min(plain) if plain else None
         if trace is not None:
-            trace["scored"] = [(c.slot, c.gain, c.cab.name, pedal_key(getattr(c, "pedal", None)), c.total(), s) for s, c, _, _ in scored]
+            trace["scored"] = [(c.slot, c.gain, c.cab.name, pedal_key(getattr(c, "pedal", None)), c.total(), s, pre(c)) for s, c, _, _ in scored]
         ranked = [best] + [s[1] for s in sorted(scored, key=lambda s: s[0]) if s[1] is not best]
         log(f"  take-aware score on {len(scored)} shortlisted ({len(tn.o)} note pairs): {AMPS[best.slot]} {best.gain:+.1f} at {sc:.2f}")
     else:
@@ -1387,7 +1437,7 @@ def match(target_x, di_x, mode="anything", log=print, workers=8, band_seconds=No
         if curve == "replace":
             eq = []
             after_eq = weighted_rms_centred(residual, w)
-        cand = Analysis(best.y).ltas_bins * linear_power_bins(best.tone, eq)
+        cand = best.ltas_bins * linear_power_bins(best.tone, eq)
         curve_points = fit_match_curve(target.analysis, cand)
 
     comp, comp_scores = None, None
