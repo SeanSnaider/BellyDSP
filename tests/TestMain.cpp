@@ -8,7 +8,7 @@
 //   ampsim_tests --bench-gui [seconds per page]
 //
 // --bench runs no tests: it prints the CPU profile of the defaults, every factory preset, and the heaviest rig on
-// this machine, block by block, at 48 kHz and 128-sample buffers (tests/CpuProfile.h; docs/INSTALL.md). --bench-gui
+// this machine, block by block, at 48 kHz and 128-sample buffers (tests/CpuProfile.h; BUILD_PLAN "CPU"). --bench-gui
 // opens the editor on screen with the defaults rig playing and reports the message thread's CPU on each page.
 //
 // Measurements are logged on lines starting with "->". They're collected into <proof-dir>/summary.txt

@@ -12,9 +12,22 @@
 #include <vector>
 
 /// The CPU profile of the whole rig, block by block (BUILD_PLAN "CPU"): what the "Full rig" tests assert the budget
-/// on, and what `ampsim_tests --bench` prints on any machine (docs/INSTALL.md, "Checking a slower computer").
+/// on, and what `ampsim_tests --bench` prints on any machine (BUILD_PLAN "CPU", the benchmark).
 namespace testing::cpu
 {
+
+/// The budget, as shares of the 128-sample deadline (2.67 ms) on the dev Mac (an M5 Pro), mean and p99, for the
+/// rigs below. It's set so a 4-core x64 laptop from about 2017, assumed 3 to 5 times slower per core for this
+/// code, keeps its p99 at or under about 60% of the deadline on the defaults and the factory presets at ASIO 128
+/// (BUILD_PLAN "CPU", the budget; ASSUMPTIONS CPU1, CPU2). The heaviest rig is for faster machines: on this budget
+/// a 2x slower PC (Sean's measured 1.75x) holds it at about 60%. The tests multiply these by cpuBudgetScale().
+struct Budget
+{
+    double meanPercent, p99Percent;
+};
+constexpr Budget defaultsBudget { 7.0, 10.0 };
+constexpr Budget typicalBudget { 10.0, 12.0 };
+constexpr Budget heaviestBudget { 25.0, 30.0 };
 
 /// One cost over a run of buffers, in microseconds per 128-sample buffer.
 struct Stats
@@ -71,6 +84,10 @@ bool setFactoryPreset (AmpSimProcessor& p, const juce::var& preset);
 void setHeaviest (AmpSimProcessor& p);
 
 void setParam (AmpSimProcessor& p, const juce::String& id, float plainValue);
+/// Lets everything loaded settle while audio runs (0.5 s of wall time, 400 buffers): the cab's IRs (JUCE builds each
+/// convolution engine on its own background thread and crossfades it in over 50 ms), an amp's warm-up and switch, a
+/// second step's warm-up, the bypass fades.
+void settleLoads (AmpSimProcessor& p);
 void waitForLoads (AmpSimProcessor& p);
 
 /// Short names for the chain's slots, for tables.

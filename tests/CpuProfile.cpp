@@ -116,8 +116,21 @@ double processCpuSeconds()
    #endif
 }
 
-/// Lets everything loaded settle while audio runs: the cab's IRs (JUCE builds each convolution engine on its own
-/// background thread and crossfades it in over 50 ms), an amp's warm-up and switch, a second step's warm-up.
+/// The instruction set this binary was compiled for (CMakeLists.txt, AMPSIM_X86_SIMD).
+const char* buildTarget()
+{
+   #if defined (__aarch64__) || defined (_M_ARM64)
+    return "arm64 (NEON)";
+   #elif defined (__AVX2__) && (defined (__FMA__) || defined (_MSC_VER))
+    return "x86-64 with AVX2 and FMA";
+   #elif defined (__AVX__)
+    return "x86-64 with AVX (no FMA)";
+   #else
+    return "x86-64 with SSE2";
+   #endif
+}
+} // namespace
+
 void settleLoads (AmpSimProcessor& p)
 {
     for (int i = 0; i < 100; ++i)
@@ -127,7 +140,6 @@ void settleLoads (AmpSimProcessor& p)
         p.runHousekeeping();
     }
 }
-} // namespace
 
 const char* slotName (Slot slot)
 {
@@ -323,13 +335,17 @@ void setHeaviest (AmpSimProcessor& p)
 
 int runBenchmark (double seconds)
 {
+    // As close to an audio thread as a plain program gets (on Windows the high priority class; ASIO and Core Audio
+    // run their callbacks higher still, so the worst buffers here overstate the app's).
+    juce::Process::setPriority (juce::Process::HighPriority);
     const auto input = guitarDI ((int) (seconds * fs));
     std::cout << "BellyDSP CPU benchmark: " << juce::SystemStats::getCpuModel() << ", " << juce::SystemStats::getNumPhysicalCpus() << " cores ("
               << juce::SystemStats::getNumCpus() << " threads), " << juce::SystemStats::getOperatingSystemName()
               << (juce::SystemStats::hasAVX2() ? ", AVX2" : "") << (juce::SystemStats::hasFMA3() ? ", FMA" : "")
               << (juce::SystemStats::hasNeon() ? ", NEON" : "") << "\n"
+              << "Built for " << buildTarget() << "\n"
               << "48 kHz, 128-sample buffers (the deadline is " << juce::String (deadlineMicros, 1) << " us), " << seconds
-              << " s of guitar DI per rig, on a normal-priority thread\n\n";
+              << " s of guitar DI per rig, in a high-priority process\n\n";
 
     std::vector<RigRun> runs;
     const auto show = [&runs] (const RigRun& run)
