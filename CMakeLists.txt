@@ -519,6 +519,7 @@ target_sources(ampsim_tests PRIVATE
     tests/HandoffTests.cpp
     tests/SvfTests.cpp
     tests/AmpSectionTests.cpp
+    tests/AmpMigrationTests.cpp
     tests/LoudnessTests.cpp
     tests/CabNormalizationStudy.cpp
     tests/GainTests.cpp

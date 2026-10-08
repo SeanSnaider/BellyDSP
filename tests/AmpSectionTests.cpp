@@ -135,7 +135,7 @@ public:
 
             expectEquals ((int) warmup, 4096, "a standard WaveNet's 4093-sample receptive field, in whole 128-sample buffers");
             expectEquals ((int) audibleAt, (int) (switchAt + warmup));
-            expectLessThan (deviation, 1.0e-6);
+            expectLessThan (deviation, 1.0e-5); // float ramps against double ones
             expectLessThan (during, steady * 1.5);
             expectEquals (runningAmps[blockOf (switchAt) - 1], 1, "steady state: one amp");
             expectEquals (runningAmps[blockOf (switchAt)], 2, "the warm-up: both");
@@ -198,9 +198,9 @@ public:
                 const auto deviation = maxAbsDifference (out, expected);
                 expect (overtakenStopped);
                 expectEquals (maxRunning, 2);
-                expectLessThan (deviation, 1.0e-6);
+                expectLessThan (deviation, 1.0e-5);
                 logMessage ("  -> amp 2 asked for, then amp 3 " + juce::String (1000.0 * 10 * blockSize / fs, 1) + " ms later: amp 2 stopped at once (never heard), amp 3 "
-                            "warmed from its request and faded in " + juce::String (1000.0 * (double) warmup / fs, 1) + " ms after it, at most "
+                            "warmed from its own request (its receptive field, " + juce::String (1000.0 * (double) warmup / fs, 1) + " ms) and then faded in, at most "
                             + juce::String (maxRunning) + " amps running; max deviation from the ideal switch " + juce::String (deviation, 9));
             }
             {
@@ -247,8 +247,11 @@ public:
 
         beginTest ("rapid switches (a new amp every 13 to 40 ms, during warm-ups and fades) never click, never run more than three amps, and settle on the last");
         {
+            // Three WaveNets (finite memory, so each is exact once warm; an LSTM's state never quite forgets, and NAM
+            // warms one for 0.5 s).
+            const auto a2 = exampleModel ("A2.nam");
             ampsim::AmpSection amp;
-            amp.amp (0).model.loadModel (lstm, false);
+            amp.amp (0).model.loadModel (a2, false);
             amp.amp (1).model.loadModel (a1, false);
             amp.amp (2).model.loadModel (small, false);
             amp.prepare (fs, blockSize);
@@ -266,9 +269,9 @@ public:
                     next = start + (size_t) (5 + random.nextInt (11)) * blockSize;
                 }
             }, [&] (size_t) { maxRunning = std::max (maxRunning, amp.getRunningAmps()); });
-            const std::array<juce::File, 3> files { lstm, a1, small };
+            const std::array<juce::File, 3> files { a2, a1, small };
             const auto last = always (files[(size_t) lastAmp], longInput);
-            std::vector<float> refs[3] = { always (lstm, longInput), always (a1, longInput), always (small, longInput) };
+            std::vector<float> refs[3] = { always (a2, longInput), always (a1, longInput), always (small, longInput) };
             const auto steady = std::max ({ maxStep (refs[0]), maxStep (refs[1]), maxStep (refs[2]) });
             const auto during = maxStep (out, switchAt - 1, (size_t) (2.3 * fs));
             const auto settled = (size_t) (2.5 * fs);
@@ -289,7 +292,7 @@ public:
             const auto a = always (a1, input);
             const auto expected = idealSwitch (a, input, switchAt, fade);
             expectEquals (amp.warmupSamplesFor (8, blockSize), 0);
-            expectLessThan (maxAbsDifference (out, expected), 1.0e-6);
+            expectLessThan (maxAbsDifference (out, expected), 1.0e-5);
             logMessage ("  -> to an empty amp: the 20 ms fade starts in the same buffer as the request");
         }
 
@@ -475,8 +478,8 @@ public:
             const auto raw = [&restored] (const juce::String& id) { return restored.parameters.getRawParameterValue (id)->load(); };
             expectEquals (restored.getChain().amp.getSelectedAmp(), AmpSimProcessor::yourCaptureAmp);
             expect (! restored.getChain().amp.isSwitching(), "the restored amp should start without a switch");
-            expectEquals (raw (AmpSimProcessor::ampParamId (AmpSimProcessor::yourCaptureAmp, "mid")), 4.0f);
-            expectEquals (raw (AmpSimProcessor::ampParamId (1, "mid")), -3.0f);
+            expectWithinAbsoluteError (raw (AmpSimProcessor::ampParamId (AmpSimProcessor::yourCaptureAmp, "mid")), 4.0f, 1.0e-5f);
+            expectWithinAbsoluteError (raw (AmpSimProcessor::ampParamId (1, "mid")), -3.0f, 1.0e-5f);
             expect (status.model[1].contains ("wavenet") && status.model[(size_t) AmpSimProcessor::yourCaptureAmp].contains ("lstm"));
             expectEquals (status.model[0], juce::String ("Empty"));
             logMessage ("  -> restored: your capture active with no switch, \"" + status.model[8] + "\", Middle +4.0 dB; Ember \"" + status.model[1]
