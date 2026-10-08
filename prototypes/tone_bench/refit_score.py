@@ -115,13 +115,81 @@ def loo(pools, names, start, tau):
     return st.median(trues), st.mean(trues), weights
 
 
+def grid_loo(pools, grids, make):
+    """Grid search over len(grids) parameters (make(values) -> weights), the training objective the mean true score of
+    the hard picks; leave-one-out. Returns (held-out median, held-out mean, the values fitted on all)."""
+    import itertools
+    combos = list(itertools.product(*grids))
+    table = np.array([[p.true[p.pick(make(c))] for p in pools] for c in combos])
+    held = [table[int(np.argmin(np.delete(table, i, axis=1).mean(axis=1))), i] for i in range(len(pools))]
+    return st.median(held), st.mean(held), combos[int(np.argmin(table.mean(axis=1)))]
+
+
+def study(raw):
+    """The low-dimensional refits, what S separates (the amp against Gain and cab), and two-stage amp rules."""
+    from scipy.stats import spearmanr
+    pools = [Pool(d, 8) for d in raw]
+    for p in pools:
+        p.terms["take"] = sum(v * p.terms[k] for k, v in CURRENT.items())
+    lam = list(np.round(np.arange(0.0, 3.01, 0.1), 2))
+    med, mean, c = grid_loo(pools, [lam], lambda c: dict(take=c[0]))
+    print(f"  S = E + l (the current take terms): leave-one-out median {med:.3f}, mean {mean:.3f} (l = {c[0]} on all)")
+    for x in ("hold", "slope", "nl", "attack", "erb", "erb_pre", "crest"):
+        med, mean, c = grid_loo(pools, [lam[::2], [0.0, 0.5, 1, 2, 4, 8, 16, 32]], lambda c, x=x: dict(take=c[0], **{x: c[1]}))
+        print(f"  S = E + l take + m {x}: leave-one-out median {med:.3f}, mean {mean:.3f} ({c} on all)")
+    for x in CURRENT:
+        med, mean, c = grid_loo(pools, [[0.0, 0.25, 0.5, 1.0, 1.5, 2.0, 3.0]], lambda c, x=x: {**CURRENT, x: CURRENT[x] * c[0]})
+        print(f"  the current S with {x}'s weight times f: leave-one-out median {med:.3f}, mean {mean:.3f} (f = {c[0]} on all)")
+    amps = raw[0]["amps"]
+    for n in (3, 8):
+        ps = [Pool(d, n) for d in raw]
+        total, within, amp_err, rho, right = [], [], [], [], 0
+        for p in ps:
+            sc = p.score(CURRENT)
+            k, b = int(np.argmin(sc)), int(np.argmin(p.true))
+            sel = np.flatnonzero(p.slot == p.slot[b])
+            kk = sel[int(np.argmin(sc[sel]))]
+            total.append(p.true[k] - p.true[b])
+            within.append(p.true[kk] - p.true[b])
+            amp_err.append(p.true[k] - p.true[kk])
+            right += p.slot[k] == p.slot[b]
+            rho.append(spearmanr([sc[p.slot == a].min() for a in range(n)], [p.true[p.slot == a].min() for a in range(n)]).correlation)
+        print(f"  {n} amps: S's pick over the pool's best {st.mean(total):.3f} (mean): Gain and cab within the best amp {st.mean(within):.3f}, "
+              f"the amp {st.mean(amp_err):.3f}; the best amp in {right} of {len(ps)}; Spearman of the amps' best S against their best "
+              f"true score: median {st.median(rho):.2f}")
+    import collections
+    print("  the pool's best amp:", collections.Counter(amps[p.slot[int(np.argmin(p.true))]] for p in pools).most_common())
+    print("  S's amp:", collections.Counter(amps[p.slot[p.pick(CURRENT)]] for p in pools).most_common())
+    gaps = [sorted(p.true[p.slot == a].min() for a in range(8))[1] - p.true.min() for p in pools]
+    print(f"  the best amp's margin over the next best, in truth: median {st.median(gaps):.3f}")
+
+    def two_stage(p, key):
+        sc = p.score(CURRENT)
+        a = min(range(8), key=lambda a: key(p, sc, a))
+        sel = np.flatnonzero(p.slot == a)
+        return p.true[sel[int(np.argmin(sc[sel]))]]
+    rules = {"S": lambda p, sc, a: sc[p.slot == a].min(),
+             "the old score": lambda p, sc, a: (p.terms["spectral"] + 0.5 * p.terms["nl"])[p.slot == a].min(),
+             "the mean of its 3 best S": lambda p, sc, a: np.sort(sc[p.slot == a])[:3].mean()}
+    for t in ("spectral", "nl", "attack", "crest", "erb"):
+        rules[t] = lambda p, sc, a, t=t: p.terms[t][p.slot == a].min()
+    for name, key in rules.items():
+        v = [two_stage(p, key) for p in pools]
+        print(f"  the amp by {name}, Gain and cab by S: median {st.median(v):.3f}, mean {st.mean(v):.3f}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--split", default="dev")
     ap.add_argument("--amps", type=int, default=8)
     ap.add_argument("--tau", type=float, nargs="*", default=[0.1])
     ap.add_argument("--sets", default="current,hold,slope,nl,hold+slope,drop")
+    ap.add_argument("--study", action="store_true", help="the low-dimensional refits and what S separates (eight amps)")
     args = ap.parse_args()
+    if args.study:
+        raw = [json.load(open(p)) for p in sorted(glob.glob(str(POOL8 / "*.json")))]
+        study([d for d in raw if d["usable"] and d["split"] == args.split])
+        return
     pools = [Pool(json.load(open(p)), args.amps) for p in sorted(glob.glob(str(POOL8 / "*.json")))]
     pools = [p for p in pools if p.usable and json.load(open(POOL8 / f"{p.id}.json"))["split"] == args.split]
     print(f"{len(pools)} pools ({args.split}, {args.amps} amps, {len(pools[0].true)} candidates each)")
@@ -143,7 +211,9 @@ def main():
             w = fit(pools, names, CURRENT, tau)
             med_in, mean_in = judge(pools, w)
             med, mean, ws = loo(pools, names, CURRENT, tau)
-            print(f"  tau {tau}: {name}: fitted on all {', '.join(f'{k} {v:.2f}' for k, v in w.items())}: in-sample median {med_in:.3f}; "
+            l_cur = softmin_loss(pools, names, np.array([CURRENT.get(k, 0.0) for k in names]), tau)
+            l_fit = softmin_loss(pools, names, np.array([w[k] for k in names]), tau)
+            print(f"  tau {tau}: {name}: soft-min loss {l_cur:.4f} (current) -> {l_fit:.4f}; fitted on all {', '.join(f'{k} {v:.2f}' for k, v in w.items())}: in-sample median {med_in:.3f} (mean {mean_in:.3f}); "
                   f"leave-one-out median {med:.3f}, mean {mean:.3f}")
 
 

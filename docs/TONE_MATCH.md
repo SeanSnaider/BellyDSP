@@ -793,6 +793,41 @@ The renders scale with the take, so with a 30 s take the wide search over eight 
 
 C++: `take::scoreOf` (S from a candidate's measures; `take::score` calls it), and `ToneMatcher::match` with the take's notes paired before the grid. When the wide search is on, every candidate keeps its take measures and S_pre, and the pedals go in front of the amps in both lists. Golden: `tone_match.py take-golden` adds the wide search over the three built-ins and over every content gain set. The C++ finds the prototype's amp, Gain, cab, pedal, and post-compressor decision, with the same number of candidates, renders, and fitted candidates, and S within 0.003 (29.2004 against 29.2013, 26.6209 against 26.6235). The earlier goldens didn't change: the fixture's other values are byte-identical.
 
+### Round 3: the score with eight amps (the gate failed)
+
+2026-10-08 (ASSUMPTIONS TM86 to TM88). The plan above was to refit the take-aware score S on candidate pools over all eight amps, then gate it three ways. Gate 1, the pools, failed. No refit, with these terms, picks better than today's S on the eight-amp pools, let alone the 0.437 it reached on the three-amp pools. So the matcher wasn't run on DEV or TEST (gates 2 and 3), and nothing changed in the app.
+
+**The pools** (`tone_bench/pool8.py`). These are Round 2's pools over every built-in gain set: each amp at Gain -24 to +24 dB in 4 dB steps, the screen's four best cabs, and the tone and match EQ fitted as the matcher fits them. That's 416 candidates per DEV case, each with its true score and every term of S, computed as `tone_match.match` computes it. Per render, the paired notes' attack, level, and envelope profile are kept too, so new terms can be tried. The take-aware score on the three original amps' part of these pools gives 0.437, as in Round 2, so the pools reproduce.
+
+| DEV pools, median (mean) | three amps | eight amps |
+|---|---|---|
+| the pool's best | 0.395 | 0.376 |
+| the old score's pick | 0.471 | 0.519 (0.534) |
+| S's pick | **0.437** (0.486) | **0.471** (0.515) |
+
+**The refits** (`tone_bench/refit_score.py`). All five weights were fitted as in Round 2: the soft-min of the true score, nonnegative weights, the softmax temperature a fraction tau of each case's own spread of S, Nelder-Mead on the log weights with restarts. The fits lower the in-sample mean (0.515 to 0.493 at tau = 0.02) but don't carry over to held-out cases. Leave-one-out gave a median of 0.498 to 0.510 (mean 0.521 to 0.543) for tau from 0.01 to 0.3. Dropping one term and refitting the other four, the best was without flux, at 0.466 (0.506), barely past today's S and nowhere near 0.437. Smaller fits were tried too, with grid searches judged by leave-one-out:
+
+| Refit (leave-one-out on DEV) | median | mean |
+|---|---|---|
+| today's take terms scaled together (one weight) | 0.469 | 0.517 |
+| plus one more term, two weights: the attack again, D_erb, D_erb without the EQ, crest, the old distortion distance | 0.471 to 0.508 | 0.518 to 0.533 |
+| plus *hold*, the notes' envelope after the attack (15 to 300 ms; sag, compression, bloom) | 0.490 | 0.525 |
+| plus *slope*, how the notes' level follows the player's picking (compression and drive flatten it) | 0.502 | 0.524 |
+| today's S with one weight rescaled (the attack, the spread) | 0.495 to 0.497 | 0.524 to 0.531 |
+
+On these 30 cases today's weights are already about as good as this family of scores gets. The two new forms (hold, slope) were fitted to weight 0 or made it worse.
+
+**What S can and can't separate.** On the pools, S's pick misses the best candidate by 0.047 on average with three amps and 0.101 with eight. The split:
+
+- *Gain and cab within the right amp.* S is about as good with eight amps (0.033) as with three (0.028).
+- *Choosing the amp.* This is where it fails. With three amps S chose the best one in 21 of 30 cases, and the wrong choice cost 0.019. With eight it chooses the best one in 5 of 30, and the wrong choice costs 0.068.
+
+S ranks the amps broadly right: the Spearman correlation of each amp's best S with its best true score has a median of 0.75. But the amps are close in truth: the best amp beats the next by a median of 0.019. The pool's best amp is Ember 8, Quartz 6, Glass 4, Comet 4, Lantern 3, Forge 3, Monolith 1, Basalt 1. S's choice is Lantern 8, Basalt 5, Ember 4, Forge 4, Monolith 3, Glass 2, Quartz 2, Comet 2. So it over-picks Lantern and Basalt and under-picks Quartz and Comet. The measures S is built from (whole-signal flux and crest, the notes' attack and level spread, the long-term spectrum) differ between these voicings by less than they differ with how the take was played.
+
+**One lead, not tuned.** Choosing the amp by the old score, then the Gain and cab by S within it, picks 0.460 (mean 0.495) on the eight-amp pools, better than S alone (0.471, 0.515). It's still short of 0.437, and it was the best of eight amp rules tried on DEV, so it would need its own test. The others, the amp by the mean of its 3 best S, by the spectral error, by the distortion distance, or by the attack, crest, or D_erb alone, picked 0.471 to 0.511.
+
+**What's left.** Telling eight close voicings apart from a play-along take needs measures that see the voicing rather than the playing. These are the per-note measures Round 2's score dropped because they added nothing on three amps: harmonicity, and the per-note spectrum at matched input levels. The measures need trying before the weights do, and on pools with pedal variants, since pedals change what the amp is fed. A cheap stopgap is to search fewer amps by default (the three built-ins, where S is reliable) and leave the others to the player's choice. That's a product decision for Sean, not something the benchmark can settle.
+
 ## Not verified (only Sean can)
 
 - How a match sounds, on anything. Every number here is a measurement on synthetic guitars.
