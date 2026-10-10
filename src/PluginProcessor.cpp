@@ -993,7 +993,7 @@ void AmpSimProcessor::setStateInformation (const void* data, int sizeInBytes)
 
         const auto path = state.getProperty (modelPathKey (s)).toString();
         const auto local = juce::File::isAbsolutePath (path) ? juce::File (path) : juce::File(); // not the other OS's paths
-        const auto moved = local != juce::File() ? presets::bundledElsewhere (local) : juce::File();
+        const auto moved = local != juce::File() ? presets::bundledElsewhere (local) : presets::bundledElsewhere (path);
 
         if (local.existsAsFile())
             loadModelIfChanged (s, local);
@@ -1026,7 +1026,7 @@ void AmpSimProcessor::setStateInformation (const void* data, int sizeInBytes)
         const auto local = juce::File::isAbsolutePath (path) ? juce::File (path) : juce::File(); // not the other OS's paths
         if (local.existsAsFile() || local.isDirectory())
             loadCabIR (m, local);
-        else if (const auto moved = local != juce::File() ? presets::bundledElsewhere (local) : juce::File(); moved.exists())
+        else if (const auto moved = local != juce::File() ? presets::bundledElsewhere (local) : presets::bundledElsewhere (path); moved.exists())
             loadCabIR (m, moved); // a built-in IR saved by a copy of the app installed somewhere else
         else
             startCabRequest (m, "Saved IR is missing: " + path, true);

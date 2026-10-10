@@ -764,6 +764,26 @@ juce::File bundledElsewhere (const juce::File& savedPath)
     return {};
 }
 
+juce::File bundledElsewhere (const juce::String& savedPath)
+{
+    // The part after the last "/content/" on the saved path, under this copy's content folder. Found 2026-10-10 by the
+    // Windows CI: a state saved on a Mac with a built-in gain set ("/Applications/BellyDSP.app/.../content/models/
+    // Monolith/gainset.json") lost that amp on Windows, where the File overload never sees an absolute path.
+    if (! isSavedAbsolutePath (savedPath))
+        return {};
+    const auto factory = libraryRoot ("factory");
+    const auto marker = "/" + factory.getFileName() + "/";
+    const auto normalised = savedPath.replaceCharacter ('\\', '/');
+    const auto at = normalised.lastIndexOf (marker);
+    if (at < 0)
+        return {};
+    const auto tail = normalised.substring (at + marker.length());
+    if (tail.isEmpty() || tail.contains ("../"))
+        return {};
+    const auto candidate = factory.getChildFile (tail);
+    return candidate.exists() ? candidate : juce::File();
+}
+
 juce::File defaultFolder()
 {
     return platform::userDataFolder().getChildFile ("presets");

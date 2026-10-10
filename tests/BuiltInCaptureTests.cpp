@@ -278,9 +278,34 @@ public:
                 loaded.add (presets::builtInAmpName (a));
             }
             expect (presets::bundledElsewhere (juce::File ("/nowhere/content/models/Nope.nam")) == juce::File());
+
+            // The other OS's paths, as text (found 2026-10-10 by the Windows CI: a Mac path read on Windows isn't a
+            // juce::File there, so a built-in saved on one OS was lost on the other). Here, on whichever OS runs the
+            // test, a state with Glass and Monolith saved by an install on the other one finds both in this copy.
+            const juce::String otherOs = juce::File::getSeparatorChar() == '/' ? "C:\\Program Files\\BellyDSP\\content\\models\\"
+                                                                              : "/Applications/BellyDSP.app/Contents/Resources/content/models/";
+            const auto sep = juce::String (juce::File::getSeparatorChar() == '/' ? "\\" : "/");
+            xml->setAttribute (AmpSimProcessor::modelPathKey (0).toString(), otherOs + "Glass" + sep + "gainset.json");
+            xml->setAttribute (AmpSimProcessor::modelPathKey (2).toString(), otherOs + "Monolith" + sep + "gainset.json");
+            juce::MemoryBlock fromOtherOs;
+            juce::AudioProcessor::copyXmlToBinary (*xml, fromOtherOs);
+            AmpSimProcessor o;
+            o.setStateInformation (fromOtherOs.getData(), (int) fromOtherOs.getSize());
+            waitForLoads (o);
+            for (const int a : { 0, 2 })
+            {
+                expectEquals (modelPath (o, a), presets::builtInCapture (a).getFullPathName());
+                expect (! o.getStatus().modelError[(size_t) a], o.getStatus().model[(size_t) a]);
+            }
+            expect (presets::bundledElsewhere (otherOs + "Nope" + sep + "gainset.json") == juce::File());
+            expect (presets::bundledElsewhere (otherOs + ".." + sep + ".." + sep + "content" + sep + "models" + sep + "Glass" + sep + "gainset.json")
+                    == presets::builtInCapture (0)); // the last "content" folder counts
+            expect (presets::bundledElsewhere (juce::String ("models/Glass/gainset.json")) == juce::File()); // not an absolute path
+            expect (presets::bundledElsewhere (otherOs + "Glass" + sep + ".." + sep + ".." + sep + "secret.txt") == juce::File());
             logMessage ("  -> the menu on Ember: " + items.joinIntoString (" | ") + "; a capture of your own loaded as amp 9 and played; removed from the menu: Glass plays, "
                         "amp 9 saved as an empty path and empty after a restore; a state without amps 4 to 8, Monolith saved by another copy of the app and "
-                        "Ember as its old single file: " + loaded.joinIntoString (", ") + " all loaded from this copy's content folder");
+                        "Ember as its old single file: " + loaded.joinIntoString (", ") + " all loaded from this copy's content folder; Glass and Monolith "
+                        "saved as \"" + otherOs + "...\" (the other OS) found here too");
         }
 
         beginTest ("the amp shelf: the eight built-in amps in order (each with its description), a click plays one, hovering names it, your capture's mini after a gap once loaded, each amp keeps its own knobs; snapshots with each amp playing");

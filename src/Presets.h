@@ -219,6 +219,11 @@ bool isBundled (const juce::File& file);
 /// paths, so a built-in capture saved by build/BellyDSP_artefacts/... is still found by /Applications/BellyDSP.app.
 juce::File bundledElsewhere (const juce::File& savedPath);
 
+/// The same for a saved path as text, from either OS (isSavedAbsolutePath): a path a Mac saved isn't a juce::File on
+/// Windows (nor the other way round), so this works on the text, with either separator. A state or preset made on
+/// one OS keeps its built-in amps and IRs on the other.
+juce::File bundledElsewhere (const juce::String& savedPath);
+
 bool save (const juce::var& preset, const juce::File& file);
 juce::var load (const juce::File& file, juce::String& error);
 } // namespace presets
