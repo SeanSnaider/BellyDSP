@@ -102,6 +102,8 @@ Built on branch `website` (from `bellydsp`), 2026-10-04: the site in `site/` (Ov
 
 Add a dated line here when something meaningful lands or a decision changes.
 
+2026-10-10: Sean's Windows PC is away for repair. CPU.1, CPU.2, and live ASIO checks wait for it. Meanwhile `.github/workflows/windows-full.yml` (by hand, on the public repo) runs the whole suite with nothing skipped and the CPU benchmark on GitHub's 4-vCPU Windows runner, and RELEASING step 0 accepts it in place of the PC, with live ASIO playback noted as unchecked.
+
 2026-10-08: The CPU saver (Sean's choice; BUILD_PLAN "CPU"): `cpu_saver`, off by default, a global switch on the Output page. On: switched-off drives stop and warm up 200 ms unheard when switched on, the drives at 2x, the Gain on its nearest step. Measured flat out: defaults 5.6 -> 3.7% of the deadline, the factory presets 30 to 52% less, the heaviest 21.6 -> 12.3%; no clicks on any transition; off, bit-identical to before; real-time test 0 / 0 / 0 with it toggling. The CPU budget is now measured on its own thread (flat out, user-interactive; device-paced runs printed), with limits from six quiet and loaded runs. Task CPU.2.
 2026-10-08: The tone match score with eight amps: the gate failed at the pools (docs/TONE_MATCH.md, "Round 3: the score with eight amps"). Refitting the take-aware score on candidate pools over every built-in amp didn't beat today's weights by leave-one-out on DEV (0.471 on the eight-amp pools; Round 2's 0.437 on three). S still picks Gain and cab well, but it chooses the right amp of eight in only 5 of 30 cases. Nothing changed in the app. Open question for Sean: search fewer amps by default, or wait for voicing-sensitive measures.
 

@@ -1,0 +1,106 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Sean Snaider
+
+# Windows, everything: the whole test suite with nothing skipped, then the CPU benchmark, on GitHub's Windows
+# runner. It stands in for Sean's Windows PC (docs/RELEASING.md step 0) while that PC is away (2026-10-10): the
+# runner is a real x64 Windows machine, 4 vCPUs and several times slower than a dev Mac, so it also serves as the
+# "weaker machine" the CPU budget is about (BUILD_PLAN "CPU"). What it can't replace: playing live through an ASIO
+# interface (no audio device here), which stays on Sean's list.
+#
+# By hand only: Actions tab > "Windows full suite" > Run workflow. On the public repo standard runners are free;
+# on the private repo Windows minutes count double, and this takes one to three hours.
+#
+# The logs (the suite's, the benchmark's, and build/proof's summary) are kept as an artifact for 30 days.
+
+name: Windows full suite
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  full:
+    runs-on: windows-2022
+    timeout-minutes: 300
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Submodule cache key (the pinned commits)
+        id: subkey
+        shell: bash
+        run: echo "key=submodules-${{ runner.os }}-$(git ls-tree -r HEAD third_party | git hash-object --stdin)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the submodules from the cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            .git/modules
+            third_party
+          key: ${{ steps.subkey.outputs.key }}
+
+      - name: Fetch the submodules (with retries)
+        shell: bash
+        run: tools/ci/fetch_submodules.sh
+
+      - name: Configure (Visual Studio 2022, x64; the same flags as the Windows build, without the updater)
+        shell: bash
+        env:
+          MSYS_NO_PATHCONV: "1" # see windows.yml: Git's bash would turn "-O2"-style flags written with '/' into paths
+        run: |
+          cmake -S . -B build-release -G "Visual Studio 17 2022" -A x64 \
+            -DCMAKE_C_FLAGS_RELEASE="-O2 -Ob2 -DNDEBUG -Zi" \
+            -DCMAKE_CXX_FLAGS_RELEASE="-O2 -Ob2 -DNDEBUG -Zi" \
+            -DCMAKE_EXE_LINKER_FLAGS_RELEASE="-DEBUG -OPT:REF -OPT:ICF -INCREMENTAL:NO" \
+            -DAMPSIM_UPDATER=OFF \
+            -DAMPSIM_WITH_ASIO=ON
+
+      - name: Build the tests
+        run: cmake --build build-release --config Release --parallel --target ampsim_tests
+
+      - name: The whole suite, nothing skipped
+        shell: bash
+        env:
+          AMPSIM_CPU_BUDGET_SCALE: "4"   # the runner against a dev Mac (tests/TestHelpers.h), as in windows.yml
+          AMPSIM_NETWORK_TESTS: "1"      # the separation tests download Demucs' pinned weights (size and SHA-256 checked)
+        run: |
+          mkdir -p logs
+          set -o pipefail
+          build-release/ampsim_tests_artefacts/Release/ampsim_tests.exe --proof-dir build-release/proof 2>&1 | tee logs/suite.txt
+
+      - name: The CPU benchmark (30 s per rig; runs even if a test failed)
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p logs
+          build-release/ampsim_tests_artefacts/Release/ampsim_tests.exe --bench 30 2>&1 | tee logs/bench.txt
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Windows full suite"
+            echo '```'
+            grep -E "checks passed|^FAIL|!!! Test" logs/suite.txt | tail -40 || true
+            echo '```'
+            echo "## CPU benchmark"
+            echo '```'
+            cat logs/bench.txt 2>/dev/null | tail -60 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          cp build-release/proof/summary.txt logs/ 2>/dev/null || true
+
+      - name: Keep the logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-full-suite-logs
+          path: logs/
+          retention-days: 30
