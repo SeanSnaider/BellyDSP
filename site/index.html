@@ -106,9 +106,35 @@
           </ul>
         </div>
         <div class="card">
+          <h3>Match tone</h3>
+          <p>Load a song, pick a section where the lead guitar stands out, and BellyDSP sets the amp, its Gain and tone, the cab, and an EQ to get close to that recording. It can pull the guitar out of a full mix first, and you can play the part along with the song (with a count-in) so it compares your notes with the recording's.</p>
+          <p>Switch between the song, the match, and your current sound before you apply it. Applying is one undo step.</p>
+        </div>
+        <div class="card">
           <h3>A real-time audio engine</h3>
           <p>Zero added latency. The one exception is opt-in: the flanger's through-zero setting delays the signal by 5 ms while it's switched on, and says so. The audio thread never allocates memory, frees it, or waits on a lock, and an automated test checks that for every feature. With every block on, it uses about a quarter of the time a 128-sample buffer allows on the developer's Apple silicon Mac.</p>
           <p>It runs at 48 kHz, the rate NAM captures are trained at.</p>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="next">
+      <div class="section-head">
+        <h2 id="next">Coming in the next version</h2>
+        <p class="dim">In development and on GitHub, but not in the download yet. When it ships, BellyDSP updates itself.</p>
+      </div>
+      <div class="grid three">
+        <div class="card">
+          <h3>Eight amps, one at a time</h3>
+          <p>Five more built-in amps, Lantern, Basalt, Comet, Forge, and Quartz, join Glass, Ember, and Monolith, each with a head of its own. Pick one from a shelf of small heads; each remembers its own knobs. Only the amp you hear runs, so switching takes about a tenth of a second and the amp uses far less CPU.</p>
+        </div>
+        <div class="card">
+          <h3>A closer Match tone</h3>
+          <p>After you play along, it compares your notes with the recording's one by one, tries pedals and a compressor in front of the amp, and adds a fine correction curve after the cab. It can also clean the rest of the band out of the recording using your take. Measured on BellyDSP's own test set of hidden rigs, it gets closer than the current version.</p>
+        </div>
+        <div class="card">
+          <h3>Lighter on slower computers</h3>
+          <p>The amp models run about twice as fast. A CPU saver switch for older machines idles the drives you aren't using, runs them at lower oversampling, and steps the Gain, cutting the app's CPU by about a third to a half.</p>
         </div>
       </div>
     </section>
