@@ -145,9 +145,9 @@ public:
             auto matchNow = [&] {
                 page.startMatch();
                 expect (session.isMatching());
-                expect (session.waitForMatch (180000));
+                expect (session.waitForMatch ((int) (180000 * cpuBudgetScale()))); // a slow machine (the Windows runner, 2026-10-10) needs longer
                 expect (session.hasResult(), session.getError());
-                expect (session.waitForCompare (60000));
+                expect (session.waitForCompare ((int) (60000 * cpuBudgetScale())));
                 page.refresh();
             };
             auto summary = [&] {
