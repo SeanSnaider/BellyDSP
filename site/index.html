@@ -47,7 +47,7 @@
              srcset="assets/img/amp-glass-1280.webp 1280w, assets/img/amp-glass-1920.webp 1920w"
              sizes="(min-width: 1184px) 1120px, calc(100vw - 32px)"
              width="1280" height="760" fetchpriority="high"
-             alt="The BellyDSP window on the Amp page: the Glass amp head with its seven knobs, the output spectrum below it, the input, gate, and output controls, and the signal chain along the bottom.">
+             alt="The BellyDSP window on the Amp page: the shelf of eight small amp heads along the top, the Glass amp head with its seven knobs, the output spectrum below it, the input, gate, and output controls, and the signal chain along the bottom.">
       </figure>
     </div>
 
@@ -66,9 +66,9 @@
       </div>
       <div class="grid two">
         <div class="card">
-          <h3>Three amp slots, always running</h3>
-          <p>Each slot plays a NAM capture (any amp-only <code>.nam</code> file) and stays running in the background, so switching between them is instant and click-free, from the panel or a MIDI footswitch (program change 1, 2, 3). Each slot is loudness-matched, calibrated to its capture's recorded input level, and has its own trims and tone controls.</p>
-          <p>Every slot comes with a built-in capture, clean, crunch, and high gain, so there's something to play the moment it opens. For now they're trained from BellyDSP's own amp model; captures of real amps will replace them.</p>
+          <h3>Eight amps, one at a time</h3>
+          <p>Glass, Ember, Monolith, Lantern, Basalt, Comet, Forge, and Quartz, from clean to a saturated lead, each with a head of its own. Pick one from the shelf of small heads at the top of the Amp page, or with a MIDI footswitch (program change 1 to 8). Each amp remembers its own knobs, and its Gain blends five captures across the knob, so it changes how hard the amp distorts, not just how loud it is.</p>
+          <p>Only the amp you hear runs; a switch fades the new one in about a tenth of a second later, without a click. The amps are NAM captures trained from BellyDSP's own amp models, not captures of real amps. Load your own <code>.nam</code> file as a ninth.</p>
         </div>
         <div class="card">
           <h3>A cab with mics you can move</h3>
@@ -107,12 +107,12 @@
         </div>
         <div class="card">
           <h3>Match tone</h3>
-          <p>Load a song, pick a section where the lead guitar stands out, and BellyDSP sets the amp, its Gain and tone, the cab, and an EQ to get close to that recording. It can pull the guitar out of a full mix first, and you can play the part along with the song (with a count-in) so it compares your notes with the recording's.</p>
+          <p>Load a song, pick a section where the lead guitar stands out, and BellyDSP sets the amp, its Gain and tone, a pedal and compressor if they help, the cab, and a fine correction curve to get close to that recording. It can pull the guitar out of a full mix first. Play the part along with the song (with a count-in) and it compares your notes with the recording's one by one, and can use them to clean the rest of the band out of the recording.</p>
           <p>Switch between the song, the match, and your current sound before you apply it. Applying is one undo step.</p>
         </div>
         <div class="card">
           <h3>A real-time audio engine</h3>
-          <p>Zero added latency. The one exception is opt-in: the flanger's through-zero setting delays the signal by 5 ms while it's switched on, and says so. The audio thread never allocates memory, frees it, or waits on a lock, and an automated test checks that for every feature. With every block on, it uses about a quarter of the time a 128-sample buffer allows on the developer's Apple silicon Mac.</p>
+          <p>Zero added latency. The one exception is opt-in: the flanger's through-zero setting delays the signal by 5 ms while it's switched on, and says so. The audio thread never allocates memory, frees it, or waits on a lock, and an automated test checks that for every feature. The default rig uses about 6% of the time a 128-sample buffer allows on the developer's Apple silicon Mac, and every block on at its heaviest about 22%. A CPU saver switch on the Output page helps older computers.</p>
           <p>It runs at 48 kHz, the rate NAM captures are trained at.</p>
         </div>
       </div>
@@ -120,17 +120,17 @@
 
     <section aria-labelledby="next">
       <div class="section-head">
-        <h2 id="next">Coming in the next version</h2>
-        <p class="dim">In development and on GitHub, but not in the download yet. When it ships, BellyDSP updates itself.</p>
+        <h2 id="next">New in 0.2.0</h2>
+        <p class="dim">Already installed? BellyDSP updates itself. The full list is on the download page.</p>
       </div>
       <div class="grid three">
         <div class="card">
           <h3>Eight amps, one at a time</h3>
-          <p>Five more built-in amps, Lantern, Basalt, Comet, Forge, and Quartz, join Glass, Ember, and Monolith, each with a head of its own. Pick one from a shelf of small heads; each remembers its own knobs. Only the amp you hear runs, so switching takes about a tenth of a second and the amp uses far less CPU.</p>
+          <p>Five more built-in amps, Lantern, Basalt, Comet, Forge, and Quartz, join Glass, Ember, and Monolith, each with a head of its own. Pick one from a shelf of small heads; each remembers its own knobs. Only the amp you hear runs, so the amp section uses far less CPU.</p>
         </div>
         <div class="card">
           <h3>A closer Match tone</h3>
-          <p>After you play along, it compares your notes with the recording's one by one, tries pedals and a compressor in front of the amp, and adds a fine correction curve after the cab. It can also clean the rest of the band out of the recording using your take. Measured on BellyDSP's own test set of hidden rigs, it gets closer than the current version.</p>
+          <p>After you play along, it compares your notes with the recording's one by one, tries pedals and a compressor in front of the amp, and adds a fine correction curve after the cab. It can also clean the rest of the band out of the recording using your take. Measured on BellyDSP's own test set of hidden rigs, it gets closer than 0.1.0 did.</p>
         </div>
         <div class="card">
           <h3>Lighter on slower computers</h3>
@@ -149,12 +149,12 @@
            switch. Use <audio controls preload="none"> with a caption saying what's playing. No embeds. -->
       <div class="gallery">
         <figure>
-          <a href="assets/img/amp-ember-1280.webp"><img src="assets/img/amp-ember-640.webp" srcset="assets/img/amp-ember-640.webp 640w, assets/img/amp-ember-1280.webp 1280w" sizes="(min-width: 720px) 50vw, 100vw" width="640" height="380" loading="lazy" decoding="async" alt="The Amp page with the Ember head selected: a red amp with a gold script badge and seven knobs."></a>
-          <figcaption>Ember, the crunch slot. Each slot has its own head.</figcaption>
+          <a href="assets/img/amp-lantern-1280.webp"><img src="assets/img/amp-lantern-640.webp" srcset="assets/img/amp-lantern-640.webp 640w, assets/img/amp-lantern-1280.webp 1280w" sizes="(min-width: 720px) 50vw, 100vw" width="640" height="380" loading="lazy" decoding="async" alt="The Amp page with Lantern selected on the shelf: a tweed amp with a brown panel, cream knobs, and a cream script badge on an oxblood grille."></a>
+          <figcaption>Lantern, power-amp breakup. Every amp has its own head.</figcaption>
         </figure>
         <figure>
-          <a href="assets/img/amp-monolith-1280.webp"><img src="assets/img/amp-monolith-640.webp" srcset="assets/img/amp-monolith-640.webp 640w, assets/img/amp-monolith-1280.webp 1280w" sizes="(min-width: 720px) 50vw, 100vw" width="640" height="380" loading="lazy" decoding="async" alt="The Amp page with the Monolith head selected: a black amp with a grille and an emerald-lit badge."></a>
-          <figcaption>Monolith, the high-gain slot, with the live output spectrum.</figcaption>
+          <a href="assets/img/amp-comet-1280.webp"><img src="assets/img/amp-comet-640.webp" srcset="assets/img/amp-comet-640.webp 640w, assets/img/amp-comet-1280.webp 1280w" sizes="(min-width: 720px) 50vw, 100vw" width="640" height="380" loading="lazy" decoding="async" alt="The Amp page with Comet selected on the shelf: a navy amp with blue knobs and a slanted ice-white badge with streaks behind it."></a>
+          <figcaption>Comet, a lead with the mids forward, with the live output spectrum.</figcaption>
         </figure>
         <figure>
           <a href="assets/img/cab-1280.webp"><img src="assets/img/cab-640.webp" srcset="assets/img/cab-640.webp 640w, assets/img/cab-1280.webp 1280w" sizes="(min-width: 720px) 50vw, 100vw" width="640" height="380" loading="lazy" decoding="async" alt="The Cab page: the built-in cab list on the left, a speaker with mic markers in the middle, and the controls for mics A and B on the right."></a>
@@ -196,7 +196,7 @@
         </div>
         <div>
           <h2>Bring your own tones</h2>
-          <p class="dim">The amps are NAM captures: load any amp-only <code>.nam</code> file into a slot, or make your own with NAM's open trainer. The cab takes any impulse response as a <code>.wav</code> file. Presets remember which files they use and find them again if you move them.</p>
+          <p class="dim">The amps are NAM captures: load any amp-only <code>.nam</code> file as your own amp, or make your own with NAM's open trainer. The cab takes any impulse response as a <code>.wav</code> file. Presets remember which files they use and find them again if you move them.</p>
           <p class="dim">The built-in IRs are public domain (CC0). The built-in captures are Sean's, under CC BY 4.0.</p>
         </div>
       </div>

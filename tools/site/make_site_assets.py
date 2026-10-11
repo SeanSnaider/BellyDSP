@@ -32,9 +32,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 # site name: (proof snapshot, widths). The first is the overview's hero.
 SHOTS = {
-    "amp-glass": ("editor_amp_glass.png", (1280, 1920)),
-    "amp-ember": ("editor_amp_ember.png", (640, 1280)),
-    "amp-monolith": ("editor_amp_monolith.png", (640, 1280)),
+    # The Amp page with its shelf of eight amps (0.2.0; the Built-in captures tests write them to amp_shelf/).
+    "amp-glass": ("amp_shelf/editor_amp_glass.png", (1280, 1920)),
+    "amp-lantern": ("amp_shelf/editor_amp_lantern.png", (640, 1280)),
+    "amp-comet": ("amp_shelf/editor_amp_comet.png", (640, 1280)),
     "cab": ("editor_cab_builtin.png", (640, 1280)),
     "harmonizer": ("editor_harmonizer.png", (640, 1280)),
     "bloom": ("editor_bloom.png", (640, 1280)),
