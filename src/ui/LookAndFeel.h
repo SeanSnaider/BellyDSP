@@ -8,7 +8,7 @@
 namespace ui
 {
 
-/// The GUI's one LookAndFeel, in the handoff's chrome: hairline borders on the background, emerald for
+/// The GUI's one LookAndFeel, in the handoff's chrome: hairline borders on the background, the orange accent for
 /// "on" and "selected" only, the toggle pill, outlined buttons like the top bar's Save, fields with a
 /// chevron, and menus on the surface colour. Everything reads its colours and type from theme::. The
 /// editor sets it on itself (its children inherit it) and on every menu it opens.
@@ -50,7 +50,7 @@ public:
     void drawAlertBox (juce::Graphics&, juce::AlertWindow&, const juce::Rectangle<int>& textArea, juce::TextLayout&) override;
     int getAlertWindowButtonHeight() override;
 
-    /// The keyboard focus ring for JUCE's own controls (buttons, combo boxes): 1 px emerald, 3 px outside
+    /// The keyboard focus ring for JUCE's own controls (buttons, combo boxes): 1 px orange (the accent), 3 px outside
     /// the control (handoff 5). None when a mouse click gave the focus (the CSS :focus-visible rule).
     std::unique_ptr<juce::FocusOutline> createFocusOutlineForComponent (juce::Component&) override;
 
