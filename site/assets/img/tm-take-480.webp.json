@@ -1,4 +1,4 @@
 {
-  "prompt": "Sourced, not generated: a BellyDSP app snapshot rendered by its own test suite (build/proof), resized and cropped by tools/site/make_site_assets.py (SHOTS: tm-take-480)",
-  "createdAt": "2026-10-13T07:10:21.087Z"
+  "prompt": "Sourced, not generated: a real BellyDSP app snapshot rendered by the test suite at 2x, build/proof/redesign/overlay_tone_match_take_recording.png (Match tone step 2, cropped to its panel), made 480 px wide WebP by tools/site/make_site_assets.py",
+  "createdAt": "2026-10-13T18:40:03.232Z"
 }

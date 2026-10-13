@@ -29,6 +29,8 @@ Since 2026-10-01 the build runs to completion without stopping for questions: ph
 
 Built on branch `website` (from `bellydsp`), 2026-10-04: the site in `site/` (Overview, Download, Stats), its data script and daily stats workflow, the Pages workflow, and a separate Windows update file in every release so updates and first installs are counted apart. `docs/WEBSITE.md` has how it all works; ASSUMPTIONS WEB1 to WEB19 the choices. Tested locally (`tools/site/test_site.py`, 15 tests; `tools/release/test_windows_update.py`, 7 tests; `tools/site/check_site.py`); the workflows, real counts, and the domain can't be checked until the public repo exists.
 
+Re-skinned to the redesigned app on 2026-10-13 (ASSUMPTIONS WEB20 to WEB23): the app's palette and orange accent, one radius scale, the heads as the stage dresses them, the main screen, Match tone's six-step page, the cab stage, the tuner and the harmonizer's inspector as the screenshots, the app icon as the tab icon, and the copy for the new layout (the board, the stage's shelf, Settings). `check_site.py` clean, `test_site.py` 15 of 15, no horizontal overflow at 320 to 1600 px; review captures in `.impeccable/review/site2/`.
+
 | # | Task | Done when |
 |---|---|---|
 | W.1 | Sean buys bellydsp.com (with WHOIS privacy) | The registrar shows it as his |

@@ -6,9 +6,11 @@
 <title>BellyDSP: a free guitar amp sim for macOS and Windows</title>
 <meta name="description" content="BellyDSP is a free, open-source guitar amp sim and multi-effects app for macOS and Windows: eight neural amps, a cab with movable mics, pedals and effects, and Match tone, which dials in the guitar from a song. Zero added latency.">
 <meta name="color-scheme" content="dark">
-<meta name="theme-color" content="#0b0c0c">
+<meta name="theme-color" content="#121212">
 <link rel="canonical" href="https://bellydsp.com/">
-<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
+<link rel="icon" href="favicon-192.png" type="image/png" sizes="192x192">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preload" href="assets/fonts/Geist-Regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="assets/img/head-glass-1400.webp" as="image" type="image/webp" imagesrcset="assets/img/head-glass-800.webp 800w, assets/img/head-glass-1400.webp 1400w" imagesizes="(min-width: 960px) 62vw, 92vw">
 <link rel="stylesheet" href="assets/css/site.css">
@@ -16,7 +18,10 @@
 <meta property="og:description" content="A free, open-source guitar amp sim and multi-effects app for macOS and Windows, with eight neural amps and Match tone.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://bellydsp.com/">
-<meta property="og:image" content="https://bellydsp.com/assets/img/amp-glass-1280.webp">
+<meta property="og:image" content="https://bellydsp.com/assets/img/main-1280.webp">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="760">
+<meta property="og:image:alt" content="The BellyDSP main screen: an amp head on a lit stage, the board of pedals under it, and the selected block's controls at the right.">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -63,7 +68,7 @@
       </div>
       <div class="hero-amp">
         <figure class="band-head">
-        <img src="assets/img/head-glass-800.webp" srcset="assets/img/head-glass-800.webp 800w, assets/img/head-glass-1400.webp 1400w" sizes="(min-width: 960px) 62vw, 92vw" width="1400" height="468" fetchpriority="high" decoding="async" alt="Glass as BellyDSP draws it: a cream amp head with a silver panel of seven knobs, Gain, Bass, Middle, Treble, Presence, Depth and Master, over a dark grille.">
+        <img src="assets/img/head-glass-800.webp" srcset="assets/img/head-glass-800.webp 800w, assets/img/head-glass-1400.webp 1400w" sizes="(min-width: 960px) 62vw, 92vw" width="1400" height="468" fetchpriority="high" decoding="async" alt="Glass as BellyDSP draws it: a silver amp head with seven chrome knobs, Gain, Bass, Middle, Treble, Presence, Depth and Master, and its pilot lamp lit, over a black grille lettered Glass.">
       </figure>
         <div class="amp-id">
           <h2 class="amp-name n-glass" id="h-glass">Glass</h2>
@@ -82,7 +87,7 @@
         <p class="note">Every amp's Gain blends five captures across the knob, so turning it up makes the amp distort harder, not just louder.</p>
         <p class="pc">Amp 2, program change 2</p>
       </div>
-      <figure class="band-head"><img src="assets/img/head-ember-800.webp" srcset="assets/img/head-ember-800.webp 800w, assets/img/head-ember-1400.webp 1400w" sizes="(min-width: 960px) 62vw, 92vw" width="1400" height="468" loading="lazy" decoding="async" alt="Ember: an oxblood amp head with a gold-trimmed black panel, cream knobs and a gold script badge on a woven grille."></figure>
+      <figure class="band-head"><img src="assets/img/head-ember-800.webp" srcset="assets/img/head-ember-800.webp 800w, assets/img/head-ember-1400.webp 1400w" sizes="(min-width: 960px) 62vw, 92vw" width="1400" height="468" loading="lazy" decoding="async" alt="Ember: an oxblood amp head with a gold-framed black panel of seven black knobs, its pilot lamp lit, and Ember in gold script on a woven grille."></figure>
     </div>
   </section>
 
@@ -94,7 +99,7 @@
         <p class="note">Each amp keeps its own knobs. Switch away and come back, and it's where you left it.</p>
         <p class="pc">Amp 3, program change 3</p>
       </div>
-      <figure class="band-head"><img src="assets/img/head-monolith-800.webp" srcset="assets/img/head-monolith-800.webp 800w, assets/img/head-monolith-1400.webp 1400w" sizes="(min-width: 960px) 62vw, 92vw" width="1400" height="468" loading="lazy" decoding="async" alt="Monolith: a black amp head with dark knobs and a slotted grille, its name on a plate with an emerald bar."></figure>
+      <figure class="band-head"><img src="assets/img/head-monolith-800.webp" srcset="assets/img/head-monolith-800.webp 800w, assets/img/head-monolith-1400.webp 1400w" sizes="(min-width: 960px) 62vw, 92vw" width="1400" height="468" loading="lazy" decoding="async" alt="Monolith: a black amp head with seven black knobs and a black grille, its name spaced out on a plate with an orange bar under it."></figure>
     </div>
   </section>
 
@@ -107,18 +112,18 @@
       <ol class="tm">
         <li>
           <h3>The song</h3>
-          <figure class="shot"><img src="assets/img/tm-song-720.webp" srcset="assets/img/tm-song-720.webp 720w, assets/img/tm-song-1440.webp 1440w" sizes="(min-width: 960px) 58vw, 92vw" width="720" height="377" loading="lazy" decoding="async" alt="The Target card on the Match tone page: a song's waveform with the section to match selected, the song level, and the switches to separate the guitar first and count in before Play."></figure>
+          <figure class="shot bare"><img src="assets/img/tm-song-640.webp" srcset="assets/img/tm-song-640.webp 640w, assets/img/tm-song-878.webp 878w" sizes="(min-width: 1300px) 682px, (min-width: 960px) 52vw, 92vw" width="878" height="592" loading="lazy" decoding="async" alt="Step 1 of the Match tone page, The song, playing: a song's waveform with an 8-second section selected, Stop, the song level, Count-in before Play, and Separate the guitar first."></figure>
           <p>Choose a song file and drag over the part you want. With Separate the guitar first on, it pulls the guitar out of the mix.</p>
         </li>
         <li>
-          <h3>Your take</h3>
-          <figure class="shot"><img src="assets/img/tm-take-480.webp" srcset="assets/img/tm-take-480.webp 480w, assets/img/tm-take-960.webp 960w" sizes="(min-width: 960px) 32vw, 92vw" width="480" height="460" loading="lazy" decoding="async" alt="The Your DI card while recording: Recording with the song, 3.0 s of 8.0, with the count-in, tempo, click and offset settings."></figure>
-          <p>Play the part along with it after a count-in. Your take lines up with the song, so it compares your notes with the recording's, one by one.</p>
+          <h3>Your DI</h3>
+          <figure class="shot bare"><img src="assets/img/tm-take-480.webp" srcset="assets/img/tm-take-480.webp 480w, assets/img/tm-take-686.webp 686w" sizes="(min-width: 1300px) 533px, (min-width: 960px) 41vw, 92vw" width="686" height="592" loading="lazy" decoding="async" alt="Step 2, Your DI, recording the take: Recording with the song, 3.0 s of 8.0, with the count-in, tempo, click and offset settings."></figure>
+          <p>Press Record and play the part along with it after a count-in, or choose a DI file. Your take lines up with the song, so it compares your notes with the recording's, one by one.</p>
         </li>
         <li class="tm-match">
           <h3>The match</h3>
-          <figure class="shot"><picture><source media="(max-width: 719px)" srcset="assets/img/tm-result-720.webp 720w, assets/img/tm-result-1440.webp 1440w" sizes="640px" width="720" height="309"><img src="assets/img/tm-match-1280.webp" srcset="assets/img/tm-match-1280.webp 1280w, assets/img/tm-match-2400.webp 2400w" sizes="(min-width: 1300px) 1240px, 94vw" width="1280" height="568" loading="lazy" decoding="async" alt="A finished match (on a phone, scroll it sideways): the closeness score, the amp, Gain, tone, cab and match EQ it chose, the spectra of the song and the match, and the Target, Match and Current switches with level matching."></picture></figure>
-          <p>It shows what it chose and how close it got. Switch between the song, the match, and your current sound, level-matched, then apply it in one undo step.</p>
+          <figure class="shot bare"><picture><source media="(max-width: 719px)" srcset="assets/img/tm-result-panel-640.webp 640w, assets/img/tm-result-panel-1176.webp 1176w" sizes="640px" width="1176" height="488"><img src="assets/img/tm-result-1280.webp" srcset="assets/img/tm-result-1280.webp 1280w, assets/img/tm-result-2400.webp 2400w" sizes="(min-width: 1300px) 1240px, 94vw" width="2400" height="488" loading="lazy" decoding="async" alt="Steps 4 to 6 after a match (on a phone, the result alone; scroll it sideways): a closeness of 68 out of 100, the amp, Gain, tone, cab and match EQ it chose, the match EQ over the song's and the match's spectra, Compare playing the match with each source's loudness, and Apply."></picture></figure>
+          <p>It shows what it chose and how close it got. Compare the song, the match, and your current sound, level-matched, then apply it in one undo step.</p>
         </li>
       </ol>
     </div>
@@ -132,7 +137,7 @@
         <p class="note">Voiced to answer your picking: dig in for crunch, and it cleans up when you pick softer.</p>
         <p class="pc">Amp 4, program change 4</p>
       </div>
-      <figure class="band-head"><img src="assets/img/head-lantern-800.webp" srcset="assets/img/head-lantern-800.webp 800w, assets/img/head-lantern-1400.webp 1400w" sizes="(min-width: 960px) 62vw, 92vw" width="1400" height="468" loading="lazy" decoding="async" alt="Lantern: a tweed amp head with a brown panel, cream knobs and a cream script badge on an oxblood grille."></figure>
+      <figure class="band-head"><img src="assets/img/head-lantern-800.webp" srcset="assets/img/head-lantern-800.webp 800w, assets/img/head-lantern-1400.webp 1400w" sizes="(min-width: 960px) 62vw, 92vw" width="1400" height="468" loading="lazy" decoding="async" alt="Lantern: a tweed amp head with a brown panel of cream knobs and Lantern in cream script on a striped oxblood grille."></figure>
     </div>
   </section>
 
@@ -144,7 +149,7 @@
         <p class="note">Made for palm mutes and big, open chords.</p>
         <p class="pc">Amp 5, program change 5</p>
       </div>
-      <figure class="band-head"><img src="assets/img/head-basalt-800.webp" srcset="assets/img/head-basalt-800.webp 800w, assets/img/head-basalt-1400.webp 1400w" sizes="(min-width: 960px) 62vw, 92vw" width="1400" height="468" loading="lazy" decoding="async" alt="Basalt: a dark stone amp head with a near-black panel in a grey frame and wide pale capitals on a coarse grille."></figure>
+      <figure class="band-head"><img src="assets/img/head-basalt-800.webp" srcset="assets/img/head-basalt-800.webp 800w, assets/img/head-basalt-1400.webp 1400w" sizes="(min-width: 960px) 62vw, 92vw" width="1400" height="468" loading="lazy" decoding="async" alt="Basalt: a dark stone amp head with a near-black panel in a grey frame and BASALT in wide silver capitals on a coarse woven grille."></figure>
     </div>
   </section>
 
@@ -152,33 +157,38 @@
     <div class="calm-in">
       <div class="calm-head">
         <h2 id="h-rig">Everything around the amp.</h2>
-        <p class="lead">The whole signal chain, in the app's order. Drag blocks to reorder them inside Pre FX and Post FX, and click a block's dot to bypass it.</p>
+        <p class="lead">The board, in the app's order: the pre pedals, the amp and the cab, then the post pedals, each with its own footswitch and LED. Click a pedal to see all its controls, drag it along its row to reorder it, and switch a whole row off at once.</p>
       </div>
-      <ol class="chainrow" aria-label="The signal chain">
-        <li class="io">Input</li><li class="on">Pre FX</li><li class="on">Amp</li><li class="on">EQ</li><li class="on">Cab</li><li class="on">Post FX</li><li class="io">Output</li>
-      </ol>
+      <div class="board" aria-label="The board, in signal order">
+        <ol class="chainrow">
+          <li class="row">Pre</li><li class="on">Gate A</li><li class="on">Compressor</li><li class="on">Boost</li><li class="on">Overdrive</li><li class="on">EQ</li><li class="on gear">Amp</li><li class="on">Gate B</li><li class="on gear">Cab</li>
+        </ol>
+        <ol class="chainrow">
+          <li class="row">Post</li><li class="on">EQ</li><li class="on">Compressor</li><li class="on">Harmonizer</li><li class="on">Multivoicer</li><li class="on">Bloom</li><li class="on">Chorus</li><li class="on">Delay</li><li class="on">Reverb</li>
+        </ol>
+      </div>
       <div class="rig">
         <dl class="rig-list">
-          <dt>Pre FX</dt>
-          <dd>Two linked noise gates that listen to the clean guitar, with a Learn button; a compressor in a studio and a pedal style; boost and overdrive pedals modelled from their circuits; and a 9-band graphic or 5-band parametric EQ.</dd>
+          <dt>Pre</dt>
+          <dd>Two noise gates that listen to the clean guitar, with a Learn button: Gate A before the amp and Gate B after it, which can follow Gate A. A compressor in a studio and a pedal style, boost and overdrive pedals modelled from their circuits, and a 9-band graphic or 5-band parametric EQ.</dd>
           <dt>Amp</dt>
-          <dd>The eight built-in amps, or your own amp-only <code>.nam</code> capture as a ninth. The built-ins are NAM captures trained from BellyDSP's own amp models, not captures of real amps.</dd>
+          <dd>The eight built-in amps, picked from the shelf of minis on the stage, or your own amp-only <code>.nam</code> capture as a ninth. The built-ins are NAM captures trained from BellyDSP's own amp models, not captures of real amps.</dd>
           <dt>Cab</dt>
           <dd>Two close mics and a stereo room mic, each an impulse response, with 21 public-domain IRs built in or your own. Load a cab pack and drag a close mic across the speaker to move it.</dd>
-          <dt>Post FX</dt>
+          <dt>Post</dt>
           <dd>EQ and compressor, a harmonizer that plays in key, a multivoicer, Bloom (bitcrusher, phaser and flanger in one), chorus, delay and reverb. Delay and reverb tails ring on when you switch them off.</dd>
           <dt>Around it</dt>
-          <dd>A tuner, tap tempo, presets with eight scenes each, undo and redo, A/B compare, MIDI learn on any control, and an output limiter so nothing clips.</dd>
+          <dd>Presets with eight scenes each along the bottom of the window, undo and redo, A/B compare, a tuner, tap tempo, and MIDI learn on any control. Settings holds the input level and the output, with a limiter so nothing clips.</dd>
         </dl>
         <figure>
-          <div class="shot"><img src="assets/img/amp-glass-1280.webp" srcset="assets/img/amp-glass-1280.webp 1280w, assets/img/amp-glass-1920.webp 1920w" sizes="(min-width: 960px) 58vw, 92vw" width="1280" height="760" loading="lazy" decoding="async" alt="The BellyDSP window on the Amp page: the shelf of eight small amp heads along the top, the Glass head with its seven knobs, the output spectrum, the input, gate and output controls, and the signal chain along the bottom."></div>
-          <figcaption>The Amp page, with the shelf of eight amps along the top and the signal chain along the bottom.</figcaption>
+          <div class="shot"><img src="assets/img/main-1280.webp" srcset="assets/img/main-1280.webp 1280w, assets/img/main-1920.webp 1920w" sizes="(min-width: 1300px) 715px, (min-width: 960px) 58vw, 92vw" width="1280" height="760" loading="lazy" decoding="async" alt="The BellyDSP main screen: the preset and scene in the top bar, the Monolith head lit on the stage with the shelf of eight minis above it, the board of pedals in two rows with the amp and cab among them, the amp's knobs in the inspector at the right, and the eight scenes along the bottom."></div>
+          <figcaption>The main screen: the amp on its stage with the shelf of eight amps, the board under it, the selected block's controls at the right, and the scenes along the bottom.</figcaption>
         </figure>
       </div>
       <div class="rig-shots">
-        <figure><div class="shot"><img src="assets/img/rig-cab-720.webp" srcset="assets/img/rig-cab-720.webp 720w, assets/img/rig-cab-1440.webp 1440w" sizes="(min-width: 960px) 46vw, 92vw" width="720" height="522" loading="lazy" decoding="async" alt="The cab: a speaker with mic markers, the controls for mics A and B with low and high cuts, and the match curve row under the speaker."></div><figcaption>The cab: drag a close mic across the speaker, and set each mic's distance, level, and phase.</figcaption></figure>
-        <figure><div class="shot"><img src="assets/img/rig-tuner-720.webp" srcset="assets/img/rig-tuner-720.webp 720w, assets/img/rig-tuner-1440.webp 1440w" sizes="(min-width: 960px) 46vw, 92vw" width="720" height="480" loading="lazy" decoding="async" alt="The tuner reading E2 at 82.41 Hz, plus 0 cents, in tune, with its needle and the six strings of standard tuning."></div><figcaption>The tuner, in tune on the low E, with the string it's tuning circled.</figcaption></figure>
-        <figure class="wide"><div class="shot"><img src="assets/img/rig-harmonizer-1280.webp" srcset="assets/img/rig-harmonizer-1280.webp 1280w, assets/img/rig-harmonizer-2400.webp 2400w" sizes="(min-width: 1300px) 1240px, 94vw" width="1280" height="437" loading="lazy" decoding="async" alt="The harmonizer in C major: a custom scale row, glide and level, and four voices with their interval, steps, octave, level, pan and humanize."></div><figcaption>The harmonizer: a key and a scale, then up to four voices that follow your playing in key.</figcaption></figure>
+        <figure class="wide rig-cab"><div class="shot"><img src="assets/img/rig-cab-1280.webp" srcset="assets/img/rig-cab-1280.webp 1280w, assets/img/rig-cab-2556.webp 2556w" sizes="(min-width: 1300px) 1240px, 94vw" width="2556" height="700" loading="lazy" decoding="async" alt="The stage showing the cab (on a phone, scroll it sideways): the cabinet library, the speaker in its baffle with a close mic on it, the match curve and room mic settings, and the cab's inspector with mic A's distance, level, pan, delay and channel."></div><figcaption>The cab on the stage: pick a cab or an IR, drag a close mic across the speaker when a cab pack is loaded, and set each mic's distance, level, and phase at the right.</figcaption></figure>
+        <figure><div class="shot bare"><img src="assets/img/rig-tuner-1280.webp" srcset="assets/img/rig-tuner-1280.webp 1280w, assets/img/rig-tuner-2400.webp 2400w" sizes="(min-width: 1300px) 990px, (min-width: 960px) 78vw, 92vw" width="2400" height="1084" loading="lazy" decoding="async" alt="The tuner reading E2 in tune, plus 2 cents at 82.48 Hz, with its scale of 41 segments, the six strings of standard tuning with the low E ticked, and the tunings."></div><figcaption>The tuner, in tune on the low E, big enough to read from across the room. T opens it from anywhere.</figcaption></figure>
+        <figure class="narrow"><div class="shot"><img src="assets/img/rig-harmonizer-291.webp" srcset="assets/img/rig-harmonizer-291.webp 291w, assets/img/rig-harmonizer-582.webp 582w" sizes="(min-width: 1300px) 240px, (min-width: 960px) 19vw, 300px" width="582" height="1084" loading="lazy" decoding="async" alt="The harmonizer's inspector: its switch, what it's hearing, the twelve keys with C chosen, the degrees of the Major scale, and the first of its four voices, two steps up."></div><figcaption>The harmonizer: a key and a scale, then up to four voices that follow your playing in key.</figcaption></figure>
       </div>
     </div>
   </section>
@@ -191,7 +201,7 @@
         <p class="note">For sustained leads and wide bends.</p>
         <p class="pc">Amp 6, program change 6</p>
       </div>
-      <figure class="band-head"><img src="assets/img/head-comet-800.webp" srcset="assets/img/head-comet-800.webp 800w, assets/img/head-comet-1400.webp 1400w" sizes="(min-width: 960px) 62vw, 92vw" width="1400" height="468" loading="lazy" decoding="async" alt="Comet: a navy amp head with blue knobs and a slanted ice-white badge with streaks trailing behind it."></figure>
+      <figure class="band-head"><img src="assets/img/head-comet-800.webp" srcset="assets/img/head-comet-800.webp 800w, assets/img/head-comet-1400.webp 1400w" sizes="(min-width: 960px) 62vw, 92vw" width="1400" height="468" loading="lazy" decoding="async" alt="Comet: a navy amp head with blue knobs, a thin light line across its panel, and Comet slanted in ice white with streaks trailing behind it."></figure>
     </div>
   </section>
 
@@ -203,7 +213,7 @@
         <p class="note">For fast, palm-muted riffing.</p>
         <p class="pc">Amp 7, program change 7</p>
       </div>
-      <figure class="band-head"><img src="assets/img/head-forge-800.webp" srcset="assets/img/head-forge-800.webp 800w, assets/img/head-forge-1400.webp 1400w" sizes="(min-width: 960px) 62vw, 92vw" width="1400" height="468" loading="lazy" decoding="async" alt="Forge: a black amp head with a brushed steel panel, an orange line under it, and heavy steel capitals between two orange rules."></figure>
+      <figure class="band-head"><img src="assets/img/head-forge-800.webp" srcset="assets/img/head-forge-800.webp 800w, assets/img/head-forge-1400.webp 1400w" sizes="(min-width: 960px) 62vw, 92vw" width="1400" height="468" loading="lazy" decoding="async" alt="Forge: a black amp head with a brushed steel panel of black knobs with orange pointers, an orange line under it, and FORGE in steel capitals between two orange rules."></figure>
     </div>
   </section>
 
@@ -215,7 +225,7 @@
         <p class="note">Only the amp you hear runs. Pick another and it fades in about a tenth of a second later, which keeps BellyDSP light on your computer.</p>
         <p class="pc">Amp 8, program change 8</p>
       </div>
-      <figure class="band-head"><img src="assets/img/head-quartz-800.webp" srcset="assets/img/head-quartz-800.webp 800w, assets/img/head-quartz-1400.webp 1400w" sizes="(min-width: 960px) 62vw, 92vw" width="1400" height="468" loading="lazy" decoding="async" alt="Quartz: a pale lilac amp head with a deeper lilac panel and thin violet capitals between two small gems."></figure>
+      <figure class="band-head"><img src="assets/img/head-quartz-800.webp" srcset="assets/img/head-quartz-800.webp 800w, assets/img/head-quartz-1400.webp 1400w" sizes="(min-width: 960px) 62vw, 92vw" width="1400" height="468" loading="lazy" decoding="async" alt="Quartz: a pale lilac amp head with a deeper lilac panel of white knobs and QUARTZ in spaced violet capitals between two small gems."></figure>
     </div>
   </section>
 

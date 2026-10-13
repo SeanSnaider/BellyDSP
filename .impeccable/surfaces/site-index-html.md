@@ -30,6 +30,7 @@ Unresolved: audio demos (when Sean records them, each amp band gets one).
 
 - The first viewport's kicker became the page's h1, a statement at about 30 px, left; "Glass" holds the display scale under its head (craft floor: no kicker above a heading).
 - "01 / 08" became "Amp N, program change N", which carries information a player uses (craft floor: section numbers only when the sequence informs).
+- 2026-10-13, the re-skin to the redesigned app: the app's world changed under this contract, so OWN-WORLD now reads as the app's current tokens (ground #121212, hairlines #2c2c2c, the accent orange #ff8a00 in place of emerald, one radius scale), the heads are the redesigned art with their knobs and lit jewel lamps, and the screenshots are the new main screen, Match tone's six-step page, the cab stage, the tuner and the harmonizer's inspector (ASSUMPTIONS WEB20 to WEB23). The structure is unchanged.
 - Phones: the top bar keeps the mark, Source and the Download button; Overview and Stats leave it, because at 320 px there's no room for the mark, four links and the button (measured). The mark is the Overview link and Stats is in every page's footer. Below 960 px the shelf keeps its names and scrolls sideways.
 
 ## Direction contract

@@ -3,21 +3,23 @@
 
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["pillow>=10", "fonttools>=4.47", "brotli>=1.1", "numpy>=1.26"]
+# dependencies = ["pillow>=10", "fonttools>=4.47", "brotli>=1.1"]
 # ///
-# SPDX-License-Identifier: AGPL-3.0-or-later
-# Copyright (C) 2026 Sean Snaider
 
-"""Makes the website's images and fonts from the app's own files. Run it by hand when the app's look
-changes (docs/WEBSITE.md, "Updating screenshots"); its outputs are committed, so the Pages build needs
+"""Makes the website's images, tab icons and fonts from the app's own files. Run it by hand when the app's
+look changes (docs/WEBSITE.md, "Updating the site"); its outputs are committed, so the Pages build needs
 nothing but plain Python.
 
     uv run tools/site/make_site_assets.py [--proof build/proof]
 
-Screenshots: the editor snapshots the test suite writes (`ampsim_tests --proof-dir build/proof`, at 2x:
-2560 x 1520 for the 1280 x 760 canvas) become WebP files in two widths, site/assets/img/<name>-<width>.webp,
-for the pages' srcset. Fonts: Geist (resources/fonts/Geist, SIL OFL 1.1) becomes WOFF2, unchanged apart
-from the container (no subsetting, so it's still the Font Software as distributed), with its licence.
+Screenshots: the redesigned app's snapshots the test suite writes (`ampsim_tests --proof-dir build/proof`, at
+2x: 2560 x 1520 for the 1280 x 760 canvas, in build/proof/redesign/) become WebP files in two widths,
+site/assets/img/<name>-<width>.webp, for the pages' srcset, each cropped to its subject. Heads: each built-in
+amp's head as the stage dresses it (its art, the lit jewel lamp and its seven knobs, on a transparent ground
+with its shadow), which the Editor parts tests save alone at 2x (build/proof/site/head_<material>.png).
+Tab icons: the app icon, the "B." mark (resources/icon). Fonts: Geist and Fraunces (resources/fonts, SIL OFL
+1.1) become WOFF2, unchanged apart from the container (no subsetting, so they're still the Font Software as
+distributed), with their licences.
 """
 
 import argparse
@@ -25,76 +27,58 @@ import shutil
 import sys
 from pathlib import Path
 
-import numpy as np
 from fontTools.ttLib import TTFont
 from PIL import Image
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
-# site name: (proof snapshot, widths).
+# site name: (snapshot in build/proof, widths, crop). Crops are (left, top, right, bottom) in the 2x snapshot. The
+# overlays' panels are cut at their own 1px borders (their rounded corners show the app's ground, which is the
+# site's), so the page shows them without a frame of its own; the stage and the inspector, which have no border, are
+# cut at the edges of their areas and framed. The widest width is the crop's own (never scaled up).
 SHOTS = {
-    # The Amp page with its shelf of eight amps (the Built-in captures tests write it to amp_shelf/); also og:image.
-    "amp-glass": ("amp_shelf/editor_amp_glass.png", (1280, 1920), None),
-    # Match tone told as its three steps (the tone match page tests write them to tone_match/), each cropped to the
-    # part that tells its step, at a size its text can be read: the song's card, the take recording against it, and
-    # the whole result. Crops are (left, top, right, bottom) in the 2560 x 1520 snapshot.
-    "tm-song": ("tone_match/20_play_target.png", (720, 1440), (78, 278, 1120, 824)),        # the Target card
-    "tm-take": ("tone_match/22_recording.png", (480, 960), (1142, 278, 1712, 824)),        # the Your DI card, recording
-    "tm-match": ("tone_match/11_compare_playing_match.png", (1280, 2400), (78, 278, 2480, 1344)),  # the three cards and the Result
-    "tm-result": ("tone_match/11_compare_playing_match.png", (720, 1440), (78, 846, 1240, 1344)),   # the Result's text, for phones
-    # The rest of the rig, each cropped to its subject: the cab's speaker and mics, the tuner's reading, the
-    # harmonizer's voice table.
-    "rig-cab": ("editor_cab_builtin.png", (720, 1440), (820, 120, 2540, 1366)),
-    "rig-tuner": ("editor_tuner_in_tune.png", (720, 1440), (480, 240, 2100, 1320)),
-    "rig-harmonizer": ("editor_harmonizer.png", (1280, 2400), (80, 240, 2540, 1080)),
+    # The main screen: the preset bar, the amp on the stage with the shelf of minis, the board, the inspector and the
+    # scenes (Main screen tests). The rig section's big shot, and og:image.
+    "main": ("redesign/main_amp.png", (1280, 1920), None),
+    # Match tone told by its six-step page (the tone match tests copy each state to redesign/overlay_tone_match_*):
+    # step 1, the song, playing its section; step 2, your DI, recording along with it; and steps 4 to 6 after a
+    # match (the result, compare playing the match, apply), with the result's panel alone for phones.
+    "tm-song": ("redesign/overlay_tone_match_play_target.png", (640, 878), (80, 232, 958, 824)),
+    "tm-take": ("redesign/overlay_tone_match_take_recording.png", (480, 686), (984, 232, 1670, 824)),
+    "tm-result": ("redesign/overlay_tone_match_compare_playing_match.png", (1280, 2400), (80, 844, 2480, 1332)),
+    "tm-result-panel": ("redesign/overlay_tone_match_compare_playing_match.png", (640, 1176), (80, 844, 1256, 1332)),
+    # The rest of the rig: the stage in Cab mode with the cab's inspector beside it (the stage's whole height, top bar
+    # to board); the tuner overlay's display and its strings and tunings; the harmonizer's inspector down to its first
+    # voice, at the tuner's height so the two sit side by side at one scale.
+    "rig-cab": ("redesign/stage_cab.png", (1280, 2556), (2, 104, 2558, 804)),
+    "rig-tuner": ("redesign/overlay_tuner_in_tune.png", (1280, 2400), (80, 248, 2480, 1332)),
+    "rig-harmonizer": ("redesign/inspector_harmonizer.png", (291, 582), (0, 0, 582, 1084)),
 }
 # (folder in resources/fonts, file): Geist for everything, Fraunces SemiBold Italic for the amp names whose badges
 # use it (Ember, Lantern), as the app's heads do.
 FONTS = [("Geist", "Geist-Light.ttf"), ("Geist", "Geist-Regular.ttf"), ("Geist", "Geist-Medium.ttf"),
          ("Geist", "Geist-SemiBold.ttf"), ("Fraunces", "Fraunces-SemiBoldItalic.ttf")]
 
-# The overview's amp bands show each amp's head as the app draws it, knobs included, on the band's own material.
-# The test suite renders the head art alone with its transparency (amp_head_<material>.png, Editor tests) and the
-# whole Amp page with each amp on the shelf (amp_shelf/editor_amp_<amp>.png, Built-in captures tests), both at 2x.
-# The head is cut out of the page snapshot with the render's alpha: the render is aligned to the snapshot by the
-# smallest mean difference over its opaque pixels (the knobs, which the render lacks, are a small part), the
-# snapshot's pixels are kept where the head is opaque, and the render's own pixels (its shadow) everywhere else.
+# The overview's amp bands show each amp's head as the stage draws it, on the band's own material.
 HEADS = ["Glass", "Ember", "Monolith", "Lantern", "Basalt", "Comet", "Forge", "Quartz"]
 HEAD_WIDTHS = (800, 1400)
 
+# The tab icons, from the app icon: (file in site/, size in px).
+ICON = REPO_ROOT / "resources" / "icon" / "BellyDSP_icon_1024.png"
+TAB_ICONS = [("favicon-32.png", 32), ("favicon-192.png", 192), ("apple-touch-icon.png", 180)]
 
-def cut_head(proof, amp):
-    head = Image.open(proof / f"amp_head_{amp.lower()}.png").convert("RGBA")
-    shot = Image.open(proof / "amp_shelf" / f"editor_amp_{amp.lower()}.png").convert("RGB")
-    h = np.asarray(head).astype(np.float32)
-    s = np.asarray(shot).astype(np.float32)
-    alpha = h[..., 3]
-    ys, xs = np.nonzero(alpha[::6, ::6] >= 254)
-    ys, xs = ys * 6, xs * 6
-    head_grey = h[ys, xs, :3].mean(axis=1)
-    shot_grey = s.mean(axis=2)
-    best = (float("inf"), 0, 0)
-    for oy in range(0, shot.height - head.height + 1, 2):
-        for ox in range(0, shot.width - head.width + 1, 2):
-            d = np.abs(shot_grey[ys + oy, xs + ox] - head_grey).mean()
-            if d < best[0]:
-                best = (d, ox, oy)
-    d, ox, oy = best
-    for dy in (-1, 0, 1):
-        for dx in (-1, 0, 1):
-            y, x = oy + dy, ox + dx
-            if 0 <= y <= shot.height - head.height and 0 <= x <= shot.width - head.width:
-                dd = np.abs(shot_grey[ys + y, xs + x] - head_grey).mean()
-                if dd < d:
-                    d, best = dd, (dd, x, y)
-    _, ox, oy = best
-    out = np.asarray(shot.crop((ox, oy, ox + head.width, oy + head.height)).convert("RGBA")).copy()
-    solid = alpha >= 250
-    out[~solid, :3] = h[~solid, :3].astype(np.uint8)
-    out[..., 3] = alpha.astype(np.uint8)
-    if d > 12:
-        raise SystemExit(f"{amp}: the head render doesn't line up with the Amp page snapshot (mean difference {d:.1f})")
-    return Image.fromarray(out, "RGBA"), (ox, oy, d)
+
+def save_widths(im, name, widths, img_dir, note, **webp):
+    total = 0
+    for w in widths:
+        if w > im.width:
+            raise SystemExit(f"{name}: {w} px is wider than its source ({im.width} px)")
+        h = round(im.height * w / im.width)
+        out = img_dir / f"{name}-{w}.webp"
+        (im if w == im.width else im.resize((w, h), Image.LANCZOS)).save(out, "WEBP", method=6, **webp)
+        total += out.stat().st_size
+        print(f"{out.relative_to(REPO_ROOT)}  {w} x {h}  {out.stat().st_size / 1024:.1f} KB  ({note})")
+    return total
 
 
 def main(argv):
@@ -112,21 +96,20 @@ def main(argv):
         im = Image.open(proof / src).convert("RGB")
         if crop:
             im = im.crop(crop)
-        for w in widths:
-            h = round(im.height * w / im.width)
-            out = img_dir / f"{name}-{w}.webp"
-            im.resize((w, h), Image.LANCZOS).save(out, "WEBP", quality=80, method=6)
-            total += out.stat().st_size
-            print(f"{out.relative_to(REPO_ROOT)}  {w} x {h}  {out.stat().st_size / 1024:.1f} KB  (from {src})")
+        total += save_widths(im, name, widths, img_dir, f"from {src}", quality=80)
     for amp in HEADS:
-        im, (ox, oy, d) = cut_head(proof, amp)
-        for w in HEAD_WIDTHS:
-            h = round(im.height * w / im.width)
-            out = img_dir / f"head-{amp.lower()}-{w}.webp"
-            im.resize((w, h), Image.LANCZOS).save(out, "WEBP", quality=82, method=6, exact=True)
-            total += out.stat().st_size
-            print(f"{out.relative_to(REPO_ROOT)}  {w} x {h}  {out.stat().st_size / 1024:.1f} KB  (cut at {ox},{oy}, difference {d:.1f})")
+        src = proof / "site" / f"head_{amp.lower()}.png"
+        im = Image.open(src).convert("RGBA")
+        if im.getpixel((0, 0))[3] != 0:
+            raise SystemExit(f"{src} isn't transparent around the head")
+        total += save_widths(im, f"head-{amp.lower()}", HEAD_WIDTHS, img_dir, f"from site/{src.name}", quality=82, exact=True)
     print(f"images: {total / 1024:.1f} KB")
+
+    icon = Image.open(ICON).convert("RGBA")
+    for f, size in TAB_ICONS:
+        out = REPO_ROOT / "site" / f
+        icon.resize((size, size), Image.LANCZOS).save(out, "PNG", optimize=True)
+        print(f"{out.relative_to(REPO_ROOT)}  {size} x {size}  {out.stat().st_size / 1024:.1f} KB  (from {ICON.relative_to(REPO_ROOT)})")
 
     fonts_root = REPO_ROOT / "resources" / "fonts"
     for folder, f in FONTS:

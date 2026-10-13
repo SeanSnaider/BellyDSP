@@ -6,9 +6,11 @@
 <title>Download BellyDSP</title>
 <meta name="description" content="Download BellyDSP for macOS 12 or later (Apple silicon or Intel) or Windows 10 and 11 (64-bit). Free and open source; it keeps itself up to date.">
 <meta name="color-scheme" content="dark">
-<meta name="theme-color" content="#0b0c0c">
+<meta name="theme-color" content="#121212">
 <link rel="canonical" href="https://bellydsp.com/download/">
-<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="icon" href="../favicon-32.png" type="image/png" sizes="32x32">
+<link rel="icon" href="../favicon-192.png" type="image/png" sizes="192x192">
+<link rel="apple-touch-icon" href="../apple-touch-icon.png">
 <link rel="preload" href="../assets/fonts/Geist-Regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="../assets/css/site.css">
 </head>
@@ -118,7 +120,7 @@
     <section aria-labelledby="input">
       <h2 id="input">Choosing the input</h2>
       <div class="body">
-      <p class="dim">Click <strong>Options</strong> at the top of BellyDSP's window, then <strong>Audio/MIDI Settings</strong>:</p>
+      <p class="dim">Click <strong>Settings</strong> at the top right of BellyDSP's window, choose <strong>Audio device</strong>, then <strong>Audio device settings...</strong> (the window's own <strong>Options</strong> menu, at the very top, opens the same settings under Audio/MIDI Settings):</p>
       <ul class="dim">
         <li><strong>Output</strong> and <strong>Input</strong>: your audio interface. <strong>Sample rate</strong>: 48000.</li>
         <li><strong>Active input channels</strong>: only the one your guitar is plugged into (usually Input 1).</li>
@@ -126,7 +128,7 @@
         <li>Windows: pick the device type <strong>Windows Audio (Exclusive Mode)</strong> for the lowest delay.</li>
         <li><strong>Untick "Mute audio input"</strong>. It starts ticked, as a guard against feedback, and you'll hear nothing until you untick it; a yellow bar says so.</li>
       </ul>
-      <p class="dim">On the interface: switch the guitar input to instrument (INST or Hi-Z), set the gain so your hardest strum stays out of the red, and turn Direct Monitor off, or you'll hear your dry guitar on top.</p>
+      <p class="dim">On the interface: switch the guitar input to instrument (INST or Hi-Z), turn its input gain all the way down, and turn Direct Monitor off, or you'll hear your dry guitar on top. BellyDSP sets the level itself: <strong>Settings &gt; Input</strong> has the Input knob, before every block.</p>
     </div>
     </section>
 
@@ -138,7 +140,7 @@
         <li><strong>Mac</strong>: it downloads the update quietly and installs it the next time you quit. Nothing to click.</li>
         <li><strong>Windows</strong>: it asks first. Click <strong>Install update</strong> and it closes, updates, and opens again. You can also skip a version or be reminded later.</li>
       </ul>
-      <p class="dim">To see your version, or check right now, click <strong>BellyDSP</strong> at the top left of the window.</p>
+      <p class="dim">To see your version, or check right now, click <strong>BellyDSP</strong> at the top left of the window. <strong>Settings &gt; About</strong> shows the version too.</p>
     </div>
     </section>
 
