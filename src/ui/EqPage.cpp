@@ -3,6 +3,8 @@
 
 #include "Pages.h"
 
+#include <tuple>
+
 namespace ui
 {
 
@@ -439,36 +441,69 @@ void EqGraph::timerCallback()
 
 // ---- EqPage ----------------------------------------------------------------------------------------------
 
+namespace
+{
+// The parametric table's columns for a 259 px column: the band's number, type, frequency, gain, Q.
+const std::vector<std::pair<int, int>> bandColumns { { 0, 18 }, { 21, 80 }, { 105, 56 }, { 165, 48 }, { 217, 42 } };
+constexpr int bandRowHeight = 26, bandRowGap = 4;
+
+juce::String shortHertz (float f)
+{
+    return f >= 1000.0f ? juce::String (f / 1000.0f, f >= 10000.0f ? 1 : 2) + "k" : juce::String (juce::roundToInt (f));
+}
+
+juce::String signedDb (float v)
+{
+    const auto r = std::round (v * 10.0f) / 10.0f;
+    return (r > 0.0f ? "+" : "") + juce::String (juce::exactlyEqual (r, 0.0f) ? 0.0f : r, 1);
+}
+} // namespace
 
 EqPage::EqPage (AmpSimProcessor& p, bool isPost)
     : BlockPage (p, isPost ? BlockId::postEq : BlockId::preEq, "EQ",
-                 isPost ? "After the cab. Its graph is on the stage: pick EQ at the stage's top right" : "Before the amp. Its graph is on the stage: pick EQ at the stage's top right"),
+                 isPost ? "After the cab. Its graph is on the stage, with the live spectrum" : "Before the amp. Its graph is on the stage, with the live spectrum"),
       prefix (isPost ? "eq_post" : "eq_pre")
 {
     using EP = params::EqualizerParameters;
-    mode = &addCombo (prefix + "_mode", { "Graphic", "Parametric" });
+    mode = &addChoice (prefix + "_mode", { "Graphic", "Parametric" });
+    mode->setOptionTooltips ({ "Graphic: nine octave sliders, 63 Hz to 16 kHz", "Parametric: five bands, each a peak, a shelf, or a notch" });
 
     static const char* sliderNames[] = { "63", "125", "250", "500", "1k", "2k", "4k", "8k", "16k" };
     for (int m = 0; m < ampsim::Equalizer::numGraphicBands; ++m)
-        sliders.push_back (&addFader (EP::sliderId (prefix, m), sliderNames[m], ""));
+    {
+        auto& fader = addFader (EP::sliderId (prefix, m), sliderNames[m], "");
+        fader.setFormatter ([] (float db) { return signedDb (db); });
+        fader.setTooltip (juce::String (sliderNames[m]) + " Hz octave: drag up or down, double-click to type");
+        sliders.push_back (&fader);
+    }
 
     for (int b = 0; b < ampsim::Equalizer::numParametricBands; ++b)
     {
         auto& band = bands[(size_t) b];
-        band.type = &addCombo (EP::bandId (prefix, b, "type"), { "Peak", "Low shelf", "High shelf", "Notch" });
+        band.type = &addCombo (EP::bandId (prefix, b, "type"), { "Peak", "Lo shelf", "Hi shelf", "Notch" });
         band.frequency = &addField (EP::bandId (prefix, b, "freq"), " Hz");
+        band.frequency->setFormatter (shortHertz);
         band.gain = &addField (EP::bandId (prefix, b, "gain"), " dB");
+        band.gain->setFormatter (signedDb);
         band.q = &addField (EP::bandId (prefix, b, "q"), "");
-        band.q->setFormatter ([] (float q) { return "Q " + juce::String (q, 2); });
+        band.q->setFormatter ([] (float q) { return juce::String (q, 2); });
+        band.q->setShowsBar (false);
+        band.frequency->setShowsBar (false);
     }
 
-    const juce::StringArray slopes { "12 dB/oct", "24 dB/oct", "48 dB/oct" };
     lowCut = &addSwitch (prefix + "_lowcut_on", "Low cut");
     highCut = &addSwitch (prefix + "_highcut_on", "High cut");
-    lowCutFrequency = &addKnob (prefix + "_lowcut_freq", "Low cut", " Hz");
-    highCutFrequency = &addKnob (prefix + "_highcut_freq", "High cut", " Hz");
-    lowCutSlope = &addCombo (prefix + "_lowcut_slope", slopes);
-    highCutSlope = &addCombo (prefix + "_highcut_slope", slopes);
+    lowCutFrequency = &addField (prefix + "_lowcut_freq", " Hz");
+    highCutFrequency = &addField (prefix + "_highcut_freq", " Hz");
+    for (auto* f : { lowCutFrequency, highCutFrequency })
+    {
+        f->setFormatter ([] (float hz) { return hz >= 1000.0f ? juce::String (hz / 1000.0f, 1) + " kHz" : juce::String (juce::roundToInt (hz)) + " Hz"; });
+        f->setShowsBar (false);
+    }
+    lowCutSlope = &addChoice (prefix + "_lowcut_slope", { "12", "24", "48" });
+    highCutSlope = &addChoice (prefix + "_highcut_slope", { "12", "24", "48" });
+    for (auto* s : { lowCutSlope, highCutSlope })
+        s->setTooltip ("The slope in dB per octave");
     refresh();
 }
 
@@ -493,54 +528,110 @@ void EqPage::refresh()
         shownMode = parametric;
         showMode (parametric == 1);
     }
+    // A cut that's off dims its frequency and slope.
+    const auto low = state.getRawParameterValue (prefix + "_lowcut_on")->load() >= 0.5f, high = state.getRawParameterValue (prefix + "_highcut_on")->load() >= 0.5f;
+    if (const auto cuts = (low ? 1 : 0) + (high ? 2 : 0); cuts != shownCuts)
+    {
+        shownCuts = cuts;
+        dim (lowCutFrequency, low);
+        dim (lowCutSlope, low);
+        dim (highCutFrequency, high);
+        dim (highCutSlope, high);
+    }
 }
 
 void EqPage::describe (InspectorLayout& l)
 {
-    l.labelled ("Mode", mode);
+    l.choice (mode);
     if (shownMode != 1)
     {
-        // Graphic: the nine octave sliders, five and four to a row.
+        // Graphic: the nine octave sliders side by side, a graphic EQ's faceplate.
         l.section ("Octave bands");
-        constexpr int faderHeight = 132;
-        for (int start = 0; start < (int) sliders.size(); start += 5)
+        l.area (&faderArea, 156);
+        if (l.isPlacing())
         {
-            std::vector<juce::Component*> line;
-            for (int m = start; m < juce::jmin ((int) sliders.size(), start + 5); ++m)
-                line.push_back (sliders[(size_t) m]);
-            while (line.size() < 5)
-                line.push_back (nullptr);
-            juce::Rectangle<int> rowArea;
-            l.area (&rowArea, faderHeight);
-            if (l.isPlacing())
+            const auto w = (float) faderArea.getWidth() / (float) sliders.size();
+            for (size_t m = 0; m < sliders.size(); ++m)
             {
-                const auto w = rowArea.getWidth() / 5;
-                for (auto* c : line)
-                {
-                    const auto cell = rowArea.removeFromLeft (w);
-                    if (c != nullptr)
-                        c->setBounds (cell.reduced (3, 0));
-                }
+                const auto x0 = faderArea.getX() + juce::roundToInt (w * (float) m), x1 = faderArea.getX() + juce::roundToInt (w * (float) (m + 1));
+                sliders[m]->setBounds (x0, faderArea.getY(), x1 - x0, faderArea.getHeight());
             }
         }
+        for (auto& r : bandRows)
+            r = {};
+        tableHeader = {};
     }
     else
     {
-        // Parametric: each band's type, then its frequency, gain, and Q (the graph's handles are the quick way;
-        // these are for exact values).
+        // Parametric: a row per band (the graph's handles are the quick way; these are the exact values).
+        faderArea = {};
+        l.section ("Bands");
+        l.area (&tableHeader, 12);
         for (size_t b = 0; b < bands.size(); ++b)
         {
-            l.section ("Band " + juce::String ((int) b + 1));
-            l.labelled ("Type", bands[b].type);
-            l.fields ({ { "Frequency", bands[b].frequency }, { "Gain", bands[b].gain }, { "Q", bands[b].q } });
+            juce::Rectangle<int> line;
+            l.area (&line, bandRowHeight);
+            l.gap (bandRowGap - InspectorLayout::rowGap);
+            if (! l.isPlacing())
+                continue;
+            bandRows[b] = line;
+            const auto cell = [&line] (size_t c) { return juce::Rectangle<int> (line.getX() + bandColumns[c].first, line.getY(), bandColumns[c].second, line.getHeight()); };
+            bands[b].type->setBounds (cell (1));
+            bands[b].frequency->setBounds (cell (2));
+            bands[b].gain->setBounds (cell (3));
+            bands[b].q->setBounds (cell (4));
         }
     }
 
+    // The cuts: each on one row, its switch, its frequency, its slope.
     l.section ("Cuts");
-    l.switches ({ lowCut, highCut });
-    l.knobs ({ lowCutFrequency, highCutFrequency });
-    l.labelled ("Low slope", lowCutSlope);
-    l.labelled ("High slope", highCutSlope);
+    for (const auto& [toggle, frequency, slope] : { std::tuple<Switch*, ValueField*, ChoiceBar*> { lowCut, lowCutFrequency, lowCutSlope },
+                                                     std::tuple<Switch*, ValueField*, ChoiceBar*> { highCut, highCutFrequency, highCutSlope } })
+    {
+        juce::Rectangle<int> line;
+        l.area (&line, ChoiceBar::rowHeight);
+        if (! l.isPlacing())
+            continue;
+        toggle->setBounds (line.getX() - Switch::margin, line.getCentreY() - Switch::preferredHeight / 2, 96, Switch::preferredHeight);
+        line.removeFromLeft (92);
+        frequency->setBounds (line.removeFromLeft (72).withSizeKeepingCentre (72, 24));
+        line.removeFromLeft (8);
+        slope->setBounds (line);
+    }
+}
+
+void EqPage::paintContent (juce::Graphics& g)
+{
+    if (! tableHeader.isEmpty())
+    {
+        g.setFont (geist (Weight::medium, 10.5f));
+        g.setColour (inkFaint);
+        const juce::StringArray captions { "", "Type", "Freq Hz", "Gain dB", "Q" };
+        for (size_t c = 1; c < bandColumns.size(); ++c)
+            g.drawText (captions[(int) c], juce::Rectangle<int> (tableHeader.getX() + bandColumns[c].first, tableHeader.getY(), bandColumns[c].second, tableHeader.getHeight()),
+                        juce::Justification::centredLeft, false);
+    }
+    // Each band's number in an orange ring, as its handle on the graph.
+    for (size_t b = 0; b < bandRows.size(); ++b)
+    {
+        if (bandRows[b].isEmpty())
+            continue;
+        const auto c = juce::Rectangle<float> (18.0f, 18.0f).withCentre ({ (float) bandRows[b].getX() + 9.0f, (float) bandRows[b].getCentreY() });
+        g.setColour (raised);
+        g.fillEllipse (c);
+        g.setColour (accent);
+        g.drawEllipse (c.reduced (0.75f), 1.5f);
+        g.setColour (ink);
+        g.setFont (geist (Weight::semibold, 10.5f));
+        g.drawText (juce::String ((int) b + 1), c, juce::Justification::centred, false);
+    }
+    // The graphic EQ's 0 dB line behind the faders.
+    if (! faderArea.isEmpty())
+    {
+        g.setColour (line1);
+        const auto y = faderArea.getY() + captionHeight + 6 + (faderArea.getHeight() - captionHeight * 2 - 14) / 2;
+        g.fillRect (faderArea.getX(), y, faderArea.getWidth(), 1);
+    }
 }
 
 // ---- EqStage ---------------------------------------------------------------------------------------------

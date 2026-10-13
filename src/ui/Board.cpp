@@ -3,6 +3,7 @@
 
 #include "Board.h"
 #include "AmpHead.h"
+#include "InspectorParts.h"
 
 namespace ui
 {
@@ -219,52 +220,103 @@ public:
         return getLocalBounds().toFloat().reduced (4.0f, 0.0f).withTrimmedTop ((pedalMargin + 7.0f) * board.scale).withTrimmedBottom (pedalMargin * board.scale);
     }
 
+    /// Where the jewel (the switch's dot) sits: centred low on the tile, where a pedal's footswitch would be.
+    juce::Point<float> jewelCentre() const
+    {
+        const auto t = tile();
+        return { t.getCentreX(), t.getBottom() - 16.0f - currentLift() };
+    }
+
+    /// How far it's raised: 3 points (at the board's scale) while selected, as a pedal.
+    float currentLift() const { return board.selected == id ? 3.0f * board.scale : 0.0f; }
+
     void paint (juce::Graphics& g) override
     {
+        // A piece of gear on the board like the pedals: raised and ringed in orange when selected, a soft shadow under
+        // it, a dark steel plate with four screws, and on it the amp's own head in small (its material) or the cab's
+        // front (tolex and grille), the name silkscreened under it, and the switch as a pilot jewel in a bezel.
         const auto isSelected = board.selected == id;
-        auto t = tile().translated (0.0f, isSelected ? -3.0f * board.scale : 0.0f);
-        g.setColour (raised.withAlpha (isSelected ? 1.0f : 0.85f));
-        g.fillRoundedRectangle (t, 8.0f);
-        g.setColour (isSelected ? accent : line1);
-        g.drawRoundedRectangle (t.reduced (0.5f), 8.0f, isSelected ? 1.5f : 1.0f);
-
-        auto area = t.reduced (6.0f, 10.0f);
-        g.setFont (geist (Weight::semibold, 10.0f));
-        g.setColour (inkFaint);
-        g.drawText (id == BlockId::amp ? "AMP" : "CAB", area.removeFromTop (14.0f), juce::Justification::centred, false);
-        area.removeFromTop (8.0f);
-        const auto icon = area.removeFromTop (30.0f);
+        const auto lift = currentLift();
+        const auto t = tile().translated (0.0f, -lift);
         const auto on = dot->isOn();
+        constexpr float r = 7.0f;
+
+        {
+            juce::Path body;
+            body.addRoundedRectangle (t, r);
+            juce::DropShadow (juce::Colours::black.withAlpha (isSelected ? 0.7f : 0.55f), juce::roundToInt (8.0f + lift * 2.0f), { 0, juce::roundToInt (3.0f + lift) })
+                .drawForPath (g, body);
+        }
+        if (isSelected)
+        {
+            g.setColour (accent.withAlpha (0.2f));
+            g.fillRoundedRectangle (t.expanded (2.0f).translated (0.0f, 2.0f), r + 2.0f);
+            g.setColour (accent);
+            g.drawRoundedRectangle (t.expanded (3.0f), r + 3.0f, 1.5f);
+        }
+
+        // The plate: brushed steel, darker toward its foot, a highlight along its top edge.
+        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff34322f), t.getX(), t.getY(), juce::Colour (0xff181716), t.getX(), t.getBottom(), false));
+        g.fillRoundedRectangle (t, r);
+        g.setColour (juce::Colours::white.withAlpha (0.03f));
+        for (auto y = t.getY() + 3.0f; y < t.getBottom() - 3.0f; y += 2.0f)
+            g.drawHorizontalLine (juce::roundToInt (y), t.getX() + 3.0f, t.getRight() - 3.0f);
+        g.setColour (juce::Colours::white.withAlpha (0.12f));
+        g.drawHorizontalLine (juce::roundToInt (t.getY() + 1.0f), t.getX() + r, t.getRight() - r);
+        g.setColour (juce::Colours::black.withAlpha (0.7f));
+        g.drawRoundedRectangle (t.reduced (0.5f), r, 1.0f);
+        for (auto [sx, sy] : { std::pair<float, float> { 0.0f, 0.0f }, { 1.0f, 0.0f }, { 0.0f, 1.0f }, { 1.0f, 1.0f } })
+        {
+            const juce::Point<float> c { sx < 0.5f ? t.getX() + 6.0f : t.getRight() - 6.0f, sy < 0.5f ? t.getY() + 6.0f : t.getBottom() - 6.0f };
+            g.setColour (juce::Colour (0xff0e0d0d));
+            g.fillEllipse (juce::Rectangle<float> (4.5f, 4.5f).withCentre (c));
+            g.setColour (juce::Colour (0xff7d7871));
+            g.fillEllipse (juce::Rectangle<float> (2.5f, 2.5f).withCentre (c.translated (-0.3f, -0.3f)));
+        }
+
+        // The gear on the plate.
+        auto face = t.reduced (8.0f, 0.0f).withTrimmedTop (12.0f);
         {
             const juce::Graphics::ScopedSaveState saved (g);
             if (! on)
-                g.beginTransparencyLayer (offAlpha);
+                g.beginTransparencyLayer (0.55f);
             if (id == BlockId::amp)
-                drawMiniAmp (g, juce::Rectangle<float> (45.0f, 30.0f).withCentre (icon.getCentre()), ampName);
+            {
+                const auto w = face.getWidth();
+                const auto head = juce::Rectangle<float> (w, w * 0.78f).withPosition (face.getX(), face.getY() + 4.0f);
+                drawSmallHead (g, head, ampName);
+                face.removeFromTop (head.getHeight() + 10.0f);
+            }
             else
             {
-                // A speaker: its rim, cone, and dust cap.
-                const auto c = icon.getCentre();
-                g.setColour (inkDim);
-                g.drawEllipse (juce::Rectangle<float> (28.0f, 28.0f).withCentre (c), 1.2f);
-                g.setColour (line2);
-                g.drawEllipse (juce::Rectangle<float> (18.0f, 18.0f).withCentre (c), 1.0f);
-                g.setColour (inkDim);
-                g.fillEllipse (juce::Rectangle<float> (7.0f, 7.0f).withCentre (c));
+                const auto front = face.withHeight (juce::jmin (face.getWidth() * 1.25f, t.getHeight() - 58.0f));
+                drawCabFront (g, front, true);
+                face.removeFromTop (front.getHeight() + 6.0f);
             }
             if (! on)
                 g.endTransparencyLayer();
         }
-        area.removeFromTop (6.0f);
-        g.setFont (geist (Weight::medium, 11.0f));
+
+        // The name, silkscreened; the bezel round the jewel.
+        g.setFont (juce::Font (geist (Weight::semibold, 10.0f)).withExtraKerningFactor (0.06f));
         g.setColour (on ? ink : inkFaint);
-        g.drawFittedText (id == BlockId::amp ? ampName : juce::String ("Cab"), area.removeFromTop (16.0f).toNearestInt(), juce::Justification::centred, 1, 0.8f);
+        g.drawFittedText ((id == BlockId::amp ? ampName : juce::String ("Cab")).toUpperCase(), face.removeFromTop (14.0f).toNearestInt(), juce::Justification::centred, 1, 0.7f);
+        const auto jc = jewelCentre();
+        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff8f8a82), jc.x, jc.y - 8.0f, juce::Colour (0xff2a2826), jc.x, jc.y + 8.0f, false));
+        g.fillEllipse (juce::Rectangle<float> (15.0f, 15.0f).withCentre (jc));
+        g.setColour (juce::Colour (0xff0b0b0b));
+        g.fillEllipse (juce::Rectangle<float> (11.0f, 11.0f).withCentre (jc));
+        if (on)
+        {
+            g.setGradientFill (juce::ColourGradient (accent.withAlpha (0.45f), jc, accent.withAlpha (0.0f), jc.translated (14.0f, 0.0f), true));
+            g.fillEllipse (juce::Rectangle<float> (28.0f, 28.0f).withCentre (jc));
+        }
     }
 
     void resized() override
     {
-        const auto t = tile();
-        dot->setBounds (juce::Rectangle<int> (17, 17).withCentre ({ juce::roundToInt (t.getCentreX()), juce::roundToInt (t.getBottom() - 18.0f) }));
+        const auto c = jewelCentre();
+        dot->setBounds (juce::Rectangle<int> (17, 17).withCentre ({ juce::roundToInt (c.x), juce::roundToInt (c.y) }));
     }
 
     void mouseUp (const juce::MouseEvent& e) override
@@ -378,7 +430,10 @@ void Board::setSelected (BlockId id)
         if (auto* pedal = pedalFor (b))
             pedal->repaint();
         if (auto* marker = getMarker (b))
+        {
+            marker->resized(); // its jewel rises with it
             marker->repaint();
+        }
     }
 }
 

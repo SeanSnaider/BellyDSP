@@ -248,6 +248,7 @@ set(AMPSIM_UI_SOURCES
     src/ui/AmpView.cpp
     src/ui/MainPages.cpp
     src/ui/Pages.cpp
+    src/ui/InspectorParts.cpp
     src/ui/CabView.cpp
     src/ui/EqPage.cpp
     src/ui/FxPages.cpp
@@ -562,6 +563,7 @@ target_sources(ampsim_tests PRIVATE
     tests/EditorTests.cpp
     tests/PedalArtTests.cpp
     tests/MainScreenTests.cpp
+    tests/InspectorTests.cpp
     tests/ReleaseTests.cpp
     tests/MigrationTests.cpp
     tests/CaptureTests.cpp

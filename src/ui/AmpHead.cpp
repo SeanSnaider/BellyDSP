@@ -1123,4 +1123,41 @@ void drawMiniAmp (juce::Graphics& g, juce::Rectangle<float> box, const juce::Str
     drawMiniHead (g, box, materialForAmp (amp));
 }
 
+void drawSmallHead (juce::Graphics& g, juce::Rectangle<float> box, const juce::String& amp)
+{
+    // The mini head's drawing in its own 30 x 20 units, scaled up whole (so its panel bar and ring keep their
+    // proportions), with what a head shows at this size added on top: its handle, the knobs along the panel, the
+    // grille's weave under it, and its feet.
+    const auto k = juce::jmin (box.getWidth() / 30.0f, box.getHeight() / 23.0f);
+    const auto origin = box.getCentre() - juce::Point<float> (15.0f, 10.5f) * k;
+    const juce::Graphics::ScopedSaveState saved (g);
+    g.addTransform (juce::AffineTransform::scale (k).translated (origin));
+
+    g.setColour (juce::Colour (0xff0e0e0e));
+    g.fillRoundedRectangle (juce::Rectangle<float> (10.0f, -1.6f, 10.0f, 2.4f), 1.0f); // the handle
+    g.fillRoundedRectangle (juce::Rectangle<float> (3.0f, 19.6f, 4.0f, 1.4f), 0.5f);    // the feet
+    g.fillRoundedRectangle (juce::Rectangle<float> (23.0f, 19.6f, 4.0f, 1.4f), 0.5f);
+    const auto material = materialForAmp (amp);
+    drawMiniHead (g, { 0.0f, 0.0f, 30.0f, 20.0f }, material);
+
+    // The knobs along the panel bar.
+    const auto barY = material == Material::monolith ? 6.5f : 5.5f;
+    for (int i = 0; i < 7; ++i)
+    {
+        const juce::Point<float> c { 6.0f + 3.0f * (float) i, barY };
+        g.setColour (juce::Colours::black.withAlpha (0.45f));
+        g.fillEllipse (juce::Rectangle<float> (1.9f, 1.9f).withCentre (c.translated (0.0f, 0.2f)));
+        g.setColour (juce::Colours::white.withAlpha (0.6f));
+        g.fillEllipse (juce::Rectangle<float> (1.3f, 1.3f).withCentre (c));
+    }
+
+    // The grille: a shade darker than the body, with its weave, under the panel.
+    const auto grille = juce::Rectangle<float> (3.0f, 10.0f, 24.0f, 7.5f);
+    g.setColour (juce::Colours::black.withAlpha (0.28f));
+    g.fillRoundedRectangle (grille, 0.8f);
+    g.setColour (juce::Colours::white.withAlpha (0.07f));
+    for (auto y = grille.getY() + 0.8f; y < grille.getBottom(); y += 1.0f)
+        g.fillRect (juce::Rectangle<float> (grille.getX() + 0.5f, y, grille.getWidth() - 1.0f, 0.3f));
+}
+
 } // namespace ui

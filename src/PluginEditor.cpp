@@ -381,17 +381,49 @@ void AmpSimEditor::select (ui::BlockId id, bool fromStage)
     board->setSelected (id);
     ampSim.parameters.state.setProperty (uiSelectedKey, ui::info (id).pageName, nullptr);
 
-    // The stage follows the amp and the cab; an EQ pedal puts the stage's EQ view on its graph.
-    if (id == ui::BlockId::preEq || id == ui::BlockId::postEq)
+    // The stage follows the amp and the cab. An EQ pedal puts the stage on its graph (the bands are in the inspector,
+    // the curve and the spectrum on the stage), and the next other pedal puts the stage back where it was, so dialling
+    // an EQ never leaves the amp hidden (ASSUMPTIONS RD23).
+    const auto isEq = id == ui::BlockId::preEq || id == ui::BlockId::postEq;
+    if (isEq)
         eqStage->showPre (id == ui::BlockId::preEq);
-    if (! fromStage && (id == ui::BlockId::amp || id == ui::BlockId::cab))
+    if (fromStage)
+        return;
+    if (id == ui::BlockId::amp || id == ui::BlockId::cab)
+    {
+        eqShownForPedal = false;
         setStageMode (id == ui::BlockId::amp ? ui::StageMode::amp : ui::StageMode::cab);
+    }
+    else if (isEq)
+    {
+        if (stage->getMode() != ui::StageMode::eq)
+        {
+            stageBeforeEq = stage->getMode();
+            eqShownForPedal = true;
+        }
+        showStage (ui::StageMode::eq, true);
+    }
+    else if (eqShownForPedal && stage->getMode() == ui::StageMode::eq)
+    {
+        eqShownForPedal = false;
+        showStage (stageBeforeEq, true);
+    }
+}
+
+void AmpSimEditor::showStage (ui::StageMode mode, bool animate)
+{
+    // The stage alone, the selection left as it is.
+    stage->setMode (mode, animate);
+    ampSim.parameters.state.setProperty (uiStageKey, ui::stageModeName (mode), nullptr);
+    layoutCanvas();
+    refreshState();
 }
 
 void AmpSimEditor::setStageMode (ui::StageMode mode, bool animate)
 {
     if (mode == ui::StageMode::count)
         return;
+    eqShownForPedal = false; // the player picked the stage: it stays where they put it
     stage->setMode (mode, animate);
     ampSim.parameters.state.setProperty (uiStageKey, ui::stageModeName (mode), nullptr);
     const auto wanted = mode == ui::StageMode::amp ? ui::BlockId::amp
