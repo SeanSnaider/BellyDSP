@@ -81,7 +81,7 @@ Three pillars, weighted equally (Sean, 2026-10-13):
 - **Release notes:** `release-notes/0.1.0.md` and `0.2.0.md`.
 - **Real statistics:** download counts and active-install estimates, from the stats data.
 - **Measured numbers:**
-  - about 7,200 automated checks;
+  - about 8,700 automated checks;
   - the real-time safety test (0 allocations, frees, locks);
   - CPU per 128-sample buffer, on the Mac and on GitHub's Windows runner;
   - the tone matcher's benchmark results (`docs/TONE_MATCH.md`, `docs/BUILD_PLAN.md` "CPU").
