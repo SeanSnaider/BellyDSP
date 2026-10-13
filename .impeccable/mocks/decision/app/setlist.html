@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Setlist sketch</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Geist:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1280px;height:760px;overflow:hidden;background:#111;color:#ececec;font-family:Geist,system-ui,sans-serif;font-size:13px}
+.bar{height:40px;display:flex;align-items:center;gap:18px;padding:0 20px 0 320px;color:#9a9a9a;border-bottom:1px solid #1d1d1d}
+.bar .sp{flex:1}.bar b{color:#ececec;font-weight:500}
+.rail{position:absolute;left:18px;top:14px;bottom:14px;width:286px;background:#f2efe6;color:#151515;border-radius:3px;transform:rotate(-.6deg);box-shadow:0 10px 30px rgba(0,0,0,.6);padding:22px 22px}
+.tape{position:absolute;width:90px;height:26px;background:rgba(190,190,180,.85);top:-10px;left:96px;transform:rotate(2deg)}
+.tape.b{top:auto;bottom:-10px;left:120px;transform:rotate(-3deg)}
+.rail h5{font-family:"Barlow Condensed";font-weight:700;font-size:15px;letter-spacing:.08em;color:#6b6b63;margin-bottom:10px}
+.song{font-family:"Barlow Condensed";font-weight:800;font-size:31px;line-height:1.05;padding:5px 0;display:flex;gap:10px;align-items:baseline;position:relative}
+.song em{font-style:normal;font-size:17px;color:#8a877e;width:22px}
+.song.cur::after{content:"";position:absolute;left:-10px;right:-8px;top:-2px;bottom:-4px;border:3px solid #d6372b;border-radius:50% 45% 48% 52%/60% 55% 45% 50%;transform:rotate(-1.5deg)}
+.scn{font-family:"Barlow Condensed";font-weight:600;font-size:20px;color:#3a3a36;padding:2px 0 2px 34px}
+.scn.cur{color:#151515;background:linear-gradient(transparent 55%,#f4e04d 55%)}
+.field{position:absolute;left:322px;right:18px;top:54px;bottom:96px;display:grid;grid-template-columns:1fr 280px;gap:16px}
+.stage{display:flex;flex-direction:column;align-items:center;justify-content:center;background:#151515;border-radius:6px}
+.head{width:580px;height:194px;border-radius:12px;background:#111213;box-shadow:0 20px 40px rgba(0,0,0,.6);padding:10px}
+.panel{height:78px;border-radius:6px;background:linear-gradient(#9aa0a6,#7d838a);display:flex;align-items:center;justify-content:space-around;padding:0 20px 0 54px;position:relative;border-bottom:2px solid #ff6a1f}
+.panel::before{content:"";position:absolute;left:20px;top:31px;width:14px;height:14px;border-radius:50%;background:#f4e04d}
+.k{width:30px;height:30px;border-radius:50%;background:radial-gradient(circle at 38% 30%,#555,#151515 80%);box-shadow:0 0 0 2px #f4e04d inset}
+.gr{margin-top:10px;height:84px;border-radius:5px;background:radial-gradient(circle,#2a2a2a 1px,#151616 1.6px) 0 0/6px 6px;display:flex;align-items:center;justify-content:center;font-family:"Barlow Condensed";font-weight:800;font-size:38px;letter-spacing:.06em;color:#cfd3d6}
+.on{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px;max-width:600px;justify-content:center}
+.chip{height:34px;padding:0 14px;border-radius:4px;background:#1f1f1f;display:flex;align-items:center;font-family:"Barlow Condensed";font-weight:700;font-size:17px;color:#8f8f8f;letter-spacing:.02em}
+.chip.lit{background:#f4e04d;color:#151515}
+.side{background:#151515;border-radius:6px;padding:18px}
+.side h4{font-size:12px;color:#9a9a9a;font-weight:500;margin-bottom:14px}
+.big{display:grid;grid-template-columns:1fr 1fr;gap:22px 10px;justify-items:center}
+.kn{width:84px;height:84px;border-radius:50%;background:radial-gradient(circle at 38% 30%,#3a3a3a,#111 78%);box-shadow:0 0 0 3px #262626;position:relative}
+.kn::after{content:"";position:absolute;left:40px;top:8px;width:4px;height:20px;border-radius:2px;background:#ececec}
+.kn.a{box-shadow:0 0 0 3px #f4e04d}
+.kl{text-align:center;margin-top:8px;color:#9a9a9a}.kl b{display:block;color:#ececec;font-size:16px;font-weight:600;font-variant-numeric:tabular-nums}
+.chain{position:absolute;left:322px;right:18px;bottom:16px;height:64px;border-top:1px solid #1d1d1d;display:flex;align-items:center;gap:8px}
+.ch{height:40px;border-radius:5px;background:#1a1a1a;padding:0 16px;display:flex;align-items:center;color:#9a9a9a}
+.ch.cur{background:#262626;color:#ececec;box-shadow:inset 0 -2px 0 #d6372b}
+.chain .sp{flex:1}.tun{font-weight:600}.tun em{font-style:normal;color:#f4e04d;margin-left:6px}
+</style></head><body>
+<div class="rail"><div class="tape"></div><div class="tape b"></div>
+  <h5>TONIGHT · 6 PRESETS</h5>
+  <div class="song"><em>1</em>MATH ROCK</div>
+  <div class="song"><em>2</em>MODERN PROG</div>
+  <div class="song cur"><em>3</em>TECH DEATH</div>
+  <div class="scn">1 Rhythm</div><div class="scn cur">2 Lead</div><div class="scn">3 Clean</div><div class="scn">4 Breakdown</div>
+  <div class="song"><em>4</em>METAL</div>
+  <div class="song"><em>5</em>MIDWEST EMO</div>
+  <div class="song"><em>6</em>OPEN STRING CLEAN</div>
+</div>
+<div class="bar"><span>Undo</span><span>A/B</span><span class="sp"></span><span>CPU <b>6%</b></span><span>In <b>-14 dB</b></span><span>Out <b>-9 dB</b></span></div>
+<div class="field">
+  <div class="stage"><div class="head"><div class="panel"><div class="k"></div><div class="k"></div><div class="k"></div><div class="k"></div><div class="k"></div><div class="k"></div><div class="k"></div></div><div class="gr">FORGE</div></div>
+    <div class="on"><span class="chip lit">GATE</span><span class="chip">COMP</span><span class="chip lit">OVERDRIVE</span><span class="chip lit">FORGE</span><span class="chip lit">MODERN 4X12</span><span class="chip">HARMONIZER</span><span class="chip lit">DELAY</span><span class="chip lit">REVERB</span></div></div>
+  <div class="side"><h4>Hands on</h4><div class="big"><div><div class="kn a"></div><p class="kl"><b>6.2</b>Gain</p></div><div><div class="kn"></div><p class="kl"><b>5.0</b>Master</p></div><div><div class="kn"></div><p class="kl"><b>22%</b>Delay mix</p></div><div><div class="kn"></div><p class="kl"><b>18%</b>Reverb mix</p></div></div></div>
+</div>
+<div class="chain"><span class="ch">Input</span><span class="ch">Pre FX</span><span class="ch cur">Amp</span><span class="ch">EQ</span><span class="ch">Cab</span><span class="ch">Post FX</span><span class="ch">Output</span><span class="sp"></span><span class="tun">E2<em>in tune</em></span></div>
+</body></html>

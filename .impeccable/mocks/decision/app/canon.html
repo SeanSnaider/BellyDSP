@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Category standard sketch</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1280px;height:760px;overflow:hidden;background:#121212;color:#e8e8e8;font-family:Geist,system-ui,sans-serif;font-size:13px}
+.bar{height:52px;display:flex;align-items:center;gap:16px;padding:0 18px;background:#1a1a1a;border-bottom:1px solid #2c2c2c}
+.brand{font-weight:600}.preset{margin:0 auto;display:flex;align-items:center;gap:14px;font-size:16px;font-weight:600}
+.preset span{color:#8a8a8a;font-weight:400;font-size:13px}
+.bar b{color:#ff8a00}
+.stage{position:absolute;left:0;right:300px;top:52px;height:380px;background:radial-gradient(ellipse 70% 80% at 50% 100%,#2a2a2a,#121212 70%);display:flex;align-items:center;justify-content:center}
+.head{width:620px;height:206px;border-radius:12px;background:#111213;box-shadow:0 30px 50px rgba(0,0,0,.7);padding:10px}
+.panel{height:82px;border-radius:6px;background:linear-gradient(#9aa0a6,#7d838a);display:flex;align-items:center;justify-content:space-around;padding:0 20px 0 54px;position:relative;border-bottom:2px solid #ff6a1f}
+.panel::before{content:"";position:absolute;left:20px;top:33px;width:14px;height:14px;border-radius:50%;background:#ff8a00}
+.k{width:32px;height:32px;border-radius:50%;background:radial-gradient(circle at 38% 30%,#555,#151515 80%)}
+.gr{margin-top:10px;height:88px;border-radius:5px;background:radial-gradient(circle,#2a2a2a 1px,#151616 1.6px) 0 0/6px 6px;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:34px;letter-spacing:.08em;color:#cfd3d6}
+.board{position:absolute;left:0;right:300px;top:432px;height:250px;background:#181818;border-top:1px solid #2c2c2c;display:flex;align-items:center;justify-content:center;gap:16px}
+.ped{width:110px;height:170px;border-radius:10px;background:linear-gradient(#3a3a3a,#262626);display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:14px 0;color:#bbb}
+.ped i{width:12px;height:12px;border-radius:50%;background:#333;display:block}.ped.on i{background:#ff8a00;box-shadow:0 0 8px #ff8a00}
+.ped u{width:46px;height:46px;border-radius:50%;background:#555;display:block;text-decoration:none}
+.insp{position:absolute;right:0;top:52px;bottom:78px;width:300px;background:#1a1a1a;border-left:1px solid #2c2c2c;padding:18px}
+.insp h4{font-size:14px;margin-bottom:16px}
+.row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #2c2c2c;color:#9a9a9a}.row b{color:#e8e8e8;font-weight:500}
+.foot{position:absolute;left:0;right:0;bottom:0;height:78px;background:#1a1a1a;border-top:1px solid #2c2c2c;display:flex;align-items:center;gap:8px;padding:0 18px}
+.sc{height:44px;padding:0 18px;border-radius:6px;background:#252525;display:flex;align-items:center;color:#9a9a9a}.sc.on{background:#ff8a00;color:#121212;font-weight:600}
+.foot .sp{flex:1}
+</style></head><body>
+<div class="bar"><span class="brand">BellyDSP</span><div class="preset">‹ Tech Death <span>Scene 2: Lead</span> ›</div><span>CPU <b>6%</b></span><span>Tuner</span></div>
+<div class="stage"><div class="head"><div class="panel"><div class="k"></div><div class="k"></div><div class="k"></div><div class="k"></div><div class="k"></div><div class="k"></div><div class="k"></div></div><div class="gr">FORGE</div></div></div>
+<div class="board"><div class="ped on"><i></i><u></u>Gate</div><div class="ped"><i></i><u></u>Comp</div><div class="ped on"><i></i><u></u>Drive</div><div class="ped"><i></i><u></u>Harmony</div><div class="ped on"><i></i><u></u>Delay</div><div class="ped on"><i></i><u></u>Reverb</div></div>
+<div class="insp"><h4>Forge</h4><div class="row">Gain<b>6.2</b></div><div class="row">Bass<b>5.4</b></div><div class="row">Middle<b>4.8</b></div><div class="row">Treble<b>6.0</b></div><div class="row">Presence<b>5.5</b></div><div class="row">Depth<b>5.2</b></div><div class="row">Master<b>5.0</b></div></div>
+<div class="foot"><span class="sc">1 Rhythm</span><span class="sc on">2 Lead</span><span class="sc">3 Clean</span><span class="sc">4 Ambient</span><span class="sp"></span><span>E2 in tune</span></div>
+</body></html>

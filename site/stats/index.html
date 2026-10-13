@@ -14,50 +14,74 @@
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<header class="top">
-  <div class="wrap">
-    <a class="brand" href="../">BellyDSP</a>
-    <nav class="nav" aria-label="Site">
-      <a href="../">Overview</a>
-      <a href="../download/">Download</a>
-      <a href="./" aria-current="page">Stats</a>
-      <a href="https://github.com/SeanSnaider/BellyDSP">Source</a>
-    </nav>
-  </div>
-</header>
+<div class="chrome">
+  <header class="bar">
+    <div class="wrap">
+      <a class="brand" href="../">BellyDSP</a>
+      <nav class="nav" aria-label="Site">
+        <a href="../" class="opt">Overview</a>
+        <a href="../download/" class="opt">Download</a>
+        <a href="../stats/" class="opt" aria-current="page">Stats</a>
+        <a href="https://github.com/SeanSnaider/BellyDSP">Source</a>
+      </nav>
+      <a class="bar-dl" href="../download/">Download</a>
+    </div>
+  </header>
+  <nav class="shelf" aria-label="The eight built-in amps">
+    <ol>
+      <li><a href="../#glass"><span class="mini m-glass" aria-hidden="true"></span><span class="nm">Glass</span></a></li>
+      <li><a href="../#ember"><span class="mini m-ember" aria-hidden="true"></span><span class="nm">Ember</span></a></li>
+      <li><a href="../#monolith"><span class="mini m-monolith" aria-hidden="true"></span><span class="nm">Monolith</span></a></li>
+      <li><a href="../#lantern"><span class="mini m-lantern" aria-hidden="true"></span><span class="nm">Lantern</span></a></li>
+      <li><a href="../#basalt"><span class="mini m-basalt" aria-hidden="true"></span><span class="nm">Basalt</span></a></li>
+      <li><a href="../#comet"><span class="mini m-comet" aria-hidden="true"></span><span class="nm">Comet</span></a></li>
+      <li><a href="../#forge"><span class="mini m-forge" aria-hidden="true"></span><span class="nm">Forge</span></a></li>
+      <li><a href="../#quartz"><span class="mini m-quartz" aria-hidden="true"></span><span class="nm">Quartz</span></a></li>
+    </ol>
+  </nav>
+</div>
 
 <main id="main">
-  <div class="wrap">
-    <div class="hero">
-      <h1>Stats</h1>
+  <section class="band page-band b-basalt" aria-labelledby="stats-title">
+    <div class="band-in">
+      <div class="band-copy">
+      <h1 id="stats-title">Stats</h1>
       <p class="lead">Downloads, and roughly how many copies are in use, counted from GitHub's anonymous download counters. Nothing else is tracked.</p>
-      <p class="small dim" id="updated">The numbers are updated once a day.</p>
+      <p class="small" id="updated">The numbers are updated once a day.</p>
       <p class="notice" data-fixture-notice hidden>Preview data: these are made-up test numbers, not real downloads.</p>
       <p class="notice" id="no-data" hidden>No numbers yet: they appear after the first release.</p>
+      </div>
     </div>
+  </section>
 
+  <div class="doc">
     <section aria-labelledby="totals" id="totals-section">
       <h2 id="totals">Downloads</h2>
+      <div class="body">
       <div class="tiles" id="tiles">
         <div class="tile"><div class="label">Downloads, all versions</div><div class="value" data-stat="downloads_total">-</div><div class="sub">macOS and Windows installers</div></div>
         <div class="tile"><div class="label">macOS</div><div class="value" data-stat="mac_install">-</div><div class="sub">.dmg downloads</div></div>
         <div class="tile"><div class="label">Windows</div><div class="value" data-stat="windows_install">-</div><div class="sub">installer downloads</div></div>
         <div class="tile"><div class="label">Updates delivered</div><div class="value" data-stat="updates">-</div><div class="sub" data-stat-sub="updates">by the apps' updaters</div></div>
       </div>
+    </div>
     </section>
 
     <section aria-labelledby="active">
       <h2 id="active">Copies in use, per day (estimate)</h2>
+      <div class="body">
       <p class="dim">How many installed copies checked for updates each day: the day-to-day growth of the update feed's download count. Read the caveats below before quoting these.</p>
       <div class="charts" id="charts"></div>
       <details>
         <summary>Show as a table</summary>
         <div class="table-scroll"><table class="data" id="active-table"><thead><tr><th scope="col">Day (UTC)</th><th scope="col">macOS</th><th scope="col">Windows</th></tr></thead><tbody></tbody></table></div>
       </details>
+    </div>
     </section>
 
     <section aria-labelledby="per-release">
       <h2 id="per-release">Per release</h2>
+      <div class="body">
       <div class="table-scroll">
         <table class="data" id="release-table">
           <thead><tr><th scope="col">Version</th><th scope="col">macOS downloads</th><th scope="col">Windows downloads</th><th scope="col">macOS updates</th><th scope="col">Windows updates</th><th scope="col">Update checks</th></tr></thead>
@@ -65,10 +89,12 @@
         </table>
       </div>
       <p class="small dim">"Updates" count the update files the apps download when they update themselves; "update checks" count fetches of that release's update feed.</p>
+    </div>
     </section>
 
     <section aria-labelledby="how">
       <h2 id="how">How it's counted, and why it's approximate</h2>
+      <div class="body">
       <ul class="dim">
         <li><strong>Downloads</strong> are GitHub's own count of each installer file (the macOS <code>.dmg</code> and the Windows <code>-windows-setup.exe</code>). Every click counts, including a second download by the same person, one that's never installed, and bots.</li>
         <li><strong>Updates</strong> are counted separately: the Mac updates from its own <code>.zip</code> and Windows from a <code>-windows-update.exe</code> that only the updater uses (the same bytes as the installer), so updating copies don't inflate the downloads.</li>
@@ -79,6 +105,7 @@
         <li>A file that's replaced on a release starts its count from zero again; fetches of the old copy since the last snapshot are lost.</li>
       </ul>
       <p class="dim">The raw daily counts are public, in <a href="https://github.com/SeanSnaider/BellyDSP/blob/stats/downloads.csv">downloads.csv on the repo's stats branch</a>, and anyone can query the same counters through GitHub's API.</p>
+    </div>
     </section>
   </div>
 </main>

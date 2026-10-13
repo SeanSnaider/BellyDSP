@@ -1,0 +1,615 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-13T07:14:18+00:00",
+  "title": "Design System: BellyDSP",
+  "extensions": {
+    "colorMeta": {
+      "ground": {
+        "role": "neutral",
+        "displayName": "Amp-Room Black",
+        "purpose": "The page, the chrome, calm bands, stat tiles.",
+        "canonical": "#0b0c0c",
+        "tonalRamp": [
+          "#0a0b0b",
+          "#242525",
+          "#414242",
+          "#606161",
+          "#818383",
+          "#a4a5a5",
+          "#c8c9c9",
+          "#edefef"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Panel Black",
+        "purpose": "Behind screenshots, code, pre blocks and tooltips.",
+        "canonical": "#111313",
+        "tonalRamp": [
+          "#0a0c0c",
+          "#232525",
+          "#404242",
+          "#5f6262",
+          "#808383",
+          "#a3a6a6",
+          "#c7caca",
+          "#ecefef"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "purpose": "Every 1px divider.",
+        "canonical": "#1e2221",
+        "tonalRamp": [
+          "#090c0b",
+          "#222625",
+          "#3f4342",
+          "#5e6261",
+          "#7f8482",
+          "#a1a6a5",
+          "#c5cac9",
+          "#eaf0ee"
+        ]
+      },
+      "hairline-strong": {
+        "role": "neutral",
+        "displayName": "Strong Hairline",
+        "purpose": "Borders of framed or interactive things.",
+        "canonical": "#2a2f2d",
+        "tonalRamp": [
+          "#080c0b",
+          "#212624",
+          "#3e4341",
+          "#5d6360",
+          "#7e8481",
+          "#a0a7a4",
+          "#c4cbc8",
+          "#eaf0ee"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Bone Ink",
+        "purpose": "Headings, strong text, the solid button on dark.",
+        "canonical": "#e6ebe9",
+        "tonalRamp": [
+          "#090c0b",
+          "#222625",
+          "#3f4341",
+          "#5e6261",
+          "#7f8382",
+          "#a2a6a4",
+          "#c5cac8",
+          "#ebf0ee"
+        ]
+      },
+      "ink-dim": {
+        "role": "neutral",
+        "displayName": "Dim Ink",
+        "purpose": "Body copy, leads, nav at rest, captions (6.4:1).",
+        "canonical": "#8a938f",
+        "tonalRamp": [
+          "#070d0a",
+          "#202724",
+          "#3c4441",
+          "#5b6360",
+          "#7c8581",
+          "#9ea8a3",
+          "#c2ccc7",
+          "#e7f1ed"
+        ]
+      },
+      "ink-faint": {
+        "role": "neutral",
+        "displayName": "Faint Ink",
+        "purpose": "Hairline-level marks only, never content (2.7:1).",
+        "canonical": "#525a57",
+        "tonalRamp": [
+          "#070d0b",
+          "#202724",
+          "#3c4441",
+          "#5b6360",
+          "#7c8581",
+          "#9ea7a4",
+          "#c2ccc8",
+          "#e8f1ed"
+        ]
+      },
+      "emerald": {
+        "role": "primary",
+        "displayName": "Signal Emerald",
+        "purpose": "On, active, correct: shelf light, current nav, active chain dots, focus, selection.",
+        "canonical": "#34d399",
+        "tonalRamp": [
+          "#010f08",
+          "#032d1d",
+          "#104e37",
+          "#127351",
+          "#1a996d",
+          "#0ec289",
+          "#51e8ad",
+          "#c7fde2"
+        ]
+      },
+      "glass-field": {
+        "role": "material",
+        "displayName": "Glass Cream-Silver",
+        "purpose": "Glass band field.",
+        "canonical": "#cdcac0",
+        "tonalRamp": [
+          "#0d0b05",
+          "#27251d",
+          "#44423a",
+          "#646158",
+          "#858279",
+          "#a8a59b",
+          "#ccc9bf",
+          "#f2eee4"
+        ]
+      },
+      "glass-ink": {
+        "role": "material",
+        "displayName": "Glass Ink",
+        "purpose": "Text and solid button on Glass.",
+        "canonical": "#17191a",
+        "tonalRamp": [
+          "#0a0b0c",
+          "#232526",
+          "#404243",
+          "#5f6263",
+          "#808384",
+          "#a3a5a7",
+          "#c7cacb",
+          "#eceff0"
+        ]
+      },
+      "ember-field": {
+        "role": "material",
+        "displayName": "Ember Oxblood",
+        "purpose": "Ember band field.",
+        "canonical": "#3f1719",
+        "tonalRamp": [
+          "#1d0103",
+          "#3e1618",
+          "#5f3434",
+          "#815353",
+          "#a57373",
+          "#ca9695",
+          "#f0b9b9",
+          "#fde9e9"
+        ]
+      },
+      "ember-gold": {
+        "role": "material",
+        "displayName": "Ember Badge Gold",
+        "purpose": "Ember's script name.",
+        "canonical": "#d9b878",
+        "tonalRamp": [
+          "#110a01",
+          "#312201",
+          "#553e08",
+          "#7a5c18",
+          "#9c7d3e",
+          "#c0a061",
+          "#e6c484",
+          "#feeccb"
+        ]
+      },
+      "monolith-field": {
+        "role": "material",
+        "displayName": "Monolith Black",
+        "purpose": "Monolith band field (also the 404).",
+        "canonical": "#121313",
+        "tonalRamp": [
+          "#0a0b0b",
+          "#242525",
+          "#414242",
+          "#606161",
+          "#818282",
+          "#a4a5a5",
+          "#c8c9c9",
+          "#edefef"
+        ]
+      },
+      "lantern-field": {
+        "role": "material",
+        "displayName": "Lantern Tweed",
+        "purpose": "Lantern band field (also the download page).",
+        "canonical": "#c8a467",
+        "tonalRamp": [
+          "#110a01",
+          "#322201",
+          "#563d0a",
+          "#7c5b1b",
+          "#9f7c3f",
+          "#c39f62",
+          "#e8c385",
+          "#feeccf"
+        ]
+      },
+      "lantern-ink": {
+        "role": "material",
+        "displayName": "Lantern Ink",
+        "purpose": "Text and solid button on Lantern.",
+        "canonical": "#26190d",
+        "tonalRamp": [
+          "#140801",
+          "#2f2216",
+          "#4e3f32",
+          "#6e5e50",
+          "#907f70",
+          "#b3a192",
+          "#d8c5b6",
+          "#feebdb"
+        ]
+      },
+      "basalt-field": {
+        "role": "material",
+        "displayName": "Basalt Stone",
+        "purpose": "Basalt band field (also the stats page).",
+        "canonical": "#2c2f31",
+        "tonalRamp": [
+          "#090c0d",
+          "#232527",
+          "#3f4245",
+          "#5e6264",
+          "#7f8385",
+          "#a2a6a8",
+          "#c6cacc",
+          "#ebeff2"
+        ]
+      },
+      "comet-field": {
+        "role": "material",
+        "displayName": "Comet Navy",
+        "purpose": "Comet band field.",
+        "canonical": "#141e44",
+        "tonalRamp": [
+          "#030529",
+          "#172248",
+          "#323f69",
+          "#515f8b",
+          "#7181af",
+          "#93a4d3",
+          "#b6c8fa",
+          "#e8eefe"
+        ]
+      },
+      "comet-ice": {
+        "role": "material",
+        "displayName": "Comet Ice",
+        "purpose": "Comet's streaks and glow.",
+        "canonical": "#9ff3ff",
+        "tonalRamp": [
+          "#010e10",
+          "#022b30",
+          "#0c4b52",
+          "#076e79",
+          "#3b909c",
+          "#60b4c0",
+          "#85d9e5",
+          "#cdf8fe"
+        ]
+      },
+      "forge-field": {
+        "role": "material",
+        "displayName": "Forge Black",
+        "purpose": "Forge band field.",
+        "canonical": "#101112",
+        "tonalRamp": [
+          "#0a0b0c",
+          "#242526",
+          "#414243",
+          "#606163",
+          "#818284",
+          "#a4a5a6",
+          "#c8c9cb",
+          "#edeff0"
+        ]
+      },
+      "forge-orange": {
+        "role": "material",
+        "displayName": "Forge Orange",
+        "purpose": "Forge's bottom rule, mini line, program-change rule.",
+        "canonical": "#ff6a1f",
+        "tonalRamp": [
+          "#190501",
+          "#421501",
+          "#6e2a09",
+          "#a13d06",
+          "#d5530a",
+          "#fe783e",
+          "#feb598",
+          "#feeae2"
+        ]
+      },
+      "quartz-field": {
+        "role": "material",
+        "displayName": "Quartz Lilac",
+        "purpose": "Quartz band field.",
+        "canonical": "#dccde3",
+        "tonalRamp": [
+          "#100715",
+          "#2b2030",
+          "#493d4f",
+          "#695c6f",
+          "#8a7c91",
+          "#ad9fb4",
+          "#d2c3d9",
+          "#f7e9fd"
+        ]
+      },
+      "quartz-violet": {
+        "role": "material",
+        "displayName": "Quartz Violet",
+        "purpose": "Quartz's name.",
+        "canonical": "#533f6c",
+        "tonalRamp": [
+          "#120222",
+          "#2d1943",
+          "#4b3763",
+          "#6a5685",
+          "#8c77a8",
+          "#af9acd",
+          "#d3bdf3",
+          "#f2eafe"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Amp name",
+        "purpose": "An amp's name in its badge lettering: Glass 300 +0.08em; Monolith 600 caps +0.18em, Basalt 600 caps +0.16em and Quartz 300 caps +0.26em at clamp(36px, 4.6vw, 3.6rem); Comet 500 skewed -12deg with three streaks; Forge 600 caps +0.02em scaled 0.86 wide. Never wraps."
+      },
+      "display-script": {
+        "displayName": "Badge script",
+        "purpose": "Ember (gold, with a 2px drop) and Lantern (dark brown) names only."
+      },
+      "page-title": {
+        "displayName": "Page title",
+        "purpose": "An inner page's h1 on its material band."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "A calm band's h2, max 16em, a sentence with a full stop."
+      },
+      "statement": {
+        "displayName": "Statement",
+        "purpose": "The overview's h1: what BellyDSP is, above the download, smaller than the Glass name on purpose."
+      },
+      "title": {
+        "displayName": "Section title",
+        "purpose": "A doc section's h2, sticky in a 300px column from 960px."
+      },
+      "voice": {
+        "displayName": "Voice",
+        "purpose": "An amp's one-line voice under its name."
+      },
+      "lead": {
+        "displayName": "Lead",
+        "purpose": "The paragraph under a headline or page title, in dim or soft ink."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Copy in dim ink, max 44em in docs; strong in ink at 500."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Nav, shelf names, captions, meta lines, program-change line (13 to 14px)."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Inline code and copyable commands."
+      }
+    },
+    "shadows": [
+      {
+        "name": "head",
+        "value": "drop-shadow(0 30px 34px rgba(0, 0, 0, 0.32))",
+        "purpose": "Every amp band's head image (a filter, following its outline)."
+      },
+      {
+        "name": "shot-featured",
+        "value": "0 24px 48px rgba(0, 0, 0, 0.45)",
+        "purpose": "A lone featured screenshot on a calm band; grouped screenshots drop it."
+      },
+      {
+        "name": "mini-ring",
+        "value": "0 0 0 1px rgba(255, 255, 255, 0.08)",
+        "purpose": "The shelf's minis, as the app draws them."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "The one ease (exponential ease-out) for every transition."
+      },
+      {
+        "name": "state",
+        "value": "160ms",
+        "purpose": "Hover, press, and color changes on links and buttons."
+      },
+      {
+        "name": "shelf-light",
+        "value": "transform 520ms, width 520ms on the shared ease",
+        "purpose": "The emerald shelf light gliding to the current amp's mini; the current amp is the band crossing a line 30% down the space below the chrome."
+      },
+      {
+        "name": "head-arrival",
+        "value": "view() timeline, range entry 5% to cover 40%: from translateY(44px) scale(0.965) with drop-shadow(0 6px 8px rgba(0,0,0,0.18)) to rest with the head shadow",
+        "purpose": "The head arriving as its band scrolls in; only under @supports (animation-timeline: view()) and prefers-reduced-motion: no-preference."
+      },
+      {
+        "name": "scroll",
+        "value": "scroll-behavior: smooth (reduced motion: auto)",
+        "purpose": "Shelf jumps and the narrow shelf scrolling the current amp into view."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "tablet",
+        "value": "720px",
+        "purpose": "Gutter 32px; below it the bar keeps only the mark, Source and Download, and the match result scrolls sideways."
+      },
+      {
+        "name": "doc-cols",
+        "value": "840px",
+        "purpose": "Facts list goes to 240px / 1fr."
+      },
+      {
+        "name": "os-cols",
+        "value": "900px",
+        "purpose": "OS columns and stats charts go two-up."
+      },
+      {
+        "name": "wide",
+        "value": "960px",
+        "purpose": "Shelf at 84px, spread out, with full-size minis; below it the shelf keeps names and scrolls sideways. Bands go to 4/8 columns, docs to 300px / 1fr."
+      },
+      {
+        "name": "max",
+        "value": "1280px",
+        "purpose": "Gutter 56px."
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Solid Button",
+      "kind": "button",
+      "refersTo": "button-solid",
+      "description": "The one download for this computer; one per group.",
+      "html": "<a class=\"ds-btn ds-btn-solid\" href=\"#\">Download for macOS</a>",
+      "css": ".ds-btn{display:inline-flex;flex-direction:column;justify-content:center;gap:2px;min-height:52px;padding:10px 22px;border-radius:10px;font-family: Geist, system-ui, sans-serif;font-size:16px;font-weight:500;text-decoration:none;border:1px solid transparent;transition:background 160ms cubic-bezier(0.16,1,0.3,1),border-color 160ms cubic-bezier(0.16,1,0.3,1),transform 160ms cubic-bezier(0.16,1,0.3,1);} .ds-btn:active{transform:translateY(1px);} .ds-btn:focus-visible{outline:2px solid #34d399;outline-offset:3px;} .ds-btn-solid{background:#e6ebe9;color:#0b0c0c;} .ds-btn-solid:hover{background:#ffffff;}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Every other action: the other OS, the source, first-launch steps. Can carry a meta line.",
+      "html": "<a class=\"ds-btn ds-btn-ghost\" href=\"#\"><span>Download for Windows</span><span class=\"ds-meta\">0.2.0, 41 MB</span></a>",
+      "css": ".ds-btn{display:inline-flex;flex-direction:column;justify-content:center;gap:2px;min-height:52px;padding:10px 22px;border-radius:10px;font-family: Geist, system-ui, sans-serif;font-size:16px;font-weight:500;text-decoration:none;border:1px solid transparent;transition:border-color 160ms cubic-bezier(0.16,1,0.3,1),transform 160ms cubic-bezier(0.16,1,0.3,1);} .ds-btn:active{transform:translateY(1px);} .ds-btn:focus-visible{outline:2px solid #34d399;outline-offset:3px;} .ds-btn-ghost{border-color:#2a2f2d;color:#e6ebe9;background:#0b0c0c;} .ds-btn-ghost:hover{border-color:#8a938f;} .ds-meta{font-size:12px;font-weight:400;opacity:.72;}"
+    },
+    {
+      "name": "Top Bar",
+      "kind": "nav",
+      "refersTo": "top-bar",
+      "description": "The app's top bar: the mark, the nav with an emerald underline on the current page, the Download button.",
+      "html": "<header class=\"ds-bar\"><a class=\"ds-brand\" href=\"#\">BellyDSP</a><nav class=\"ds-nav\"><a href=\"#\" aria-current=\"page\">Overview</a><a href=\"#\">Download</a><a href=\"#\">Stats</a><a href=\"#\">Source</a></nav><a class=\"ds-bar-dl\" href=\"#\">Download for macOS</a></header>",
+      "css": ".ds-bar{height:56px;display:flex;align-items:center;gap:28px;padding:0 32px;background:#0b0c0c;border-bottom:1px solid #1e2221;font-family: Geist, system-ui, sans-serif;color:#e6ebe9;} .ds-brand{display:inline-flex;align-items:center;gap:10px;font-weight:600;font-size:15px;text-decoration:none;color:#e6ebe9;} .ds-brand::before{content:'';width:7px;height:7px;border-radius:50%;background:#34d399;} .ds-nav{display:flex;gap:24px;margin-left:auto;font-size:14px;} .ds-nav a{color:#8a938f;text-decoration:none;padding:18px 0 16px;border-bottom:2px solid transparent;} .ds-nav a:hover{color:#e6ebe9;} .ds-nav a[aria-current=page]{color:#e6ebe9;border-bottom-color:#34d399;} .ds-nav a:focus-visible,.ds-bar-dl:focus-visible{outline:2px solid #34d399;outline-offset:3px;} .ds-bar-dl{font-size:14px;font-weight:500;text-decoration:none;background:#e6ebe9;color:#0b0c0c;padding:8px 16px;border-radius:8px;transition:background 160ms cubic-bezier(0.16,1,0.3,1);} .ds-bar-dl:hover{background:#fff;}"
+    },
+    {
+      "name": "Amp Shelf",
+      "kind": "nav",
+      "refersTo": "shelf",
+      "description": "The eight minis with their names; the emerald shelf light sits under the current amp.",
+      "html": "<nav class=\"ds-shelf\"><a href=\"#\" aria-current=\"true\"><span class=\"ds-mini ds-m-glass\"></span>Glass</a><a href=\"#\"><span class=\"ds-mini ds-m-ember\"></span>Ember</a><a href=\"#\"><span class=\"ds-mini ds-m-monolith\"></span>Monolith</a><a href=\"#\"><span class=\"ds-mini ds-m-forge\"></span>Forge</a></nav>",
+      "css": ".ds-shelf{height:84px;display:flex;gap:32px;padding:0 32px;background:#0b0c0c;border-bottom:1px solid #1e2221;font-family: Geist, system-ui, sans-serif;} .ds-shelf a{display:flex;align-items:center;gap:12px;color:#8a938f;text-decoration:none;font-size:14px;position:relative;transition:color 160ms cubic-bezier(0.16,1,0.3,1);} .ds-shelf a:hover,.ds-shelf a[aria-current=true]{color:#e6ebe9;} .ds-shelf a:focus-visible{outline:2px solid #34d399;outline-offset:3px;} .ds-shelf a[aria-current=true]::after{content:'';position:absolute;left:0;bottom:-1px;width:48px;height:2px;border-radius:1px;background:#34d399;} .ds-mini{width:48px;height:32px;border-radius:4px;position:relative;box-shadow:0 0 0 1px rgba(255,255,255,.08);overflow:hidden;} .ds-mini::before{content:'';position:absolute;left:10%;right:10%;top:13%;height:22%;border-radius:1px;} .ds-m-glass{background:#d9d6cd;} .ds-m-glass::before{background:#b9bcba;} .ds-m-ember{background:#4b1d1f;} .ds-m-ember::before{background:#1c1514;box-shadow:0 0 0 1px #a88a52;} .ds-m-monolith{background:#161717;} .ds-m-monolith::before{background:#0c0d0d;border-bottom:1px solid #34d399;} .ds-m-forge{background:#111213;} .ds-m-forge::before{background:#8d9399;} .ds-m-forge::after{content:'';position:absolute;left:10%;right:10%;top:42%;height:1px;background:#ff6a1f;}"
+    },
+    {
+      "name": "Amp Band (Ember)",
+      "kind": "custom",
+      "refersTo": "amp-band",
+      "description": "One amp at page scale in its own material, the name in its badge lettering, voice, note, and the program-change line. The real head image sits in the other column.",
+      "html": "<section class=\"ds-band ds-ember\"><h2 class=\"ds-name\">Ember</h2><p class=\"ds-voice\">Light crunch to heavy crunch.</p><p class=\"ds-note\">Every amp's Gain blends five captures across the knob.</p><p class=\"ds-pc\">Amp 2, program change 2</p></section>",
+      "css": ".ds-band{position:relative;isolation:isolate;overflow:hidden;padding:72px 32px;font-family: Geist, system-ui, sans-serif;} .ds-band::before{content:'';position:absolute;inset:0;z-index:-1;} .ds-ember{color:#f1e2d6;background:radial-gradient(ellipse 80% 70% at 70% 60%,#5a2326,#3f1719 75%);} .ds-ember::before{background:repeating-linear-gradient(0deg,rgba(0,0,0,.16) 0 1px,transparent 1px 3px),repeating-linear-gradient(90deg,rgba(0,0,0,.12) 0 1px,transparent 1px 3px);} .ds-name{font-family:Fraunces,Georgia,serif;font-style:italic;font-weight:600;font-size:72px;line-height:.95;margin:0 0 18px;color:#d9b878;text-shadow:0 2px 0 rgba(0,0,0,.5);} .ds-voice{font-size:22px;line-height:1.4;margin:0 0 14px;} .ds-note{color:#d1b3a4;max-width:30em;margin:0 0 18px;} .ds-pc{display:inline-flex;align-items:center;gap:10px;font-size:13px;color:#d1b3a4;margin:0;} .ds-pc::before{content:'';width:18px;height:1px;background:currentColor;opacity:.6;}"
+    },
+    {
+      "name": "Chain Row",
+      "kind": "chip",
+      "refersTo": "chain-cell",
+      "description": "The signal chain as cells; active blocks carry the emerald dot, endpoints are dashed.",
+      "html": "<ol class=\"ds-chain\"><li class=\"ds-io\">Input</li><li class=\"ds-on\">Pre FX</li><li class=\"ds-on\">Amp</li><li>EQ</li><li class=\"ds-io\">Output</li></ol>",
+      "css": ".ds-chain{display:flex;flex-wrap:wrap;gap:8px;list-style:none;margin:0;padding:0;font-family: Geist, system-ui, sans-serif;font-size:14px;color:#e6ebe9;} .ds-chain li{display:inline-flex;align-items:center;gap:8px;border:1px solid #2a2f2d;border-radius:9px;padding:8px 14px;} .ds-chain li.ds-on{border-color:rgba(52,211,153,.6);} .ds-chain li.ds-on::after{content:'';width:6px;height:6px;border-radius:50%;background:#34d399;} .ds-chain .ds-io{border-style:dashed;color:#8a938f;}"
+    },
+    {
+      "name": "Facts List",
+      "kind": "custom",
+      "refersTo": "facts",
+      "description": "Engineering evidence: term, then dim copy with the measured number in ink.",
+      "html": "<dl class=\"ds-facts\"><dt>The audio thread</dt><dd>Allocations, frees and locks in 14 seconds of every feature: <strong>0, 0, 0</strong>.</dd><dt>CPU</dt><dd>About <strong>6%</strong> of a 128-sample buffer.</dd></dl>",
+      "css": ".ds-facts{display:grid;grid-template-columns:240px 1fr;margin:0;font-family: Geist, system-ui, sans-serif;color:#e6ebe9;font-size:16px;line-height:1.6;} .ds-facts dt{font-weight:600;padding:18px 0;border-top:1px solid #1e2221;} .ds-facts dd{margin:0;padding:18px 0;border-top:1px solid #1e2221;color:#8a938f;} .ds-facts strong{color:#e6ebe9;font-weight:500;font-variant-numeric:tabular-nums;}"
+    },
+    {
+      "name": "Screenshot Frame",
+      "kind": "card",
+      "refersTo": "shot",
+      "description": "A real app snapshot in a strong-hairline frame; the lone featured one casts the screenshot shadow, grouped ones don't.",
+      "html": "<figure class=\"ds-fig\"><div class=\"ds-shot\"><div class=\"ds-ph\">App snapshot</div></div><figcaption>The Amp page, with the shelf along the top.</figcaption></figure>",
+      "css": ".ds-fig{margin:0;font-family: Geist, system-ui, sans-serif;} .ds-shot{border:1px solid #2a2f2d;border-radius:12px;overflow:hidden;background:#111313;box-shadow:0 24px 48px rgba(0,0,0,.45);} .ds-ph{aspect-ratio:1280/760;display:grid;place-items:center;color:#525a57;font-size:13px;} .ds-fig figcaption{font-size:14px;color:#8a938f;margin-top:14px;max-width:34em;}"
+    },
+    {
+      "name": "Stat Tiles",
+      "kind": "card",
+      "refersTo": "stat-tile",
+      "description": "Numbers in a 1px-gap hairline grid, tabular values.",
+      "html": "<div class=\"ds-tiles\"><div class=\"ds-tile\"><div class=\"ds-l\">Downloads, all versions</div><div class=\"ds-v\">1,284</div><div class=\"ds-s\">macOS and Windows installers</div></div><div class=\"ds-tile\"><div class=\"ds-l\">macOS</div><div class=\"ds-v\">902</div><div class=\"ds-s\">.dmg downloads</div></div></div>",
+      "css": ".ds-tiles{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:#1e2221;border:1px solid #1e2221;border-radius:10px;overflow:hidden;font-family: Geist, system-ui, sans-serif;} .ds-tile{background:#0b0c0c;padding:20px 22px;color:#e6ebe9;} .ds-l{font-size:13px;color:#8a938f;} .ds-v{font-size:38px;font-weight:500;letter-spacing:-.02em;margin:4px 0;font-variant-numeric:tabular-nums;} .ds-s{font-size:12px;color:#8a938f;}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Amp Shelf, Unrolled",
+    "overview": "bellydsp.com is drawn in the desktop app's current visual world, because PRODUCT.md binds \"the site looks like the app\": a near-black ground, 1px hairlines, Geist for everything, and emerald only for what is on, active, or correct. Onto that calm ground the site lays the app's eight amp heads as page-scale bands. Each band is built from its head's material (silver Glass, oxblood Ember, black Monolith, tweed Lantern, stone Basalt, navy Comet, steel-and-black Forge, lilac Quartz) the way the app builds its textures, with procedural CSS gradients, and the app's own rendered head sits on it as the band's object. Everything that isn't an amp (Match tone, the rest of the rig, how it's built, the download) lives on calm dark bands between them.\n\nThe density is low and the scale is generous: one idea per band, a 4/8 column split, the amp's name at display size beside or under its head. The imagery is only real app snapshots and heads rendered by the test suite. There's no hero illustration, no feature-card grid, no logo row.\n\n**This world follows the app's.** The desktop app is about to be redesigned with the whole look open (PRODUCT.md, \"The app\"). When the app's new world lands, this document and the site get revised to match it. Until then, the tokens below are the app's current look as the site carries it.",
+    "keyCharacteristics": [
+      "Near-black ground (`ground`), separated by 1px hairlines rather than by shadows or fills.",
+      "One accent, emerald, which means on, active, or correct.",
+      "Eight amp materials, used only as full-width bands, inner-page bands, and the shelf's minis.",
+      "Geist throughout. Each amp's name is set in its badge's own lettering.",
+      "The app's real heads and snapshots are the only pictures.",
+      "One authored motion: the head arrives as its band scrolls in. The shelf light follows the current amp."
+    ],
+    "rules": [
+      {
+        "name": "The Emerald Means On Rule",
+        "body": "Emerald marks the current, the active, the focused, or the correct, and nothing else. It never fills a surface, a button, or a heading. The only emerald inside an amp material is a detail the app's own head already has (Monolith's emerald bar), and that belongs to the head.",
+        "section": "colors"
+      },
+      {
+        "name": "The Materials Stay On Their Amps Rule",
+        "body": "An amp material appears as a full band, as an inner page's top band, or as that amp's mini on the shelf. Calm bands, doc sections, and components never borrow an amp's colors as accents.",
+        "section": "colors"
+      },
+      {
+        "name": "The Name Is The Display Rule",
+        "body": "Display scale belongs to the amp names. Statements, page titles, and headlines sit below it, and nothing sits above a heading as a label.",
+        "section": "typography"
+      },
+      {
+        "name": "The One Family Rule",
+        "body": "Geist sets everything except the two amps whose badges are script (Ember, Lantern), which get Fraunces. No third face. Comet's slant is a skew because Geist has no italic.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Numbers Rule",
+        "body": "Numbers that get compared (tables, stat values, `.num`) use tabular figures.",
+        "section": "typography"
+      },
+      {
+        "name": "The Objects Cast, The Page Doesn't Rule",
+        "body": "Cards, buttons, tiles, notices and bands never get a shadow. When a surface needs separating, use a hairline.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do set every new surface on the ground, with hairlines for structure.",
+      "Do give an amp's content its own material band, with its tints for text and its re-inked buttons, and its real head from the app.",
+      "Do build materials from CSS gradients, the way the app builds its textures, with the grain on its own layer.",
+      "Do set an amp's name in its badge's lettering, at display scale, on one line.",
+      "Do keep one solid button per group, for the download that fits this computer.",
+      "Do put every motion behind `prefers-reduced-motion: no-preference`, and use the shared ease (`cubic-bezier(0.16, 1, 0.3, 1)`).",
+      "Do show measured numbers in ink at 500 inside dim copy, in tabular figures where they're compared.",
+      "Do revise this document when the app's redesigned world lands. The site follows the app."
+    ],
+    "donts": [
+      "Don't use emerald for decoration, fills, headings, or buttons. It means on, active, or correct.",
+      "Don't use an amp material outside its band, its inner-page band, or its mini.",
+      "Don't put a label or a number above a heading.",
+      "Don't use mockups, stock, or illustrations. Only the app's real snapshots and heads.",
+      "Don't shadow surfaces. Only heads and a lone featured screenshot cast a shadow, soft and straight down.",
+      "Don't add a third typeface or set body text in Fraunces.",
+      "Don't hide the download: the bar keeps its Download button at every width."
+    ]
+  }
+}

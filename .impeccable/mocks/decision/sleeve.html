@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Sleeve sketch</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1440px;height:900px;overflow:hidden;background:#0b0c0c;color:#e6ebe9;font-family:Geist,system-ui,sans-serif}
+.bar{height:56px;border-bottom:1px solid #1e2221;display:flex;align-items:center;padding:0 80px;gap:28px;font-size:14px}
+.brand{font-weight:600;font-size:15px;display:flex;align-items:center;gap:10px}
+.brand i{width:7px;height:7px;border-radius:50%;background:#34d399;display:block}
+.bar nav{margin-left:auto;display:flex;gap:24px;color:#8a938f}
+.bar .dl{border:1px solid #2a2f2d;border-radius:8px;padding:7px 14px;color:#e6ebe9}
+.cover{position:absolute;left:80px;top:100px;width:720px;height:720px;border:1px solid #2a2f2d;border-radius:4px;background:radial-gradient(ellipse 70% 60% at 50% 70%,rgba(52,211,153,.06),transparent 70%),#0f1111;overflow:hidden}
+.cat{position:absolute;left:28px;top:24px;font-size:12px;letter-spacing:.14em;color:#525a57}
+.cat b{color:#8a938f;font-weight:500}
+.side{position:absolute;right:28px;top:24px;font-size:12px;letter-spacing:.14em;color:#525a57}
+.shelf{position:absolute;left:50%;transform:translateX(-50%);top:150px;display:flex;gap:12px}
+.mini{width:44px;height:29px;border-radius:4px;box-shadow:0 0 0 1px rgba(255,255,255,.08);position:relative}
+.mini::before{content:"";position:absolute;left:4px;right:4px;top:4px;height:7px;border-radius:1px;background:rgba(0,0,0,.35)}
+.mini.on::after{content:"";position:absolute;left:0;right:0;bottom:-9px;height:2px;background:#34d399}
+.head{position:absolute;left:60px;top:240px;width:600px;height:200px;border-radius:12px;background:linear-gradient(#e4e1d8,#cfccc2);box-shadow:0 18px 40px rgba(0,0,0,.6);padding:12px}
+.panel{height:72px;border-radius:6px;background:linear-gradient(#dfe1df,#c4c7c5);display:flex;align-items:center;justify-content:space-around;padding:0 30px 0 70px;position:relative}
+.panel::before{content:"";position:absolute;left:22px;top:28px;width:16px;height:16px;border-radius:50%;background:#34d399;box-shadow:0 0 10px #34d399}
+.k{width:30px;height:30px;border-radius:50%;background:radial-gradient(circle at 38% 30%,#fff,#b8bcbb 80%);box-shadow:0 0 0 2px #34d399 inset,0 3px 6px rgba(0,0,0,.35)}
+.grille{margin-top:10px;height:94px;border-radius:5px;background:repeating-linear-gradient(45deg,#232525 0 3px,#1b1d1d 3px 6px);display:flex;align-items:center;justify-content:center;font-weight:300;font-size:40px;letter-spacing:.08em;color:#e4e6e5}
+.ampname{position:absolute;left:0;right:0;top:480px;text-align:center;font-size:15px;color:#8a938f}
+.ampname b{color:#e6ebe9;font-weight:500}
+.spectrum{position:absolute;left:60px;right:60px;bottom:70px;height:90px;border-top:1px solid #1e2221}
+.spectrum svg{width:100%;height:100%}
+.sticker{position:absolute;left:880px;top:118px;width:480px}
+.eyebrow{font-size:13px;color:#8a938f;letter-spacing:.02em;margin-bottom:22px}
+h1{font-size:104px;font-weight:600;letter-spacing:-.04em;line-height:.95}
+h1 span{color:#34d399}
+.hook{margin-top:26px;font-size:20px;line-height:1.5;color:#b9c1be}
+.acts{margin-top:34px;display:flex;gap:12px}
+.btn{height:52px;border-radius:10px;display:flex;align-items:center;padding:0 22px;font-size:16px;font-weight:500}
+.btn.p{background:#e6ebe9;color:#0b0c0c}
+.btn.s{border:1px solid #2a2f2d}
+.meta{margin-top:14px;font-size:13px;color:#525a57}
+.tracks{position:absolute;left:880px;top:620px;width:480px;border-top:1px solid #1e2221}
+.t{display:flex;gap:18px;align-items:baseline;padding:13px 0;border-bottom:1px solid #1e2221;font-size:16px}
+.t em{font-style:normal;color:#525a57;font-size:13px;width:22px;font-variant-numeric:tabular-nums}
+.t span{color:#8a938f;margin-left:auto;font-size:13px}
+</style></head><body>
+<div class="bar"><div class="brand"><i></i>BellyDSP</div><nav><span style="color:#e6ebe9">Overview</span><span>Download</span><span>Stats</span><span>Source</span></nav><span class="dl">Download 0.2.0</span></div>
+
+<div class="cover">
+  <div class="cat"><b>BDSP</b> 0.2.0</div><div class="side">SIDE A · THE RIG</div>
+  <div class="shelf">
+    <div class="mini on" style="background:#d9d6cd"></div>
+    <div class="mini" style="background:#4b1d1f"></div>
+    <div class="mini" style="background:#161717"></div>
+    <div class="mini" style="background:#c8a467"></div>
+    <div class="mini" style="background:#35383b"></div>
+    <div class="mini" style="background:#17234d"></div>
+    <div class="mini" style="background:#111213"></div>
+    <div class="mini" style="background:#e4d7ea"></div>
+  </div>
+  <div class="head"><div class="panel"><div class="k"></div><div class="k"></div><div class="k"></div><div class="k"></div><div class="k"></div><div class="k"></div><div class="k"></div></div><div class="grille">Glass</div></div>
+  <div class="ampname"><b>Glass</b> · clean to the edge of breakup · click an amp to swap the head</div>
+  <div class="spectrum"><svg viewBox="0 0 600 90" preserveAspectRatio="none"><path d="M0 60 C60 58 90 40 140 44 S220 30 260 38 S340 28 380 34 S470 30 520 46 S580 70 600 76" fill="none" stroke="#34d399" stroke-width="1.5"/></svg></div>
+</div>
+
+<div class="sticker">
+  <div class="eyebrow">Free and open source · macOS and Windows · version 0.2.0</div>
+  <h1>BellyDSP<span>.</span></h1>
+  <p class="hook">A guitar amp sim and multi-effects app. Eight neural amps, a cab with mics you can move, a full pedalboard, and Match tone: load a song, play along, and it dials in the guitar.</p>
+  <div class="acts"><div class="btn p">Download for macOS</div><div class="btn s">Windows</div></div>
+  <div class="meta">18.9 MB · universal · updates itself · zero added latency</div>
+</div>
+
+<div class="tracks">
+  <div class="t"><em>01</em>Eight amps, one at a time<span>The rig</span></div>
+  <div class="t"><em>02</em>Match tone from a song<span>Play along</span></div>
+  <div class="t"><em>03</em>A cab with mics you can move<span>21 IRs</span></div>
+</div>
+</body></html>

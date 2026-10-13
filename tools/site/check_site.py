@@ -70,6 +70,10 @@ class Page(html.parser.HTMLParser):
             src = a.get("src") or a.get("data")
             if src:
                 self.resources.append((src, tag, a))
+        if tag == "source":  # <picture><source srcset>: an art-directed image for another viewport
+            for part in a.get("srcset", "").split(","):
+                if part.strip():
+                    self.resources.append((part.strip().split()[0], "srcset", a))
         if tag == "meta" and a.get("property") == "og:image":
             self.links.append(a.get("content", ""))
 

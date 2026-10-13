@@ -1,0 +1,72 @@
+{
+  "title": "Choose the app's new world",
+  "question": "The roll assigned The marquee. Keep it, take my pick or the grid, re-roll, or take the category standard played straight.",
+  "options": [
+    {
+      "id": "marquee",
+      "label": "The marquee",
+      "kicker": "THE ROLL",
+      "lineage": "a venue's backlit letterboard marquee, tonight's bill in black slotted letters",
+      "thesis": "Tonight's tone, spelled in lights: the preset and scene sit on a backlit marquee you can read from across the room.",
+      "palette": ["#15110f", "#1e1916", "#f3eee2", "#121212", "#ffb547"],
+      "materials": ["a backlit warm-white letterboard strip", "black condensed slotted capitals", "amber bulb light for what's on", "a warm house-dark ground"],
+      "viewport": "A full-width marquee spells TECH DEATH and SCENE 2 LEAD; under it the scene buttons, then what's on, the amp, and four hands-on knobs.",
+      "risk": "Reads as a novelty if the letters spell anything but real names, or if the marquee spreads past its one strip.",
+      "raised": [
+        { "from": "Botanical folio", "raise": "Every amp head is drawn at one fixed scale and baseline on every page, so switching amps compares like for like." },
+        { "from": "Vertical video feed", "raise": "A performance view where the current scene owns the screen and the next one is one key away." },
+        { "from": "Cassette j-card", "raise": "Values sit right-aligned in tabular columns, like running times against a margin." },
+        { "from": "Darkroom exposure record", "raise": "The dark grounds come from one strict nine-step tonal ramp, nothing in between." },
+        { "from": "Zoo guide map", "raise": "Work areas divide by flat tonal fields, not boxes and borders." }
+      ],
+      "html": ".impeccable/mocks/decision/app/marquee.html",
+      "htmlFrame": "1280x760"
+    },
+    {
+      "id": "pick-setlist",
+      "label": "The setlist",
+      "kicker": "IMPECCABLE’S PICK",
+      "lineage": "the setlist taped to the stage floor, read from the guitar",
+      "thesis": "The rig as tonight's setlist: presets in order down a taped strip, the current one circled, readable at a glance while you play.",
+      "palette": ["#111111", "#f2efe6", "#151515", "#d6372b", "#f4e04d"],
+      "materials": ["a paper strip as the preset rail", "bold condensed marker-black entries", "a red circle on the current preset", "highlighter yellow for what's on"],
+      "viewport": "A paper rail down the left lists the presets in order, the current one circled with its scenes under it; the amp, what's on and the knobs fill the stage-black field.",
+      "risk": "The most familiar idea for a band tool; paper and marker tip into costume if they reach past the rail.",
+      "html": ".impeccable/mocks/decision/app/setlist.html",
+      "htmlFrame": "1280x760"
+    },
+    {
+      "id": "challenger-crouwel",
+      "label": "The grid specimen",
+      "verdict": "competitive",
+      "lineage": "Wim Crouwel's gridded type specimens",
+      "thesis": "A visible construction grid holds every control, and the preset name is built from the same cells, monumental and readable across the room.",
+      "palette": ["#0f1a8c", "#1b2aa8", "#ffffff", "#9fb0ff", "#d7ff3a"],
+      "materials": ["faint construction-grid hairlines", "grid-built display letters", "one stark ultramarine ground", "lime for what's on"],
+      "viewport": "The preset name assembled from grid cells across the top; the controls snap to the same cells below, what's on as lit cells in one strip.",
+      "case": "Fuses well: a grid suits a dense control screen and math rock's Swiss-grid covers; loses narrowly on audience identification for most guitarists.",
+      "risk": "Grid-built letters read slowly for long names, and the grid turns to wallpaper if it stops holding real controls.",
+      "html": ".impeccable/mocks/decision/app/crouwel.html",
+      "htmlFrame": "1280x760",
+      "hero": "https://impeccable.style/worlds/cards/crouwel-grid-specimen-hero.webp"
+    },
+    { "id": "challenger-folio", "label": "Botanical folio", "verdict": "declined", "lineage": "a botanical folio of one plant through its seasons", "palette": ["#f2ead8", "#7a5a3a", "#3f7a3a", "#b3261e"], "materials": ["cream plates", "sepia hairlines"], "thesis": "Each amp as a plate at one fixed scale.", "viewport": "Plates of the amps side by side.", "risk": "Guitarists don't see themselves in a herbarium.", "case": "Fuses poorly: no audience identification, and plates fight a control screen.", "kept": "One fixed scale and baseline for every amp head." },
+    { "id": "challenger-feed", "label": "Vertical video feed", "verdict": "declined", "lineage": "a full-screen vertical media feed", "palette": ["#000000", "#ffffff"], "materials": ["full-bleed item", "right rail glyphs"], "thesis": "One scene owns the screen at a time.", "viewport": "The scene full screen with a rail of actions.", "risk": "Reads as a social app, not an audio tool.", "case": "Fuses poorly: a feed's grammar misleads in a pro tool.", "kept": "The current scene owns the screen; the next is one key away." },
+    { "id": "challenger-zoo", "label": "Zoo guide map", "verdict": "declined", "lineage": "a gardens guide map of flat colour lobes", "palette": ["#8ed462", "#f5f1e4", "#2c2e2a", "#ff705d"], "materials": ["flat colour lobes", "capsule controls"], "thesis": "Areas as swelling flat lobes.", "viewport": "Sections as coloured islands.", "risk": "Playful cartography fights precise controls.", "case": "Fuses poorly: lobes hide the chain's order.", "kept": "Areas divide by flat fields, not borders." },
+    { "id": "challenger-jcard", "label": "Cassette j-card", "verdict": "declined", "lineage": "a mixtape's hand-lettered j-card", "palette": ["#ffffff", "#1d3c9e", "#9a9a9a", "#c8102e"], "materials": ["lined inlay stock", "ballpoint"], "thesis": "Presets as side A and side B tracklists.", "viewport": "The tracklist as the preset list.", "risk": "Handwriting is a costume on a working screen.", "case": "Fuses poorly: ballpoint lines can't carry live state.", "kept": "Values right-aligned in tabular columns." },
+    { "id": "challenger-darkroom", "label": "Darkroom exposure record", "verdict": "declined", "lineage": "a darkroom printer's exposure record", "palette": ["#e9e6df", "#5a5a5a", "#1a1a1a", "#c2185b"], "materials": ["zone-ramp neutrals", "hatch overlays"], "thesis": "Load drawn as hatch density.", "viewport": "Translucent sheets over a zone ramp.", "risk": "A darkroom means nothing to most players.", "case": "Fuses poorly: hatching reads as noise next to audio meters.", "kept": "One strict tonal ramp for every neutral." }
+  ],
+  "reroll": { "registers": ["safer", "bolder"] },
+  "canon": true,
+  "canonCard": {
+    "label": "The category standard",
+    "thesis": "What amp sims ship, done impeccably: a dark stage with photoreal amps, a pedal row, a preset bar on top, an inspector on the right.",
+    "palette": ["#121212", "#1f1f1f", "#2c2c2c", "#e8e8e8", "#ff8a00"],
+    "materials": ["photoreal amp and pedal renders", "dark stage gradient", "an orange accent"],
+    "viewport": "A preset bar, the amp on a dark stage, a pedal row under it, an inspector with the selected block's knobs at the right.",
+    "risk": "Indistinguishable from the competition by design.",
+    "html": ".impeccable/mocks/decision/app/canon.html",
+    "htmlFrame": "1280x760"
+  },
+  "steer": true
+}

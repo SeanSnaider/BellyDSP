@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Bands sketch</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1440px;height:900px;overflow:hidden;background:#0b0c0c;color:#e6ebe9;font-family:Geist,system-ui,sans-serif}
+.bar{height:56px;border-bottom:1px solid #1e2221;display:flex;align-items:center;padding:0 64px;gap:28px;font-size:14px;background:#0b0c0c}
+.brand{font-weight:600;font-size:15px;display:flex;align-items:center;gap:10px}
+.brand i{width:7px;height:7px;border-radius:50%;background:#34d399;display:block}
+.bar nav{margin-left:auto;display:flex;gap:24px;color:#8a938f}
+.bar .dl{background:#e6ebe9;color:#0b0c0c;border-radius:8px;padding:8px 16px;font-weight:500}
+.shelf{height:96px;border-bottom:1px solid #1e2221;display:flex;align-items:center;justify-content:space-between;padding:0 64px;background:#0b0c0c}
+.cell{display:flex;align-items:center;gap:12px;position:relative;height:96px}
+.mini{width:48px;height:32px;border-radius:4px;box-shadow:0 0 0 1px rgba(255,255,255,.08);position:relative}
+.mini::before{content:"";position:absolute;left:4px;right:4px;top:4px;height:8px;border-radius:1px;background:rgba(0,0,0,.35)}
+.cell span{font-size:15px;color:#8a938f}
+.cell.on span{color:#e6ebe9;font-weight:500}
+.cell.on::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;background:#34d399}
+.band{position:absolute;left:0;right:0;top:152px;height:640px;background:linear-gradient(170deg,#e2dfd6,#c9c6bc);color:#151716;overflow:hidden}
+.band::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(90deg,rgba(255,255,255,.08) 0 1px,transparent 1px 4px);pointer-events:none}
+.idx{position:absolute;left:64px;top:56px;font-size:13px;letter-spacing:.16em;color:#5d615f}
+.name{position:absolute;left:64px;top:90px;font-size:150px;font-weight:300;letter-spacing:.04em;line-height:1;color:#1b1d1d}
+.voice{position:absolute;left:70px;top:262px;font-size:24px;color:#3b3f3e;width:420px;line-height:1.4}
+.facts{position:absolute;left:70px;top:380px;width:400px;font-size:15px;color:#4a4e4d;line-height:1.7}
+.facts b{color:#151716;font-weight:500}
+.head{position:absolute;right:64px;top:110px;width:780px;height:262px;border-radius:14px;background:linear-gradient(#ecebe5,#d3d0c6);box-shadow:0 30px 60px rgba(0,0,0,.35),0 0 0 1px rgba(0,0,0,.08);padding:16px}
+.panel{height:100px;border-radius:7px;background:linear-gradient(#e9eae8,#c9cccb);display:flex;align-items:center;justify-content:space-around;padding:0 40px 0 110px;position:relative}
+.panel::before{content:"";position:absolute;left:34px;top:41px;width:18px;height:18px;border-radius:50%;background:#34d399;box-shadow:0 0 12px #34d399}
+.k{width:40px;height:40px;border-radius:50%;background:radial-gradient(circle at 38% 30%,#fff,#b8bcbb 80%);box-shadow:0 0 0 2px #34d399 inset,0 4px 8px rgba(0,0,0,.3)}
+.grille{margin-top:12px;height:118px;border-radius:6px;background:repeating-linear-gradient(45deg,#232525 0 3px,#1b1d1d 3px 6px);display:flex;align-items:center;justify-content:center;font-weight:300;font-size:46px;letter-spacing:.08em;color:#e4e6e5}
+.knobs{position:absolute;right:64px;top:400px;width:780px;display:flex;justify-content:space-between;font-size:13px;color:#5d615f}
+.hint{position:absolute;right:64px;bottom:44px;font-size:14px;color:#3b3f3e}
+.next{position:absolute;left:0;right:0;top:792px;height:108px;background:#4b1d1f}
+.next span{position:absolute;left:64px;top:36px;font-size:13px;letter-spacing:.16em;color:#b48f5e}
+.next em{position:absolute;left:64px;top:58px;font-style:italic;font-family:Georgia,serif;font-size:40px;color:#d9b878}
+</style></head><body>
+<div class="bar"><div class="brand"><i></i>BellyDSP</div><nav><span style="color:#e6ebe9">Overview</span><span>Download</span><span>Stats</span><span>Source</span></nav><span class="dl">Download for macOS</span></div>
+<div class="shelf">
+  <div class="cell on"><div class="mini" style="background:#d9d6cd"></div><span>Glass</span></div>
+  <div class="cell"><div class="mini" style="background:#4b1d1f"></div><span>Ember</span></div>
+  <div class="cell"><div class="mini" style="background:#161717"></div><span>Monolith</span></div>
+  <div class="cell"><div class="mini" style="background:#c8a467"></div><span>Lantern</span></div>
+  <div class="cell"><div class="mini" style="background:#35383b"></div><span>Basalt</span></div>
+  <div class="cell"><div class="mini" style="background:#17234d"></div><span>Comet</span></div>
+  <div class="cell"><div class="mini" style="background:#111213"></div><span>Forge</span></div>
+  <div class="cell"><div class="mini" style="background:#e4d7ea"></div><span>Quartz</span></div>
+</div>
+<div class="band">
+  <div class="idx">01 / 08 · BUILT IN</div>
+  <div class="name">Glass</div>
+  <p class="voice">Clean to the edge of breakup. Five captures across the Gain knob, so it distorts more, not just louder.</p>
+  <p class="facts"><b>Eight amps, one at a time.</b> Pick one on the shelf and the head, the knobs, and the sound follow. Each amp remembers its own settings. Program change 1 to 8 on a footswitch.</p>
+  <div class="head"><div class="panel"><div class="k"></div><div class="k"></div><div class="k"></div><div class="k"></div><div class="k"></div><div class="k"></div><div class="k"></div></div><div class="grille">Glass</div></div>
+  <div class="knobs"><span style="margin-left:120px">Gain</span><span>Bass</span><span>Middle</span><span>Treble</span><span>Presence</span><span>Depth</span><span style="margin-right:30px">Master</span></div>
+  <div class="hint">Scroll for Ember, or pick any amp above</div>
+</div>
+<div class="next"><span>02 / 08</span><em>Ember</em></div>
+</body></html>

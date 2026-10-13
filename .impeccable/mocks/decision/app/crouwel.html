@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Grid specimen sketch</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1280px;height:760px;overflow:hidden;background:#0f1a8c;color:#fff;font-family:Geist,system-ui,sans-serif;font-size:13px}
+body{background-image:linear-gradient(rgba(159,176,255,.16) 1px,transparent 1px),linear-gradient(90deg,rgba(159,176,255,.16) 1px,transparent 1px);background-size:16px 16px;background-position:0 0}
+.bar{height:40px;display:flex;align-items:center;gap:18px;padding:0 20px;color:#9fb0ff}
+.bar .sp{flex:1}.bar b{color:#fff;font-weight:500}.brand{color:#fff;font-weight:600}
+.name{position:absolute;left:20px;top:52px;display:flex;gap:16px}
+.gl{display:grid;grid-template-columns:repeat(4,16px);grid-auto-rows:16px}
+.gl i{display:block;background:#fff}
+.scene{position:absolute;right:20px;top:60px;text-align:right}
+.scene b{display:block;font-size:56px;font-weight:600;letter-spacing:-.02em;line-height:1}
+.scene span{color:#9fb0ff}
+.scenes{position:absolute;left:20px;right:20px;top:200px;display:grid;grid-template-columns:repeat(8,1fr);gap:0;border:1px solid rgba(159,176,255,.45)}
+.sc{height:40px;display:flex;align-items:center;gap:10px;padding:0 12px;border-right:1px solid rgba(159,176,255,.45);color:#c8d2ff}
+.sc:last-child{border-right:0}.sc em{font-style:normal;color:#9fb0ff}
+.sc.on{background:#fff;color:#0f1a8c;font-weight:600}
+.lit{position:absolute;left:20px;right:20px;top:260px;display:grid;grid-template-columns:repeat(8,1fr);gap:0}
+.cell{height:60px;border:1px solid rgba(159,176,255,.45);margin:-1px 0 0 -1px;padding:10px 12px;color:#c8d2ff}
+.cell b{display:block;font-weight:600;color:#fff;font-size:14px}
+.cell.on{background:#d7ff3a;color:#0f1a8c;border-color:#d7ff3a}.cell.on b{color:#0f1a8c}
+.stage{position:absolute;left:20px;top:340px;width:820px;height:320px;display:flex;align-items:center;justify-content:center;border:1px solid rgba(159,176,255,.45)}
+.head{width:600px;height:200px;border-radius:12px;background:#111213;box-shadow:0 20px 40px rgba(0,0,40,.5);padding:10px}
+.panel{height:80px;border-radius:6px;background:linear-gradient(#9aa0a6,#7d838a);display:flex;align-items:center;justify-content:space-around;padding:0 20px 0 54px;position:relative;border-bottom:2px solid #ff6a1f}
+.panel::before{content:"";position:absolute;left:20px;top:32px;width:14px;height:14px;border-radius:50%;background:#d7ff3a}
+.k{width:30px;height:30px;border-radius:50%;background:radial-gradient(circle at 38% 30%,#555,#151515 80%);box-shadow:0 0 0 2px #d7ff3a inset}
+.gr{margin-top:10px;height:86px;border-radius:5px;background:radial-gradient(circle,#2a2a2a 1px,#151616 1.6px) 0 0/6px 6px;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:34px;letter-spacing:.08em;color:#cfd3d6}
+.knobs{position:absolute;left:860px;right:20px;top:340px;height:320px;display:grid;grid-template-columns:1fr 1fr;border:1px solid rgba(159,176,255,.45)}
+.kc{border:1px solid rgba(159,176,255,.25);display:flex;flex-direction:column;align-items:center;justify-content:center}
+.kn{width:80px;height:80px;border-radius:50%;border:3px solid #fff;position:relative}
+.kn::after{content:"";position:absolute;left:36px;top:6px;width:4px;height:20px;background:#fff}
+.kn.a{border-color:#d7ff3a}
+.kc b{margin-top:10px;font-size:16px;font-weight:600}.kc span{color:#9fb0ff}
+.chain{position:absolute;left:20px;right:20px;bottom:20px;height:60px;display:grid;grid-template-columns:repeat(7,1fr) 160px;border:1px solid rgba(159,176,255,.45)}
+.ch{display:flex;align-items:center;padding:0 14px;color:#c8d2ff;border-right:1px solid rgba(159,176,255,.45)}
+.ch.cur{background:#fff;color:#0f1a8c;font-weight:600}
+.tun{display:flex;align-items:center;justify-content:center;font-weight:600}.tun em{font-style:normal;color:#d7ff3a;margin-left:8px}
+</style></head><body>
+<div class="bar"><span class="brand">BellyDSP</span><span>Undo</span><span>A/B</span><span class="sp"></span><span>CPU <b>6%</b></span><span>In <b>-14 dB</b></span><span>Out <b>-9 dB</b></span></div>
+<div class="name">
+  <div class="gl"><i style="grid-column:1/5"></i><i style="grid-column:2/4;grid-row:2/8"></i></div>
+  <div class="gl"><i style="grid-column:1/5"></i><i style="grid-column:1/2;grid-row:2/7"></i><i style="grid-column:2/4;grid-row:4"></i><i style="grid-column:1/5;grid-row:7"></i></div>
+  <div class="gl"><i style="grid-column:1/5"></i><i style="grid-column:1/2;grid-row:2/7"></i><i style="grid-column:1/5;grid-row:7"></i></div>
+  <div class="gl"><i style="grid-column:1/2;grid-row:1/8"></i><i style="grid-column:4/5;grid-row:1/8"></i><i style="grid-column:2/4;grid-row:4"></i></div>
+  <div style="width:24px"></div>
+  <div class="gl"><i style="grid-column:1/2;grid-row:1/8"></i><i style="grid-column:2/4;grid-row:1"></i><i style="grid-column:4/5;grid-row:2/7"></i><i style="grid-column:2/4;grid-row:7"></i></div>
+  <div class="gl"><i style="grid-column:1/5"></i><i style="grid-column:1/2;grid-row:2/7"></i><i style="grid-column:2/4;grid-row:4"></i><i style="grid-column:1/5;grid-row:7"></i></div>
+  <div class="gl"><i style="grid-column:2/4"></i><i style="grid-column:1/2;grid-row:2/8"></i><i style="grid-column:4/5;grid-row:2/8"></i><i style="grid-column:2/4;grid-row:4"></i></div>
+  <div class="gl"><i style="grid-column:1/5"></i><i style="grid-column:2/4;grid-row:2/8"></i></div>
+  <div class="gl"><i style="grid-column:1/2;grid-row:1/8"></i><i style="grid-column:4/5;grid-row:1/8"></i><i style="grid-column:2/4;grid-row:4"></i></div>
+</div>
+<div class="scene"><b>Scene 2, Lead</b><span>Tech Death · preset 3 of 6</span></div>
+<div class="scenes"><div class="sc"><em>1</em>Rhythm</div><div class="sc on"><em>2</em>Lead</div><div class="sc"><em>3</em>Clean</div><div class="sc"><em>4</em>Ambient</div><div class="sc"><em>5</em>Breakdown</div><div class="sc"><em>6</em>Solo</div><div class="sc"><em>7</em>Empty</div><div class="sc"><em>8</em>Empty</div></div>
+<div class="lit"><div class="cell on"><b>Gate</b>-45 dB</div><div class="cell"><b>Comp</b>off</div><div class="cell on"><b>Overdrive</b>Mid Drive</div><div class="cell on"><b>Amp</b>Forge</div><div class="cell on"><b>Cab</b>Modern 4x12</div><div class="cell"><b>Harmony</b>off</div><div class="cell on"><b>Delay</b>Dual 1/8</div><div class="cell on"><b>Reverb</b>Hall</div></div>
+<div class="stage"><div class="head"><div class="panel"><div class="k"></div><div class="k"></div><div class="k"></div><div class="k"></div><div class="k"></div><div class="k"></div><div class="k"></div></div><div class="gr">FORGE</div></div></div>
+<div class="knobs"><div class="kc"><div class="kn a"></div><b>6.2</b><span>Gain</span></div><div class="kc"><div class="kn"></div><b>5.0</b><span>Master</span></div><div class="kc"><div class="kn"></div><b>22%</b><span>Delay mix</span></div><div class="kc"><div class="kn"></div><b>18%</b><span>Reverb mix</span></div></div>
+<div class="chain"><span class="ch">Input</span><span class="ch">Pre FX</span><span class="ch cur">Amp</span><span class="ch">EQ</span><span class="ch">Cab</span><span class="ch">Post FX</span><span class="ch">Output</span><span class="tun">E2<em>in tune</em></span></div>
+</body></html>
