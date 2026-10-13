@@ -401,7 +401,8 @@ void Knob::valueChanged()
 
 juce::String Knob::getShownLabel() const
 {
-    return isDragging() || isHovered() ? getValueText() : caption;
+    // A large knob always shows its value on a line of its own, so its caption stays.
+    return (isDragging() || isHovered()) && size != Size::large ? getValueText() : caption;
 }
 
 juce::Rectangle<int> Knob::getTextEntryBounds() const
@@ -413,15 +414,15 @@ void Knob::paint (juce::Graphics& g)
 {
     const auto colours = knobSkin (skin);
     const auto box = getLocalBounds().toFloat().reduced ((float) margin);
-    const bool normal = size == Size::normal;
-    const auto hit = normal ? 64.0f : 52.0f;
+    const auto hit = hitSize (size);
     const auto wrap = juce::Rectangle<float> (box.getCentreX() - hit * 0.5f, box.getY(), hit, hit);
     const auto centre = wrap.getCentre();
+    const bool large = size == Size::large;
 
-    // The arcs: the reference's 72-unit SVG over the hit area grown by 4 (60 px for the small knob).
-    const auto svgScale = normal ? 1.0f : 60.0f / 72.0f;
+    // The arcs: the reference's 72-unit SVG over the hit area grown by 4 (60 px for the small knob, 88 for the large).
+    const auto svgScale = (hit + 8.0f) / 72.0f;
     const auto radius = 32.0f * svgScale;
-    const juce::PathStrokeType stroke (2.0f * svgScale, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
+    const juce::PathStrokeType stroke (large ? 3.0f : 2.0f * svgScale, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
     const auto t = getNormalisedValue();
     const auto angle = arcStart + t * (arcEnd - arcStart);
 
@@ -439,12 +440,12 @@ void Knob::paint (juce::Graphics& g)
     }
 
     // The body: a soft shadow, the 1 px ring, the gradient (highlight up and to the left), the pointer.
-    const auto bodySize = normal ? 40.0f : 32.0f;
+    const auto bodySize = size == Size::normal ? 40.0f : large ? 52.0f : 32.0f;
     const auto body = juce::Rectangle<float> (bodySize, bodySize).withCentre (centre);
     {
         juce::Path disc;
         disc.addEllipse (body.expanded (1.0f));
-        juce::DropShadow (juce::Colours::black.withAlpha (0.35f), 6, { 0, 3 }).drawForPath (g, disc);
+        juce::DropShadow (juce::Colours::black.withAlpha (0.35f), large ? 9 : 6, { 0, large ? 4 : 3 }).drawForPath (g, disc);
         g.setColour (colours.ring);
         g.fillPath (disc);
     }
@@ -461,16 +462,33 @@ void Knob::paint (juce::Graphics& g)
         g.setGradientFill (gradient);
         g.fillEllipse (body);
     }
+    if (large)
     {
+        // The large knob's cap: a faint machined ring just inside the body's edge.
+        g.setColour (juce::Colours::white.withAlpha (0.06f));
+        g.drawEllipse (body.reduced (5.0f), 1.0f);
+    }
+    {
+        // The pointer: 3 wide, a quarter of the body long, a tenth of it in from the edge (10 and 4 on the 40 px body).
         juce::Path pointer;
-        pointer.addRoundedRectangle (-1.5f, -bodySize * 0.5f + 4.0f, 3.0f, 10.0f, 1.5f);
+        pointer.addRoundedRectangle (-1.5f, -bodySize * 0.5f + bodySize / 10.0f, 3.0f, bodySize / 4.0f, 1.5f);
         g.setColour (colours.pointer);
         g.fillPath (pointer, juce::AffineTransform::rotation (angle).translated (centre));
     }
 
     // The label, or the value while dragging (and on hover): emerald in the chrome, underlined in emerald
-    // on an amp panel.
-    if (! isEditingText())
+    // on an amp panel. A large knob keeps its caption and shows its value on a line under it, always.
+    if (! isEditingText() && large)
+    {
+        const auto labelArea = juce::Rectangle<float> (box.getX() - 4.0f, wrap.getBottom() + 6.0f, box.getWidth() + 8.0f, 16.0f);
+        g.setFont (geist (Weight::medium, 12.0f));
+        g.setColour (colours.label);
+        g.drawText (caption, labelArea, juce::Justification::centred, false);
+        g.setFont (tabular (geist (Weight::medium, 14.0f)));
+        g.setColour (isDragging() ? accent : ink);
+        g.drawFittedText (getValueText(), labelArea.translated (0.0f, 17.0f).withHeight (18.0f).toNearestInt(), juce::Justification::centred, 1, 0.8f);
+    }
+    else if (! isEditingText())
     {
         const auto labelArea = juce::Rectangle<float> (box.getX() - 4.0f, wrap.getBottom() + 6.0f, box.getWidth() + 8.0f, 16.0f);
         const auto shown = getShownLabel();
@@ -985,6 +1003,209 @@ void Segmented::focusLost (FocusChangeType)
 {
     keyboardFocus = false;
     repaint();
+}
+
+// ---- ChoiceBar -----------------------------------------------------------------------------------
+
+namespace
+{
+juce::StringArray choicesOf (juce::RangedAudioParameter& parameter)
+{
+    if (auto* choice = dynamic_cast<juce::AudioParameterChoice*> (&parameter))
+        return choice->choices;
+    juce::StringArray names;
+    for (int i = 0; i < juce::jmax (2, parameter.getNumSteps()); ++i)
+        names.add (parameter.getText (parameter.convertTo0to1 ((float) i), 0));
+    return names;
+}
+} // namespace
+
+ChoiceBar::ChoiceBar (juce::AudioProcessorValueTreeState& s, const juce::String& parameterId, juce::StringArray names)
+    : state (s),
+      parameter (lookUp (s, parameterId)),
+      labels (names.isEmpty() ? choicesOf (parameter) : std::move (names)),
+      attachment (parameter, [this] (float v)
+                  {
+                      const auto index = juce::jlimit (0, juce::jmax (0, labels.size() - 1), juce::roundToInt (v));
+                      if (index != selected)
+                      {
+                          selected = index;
+                          repaint();
+                      }
+                  },
+                  s.undoManager)
+{
+    tagged (*this, parameterId);
+    setWantsKeyboardFocus (true);
+    setMouseCursor (juce::MouseCursor::PointingHandCursor);
+    selected = -1;
+    attachment.sendInitialUpdate();
+}
+
+void ChoiceBar::choose (int index)
+{
+    index = juce::jlimit (0, juce::jmax (0, labels.size() - 1), index);
+    if (index == selected)
+        return;
+    beginUndoStep (state);
+    attachment.setValueAsCompleteGesture ((float) index);
+}
+
+void ChoiceBar::setColumns (int perRow)
+{
+    columns = juce::jmax (0, perRow);
+    repaint();
+}
+
+int ChoiceBar::getRows() const noexcept
+{
+    const auto perRow = columns > 0 ? columns : juce::jmax (1, labels.size());
+    return juce::jmax (1, (labels.size() + perRow - 1) / perRow);
+}
+
+juce::String ChoiceBar::getTooltip()
+{
+    if (hovered >= 0 && hovered < optionTips.size())
+        return optionTips[hovered];
+    return SettableTooltipClient::getTooltip();
+}
+
+juce::Rectangle<float> ChoiceBar::optionArea (int index) const
+{
+    // Equal segments on each row, inset 2 from the box; a short last row's segments as wide as a full row's.
+    const auto perRow = columns > 0 ? columns : juce::jmax (1, labels.size());
+    const auto inner = getLocalBounds().toFloat().reduced (2.0f);
+    const auto w = inner.getWidth() / (float) perRow, h = inner.getHeight() / (float) getRows();
+    return { inner.getX() + w * (float) (index % perRow), inner.getY() + h * (float) (index / perRow), w, h };
+}
+
+int ChoiceBar::optionAt (juce::Point<float> p) const
+{
+    for (int i = 0; i < labels.size(); ++i)
+        if (optionArea (i).contains (p))
+            return i;
+    return -1;
+}
+
+void ChoiceBar::paint (juce::Graphics& g)
+{
+    const auto box = getLocalBounds().toFloat().reduced (0.5f);
+    g.setColour (raised);
+    g.fillRoundedRectangle (box, radiusControl);
+    g.setColour (line1);
+    g.drawRoundedRectangle (box, radiusControl, 1.0f);
+
+    const auto f = geist (Weight::medium, 12.0f);
+    g.setFont (f);
+    for (int i = 0; i < labels.size(); ++i)
+    {
+        const auto r = optionArea (i);
+        if (i == selected)
+        {
+            g.setColour (line1.brighter (0.2f));
+            g.fillRoundedRectangle (r.reduced (1.0f), radiusControl - 2.0f);
+        }
+        else if (i == hovered)
+        {
+            g.setColour (line1.withAlpha (0.6f));
+            g.fillRoundedRectangle (r.reduced (1.0f), radiusControl - 2.0f);
+        }
+        g.setColour (i == selected ? accent : (i == hovered ? ink : inkDim));
+        g.drawFittedText (labels[i], r.reduced (3.0f, 0.0f).toNearestInt(), juce::Justification::centred, 1, 0.75f);
+    }
+    if (keyboardFocus)
+        drawFocusRing (g, box.reduced (3.0f));
+}
+
+void ChoiceBar::mouseMove (const juce::MouseEvent& e)
+{
+    if (const auto h = optionAt (e.position); h != hovered)
+    {
+        hovered = h;
+        repaint();
+    }
+}
+
+void ChoiceBar::mouseExit (const juce::MouseEvent&)
+{
+    hovered = -1;
+    repaint();
+}
+
+void ChoiceBar::mouseUp (const juce::MouseEvent& e)
+{
+    if (e.mods.isPopupMenu() || ! isEnabled())
+        return;
+    if (const auto i = optionAt (e.position); i >= 0)
+        choose (i);
+}
+
+bool ChoiceBar::keyPressed (const juce::KeyPress& key)
+{
+    if (int direction = 0; keyboardFocus && isArrow (key, direction))
+    {
+        choose (selected + direction);
+        return true;
+    }
+    return false;
+}
+
+void ChoiceBar::focusGained (FocusChangeType cause)
+{
+    keyboardFocus = cause != focusChangedByMouseClick;
+    repaint();
+}
+
+void ChoiceBar::focusLost (FocusChangeType)
+{
+    keyboardFocus = false;
+    repaint();
+}
+
+// ---- PadSwitch -----------------------------------------------------------------------------------
+
+PadSwitch::PadSwitch (const juce::String& text, juce::String detailText) : Switch (text), detail (std::move (detailText)) {}
+
+void PadSwitch::paintButton (juce::Graphics& g, bool highlighted, bool down)
+{
+    const auto box = getLocalBounds().toFloat().reduced (0.5f);
+    const bool on = getToggleState();
+    const auto alpha = isEnabled() ? 1.0f : 0.4f;
+
+    // The pad: raised, a hairline border (orange while on, lighter on hover), pressed a shade darker.
+    g.setColour ((down ? raised.darker (0.2f) : raised).withMultipliedAlpha (alpha));
+    g.fillRoundedRectangle (box, radiusControl);
+    g.setColour ((on ? accent.withAlpha (0.7f) : (highlighted ? inkFaint : line2)).withMultipliedAlpha (alpha));
+    g.drawRoundedRectangle (box, radiusControl, 1.0f);
+
+    // The LED, with a glow while on.
+    const auto led = juce::Rectangle<float> (8.0f, 8.0f).withCentre ({ box.getX() + 16.0f, box.getCentreY() });
+    if (on)
+    {
+        g.setGradientFill (juce::ColourGradient (accent.withAlpha (0.45f), led.getCentre(), accent.withAlpha (0.0f), led.getCentre().translated (11.0f, 0.0f), true));
+        g.fillEllipse (led.expanded (7.0f));
+    }
+    g.setColour ((on ? accent : line2.brighter (0.1f)).withMultipliedAlpha (alpha));
+    g.fillEllipse (led);
+
+    auto text = box.withTrimmedLeft (32.0f).withTrimmedRight (8.0f);
+    if (detail.isNotEmpty())
+    {
+        g.setFont (geist (Weight::medium, 13.0f));
+        g.setColour ((on ? ink : inkDim).withMultipliedAlpha (alpha));
+        g.drawFittedText (getButtonText(), text.withTrimmedBottom (text.getHeight() * 0.5f - 1.0f).toNearestInt(), juce::Justification::bottomLeft, 1, 0.85f);
+        g.setFont (geist (Weight::regular, 11.0f));
+        g.setColour (inkFaint.withMultipliedAlpha (alpha));
+        g.drawFittedText (detail, text.withTrimmedTop (text.getHeight() * 0.5f + 1.0f).toNearestInt(), juce::Justification::topLeft, 1, 0.85f);
+    }
+    else
+    {
+        g.setFont (geist (Weight::medium, 13.0f));
+        g.setColour ((on ? ink : inkDim).withMultipliedAlpha (alpha));
+        g.drawFittedText (getButtonText(), text.toNearestInt(), juce::Justification::centredLeft, 1, 0.85f);
+    }
+    if (keyboardFocus)
+        drawFocusRing (g, box.reduced (3.0f));
 }
 
 // ---- Drawing helpers -----------------------------------------------------------------------------

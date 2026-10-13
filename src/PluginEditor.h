@@ -147,6 +147,7 @@ private:
     void refreshState();
     void layoutCanvas();
     void select (ui::BlockId id, bool fromStage);
+    void showStage (ui::StageMode mode, bool animate);
     ui::ControlGroup* overlayPage (ui::Overlay o);
 
     void chooseFile (const juce::String& title, const juce::String& patterns, const juce::Identifier& lastPathKey,
@@ -187,6 +188,8 @@ private:
     std::unique_ptr<ui::OverlayFrame> overlayFrame;
     ui::Overlay overlay = ui::Overlay::none;
     ui::BlockId selectedBlock = ui::BlockId::count;
+    ui::StageMode stageBeforeEq = ui::StageMode::amp; // where the stage was before an EQ pedal put it on the EQ
+    bool eqShownForPedal = false;                     // the stage is on the EQ because an EQ pedal is selected
     std::unique_ptr<StatusLine> statusLine;
     std::unique_ptr<juce::TooltipWindow> tooltips;
 

@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Sean Snaider
 
 #include "CabView.h"
+#include "InspectorParts.h"
 #include "LookAndFeel.h"
 
 #include <cmath>
@@ -300,23 +301,34 @@ private:
 
 // ---- The speaker ---------------------------------------------------------------------------------
 
-/// The reference's speaker (outer ring, cone rings, dust cap, crosshair) at 380 px, and the two close
-/// mics' markers on it.
+/// The speaker on the stage (phase 2: the cab's view is built around it): a 12-inch driver in its baffle, drawn in
+/// code and cached at the size it's shown (the baffle's tolex, the basket's rim with its bolts, the rubber surround,
+/// the paper cone with its ribs, the dust cap, lit warmly from below like the stage), and the two close mics on it,
+/// large: each a capsule over the cone (its grille mesh, a ring in the mic's colour, its letter) with its body hanging
+/// below it, as a mic on a stand seen from the front. The farther a mic is from the grille (its Distance), the smaller
+/// it's drawn. A mic with a cab pack moves: drag it across the cone (its distance from the centre over the cone's
+/// radius is its position, pos_x; the angle is only for looks and isn't saved), and the pack's capture positions show
+/// as small dots along its way. A mic with a plain IR can't move: it's dimmed.
 class CabView::Speaker final : public juce::Component
 {
 public:
     explicit Speaker (AmpSimProcessor& p) : ampSim (p)
     {
         for (int m = 0; m < 2; ++m)
+        {
             position[(size_t) m] = p.parameters.getParameter (AmpSimProcessor::cabParamId (m, "pos_x"));
+            distance[(size_t) m] = p.parameters.getParameter (AmpSimProcessor::cabParamId (m, "pos_y"));
+        }
     }
 
     // The markers' angles: for looks only, never saved (UH8). The reference's starting places.
     std::array<float, 2> angle { std::atan2 (-0.05f, -0.12f), std::atan2 (0.30f, 0.42f) };
     std::array<bool, 2> hasPack {};
+    std::array<std::vector<float>, 2> packPositions; // each pack's capture positions across the cone (0 to 1)
     float scale = 0.95f; // pixels per SVG unit: the component is the speaker's 400 units across
 
     float radiusOf (int mic) const { return position[(size_t) mic]->convertFrom0to1 (position[(size_t) mic]->getValue()) * maxRadius; }
+    float distanceOf (int mic) const { return distance[(size_t) mic]->getValue(); }
 
     juce::Point<float> marker (int mic) const
     {
@@ -324,54 +336,55 @@ public:
         return getLocalBounds().toFloat().getCentre() + juce::Point<float> (std::cos (angle[(size_t) mic]), std::sin (angle[(size_t) mic])) * r;
     }
 
+    /// A capsule's radius in pixels: 17 at the grille, three quarters of that at the pack's farthest.
+    float capsuleRadius (int mic) const { return 17.0f * (1.0f - 0.25f * juce::jlimit (0.0f, 1.0f, distanceOf (mic))); }
+
     void paint (juce::Graphics& g) override
     {
-        const auto c = getLocalBounds().toFloat().getCentre();
-        const auto ring = [this, &g, c] (float r, juce::Colour colour)
-        {
-            g.setColour (colour);
-            g.drawEllipse (juce::Rectangle<float> (2.0f * r * scale, 2.0f * r * scale).withCentre (c), 1.0f);
-        };
-        ring (190.0f, line1);
-        ring (160.0f, line2);
-        for (auto r : { 132.0f, 104.0f, 76.0f })
-            ring (r, line1);
-        const auto cap = juce::Rectangle<float> (88.0f * scale, 88.0f * scale).withCentre (c);
-        g.setColour (surface);
-        g.fillEllipse (cap);
-        ring (44.0f, line2);
-        g.setColour (line2);
-        g.drawLine (c.x - 6.0f * scale, c.y, c.x + 6.0f * scale, c.y, 1.0f);
-        g.drawLine (c.x, c.y - 6.0f * scale, c.x, c.y + 6.0f * scale, 1.0f);
+        if (art.isNull() || art.getWidth() != getWidth() * 2 || art.getHeight() != getHeight() * 2)
+            art = render (getWidth(), getHeight(), scale, 2.0f);
+        g.drawImage (art, getLocalBounds().toFloat());
 
-        // The markers: an 11 unit ring (filled with the background) with a 3 unit dot, the letter up and
-        // to the right; mic B first, so A sits on top. A mic without a pack is dimmed.
+        // The packs' capture positions along each movable mic's way, then the mics: B first, so A sits on top.
+        const auto c = getLocalBounds().toFloat().getCentre();
         for (int m = 1; m >= 0; --m)
-        {
-            const auto colour = (m == 0 ? accent : ink).withMultipliedAlpha (hasPack[(size_t) m] ? 1.0f : 0.35f);
-            const auto p = marker (m);
-            g.setColour (bg);
-            g.fillEllipse (juce::Rectangle<float> (22.0f * scale, 22.0f * scale).withCentre (p));
-            g.setColour (colour);
-            g.drawEllipse (juce::Rectangle<float> (22.0f * scale, 22.0f * scale).withCentre (p), 1.5f * scale);
-            g.fillEllipse (juce::Rectangle<float> (6.0f * scale, 6.0f * scale).withCentre (p));
-            g.setFont (geist (Weight::medium, 13.0f * scale));
-            g.drawText (m == 0 ? "A" : "B", juce::Rectangle<float> (p.x + 18.0f * scale, p.y - 12.0f * scale - 13.0f, 20.0f, 14.0f),
-                        juce::Justification::bottomLeft, false);
-        }
+            if (hasPack[(size_t) m])
+            {
+                g.setColour ((m == 0 ? accent : ink).withAlpha (0.45f));
+                const juce::Point<float> dir { std::cos (angle[(size_t) m]), std::sin (angle[(size_t) m]) };
+                for (auto x : packPositions[(size_t) m])
+                    g.fillEllipse (juce::Rectangle<float> (4.0f, 4.0f).withCentre (c + dir * (x * maxRadius * speakerRadius * scale)));
+            }
+        for (int m = 1; m >= 0; --m)
+            drawMic (g, m);
     }
 
     int markerAt (juce::Point<float> p) const
     {
         for (int m = 0; m < 2; ++m)
-            if (hasPack[(size_t) m] && marker (m).getDistanceFrom (p) <= 20.0f * scale)
+            if (hasPack[(size_t) m] && marker (m).getDistanceFrom (p) <= capsuleRadius (m) + 6.0f)
                 return m;
         return -1;
     }
 
     void mouseMove (const juce::MouseEvent& e) override
     {
-        setMouseCursor (markerAt (e.position) >= 0 ? juce::MouseCursor::DraggingHandCursor : juce::MouseCursor::NormalCursor);
+        const auto over = markerAt (e.position);
+        setMouseCursor (over >= 0 ? juce::MouseCursor::DraggingHandCursor : juce::MouseCursor::NormalCursor);
+        if (over != hovered)
+        {
+            hovered = over;
+            repaint();
+        }
+    }
+
+    void mouseExit (const juce::MouseEvent&) override
+    {
+        if (hovered >= 0)
+        {
+            hovered = -1;
+            repaint();
+        }
     }
 
     void mouseDown (const juce::MouseEvent& e) override
@@ -383,13 +396,14 @@ public:
             return;
         beginUndoStep (ampSim.parameters);
         position[(size_t) dragging]->beginChangeGesture();
-        moveTo (e.position);
+        grabOffset = e.position - marker (dragging);
+        moveTo (e.position - grabOffset);
     }
 
     void mouseDrag (const juce::MouseEvent& e) override
     {
         if (dragging >= 0 && ! e.mods.isPopupMenu())
-            moveTo (e.position);
+            moveTo (e.position - grabOffset);
     }
 
     void mouseUp (const juce::MouseEvent&) override
@@ -397,6 +411,7 @@ public:
         if (dragging >= 0)
             position[(size_t) dragging]->endChangeGesture();
         dragging = -1;
+        repaint();
     }
 
     void moveTo (juce::Point<float> p)
@@ -412,10 +427,151 @@ public:
         repaint();
     }
 
+    /// The baffle and the driver at a size, uncached (the cache, and tests).
+    static juce::Image render (int width, int height, float unitScale, float pixelScale)
+    {
+        juce::Image image (juce::Image::ARGB, juce::jmax (1, juce::roundToInt ((float) width * pixelScale)), juce::jmax (1, juce::roundToInt ((float) height * pixelScale)),
+                           true);
+        juce::Graphics g (image);
+        g.addTransform (juce::AffineTransform::scale (pixelScale));
+        const auto b = juce::Rectangle<float> ((float) width, (float) height);
+        const auto c = b.getCentre();
+        const auto u = unitScale; // pixels per unit: the cone's edge is at 160 units
+
+        // The baffle: a square of black tolex, its corners rounded, a shade lighter at the top, with a hairline edge.
+        const auto baffle = b.reduced (1.0f);
+        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff1f1d1b), 0.0f, baffle.getY(), juce::Colour (0xff0e0d0c), 0.0f, baffle.getBottom(), false));
+        g.fillRoundedRectangle (baffle, 14.0f);
+        g.setColour (juce::Colours::black);
+        g.drawRoundedRectangle (baffle, 14.0f, 1.5f);
+        g.setColour (juce::Colours::white.withAlpha (0.05f));
+        g.drawRoundedRectangle (baffle.reduced (3.0f), 12.0f, 1.0f);
+
+        const auto circle = [&c] (float r) { return juce::Rectangle<float> (2.0f * r, 2.0f * r).withCentre (c); };
+
+        // The cut-out's shadow, then the basket's rim: brushed steel, darker below, with eight bolts.
+        g.setGradientFill (juce::ColourGradient (juce::Colours::black.withAlpha (0.7f), c, juce::Colours::black.withAlpha (0.0f), c.translated (196.0f * u, 0.0f), true));
+        g.fillEllipse (circle (196.0f * u));
+        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff57534e), c.x, c.y - 186.0f * u, juce::Colour (0xff1c1b1a), c.x, c.y + 186.0f * u, false));
+        g.fillEllipse (circle (184.0f * u));
+        g.setColour (juce::Colours::black.withAlpha (0.8f));
+        g.drawEllipse (circle (184.0f * u), 1.0f);
+        for (int i = 0; i < 8; ++i)
+        {
+            const auto a = juce::MathConstants<float>::twoPi * ((float) i + 0.5f) / 8.0f;
+            const auto p = c + juce::Point<float> (std::cos (a), std::sin (a)) * (174.0f * u);
+            g.setColour (juce::Colour (0xff0d0d0c));
+            g.fillEllipse (juce::Rectangle<float> (9.0f * u, 9.0f * u).withCentre (p));
+            g.setColour (juce::Colour (0xff8a857e));
+            g.fillEllipse (juce::Rectangle<float> (5.0f * u, 5.0f * u).withCentre (p.translated (-0.6f * u, -0.6f * u)));
+        }
+
+        // The surround: a rubber roll, its crest catching the light at the top left.
+        g.setColour (juce::Colour (0xff0b0a0a));
+        g.fillEllipse (circle (166.0f * u));
+        {
+            juce::Path roll;
+            roll.addEllipse (circle (162.0f * u));
+            roll.addEllipse (circle (150.0f * u));
+            roll.setUsingNonZeroWinding (false);
+            g.setGradientFill (juce::ColourGradient (juce::Colour (0xff3b3835), c.x - 120.0f * u, c.y - 120.0f * u, juce::Colour (0xff080808), c.x + 120.0f * u,
+                                                     c.y + 120.0f * u, false));
+            g.fillPath (roll);
+        }
+
+        // The cone: paper, a radial gradient from the cap out, its ribs as faint rings, and the light from below.
+        {
+            juce::ColourGradient paper (juce::Colour (0xff2c2925), c, juce::Colour (0xff121110), c.translated (150.0f * u, 0.0f), true);
+            paper.addColour (0.45, juce::Colour (0xff201e1b));
+            g.setGradientFill (paper);
+            g.fillEllipse (circle (150.0f * u));
+            for (auto r : { 128.0f, 108.0f, 88.0f, 68.0f })
+            {
+                g.setColour (juce::Colours::black.withAlpha (0.28f));
+                g.drawEllipse (circle (r * u), 1.2f);
+                g.setColour (juce::Colours::white.withAlpha (0.035f));
+                g.drawEllipse (circle (r * u - 1.5f), 1.0f);
+            }
+            const juce::Graphics::ScopedSaveState saved (g);
+            juce::Path cone;
+            cone.addEllipse (circle (150.0f * u));
+            g.reduceClipRegion (cone);
+            g.setGradientFill (juce::ColourGradient (theme::stageLight.withAlpha (0.0f), c.x, c.y, theme::stageLight.withAlpha (0.5f), c.x, c.y + 150.0f * u, false));
+            g.fillEllipse (circle (150.0f * u));
+        }
+
+        // The dust cap: a dome, lit at its top left, with a soft shadow round it.
+        g.setGradientFill (juce::ColourGradient (juce::Colours::black.withAlpha (0.6f), c, juce::Colours::black.withAlpha (0.0f), c.translated (52.0f * u, 0.0f), true));
+        g.fillEllipse (circle (52.0f * u));
+        {
+            const juce::Point<float> light { c.x - 14.0f * u, c.y - 16.0f * u };
+            juce::ColourGradient dome (juce::Colour (0xff57524b), light, juce::Colour (0xff151413), light.translated (60.0f * u, 0.0f), true);
+            g.setGradientFill (dome);
+            g.fillEllipse (circle (42.0f * u));
+            g.setColour (juce::Colours::black.withAlpha (0.5f));
+            g.drawEllipse (circle (42.0f * u), 1.0f);
+        }
+        return image;
+    }
+
 private:
+    void drawMic (juce::Graphics& g, int m) const
+    {
+        const auto colour = m == 0 ? accent : ink;
+        const auto alpha = hasPack[(size_t) m] ? 1.0f : 0.4f;
+        const auto p = marker (m);
+        const auto r = capsuleRadius (m);
+        const auto lifted = dragging == m || hovered == m;
+
+        // The body hanging below the capsule: a steel tube with a highlight down its left, and its shadow on the cone.
+        const auto body = juce::Rectangle<float> (r * 1.1f, r * 3.6f).withPosition (p.x - r * 0.55f, p.y + r * 0.4f);
+        g.setColour (juce::Colours::black.withAlpha (0.45f * alpha));
+        g.fillRoundedRectangle (body.translated (3.0f, 4.0f), r * 0.3f);
+        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff6b6966).withMultipliedAlpha (alpha), body.getX(), 0.0f, juce::Colour (0xff1d1c1b).withMultipliedAlpha (alpha),
+                                                 body.getRight(), 0.0f, false));
+        g.fillRoundedRectangle (body, r * 0.3f);
+
+        // The capsule: its shadow, a dark mesh, the ring in the mic's colour, and its letter beside it.
+        g.setColour (juce::Colours::black.withAlpha (0.5f * alpha));
+        g.fillEllipse (juce::Rectangle<float> (2.0f * r + 4.0f, 2.0f * r + 4.0f).withCentre (p.translated (2.0f, 3.0f)));
+        const auto capsule = juce::Rectangle<float> (2.0f * r, 2.0f * r).withCentre (p);
+        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff3a3835).withMultipliedAlpha (alpha), capsule.getX(), capsule.getY(),
+                                                 juce::Colour (0xff0c0c0b).withMultipliedAlpha (alpha), capsule.getRight(), capsule.getBottom(), false));
+        g.fillEllipse (capsule);
+        {
+            const juce::Graphics::ScopedSaveState saved (g);
+            juce::Path round;
+            round.addEllipse (capsule.reduced (2.0f));
+            g.reduceClipRegion (round);
+            g.setColour (juce::Colours::white.withAlpha (0.10f * alpha));
+            for (auto x = capsule.getX(); x < capsule.getRight(); x += 3.0f)
+                g.drawVerticalLine (juce::roundToInt (x), capsule.getY(), capsule.getBottom());
+            for (auto y = capsule.getY(); y < capsule.getBottom(); y += 3.0f)
+                g.drawHorizontalLine (juce::roundToInt (y), capsule.getX(), capsule.getRight());
+        }
+        if (lifted)
+        {
+            g.setGradientFill (juce::ColourGradient (colour.withAlpha (0.35f), p, colour.withAlpha (0.0f), p.translated (r + 10.0f, 0.0f), true));
+            g.fillEllipse (capsule.expanded (10.0f));
+        }
+        g.setColour (colour.withMultipliedAlpha (alpha));
+        g.drawEllipse (capsule.reduced (0.75f), lifted ? 2.5f : 2.0f);
+        g.fillEllipse (juce::Rectangle<float> (5.0f, 5.0f).withCentre (p));
+
+        // The letter on a small tag up and to the right.
+        const auto tag = juce::Rectangle<float> (18.0f, 16.0f).withPosition (p.x + r * 0.7f, p.y - r - 12.0f);
+        g.setColour (juce::Colours::black.withAlpha (0.65f * alpha));
+        g.fillRoundedRectangle (tag, 4.0f);
+        g.setColour (colour.withMultipliedAlpha (alpha));
+        g.setFont (geist (Weight::semibold, 12.0f));
+        g.drawText (m == 0 ? "A" : "B", tag, juce::Justification::centred, false);
+    }
+
     AmpSimProcessor& ampSim;
-    std::array<juce::RangedAudioParameter*, 2> position {};
-    int dragging = -1;
+    std::array<juce::RangedAudioParameter*, 2> position {}, distance {};
+    juce::Image art;
+    int dragging = -1, hovered = -1;
+    juce::Point<float> grabOffset;
 };
 
 // ---- A mic's file link ---------------------------------------------------------------------------
@@ -475,23 +631,29 @@ public:
         }
         for (auto* control : std::initializer_list<juce::Component*> { view.lowCut, view.highCut, view.lowCutOn, view.highCutOn, view.lowSlope, view.highSlope })
             addAndMakeVisible (*control);
+        view.cabOn->onStateChange = [this] { repaint (0, 0, getWidth(), BlockPage::headerHeight (subtitle, getWidth())); };
     }
 
-    static inline const juce::String subtitle { "Close mics A and B, and the cuts. The library, the speaker, the room mic, and the match curve are on the stage" };
+    static inline const juce::String subtitle { "Between Gate B and the post section. Drag the mics on the speaker; the library and the room mic are on the stage" };
 
     void layout (InspectorLayout& l)
     {
+        // Each close mic: its heading (Mute at its right), its file, Distance and Level, its pan, delay, and channel,
+        // and the phase flip. Then the cuts.
         for (int m = 0; m < 2; ++m)
         {
             auto& c = view.mics[(size_t) m];
-            l.section (m == 0 ? "Mic A, close mic 1" : "Mic B, close mic 2");
+            l.section (m == 0 ? "Mic A, close mic 1" : "Mic B, close mic 2", c.mute);
             juce::Rectangle<int> linkArea;
             l.area (&linkArea, 18);
             if (l.isPlacing())
-                view.links[(size_t) m]->setBounds (linkArea.withTrimmedLeft (16));
+            {
+                linkRows[(size_t) m] = linkArea;
+                view.links[(size_t) m]->setBounds (linkArea.withTrimmedLeft (18));
+            }
             l.knobs ({ c.distance, c.level });
-            l.switches ({ c.flip, c.mute });
             l.fields ({ { "Pan", c.pan }, { "Delay", c.delay }, { "Channel", c.channel } });
+            l.switches ({ c.flip });
         }
         l.section ("Cuts");
         l.switches ({ view.lowCutOn, view.highCutOn });
@@ -508,9 +670,7 @@ public:
 
     void resized() override
     {
-        const auto w = view.cabOn->getPreferredWidth();
-        view.cabOn->setBounds (getWidth() - BlockPage::padding - w + Switch::margin, BlockPage::padding + (22 - Switch::preferredHeight) / 2, w,
-                               Switch::preferredHeight);
+        view.cabOn->setBounds (BlockPage::headerSwitchBounds (getWidth(), view.cabOn->getPreferredWidth()));
         InspectorLayout l ({ BlockPage::padding, BlockPage::headerHeight (subtitle, getWidth()) + BlockPage::padding, getWidth() - 2 * BlockPage::padding, 0 },
                            true);
         layout (l);
@@ -520,31 +680,29 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        const auto width = getWidth() - 2 * BlockPage::padding;
-        g.setFont (geist (Weight::semibold, 16.0f));
-        g.setColour (ink);
-        g.drawText ("Cab", juce::Rectangle<int> (BlockPage::padding, BlockPage::padding, width - 60, 22), juce::Justification::centredLeft, false);
-        const auto height = BlockPage::headerHeight (subtitle, getWidth());
-        g.setFont (font (Text::label));
-        g.setColour (inkFaint);
-        const juce::Rectangle<int> lines (BlockPage::padding, BlockPage::padding + 26, width, height - BlockPage::padding - 26 - 14);
-        g.drawFittedText (subtitle, lines, juce::Justification::topLeft, juce::jmax (1, lines.getHeight() / 16), 1.0f);
-        g.setColour (line1);
-        g.fillRect (BlockPage::padding, height - 1, width, 1);
+        const auto on = view.cabOn->getToggleState();
+        BlockPage::paintHeader (g, getWidth(), "Cab", subtitle,
+                                [on] (juce::Graphics& gg, juce::Rectangle<float> box) { drawCabFront (gg, box.withSizeKeepingCentre (box.getWidth() - 2.0f, box.getHeight() - 8.0f), on); },
+                                view.cabOn->getWidth());
         InspectorLayout::paintTexts (g, texts);
 
-        // Each mic's colour, as its marker on the speaker: a dot before its file.
+        // Each mic's colour, as its capsule on the speaker: a ringed dot before its file.
         for (int m = 0; m < 2; ++m)
         {
-            const auto link = view.links[(size_t) m]->getBounds();
+            const auto row = linkRows[(size_t) m];
+            if (row.isEmpty())
+                continue;
+            const auto dot = juce::Rectangle<float> (10.0f, 10.0f).withCentre ({ (float) row.getX() + 6.0f, (float) row.getCentreY() });
             g.setColour (m == 0 ? accent : ink);
-            g.fillEllipse (juce::Rectangle<float> (8.0f, 8.0f).withCentre ({ (float) link.getX() - 12.0f, (float) link.getCentreY() }));
+            g.drawEllipse (dot, 1.5f);
+            g.fillEllipse (dot.reduced (3.0f));
         }
     }
 
 private:
     CabView& view;
     std::vector<InspectorLayout::Text> texts;
+    std::array<juce::Rectangle<int>, 2> linkRows;
 };
 
 // ---- CabView -------------------------------------------------------------------------------------
@@ -575,10 +733,10 @@ CabView::CabView (AmpSimProcessor& p) : ControlGroup (p)
     for (int m = 0; m < 2; ++m)
     {
         auto& c = mics[(size_t) m];
-        c.distance = &addKnob (AmpSimProcessor::cabParamId (m, "pos_y"), "Distance", "", Knob::Size::compact);
+        c.distance = &addKnob (AmpSimProcessor::cabParamId (m, "pos_y"), "Distance", "");
         c.distance->setFormatter ([] (float v) { return juce::String (juce::roundToInt (v * 100.0f)) + "%"; });
         c.distance->setTooltip ("Distance from the grille, from the pack's closest capture (0%) to its farthest (100%). Moves a mic with a cab pack.");
-        c.level = &addKnob (AmpSimProcessor::cabParamId (m, "level"), "Level", " dB", Knob::Size::compact);
+        c.level = &addKnob (AmpSimProcessor::cabParamId (m, "level"), "Level", " dB");
         c.flip = &addSwitch (AmpSimProcessor::cabParamId (m, "invert"), "Flip phase");
         c.mute = &addSwitch (AmpSimProcessor::cabParamId (m, "mute"), "Mute");
         c.pan = &addField (AmpSimProcessor::cabParamId (m, "pan"), "");
@@ -589,9 +747,9 @@ CabView::CabView (AmpSimProcessor& p) : ControlGroup (p)
         c.channel->setTooltip ("Which channel of a stereo IR file this mic uses");
     }
 
-    lowCut = &addKnob ("cab_lowcut_freq", "Low cut", " Hz", Knob::Size::compact);
+    lowCut = &addKnob ("cab_lowcut_freq", "Low cut", " Hz");
     lowCut->setFormatter ([] (float v) { return juce::String (juce::roundToInt (v)) + " Hz"; });
-    highCut = &addKnob ("cab_highcut_freq", "High cut", " Hz", Knob::Size::compact);
+    highCut = &addKnob ("cab_highcut_freq", "High cut", " Hz");
     highCut->setFormatter ([] (float v) { return juce::String (v / 1000.0f, 1) + " kHz"; });
     lowCutOn = &addSwitch ("cab_lowcut_on", "Low cut");
     highCutOn = &addSwitch ("cab_highcut_on", "High cut");
@@ -879,9 +1037,16 @@ void CabView::refresh()
     bool changed = false;
     for (int m = 0; m < 2; ++m)
     {
-        const auto pack = ! ampSim.getCabPackPoints (m).empty();
+        const auto points = ampSim.getCabPackPoints (m);
+        const auto pack = ! points.empty();
         changed = changed || pack != speaker->hasPack[(size_t) m];
         speaker->hasPack[(size_t) m] = pack;
+        // The pack's capture positions across the cone, each once (the speaker draws them along the mic's way).
+        std::vector<float> across;
+        for (const auto& point : points)
+            if (std::none_of (across.begin(), across.end(), [&point] (float x) { return std::abs (x - (float) point.x) < 0.01f; }))
+                across.push_back ((float) point.x);
+        speaker->packPositions[(size_t) m] = std::move (across);
     }
     juce::String newReadout;
     if (! speaker->hasPack[0] && ! speaker->hasPack[1])
@@ -912,40 +1077,49 @@ void CabView::pageShown()
 
 void CabView::paint (juce::Graphics& g)
 {
-    // The headings (12 px medium ink-faint).
-    g.setFont (geist (Weight::medium, 12.0f));
-    g.setColour (inkFaint);
-    g.drawText ("Cabinet", leftColumn.withHeight (16), juce::Justification::centredLeft, false);
-    g.drawText ("Room mic", roomHeading, juce::Justification::centredLeft, false);
-    g.drawText ("Match curve", matchHeading, juce::Justification::centredLeft, false);
-    g.setColour (line1);
-    g.fillRect (rightColumn.getX(), roomHeading.getY() - 14, rightColumn.getWidth(), 1);
+    // The headings, as the inspector's (small capitals and a hairline).
+    drawInspectorHeading (g, leftColumn.withHeight (16), "Cabinet");
+    drawInspectorHeading (g, roomHeading, "Room mic");
+    drawInspectorHeading (g, matchHeading.withWidth (84), "Match curve");
+}
 
-    // The readout under the speaker: "Mic A Cap   Mic B Cone" (12 px faint, the zone in ink, medium).
-    const auto readoutArea = juce::Rectangle<int> (centreColumn.getX(), speaker->getBottom() + 10, centreColumn.getWidth(), 16);
+void CabView::paintOverChildren (juce::Graphics& g)
+{
+    // The mics' zones on the baffle's top corners ("A Cap edge", "B Cone"), or what moves them, at its foot.
+    const auto baffle = speaker->getBounds().toFloat();
+    const auto chip = [&g] (juce::Rectangle<float> r, juce::Colour dot, const juce::String& letter, const juce::String& words)
+    {
+        g.setColour (juce::Colours::black.withAlpha (0.55f));
+        g.fillRoundedRectangle (r, r.getHeight() * 0.5f);
+        g.setColour (line1);
+        g.drawRoundedRectangle (r.reduced (0.5f), r.getHeight() * 0.5f, 1.0f);
+        auto inner = r.reduced (10.0f, 0.0f);
+        if (letter.isNotEmpty())
+        {
+            g.setColour (dot);
+            g.fillEllipse (juce::Rectangle<float> (6.0f, 6.0f).withCentre ({ inner.getX() + 3.0f, inner.getCentreY() }));
+            inner.removeFromLeft (11.0f);
+            g.setFont (geist (Weight::semibold, 12.0f));
+            g.drawText (letter, inner.removeFromLeft (12.0f), juce::Justification::centredLeft, false);
+        }
+        g.setFont (geist (letter.isNotEmpty() ? Weight::medium : Weight::regular, 12.0f));
+        g.setColour (letter.isNotEmpty() ? ink : inkDim);
+        g.drawText (words, inner, letter.isNotEmpty() ? juce::Justification::centredLeft : juce::Justification::centred, false);
+    };
     if (! readout.contains ("|"))
     {
-        g.setFont (geist (Weight::regular, 12.0f));
-        g.setColour (inkFaint);
-        g.drawText (readout, readoutArea, juce::Justification::centred, false);
+        const auto w = textWidth (geist (Weight::regular, 12.0f), readout) + 24.0f;
+        chip (juce::Rectangle<float> (w, 24.0f).withCentre ({ baffle.getCentreX(), baffle.getBottom() - 24.0f }), {}, {}, readout);
+        return;
     }
-    else
+    const auto parts = juce::StringArray::fromTokens (readout, "|", "");
+    for (int m = 0; m < 2 && 2 * m + 1 < parts.size(); ++m)
     {
-        const auto parts = juce::StringArray::fromTokens (readout, "|", "");
-        const auto label = geist (Weight::regular, 12.0f), value = geist (Weight::medium, 12.0f);
-        float total = 0.0f;
-        for (int i = 0; i < parts.size(); ++i)
-            total += textWidth (i % 2 == 0 ? label : value, parts[i]) + (i % 2 == 0 ? 4.0f : (i + 1 < parts.size() ? 28.0f : 0.0f));
-        auto x = (float) readoutArea.getCentreX() - total * 0.5f;
-        for (int i = 0; i < parts.size(); ++i)
-        {
-            const auto& f = i % 2 == 0 ? label : value;
-            g.setFont (f);
-            g.setColour (i % 2 == 0 ? inkFaint : ink);
-            const auto w = textWidth (f, parts[i]);
-            g.drawText (parts[i], juce::Rectangle<float> (x, (float) readoutArea.getY(), w + 2.0f, 16.0f), juce::Justification::centredLeft, false);
-            x += w + (i % 2 == 0 ? 4.0f : 28.0f);
-        }
+        const auto words = parts[2 * m + 1];
+        const auto w = 10.0f + 11.0f + 12.0f + textWidth (geist (Weight::medium, 12.0f), words) + 12.0f;
+        const auto r = m == 0 ? juce::Rectangle<float> (baffle.getX() + 12.0f, baffle.getY() + 12.0f, w, 24.0f)
+                              : juce::Rectangle<float> (baffle.getRight() - 12.0f - w, baffle.getY() + 12.0f, w, 24.0f);
+        chip (r, m == 0 ? accent : ink, m == 0 ? "A" : "B", words);
     }
 }
 
@@ -975,10 +1149,10 @@ void CabView::resized()
     listViewport->setBounds (leftColumn.getX(), listTop, leftColumn.getWidth(), listHeight);
     list->setSize (leftColumn.getWidth() - (scrolls ? 8 : 0), entries.empty() ? listHeight : listContentHeight);
 
-    // Centre: the speaker as large as the column allows, over its readout.
-    const auto speakerSize = (float) juce::jmin (centreColumn.getWidth(), centreColumn.getHeight() - 30);
-    speaker->scale = speakerSize / 400.0f;
-    speaker->setBounds (juce::Rectangle<int> ((int) speakerSize, (int) speakerSize).withCentre ({ centreColumn.getCentreX(), centreColumn.getY() + (int) speakerSize / 2 }));
+    // Centre: the speaker in its baffle, as large as the stage's height allows (the message line keeps the foot).
+    const auto speakerSize = juce::jmin (centreColumn.getWidth(), getHeight() - 14 - 36);
+    speaker->scale = (float) speakerSize / 400.0f;
+    speaker->setBounds (juce::Rectangle<int> (speakerSize, speakerSize).withCentre ({ centreColumn.getCentreX(), 14 + speakerSize / 2 }));
 
     // Right: the match curve's line (its heading, Amount, and switch) over its view; then the room mic and the
     // alignment.

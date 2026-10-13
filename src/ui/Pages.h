@@ -6,6 +6,7 @@
 #include "Analyzer.h"
 #include "Blocks.h"
 #include "Controls.h"
+#include "InspectorParts.h"
 #include "Meters.h"
 #include "PluginProcessor.h"
 
@@ -44,6 +45,10 @@ protected:
     juce::ComboBox& addCombo (const juce::String& parameterId, const juce::StringArray& items);
     ValueField& addField (const juce::String& parameterId, const juce::String& suffix);
     Fader& addFader (const juce::String& parameterId, const juce::String& caption, const juce::String& suffix);
+    /// A choice parameter as a row of buttons (labels: shorter names for its choices, same order).
+    ChoiceBar& addChoice (const juce::String& parameterId, const juce::StringArray& labels = {});
+    /// A switch drawn as a pad with an LED.
+    PadSwitch& addPad (const juce::String& parameterId, const juce::String& text, const juce::String& detail = {});
     juce::TextButton& addButton (const juce::String& text, std::function<void()> onClick);
     juce::Label& addLabel (const juce::String& text, theme::Text style = theme::Text::label, juce::Colour colour = theme::textDim);
 
@@ -118,8 +123,14 @@ public:
     /// A heading over what follows, with a gap above it (none above the first thing in the column); with `right`,
     /// a control at the heading's right end (a voice's switch).
     void section (const juce::String& title, juce::Component* right = nullptr);
-    /// Knobs in rows of three, each centred in its third of the width; a nullptr leaves its cell empty.
-    void knobs (const std::vector<Knob*>& knobs);
+    /// Knobs in rows of three (or `perRow`), each centred in its share of the width; a nullptr leaves its cell empty.
+    void knobs (const std::vector<Knob*>& knobs, int perRow = 3);
+    /// A block's main controls (phase 2): its knobs made large (Knob::Size::large, the value shown under the
+    /// caption), two to a row, each centred in its half; a nullptr leaves its half to `beside` (placed in that half,
+    /// `besideHeight` high, centred on the row), for a Tap pad or a meter next to the knob.
+    void hero (const std::vector<Knob*>& knobs, juce::Component* beside = nullptr, int besideHeight = 0);
+    /// A choice bar across the row, as tall as its rows need; with a caption, the caption on the left.
+    void choice (ChoiceBar* bar, const juce::String& caption = {});
     /// A control on a row of its own with its name on the left (a choice, a field).
     void labelled (const juce::String& caption, juce::Component* control, int height = theme::controlHeight);
     /// A control across the whole row.
@@ -161,7 +172,7 @@ public:
     const std::vector<Text>& getTexts() const noexcept { return texts; }
     static void paintTexts (juce::Graphics& g, const std::vector<Text>& texts);
 
-    static constexpr int sectionGap = 22, headingHeight = 16, headingGap = 10, rowGap = 8, captionWidth = 92;
+    static constexpr int sectionGap = 24, headingHeight = 16, headingGap = 10, rowGap = 10, captionWidth = 84;
 
 private:
     void begin(); // the gap before a row (not before the first)
@@ -201,10 +212,22 @@ public:
     static constexpr int padding = 16;
     static int headerHeight (const juce::String& subtitle, int width);
 
+    /// The inspector's header, shared by the pedals, the amp, and the cab (phase 2): the block's gear in small at the
+    /// left (`thumbnail` draws it in the box it's given: a pedal's enclosure, the amp's mini head, the cab), its name
+    /// (17 px semibold) and where it sits (12 px faint, up to three lines) to the right, room for its switch at the
+    /// top right (`switchWidth`), and a hairline under it all.
+    static constexpr int thumbWidth = 44, thumbHeight = 58, textLeft = padding + thumbWidth + 12;
+    static void paintHeader (juce::Graphics& g, int width, const juce::String& title, const juce::String& subtitle,
+                             const std::function<void (juce::Graphics&, juce::Rectangle<float>)>& thumbnail, int switchWidth);
+    /// Where the header's switch goes (its right edge on the column's).
+    static juce::Rectangle<int> headerSwitchBounds (int width, int switchWidth);
+
 protected:
     /// The block's controls, in order, as the column shows them.
     virtual void describe (InspectorLayout&) = 0;
     virtual void paintContent (juce::Graphics&) {}
+    /// A section's controls dimmed together (an effect inside Bloom that's off, a voice that's off).
+    static void dimAll (std::initializer_list<juce::Component*> list, float alpha);
 
     Switch* onSwitch = nullptr; // the block's own switch, in the header, when it has one
 
@@ -241,78 +264,103 @@ void dim (juce::Component* c, bool used);
 
 // ---- Pages --------------------------------------------------------------------------------------------
 
-/// A noise gate: its knobs, release mode, detector, sidechain filter, the detector's level against the
-/// open and close thresholds, and the gain reduction. Gate A has Learn; Gate B the link, and while linked
-/// its own settings are dimmed (it applies Gate A's decision).
-class GatePage final : public BlockPage
+/// A noise gate (phase 2's designed inspector): its live meter first (open or closed, the detector's level against the
+/// thresholds, the reduction; drag it to set the threshold), then Learn (Gate A) or the link to Gate A (Gate B, a pad),
+/// Threshold and Release large, the release mode (Adaptive or Fixed), then the rest: attack, hold, range, and the
+/// detector with its sidechain high-pass. Linked, Gate B's own settings are dimmed (it applies Gate A's decision).
+class GatePage final : public BlockPage, private juce::Timer
 {
 public:
     GatePage (AmpSimProcessor& processor, bool isGateB);
+    ~GatePage() override;
     void refresh() override;
+    void pageShown() override;
+    void pageHidden() override;
+
+    GateMeterView& getMeter() noexcept { return *meterView; }
+    ChoiceBar& getReleaseMode() noexcept { return *releaseMode; }
+    Knob& getThresholdKnob() noexcept { return *threshold; }
+    Knob& getReleaseKnob() noexcept { return *release; }
+    /// Gate A's Learn button (nullptr on Gate B), Gate B's link pad (nullptr on Gate A).
+    juce::Button* getLearnButton() noexcept { return learn; }
+    juce::Button* getLinkPad() noexcept { return link; }
+    /// Reads the meters now (the page's 30 Hz timer does it while it shows).
+    void updateMeter();
 
 private:
     void describe (InspectorLayout&) override;
-    void paintContent (juce::Graphics&) override;
+    void timerCallback() override { updateMeter(); }
 
     const bool gateB;
-    std::vector<Knob*> knobs;
-    juce::ComboBox *releaseMode = nullptr, *detector = nullptr;
-    Switch *sidechain = nullptr, *link = nullptr;
+    Knob *threshold = nullptr, *release = nullptr, *hysteresis = nullptr, *hold = nullptr, *attack = nullptr, *range = nullptr, *scFreq = nullptr;
+    ChoiceBar *releaseMode = nullptr, *detector = nullptr;
+    Switch* sidechain = nullptr;
+    PadSwitch* link = nullptr;
     juce::TextButton* learn = nullptr;
-    ReductionMeter* reduction = nullptr;
-    AmpSimProcessor::GateMeter meter;
+    GateMeterView* meterView = nullptr;
     bool linked = false, learning = false;
-    float learnProgress = 0.0f;
-    juce::Rectangle<int> meterArea;
+    int shownSidechain = -1;
 };
 
-/// A compressor: mode, detector, its eight knobs, the auto and sidechain switches, its static curve, and
-/// the gain reduction.
-class CompressorPage final : public BlockPage
+/// A compressor (phase 2): the mode (Studio or Pedal) on top, its live meter (the static curve, the gain reduction now
+/// and its last three seconds), Threshold and Ratio large, then attack, release, and knee with auto release, makeup and
+/// mix with auto makeup, and the detector with its sidechain high-pass.
+class CompressorPage final : public BlockPage, private juce::Timer
 {
 public:
     CompressorPage (AmpSimProcessor& processor, bool isPost);
+    ~CompressorPage() override;
     void refresh() override;
+    void pageShown() override;
+    void pageHidden() override;
+
+    CompressorMeterView& getMeter() noexcept { return *meterView; }
+    ChoiceBar& getMode() noexcept { return *mode; }
+    /// Reads the reduction now (the page's 30 Hz timer does it while it shows).
+    void updateMeter();
 
 private:
     void describe (InspectorLayout&) override;
-    void paintContent (juce::Graphics&) override;
+    void timerCallback() override { updateMeter(); }
 
     const bool post;
     const juce::String prefix;
-    std::vector<Knob*> knobs;
-    juce::ComboBox *mode = nullptr, *detector = nullptr;
+    Knob *threshold = nullptr, *ratio = nullptr, *knee = nullptr, *attack = nullptr, *release = nullptr, *makeup = nullptr, *mix = nullptr, *scFreq = nullptr;
+    ChoiceBar *mode = nullptr, *detector = nullptr;
     Switch *autoRelease = nullptr, *autoMakeup = nullptr, *sidechain = nullptr;
-    ReductionMeter* reduction = nullptr;
-    juce::Rectangle<int> curveArea;
-    float shownThreshold = 1.0f, shownRatio = 0.0f, shownKnee = -1.0f;
+    CompressorMeterView* meterView = nullptr;
+    int shownSidechain = -1;
 };
 
-/// The boost: mode and the knobs the mode uses (the others dimmed).
+/// The boost (phase 2): its three modes as a selector with what the mode does under it, Level and Tilt large, the
+/// tight filter and the mid push; the knobs a mode doesn't use are dimmed.
 class BoostPage final : public BlockPage
 {
 public:
     explicit BoostPage (AmpSimProcessor& processor);
     void refresh() override;
+    ChoiceBar& getMode() noexcept { return *mode; }
 
 private:
     void describe (InspectorLayout&) override;
-    juce::ComboBox* mode = nullptr;
+    ChoiceBar* mode = nullptr;
     Knob *level = nullptr, *tilt = nullptr, *tightHz = nullptr, *mid = nullptr;
     juce::Label* about = nullptr;
     int shownMode = -1;
 };
 
-/// The overdrive: mode, drive, tone, level, mix, the tight filter, and the drive blocks' oversampling.
+/// The overdrive (phase 2): its four circuits as a two-by-two selector with what each is under it, Drive and Level
+/// large, Tone and Mix, the tight filter (its switch on its heading), and the drive blocks' oversampling.
 class OverdrivePage final : public BlockPage
 {
 public:
     explicit OverdrivePage (AmpSimProcessor& processor);
     void refresh() override;
+    ChoiceBar& getMode() noexcept { return *mode; }
 
 private:
     void describe (InspectorLayout&) override;
-    juce::ComboBox *mode = nullptr, *oversampling = nullptr;
+    ChoiceBar *mode = nullptr, *oversampling = nullptr;
     Switch* tight = nullptr;
     Knob *drive = nullptr, *tone = nullptr, *level = nullptr, *mix = nullptr, *tightHz = nullptr;
     juce::Label *oversamplingNote = nullptr, *about = nullptr;
@@ -383,21 +431,28 @@ private:
     double dragFrequency = 0.0, dragGain = 0.0;
 };
 
-/// An EQ in the inspector: on, mode, the nine sliders (graphic) or the five bands (parametric), and the cuts.
-/// Its graph is on the stage (EqStage).
+/// An EQ in the inspector (phase 2): the mode as a selector, then the bands in a form that fits the column: the nine
+/// octave sliders side by side as a graphic EQ's faceplate, or the five parametric bands as a table (each its number,
+/// type, frequency, gain, and Q on one row), then the cuts, each on one row (its switch, frequency, slope). The graph
+/// is on the stage: selecting an EQ pedal puts the stage on it (AmpSimEditor::select).
 class EqPage final : public BlockPage
 {
 public:
     EqPage (AmpSimProcessor& processor, bool isPost);
     ~EqPage() override;
     void refresh() override;
+    ChoiceBar& getMode() noexcept { return *mode; }
+    /// For tests: a band's row in the table (in this page), and a fader.
+    juce::Rectangle<int> getBandRow (int band) const { return bandRows[(size_t) band]; }
+    Fader& getFader (int index) { return *sliders[(size_t) index]; }
 
 private:
     void describe (InspectorLayout&) override;
+    void paintContent (juce::Graphics&) override;
     void showMode (bool parametric);
 
     const juce::String prefix;
-    juce::ComboBox* mode = nullptr;
+    ChoiceBar* mode = nullptr;
     std::vector<Fader*> sliders;
     struct Band
     {
@@ -405,10 +460,12 @@ private:
         ValueField *frequency = nullptr, *gain = nullptr, *q = nullptr;
     };
     std::array<Band, ampsim::Equalizer::numParametricBands> bands;
+    std::array<juce::Rectangle<int>, ampsim::Equalizer::numParametricBands> bandRows;
+    juce::Rectangle<int> tableHeader, faderArea;
     Switch *lowCut = nullptr, *highCut = nullptr;
-    Knob *lowCutFrequency = nullptr, *highCutFrequency = nullptr;
-    juce::ComboBox *lowCutSlope = nullptr, *highCutSlope = nullptr;
-    int shownMode = -1;
+    ValueField *lowCutFrequency = nullptr, *highCutFrequency = nullptr;
+    ChoiceBar *lowCutSlope = nullptr, *highCutSlope = nullptr;
+    int shownMode = -1, shownCuts = -1;
 };
 
 /// The stage's EQ mode: one EQ's graph at the stage's size (the post EQ, or the pre EQ: a choice at its top left,
@@ -444,36 +501,48 @@ private:
     bool pre = false, showing = false;
 };
 
-/// The harmonizer: key, scale (with the 12-note custom scale), the out-of-key rule, the lowest note,
-/// glide and level, a section per voice, and what it hears now.
+/// The harmonizer (phase 2): what it hears now (the note and each voice's), the key as twelve buttons and the scale
+/// (with the custom scale's twelve notes, used when the scale is Custom), the voices as a table (each voice two rows:
+/// its switch, interval mode, steps, semitones, and octave; its level, pan, and humanize), then what out-of-key notes
+/// do, the lowest note, glide, and level. Diatonic voices use steps and chromatic ones semitones: the other is dimmed;
+/// a voice that's off is dimmed whole.
 class HarmonizerPage final : public BlockPage
 {
 public:
     explicit HarmonizerPage (AmpSimProcessor& processor);
     void refresh() override;
 
+    HearingView& getHearing() noexcept { return *hearingView; }
+    ChoiceBar& getKey() noexcept { return *root; }
+    /// For tests: a voice's row in the table (both its lines), and a field of it (steps, semitones, octave, level,
+    /// pan, humanize).
+    juce::Rectangle<int> getVoiceRow (int voice) const { return voiceRows[(size_t) voice]; }
+    ValueField& getVoiceField (int voice, int field) { return *rows[(size_t) voice].fields[(size_t) field]; }
+
 private:
     void describe (InspectorLayout&) override;
     void paintContent (juce::Graphics&) override;
 
-    juce::ComboBox *root = nullptr, *scale = nullptr, *outOfKey = nullptr, *floor = nullptr;
+    ChoiceBar *root = nullptr, *outOfKey = nullptr, *floor = nullptr;
+    juce::ComboBox* scale = nullptr;
     Knob *glide = nullptr, *level = nullptr;
+    HearingView* hearingView = nullptr;
     std::array<juce::TextButton*, 12> customNotes {};
     struct Row
     {
         Switch* on = nullptr;
-        juce::ComboBox* mode = nullptr;
+        ChoiceBar* mode = nullptr;
         std::array<ValueField*, 6> fields {}; // steps, semitones, octave, level, pan, humanize
     };
     std::array<Row, ampsim::Harmonizer::maxVoices> rows;
-    juce::String hearing;
+    std::array<juce::Rectangle<int>, ampsim::Harmonizer::maxVoices> voiceRows;
+    std::array<juce::Rectangle<int>, 2> captionRows;
     int shownMask = -1, shownScale = -1;
-    juce::Rectangle<int> hearingArea;
 };
 
-/// The multivoicer: engine, mix mode (Blend or Add), voice count, mix, spread, the wet high-pass, the four
-/// one-click shapes, the starting points, and a section per voice (voices past the count dimmed), each with an
-/// interval picker (a chevron beside its semitones) for the named intervals.
+/// The multivoicer (phase 2): the engine and the mix mode as selectors, the four one-click shapes and the starting
+/// points, Mix and Spread large, the voice count and the wet high-pass, then the eight voices as a table, one row
+/// each (its number, interval with its picker, cents, delay, pan, level, drift); voices past the count are dimmed.
 class MultivoicerPage final : public BlockPage
 {
 public:
@@ -485,11 +554,13 @@ public:
     juce::Button& getShapeButton (int index) { return *shapes[(size_t) index]; }
     juce::Button& getIntervalPicker (int voice) { return *rows[(size_t) voice].picker; }
     juce::PopupMenu intervalMenu (int voice);
+    juce::Rectangle<int> getVoiceRow (int voice) const { return voiceRows[(size_t) voice]; }
 
 private:
     void describe (InspectorLayout&) override;
+    void paintContent (juce::Graphics&) override;
 
-    juce::ComboBox *engine = nullptr, *mixMode = nullptr;
+    ChoiceBar *engine = nullptr, *mixMode = nullptr;
     Switch* highPass = nullptr;
     juce::TextButton* startingPoints = nullptr;
     std::array<juce::TextButton*, 4> shapes {};
@@ -500,11 +571,14 @@ private:
         juce::Button* picker = nullptr;       // beside the semitones: the named intervals
     };
     std::array<Row, ampsim::Multivoicer::maxVoices> rows;
-    int shownVoices = -1;
+    std::array<juce::Rectangle<int>, ampsim::Multivoicer::maxVoices> voiceRows;
+    juce::Rectangle<int> captionRow;
+    int shownVoices = -1, shownHighPass = -1;
 };
 
-/// Bloom: its switch and mix, the order of its three effects (drag the chips), and the bitcrusher, phaser,
-/// and flanger, a section each, in that order.
+/// Bloom (phase 2): the order of its three effects first (drag the chips), its mix, then the bitcrusher, phaser, and
+/// flanger in the order they run, a section each with its switch on its heading (an effect that's off is dimmed), its
+/// choices as selectors, and its knobs.
 class BloomPage final : public BlockPage
 {
 public:
@@ -519,15 +593,17 @@ private:
     {
         juce::String title;
         Switch* on = nullptr;
-        std::vector<std::pair<juce::String, juce::ComboBox*>> combos;
+        std::vector<std::pair<juce::String, ChoiceBar*>> choices;
         std::vector<Switch*> switches;
         std::vector<Knob*> knobs;
         juce::ComboBox* note = nullptr; // shown instead of the rate knob when synced
         Knob* rate = nullptr;
+        int shownOn = -1;
     };
     void describe (InspectorLayout&) override;
+    void dimEffect (Effect& e, float alpha);
 
-    ValueField* mix = nullptr;
+    Knob* mix = nullptr;
     juce::Label* latency = nullptr;
     OrderChips* chips = nullptr;
     Effect crush, phaser, flanger;
@@ -535,7 +611,8 @@ private:
     int shownPhaserMode = -1, shownPhaserSync = -1, shownFlangerSync = -1;
 };
 
-/// The chorus.
+/// The chorus (phase 2): its three modes as a selector, Rate (or its synced note) and Depth large, the sync, Mix and
+/// Width, the shape, the low-end protection (its switch on its heading), and its character.
 class ChorusPage final : public BlockPage
 {
 public:
@@ -544,44 +621,60 @@ public:
 
 private:
     void describe (InspectorLayout&) override;
-    juce::ComboBox *mode = nullptr, *shape = nullptr, *note = nullptr;
+    ChoiceBar *mode = nullptr, *shape = nullptr;
+    juce::ComboBox* note = nullptr;
     Switch *sync = nullptr, *analog = nullptr, *noise = nullptr, *highPass = nullptr;
     Knob *rate = nullptr, *depth = nullptr, *mix = nullptr, *width = nullptr, *highPassHz = nullptr;
-    int shownSync = -1;
+    int shownSync = -1, shownHighPass = -1;
 };
 
-/// The delay, with the tempo and Tap.
-class DelayPage final : public BlockPage
+/// The delay (phase 2): its three modes as a selector, then its time large (or the synced note) beside the Tap pad (the
+/// tempo under it, blinking on the beat) and the sync, Feedback and Mix large, the stereo layout with the right side's
+/// time or offset, the repeats' tone and ducking, and the modulation.
+class DelayPage final : public BlockPage, private juce::Timer
 {
 public:
     explicit DelayPage (AmpSimProcessor& processor);
+    ~DelayPage() override;
     void refresh() override;
+    void pageShown() override;
+    void pageHidden() override;
+    TapPad& getTapPad() noexcept { return *tap; }
 
 private:
     void describe (InspectorLayout&) override;
-    juce::ComboBox *mode = nullptr, *stereo = nullptr, *note = nullptr, *rightNote = nullptr;
+    void timerCallback() override;
+
+    ChoiceBar *mode = nullptr, *stereo = nullptr;
+    juce::ComboBox *note = nullptr, *rightNote = nullptr;
     Switch* sync = nullptr;
     Knob *time = nullptr, *rightTime = nullptr, *offset = nullptr, *feedback = nullptr, *mix = nullptr, *lowCut = nullptr, *highCut = nullptr,
-         *modDepth = nullptr, *modRate = nullptr, *duck = nullptr, *tempo = nullptr;
-    juce::TextButton* tap = nullptr;
+         *modDepth = nullptr, *modRate = nullptr, *duck = nullptr;
+    ValueField* tempo = nullptr;
+    TapPad* tap = nullptr;
+    juce::Rectangle<int> tempoCaption;
     int shownState = -1;
 };
 
-/// The reverb, with freeze and the shimmer.
+/// The reverb (phase 2): its three engines as a selector, Mix and Decay large, Freeze as a pad, then the space (size,
+/// pre-delay or its synced note, early and late, diffusion, width), the damping and the cuts, the motion, and the
+/// shimmer with its interval (Room and Hall only: dimmed on Plate).
 class ReverbPage final : public BlockPage
 {
 public:
     explicit ReverbPage (AmpSimProcessor& processor);
     void refresh() override;
+    juce::Button& getFreezePad() noexcept { return *freeze; }
 
 private:
     void describe (InspectorLayout&) override;
-    juce::ComboBox *engine = nullptr, *preDelayNote = nullptr, *shimmerInterval = nullptr;
+    ChoiceBar *engine = nullptr, *shimmerInterval = nullptr;
+    juce::ComboBox* preDelayNote = nullptr;
     Switch *freeze = nullptr, *preDelaySync = nullptr;
     Knob *mix = nullptr, *preDelay = nullptr, *decay = nullptr, *size = nullptr, *lowDecay = nullptr, *highDecay = nullptr, *diffusion = nullptr,
          *earlyLate = nullptr, *modDepth = nullptr, *modRate = nullptr, *width = nullptr, *ducking = nullptr, *lowCut = nullptr, *highCut = nullptr,
          *shimmer = nullptr;
-    int shownSync = -1;
+    int shownSync = -1, shownEngine = -1;
 };
 
 /// The tempo notes' names ("1/4", "1/8D", ...) in parameter order.

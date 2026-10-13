@@ -86,6 +86,7 @@ public:
     void refresh() override;
     void pageShown() override;
     void paint (juce::Graphics&) override;
+    void paintOverChildren (juce::Graphics&) override;
     void resized() override;
 
     bool isInterestedInFileDrag (const juce::StringArray& files) override;
