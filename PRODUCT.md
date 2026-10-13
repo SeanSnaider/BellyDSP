@@ -64,7 +64,7 @@ Three pillars, weighted equally (Sean, 2026-10-13):
 ## Brand Commitments
 
 - **The name and mark:** BellyDSP, and the "B." mark (the app icon, `resources/icon/`).
-- **The site looks like the app:** the app's dark look, its emerald accent, and the "B." mark carry over to the site (binding, Sean, 2026-10-13).
+- **The site looks like the app:** the app's dark look, its accent, and the "B." mark carry over to the site (binding, Sean, 2026-10-13). The accent was emerald when Sean said this; the app redesign he chose the same day made it orange (#ff8a00), so the site follows the orange.
 - **Imagery:** real app snapshots rendered by the test suite, no mockups or stock (binding, Sean, 2026-10-13).
 - **The stats page stays public** (binding, Sean, 2026-10-13).
 - **Voice:** direct, plain, a little casual, no corporate buzzwords, and no em dashes.

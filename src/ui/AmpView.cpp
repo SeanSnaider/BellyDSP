@@ -160,7 +160,7 @@ void SpectrumView::paint (juce::Graphics& g)
         g.fillPath (zero);
     }
 
-    // The curve and its fill (handoff 6: a 1.5 px emerald line, a faint emerald fill fading out downwards).
+    // The curve and its fill (handoff 6: a 1.5 px the accent (orange) line, a faint the accent (orange) fill fading out downwards).
     if (hasCurve() && columns.size() > 1)
     {
         const auto yOf = [&plot] (float db)

@@ -80,7 +80,7 @@ public:
     }
 };
 
-/// The keyboard focus ring (handoff 5): a 1px emerald outline 3px outside `box`, radius 4. Only drawn when
+/// The keyboard focus ring (handoff 5): a 1px the accent (orange) outline 3px outside `box`, radius 4. Only drawn when
 /// the focus came from the keyboard (the CSS :focus-visible rule): a click focuses a control (so its arrow
 /// keys work) without a ring.
 void drawFocusRing (juce::Graphics& g, juce::Rectangle<float> box);
@@ -182,12 +182,12 @@ private:
 /// focus ring (3 px outside the box) are drawn inside it. Geometry, exactly as the reference's SVG and CSS:
 ///   track     an arc of radius 32 in a 72 px box centred on the hit area, -135 to +135 degrees (0 = up),
 ///             stroke 2, round caps, the skin's track colour (small: the same drawing at 60/72 scale)
-///   value     the same arc from -135 to the value, emerald, hidden at the minimum
+///   value     the same arc from -135 to the value, the accent (orange), hidden at the minimum
 ///   body      a 40 px circle (small 32), a radial gradient from the skin's a (highlight at 38% / 30%) to b
 ///             at 80%, a 1 px ring, and a soft shadow (0 3 6, black at 35%)
 ///   pointer   a 3 x 10 bar, 4 px in from the body's edge, rotating with the value
 ///   label     12 px, weight 500, the skin's label colour; while dragging (and on hover) the value instead,
-///             emerald in the chrome, underlined in emerald on the amp panels
+///             the accent (orange) in the chrome, underlined in the accent (orange) on the amp panels
 class Knob final : public ParameterControl
 {
 public:
@@ -208,7 +208,7 @@ public:
     void setSkin (theme::Skin newSkin);
     theme::Skin getSkin() const noexcept { return skin; }
 
-    /// The amp panels underline the value while dragging; the chrome turns it emerald (handoff 4.1).
+    /// The amp panels underline the value while dragging; the chrome turns it the accent (orange) (handoff 4.1).
     bool isPanelStyle() const noexcept { return skin != theme::Skin::chrome; }
 
     /// What the label shows now: the caption, or the value while dragging or hovered (never with the value shown under
@@ -287,7 +287,7 @@ private:
 };
 
 /// The toggle (handoff 4.2): a 28 x 16 pill with a 1 px border in the text colour and an 8 px dot, the
-/// label 12 px to its right after an 8 px gap. Off: the dot on the left, muted. On: border and dot emerald,
+/// label 12 px to its right after an 8 px gap. Off: the dot on the left, muted. On: border and dot the accent (orange),
 /// the dot on the right. Click, Space, or Enter flips it. Attach it with a ButtonAttachment. The component
 /// is the CSS box grown by 4 px each way (the focus ring).
 class Switch : public IgnoresRightClick<juce::ToggleButton>
@@ -329,7 +329,7 @@ private:
     bool userGesture = false; // set by a mouse-up or key on the switch, consumed by the click it causes
 };
 
-/// A bypass dot (handoff 4.4): 7 px, emerald when the block is engaged, line-2 when it's bypassed. Bound
+/// A bypass dot (handoff 4.4): 7 px, the accent (orange) when the block is engaged, line-2 when it's bypassed. Bound
 /// to a block's switch, or inverted to a bypass parameter (the amp's, the cab's). A click flips it as one
 /// gesture without anything else happening (the chain block around it doesn't navigate).
 class PowerSwitch final : public juce::Component, public juce::SettableTooltipClient

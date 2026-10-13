@@ -1,352 +1,561 @@
 ---
 name: BellyDSP
-description: The bellydsp.com website, drawn in the desktop app's current visual world, with the app's amp shelf unrolled into page-scale material bands.
+description: A dark studio stage for rendered gear. One amp lit from below, the pedals as a board in chain order, the selected block in an inspector, and one orange that means on.
 colors:
-  ground: "#0b0c0c"
-  surface: "#111313"
-  hairline: "#1e2221"
-  hairline-strong: "#2a2f2d"
-  ink: "#e6ebe9"
-  ink-dim: "#8a938f"
-  ink-faint: "#525a57"
-  emerald: "#34d399"
-  glass-field: "#cdcac0"
-  glass-ink: "#17191a"
-  ember-field: "#3f1719"
-  ember-gold: "#d9b878"
-  monolith-field: "#121313"
-  lantern-field: "#c8a467"
-  lantern-ink: "#26190d"
-  basalt-field: "#2c2f31"
-  comet-field: "#141e44"
-  comet-ice: "#9ff3ff"
-  forge-field: "#101112"
-  forge-orange: "#ff6a1f"
-  quartz-field: "#dccde3"
-  quartz-violet: "#533f6c"
+  bg: "#121212"
+  panel-bg: "#1a1a1a"
+  raised: "#1f1f1f"
+  line1: "#2c2c2c"
+  line2: "#3a3a3a"
+  ink: "#e8e8e8"
+  ink-dim: "#9a9a9a"
+  ink-faint: "#6b6b6b"
+  accent: "#ff8a00"
+  accent-dim: "#ff8a0024"
+  on-accent: "#121212"
+  clip: "#e5484d"
+  stage-light: "#34302b"
+  board-tray: "#161616"
+  letterbox: "#0a0a0a"
+  scrim: "#0a0a0ac8"
+  led-off: "#2a2a2a"
+  site-ground: "#0b0c0c"
+  site-surface: "#111313"
+  site-hairline: "#1e2221"
+  site-hairline-strong: "#2a2f2d"
+  site-ink: "#e6ebe9"
+  site-ink-dim: "#8a938f"
+  site-ink-faint: "#525a57"
+  site-emerald: "#34d399"
+  site-glass-field: "#cdcac0"
+  site-glass-ink: "#17191a"
+  site-ember-field: "#3f1719"
+  site-ember-gold: "#d9b878"
+  site-monolith-field: "#121313"
+  site-lantern-field: "#c8a467"
+  site-lantern-ink: "#26190d"
+  site-basalt-field: "#2c2f31"
+  site-comet-field: "#141e44"
+  site-comet-ice: "#9ff3ff"
+  site-forge-field: "#101112"
+  site-forge-orange: "#ff6a1f"
+  site-quartz-field: "#dccde3"
+  site-quartz-violet: "#533f6c"
 typography:
-  display:
+  tuner-note:
+    fontFamily: "Geist, system-ui, sans-serif"
+    fontSize: "200px"
+    fontWeight: 300
+    lineHeight: 1
+  preset-name:
+    fontFamily: "Geist, system-ui, sans-serif"
+    fontSize: "23px"
+    fontWeight: 600
+    lineHeight: 1.1
+  overlay-title:
+    fontFamily: "Geist, system-ui, sans-serif"
+    fontSize: "20px"
+    fontWeight: 600
+    lineHeight: 1.2
+  inspector-title:
+    fontFamily: "Geist, system-ui, sans-serif"
+    fontSize: "17px"
+    fontWeight: 600
+    lineHeight: 1.2
+  title:
+    fontFamily: "Geist, system-ui, sans-serif"
+    fontSize: "15px"
+    fontWeight: 500
+    lineHeight: 1.3
+  stage-line:
+    fontFamily: "Geist, system-ui, sans-serif"
+    fontSize: "14px"
+    fontWeight: 400
+    lineHeight: 1.3
+  body:
+    fontFamily: "Geist, system-ui, sans-serif"
+    fontSize: "13px"
+    fontWeight: 400
+    lineHeight: 1.4
+  value-large:
+    fontFamily: "Geist, system-ui, sans-serif"
+    fontSize: "14px"
+    fontWeight: 500
+    fontFeature: "tnum"
+  value:
+    fontFamily: "Geist, system-ui, sans-serif"
+    fontSize: "12px"
+    fontWeight: 500
+    fontFeature: "tnum"
+  label:
+    fontFamily: "Geist, system-ui, sans-serif"
+    fontSize: "12px"
+    fontWeight: 400
+    lineHeight: 1.4
+  value-small:
+    fontFamily: "Geist, system-ui, sans-serif"
+    fontSize: "11px"
+    fontWeight: 500
+    fontFeature: "tnum"
+  caption:
+    fontFamily: "Geist, system-ui, sans-serif"
+    fontSize: "11px"
+    fontWeight: 400
+    lineHeight: 1.3
+  section-heading:
+    fontFamily: "Geist, system-ui, sans-serif"
+    fontSize: "10.5px"
+    fontWeight: 600
+    letterSpacing: "0.09em"
+  badge-script:
+    fontFamily: "Fraunces, Georgia, serif"
+    fontWeight: 600
+  site-display:
     fontFamily: "Geist, system-ui, -apple-system, Segoe UI, sans-serif"
     fontSize: "clamp(56px, 8.5vw, 6rem)"
     fontWeight: 600
     lineHeight: 0.95
     letterSpacing: "0"
-  display-script:
+  site-display-script:
     fontFamily: "Fraunces, Georgia, serif"
     fontSize: "clamp(56px, 8.5vw, 6rem)"
     fontWeight: 600
     lineHeight: 0.95
-    letterSpacing: "0"
-  page-title:
+  site-page-title:
     fontFamily: "Geist, system-ui, sans-serif"
     fontSize: "clamp(40px, 5.6vw, 72px)"
     fontWeight: 600
     lineHeight: 1.15
     letterSpacing: "-0.035em"
-  headline:
+  site-headline:
     fontFamily: "Geist, system-ui, sans-serif"
     fontSize: "clamp(32px, 4vw, 52px)"
     fontWeight: 600
     lineHeight: 1.15
     letterSpacing: "-0.03em"
-  statement:
+  site-statement:
     fontFamily: "Geist, system-ui, sans-serif"
     fontSize: "clamp(24px, 2.1vw, 30px)"
     fontWeight: 600
     lineHeight: 1.2
     letterSpacing: "-0.02em"
-  title:
+  site-title:
     fontFamily: "Geist, system-ui, sans-serif"
     fontSize: "clamp(24px, 2.4vw, 30px)"
     fontWeight: 600
     lineHeight: 1.15
     letterSpacing: "-0.02em"
-  voice:
+  site-voice:
     fontFamily: "Geist, system-ui, sans-serif"
     fontSize: "clamp(20px, 2vw, 24px)"
     fontWeight: 400
     lineHeight: 1.4
-  lead:
+  site-lead:
     fontFamily: "Geist, system-ui, sans-serif"
     fontSize: "clamp(17px, 1.8vw, 20px)"
     fontWeight: 400
     lineHeight: 1.6
-  body:
+  site-body:
     fontFamily: "Geist, system-ui, sans-serif"
     fontSize: "16px"
     fontWeight: 400
     lineHeight: 1.6
-  label:
+  site-label:
     fontFamily: "Geist, system-ui, sans-serif"
     fontSize: "14px"
     fontWeight: 400
     lineHeight: 1.6
-  mono:
+  site-mono:
     fontFamily: "ui-monospace, SF Mono, Menlo, Consolas, monospace"
     fontSize: "0.875em"
     fontWeight: 400
 rounded:
   mini: "3px"
-  code: "5px"
-  sm: "8px"
-  md: "10px"
-  lg: "12px"
+  control: "6px"
+  panel: "6px"
+  menu: "8px"
+  card: "10px"
+  window: "12px"
+  head: "14px"
+  site-mini: "3px"
+  site-code: "5px"
+  site-sm: "8px"
+  site-md: "10px"
+  site-lg: "12px"
 spacing:
-  gutter: "16px"
-  gutter-tablet: "32px"
-  gutter-wide: "56px"
-  bar: "56px"
-  shelf: "64px"
-  shelf-wide: "84px"
-  max: "1240px"
+  xs: "4px"
+  s: "8px"
+  m: "12px"
+  l: "16px"
+  xl: "24px"
+  xxl: "32px"
+  control-height: "28px"
+  switch-height: "24px"
+  top-bar: "52px"
+  footer: "78px"
+  stage: "350px"
+  board: "280px"
+  inspector: "300px"
+  canvas-width: "1280px"
+  canvas-height: "760px"
+  site-gutter: "16px"
+  site-gutter-tablet: "32px"
+  site-gutter-wide: "56px"
+  site-bar: "56px"
+  site-shelf: "64px"
+  site-shelf-wide: "84px"
+  site-max: "1240px"
 components:
-  button-solid:
-    backgroundColor: "{colors.ink}"
-    textColor: "{colors.ground}"
-    typography: "{typography.body}"
-    rounded: "{rounded.md}"
-    padding: "10px 22px"
-    height: "52px"
-  button-solid-hover:
-    backgroundColor: "#ffffff"
-    textColor: "{colors.ground}"
-  button-solid-on-glass:
-    backgroundColor: "{colors.glass-ink}"
-    textColor: "#f2f1ec"
-    rounded: "{rounded.md}"
-    padding: "10px 22px"
-    height: "52px"
-  button-solid-on-lantern:
-    backgroundColor: "{colors.lantern-ink}"
-    textColor: "#f6ead2"
-    rounded: "{rounded.md}"
-    padding: "10px 22px"
-    height: "52px"
-  button-ghost:
-    backgroundColor: "transparent"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.md}"
-    padding: "10px 22px"
-    height: "52px"
-  bar-download:
-    backgroundColor: "{colors.ink}"
-    textColor: "{colors.ground}"
-    typography: "{typography.label}"
-    rounded: "{rounded.sm}"
-    padding: "8px 16px"
   top-bar:
-    backgroundColor: "{colors.ground}"
+    backgroundColor: "{colors.panel-bg}"
     textColor: "{colors.ink-dim}"
-    typography: "{typography.label}"
-    height: "{spacing.bar}"
-  shelf:
-    backgroundColor: "{colors.ground}"
-    textColor: "{colors.ink-dim}"
-    typography: "{typography.label}"
-    height: "{spacing.shelf}"
-  chain-cell:
-    backgroundColor: "transparent"
+    typography: "{typography.body}"
+    height: "{spacing.top-bar}"
+  preset-box:
+    backgroundColor: "{colors.raised}"
     textColor: "{colors.ink}"
+    typography: "{typography.preset-name}"
+    rounded: "{rounded.control}"
+    height: "48px"
+  button:
+    backgroundColor: "{colors.raised}"
+    textColor: "{colors.ink}"
+    typography: "{typography.body}"
+    rounded: "{rounded.control}"
+    height: "{spacing.control-height}"
+  button-primary:
+    backgroundColor: "{colors.line1}"
+    textColor: "{colors.ink}"
+    typography: "{typography.body}"
+    rounded: "{rounded.control}"
+    height: "{spacing.control-height}"
+  button-primary-running:
+    backgroundColor: "{colors.accent}"
+    textColor: "{colors.on-accent}"
+  segmented-pill:
+    backgroundColor: "{colors.raised}"
+    textColor: "{colors.ink-dim}"
+    typography: "{typography.body}"
+    height: "30px"
+  segmented-pill-chosen:
+    backgroundColor: "{colors.line2}"
+    textColor: "{colors.accent}"
+  choice-bar:
+    backgroundColor: "{colors.raised}"
+    textColor: "{colors.ink-dim}"
     typography: "{typography.label}"
+    rounded: "{rounded.control}"
+    height: "28px"
+  choice-bar-chosen:
+    backgroundColor: "{colors.line1}"
+    textColor: "{colors.accent}"
+  knob-large:
+    textColor: "{colors.ink}"
+    typography: "{typography.value-large}"
+    size: "80px"
+  knob:
+    textColor: "{colors.ink}"
+    typography: "{typography.value-small}"
+    size: "64px"
+  knob-compact:
+    textColor: "{colors.ink}"
+    typography: "{typography.value-small}"
+    size: "52px"
+  switch:
+    textColor: "{colors.ink-dim}"
+    typography: "{typography.label}"
+    width: "28px"
+    height: "16px"
+  pad-switch:
+    backgroundColor: "{colors.raised}"
+    textColor: "{colors.ink}"
+    typography: "{typography.body}"
+    rounded: "{rounded.control}"
+    height: "40px"
+  scene-button:
+    backgroundColor: "{colors.raised}"
+    textColor: "{colors.ink}"
+    typography: "{typography.body}"
+    rounded: "{rounded.control}"
+  scene-button-lit:
+    backgroundColor: "{colors.accent}"
+    textColor: "{colors.on-accent}"
+  scene-button-empty:
+    backgroundColor: "transparent"
+    textColor: "{colors.ink-faint}"
+  inspector:
+    backgroundColor: "{colors.panel-bg}"
+    textColor: "{colors.ink}"
+    width: "{spacing.inspector}"
+    padding: "0 16px"
+  overlay-panel:
+    backgroundColor: "{colors.panel-bg}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.card}"
+  menu:
+    backgroundColor: "{colors.raised}"
+    textColor: "{colors.ink}"
+    typography: "{typography.body}"
+    rounded: "{rounded.menu}"
+  keycap:
+    backgroundColor: "{colors.raised}"
+    textColor: "{colors.ink-dim}"
+    typography: "{typography.caption}"
+    rounded: "4px"
+    height: "20px"
+  site-button-solid:
+    backgroundColor: "{colors.site-ink}"
+    textColor: "{colors.site-ground}"
+    typography: "{typography.site-body}"
+    rounded: "{rounded.site-md}"
+    padding: "10px 22px"
+    height: "52px"
+  site-button-solid-hover:
+    backgroundColor: "#ffffff"
+    textColor: "{colors.site-ground}"
+  site-button-ghost:
+    backgroundColor: "transparent"
+    textColor: "{colors.site-ink}"
+    rounded: "{rounded.site-md}"
+    padding: "10px 22px"
+    height: "52px"
+  site-bar-download:
+    backgroundColor: "{colors.site-ink}"
+    textColor: "{colors.site-ground}"
+    typography: "{typography.site-label}"
+    rounded: "{rounded.site-sm}"
+    padding: "8px 16px"
+  site-top-bar:
+    backgroundColor: "{colors.site-ground}"
+    textColor: "{colors.site-ink-dim}"
+    typography: "{typography.site-label}"
+    height: "{spacing.site-bar}"
+  site-shelf:
+    backgroundColor: "{colors.site-ground}"
+    textColor: "{colors.site-ink-dim}"
+    typography: "{typography.site-label}"
+    height: "{spacing.site-shelf}"
+  site-chain-cell:
+    backgroundColor: "transparent"
+    textColor: "{colors.site-ink}"
+    typography: "{typography.site-label}"
     rounded: "9px"
     padding: "8px 14px"
-  shot:
-    backgroundColor: "{colors.surface}"
-    rounded: "{rounded.lg}"
-  notice:
-    backgroundColor: "transparent"
-    textColor: "{colors.ink-dim}"
-    rounded: "{rounded.md}"
-    padding: "12px 16px"
-  stat-tile:
-    backgroundColor: "{colors.ground}"
-    textColor: "{colors.ink}"
+  site-shot:
+    backgroundColor: "{colors.site-surface}"
+    rounded: "{rounded.site-lg}"
+  site-stat-tile:
+    backgroundColor: "{colors.site-ground}"
+    textColor: "{colors.site-ink}"
     padding: "20px 22px"
 ---
 
 # Design System: BellyDSP
 
+This file records two surfaces. **The desktop app** is the primary system: the redesign shipped on 2026-10-13 (direction contract `.impeccable/surfaces/src-plugineditor-cpp.md`, tokens in `src/ui/Theme.h`, snapshots in `.impeccable/review/app/`). **The website** (bellydsp.com) has its own section at the end, under Components. It follows the app's world and still carries the app's old look; its tokens are the ones prefixed `site-`.
+
 ## Overview
 
-**Creative North Star: "The Amp Shelf, Unrolled"**
+**Creative North Star: "The Lit Stage"**
 
-bellydsp.com is drawn in the desktop app's current visual world, because PRODUCT.md binds "the site looks like the app": a near-black ground, 1px hairlines, Geist for everything, and emerald only for what is on, active, or correct. Onto that calm ground the site lays the app's eight amp heads as page-scale bands. Each band is built from its head's material (silver Glass, oxblood Ember, black Monolith, tweed Lantern, stone Basalt, navy Comet, steel-and-black Forge, lilac Quartz) the way the app builds its textures, with procedural CSS gradients, and the app's own rendered head sits on it as the band's object. Everything that isn't an amp (Match tone, the rest of the rig, how it's built, the download) lives on calm dark bands between them.
+The app is a dark studio room with real gear in it. One amp head stands on a stage lit warmly from below. The pedals stand on a board under it in chain order, each in its own enclosure with an LED and a footswitch. The chrome around the gear (the top bar, the inspector, the scenes footer) is flat and quiet: near-black panels, 1px hairlines, Geist, grey inks. Everything that is on, selected, or active is lit in one orange, so from a step back the player reads the rig the way they'd read a real one: what's glowing is what's on.
 
-The density is low and the scale is generous: one idea per band, a 4/8 column split, the amp's name at display size beside or under its head. The imagery is only real app snapshots and heads rendered by the test suite. There's no hero illustration, no feature-card grid, no logo row.
+The density is that of a working tool. Everything a player needs while playing fits on one fixed 1280 x 760 canvas: the preset and scene, which pedals are lit, the amp's knobs, the selected block's every control, and the eight scenes. The canvas scales uniformly to the window and letterboxes. The gear is the only thing with material, colour, and depth. The chrome never competes with it.
 
-**This world follows the app's.** The desktop app is about to be redesigned with the whole look open (PRODUCT.md, "The app"). When the app's new world lands, this document and the site get revised to match it. Until then, the tokens below are the app's current look as the site carries it.
+All of it is drawn in code. The heads, pedals, cab front, speaker, and markers are procedural art, rendered once per scale into a cache and blitted per frame. No bitmaps, no third-party trade dress, and no other company's product or amp names.
 
 **Key Characteristics:**
-- Near-black ground (`ground`), separated by 1px hairlines rather than by shadows or fills.
-- One accent, emerald, which means on, active, or correct.
-- Eight amp materials, used only as full-width bands, inner-page bands, and the shelf's minis.
-- Geist throughout. Each amp's name is set in its badge's own lettering.
-- The app's real heads and snapshots are the only pictures.
-- One authored motion: the head arrives as its band scrolls in. The shelf light follows the current amp.
+- A near-black ground (`bg`) with flat panels (`panel-bg`) and raised controls (`raised`), separated by 1px hairlines (`line1`).
+- One accent, orange (`accent`), meaning on, selected, or active. Red (`clip`) means a clip and nothing else.
+- Rendered gear in its own materials: nine amp heads, fourteen pedals, the cab's front, and the board's markers.
+- An off pedal is dimmed whole, so on and off read from two metres away.
+- Every knob in the inspector shows its value. Numbers are tabular.
+- Three short motions: the LED bloom, the scene glide, the stage crossfade.
 
 ## Colors
 
-A cool near-black ground with grey-green ink, one emerald signal, and eight amp materials that only ever show up at band scale.
+A neutral, slightly warm near-black studio with grey inks, one orange signal, one red for clipping, and gear that brings its own colours.
 
 ### Primary
-- **Signal Emerald** (`emerald`): the shelf light under the current amp, the 2px underline under the current page in the nav, the dot on each active chain cell, the dot in the mark and favicon, the "detected" dot in the download page's OS note, the focus ring, the text selection (at 28% alpha), the caret, and `accent-color`.
+- **Pilot Orange** (`accent`): the lit LEDs and their halos, the inspector knobs' value arcs, the lit scene's fill, the selected pedal's or marker's ring, the chosen segment of a ChoiceBar or pill, a switch's border and dot when on, the lit jewel lamp, the playing amp's underline on the shelf, the gain set's active capture dots on the head's Gain knob, an in-tune tuner, the keyboard focus ring, and a value while it's being dragged.
+- **Orange Wash** (`accent-dim`, the accent at 14%): soft fills behind a done step badge and a chosen option. Never a surface.
+- **On Orange** (`on-accent`): text on an orange fill (the lit scene's number and name).
+
+### Signal
+- **Clip Red** (`clip`): a latched clip on the In and Out meters. Warnings and errors are written in words in the neutral inks.
 
 ### Neutral
-- **Amp-Room Black** (`ground`): the page, the chrome, the calm bands, stat tiles. Also `theme-color`.
-- **Panel Black** (`surface`): behind screenshots, code, pre blocks, and tooltips.
-- **Hairline** (`hairline`): every divider: under the bar and the shelf, the tops of calm bands and doc sections, list and table rules, footer.
-- **Strong Hairline** (`hairline-strong`): the borders of interactive or framed things: ghost buttons, chain cells, screenshots, step counters, notices, the scrollbar thumb.
-- **Bone Ink** (`ink`): headings, strong text, the solid button's fill on dark.
-- **Dim Ink** (`ink-dim`, 6.4:1 on the ground): body copy, leads, nav links at rest, captions.
-- **Faint Ink** (`ink-faint`, 2.7:1): hairline-level marks only (the chart crosshair). Never content.
-
-### Amp materials
-Each band sets its own `--text` and `--soft` tints from its material, so copy on it reads in that material's ink, and its buttons are re-inked to match.
-- **Glass** (`glass-field`, a cream-silver gradient with fine vertical brushing; ink `glass-ink`).
-- **Ember** (`ember-field`, an oxblood radial with a woven cross-grid; the name in `ember-gold` script).
-- **Monolith** (`monolith-field`, with horizontal slats fading in from the right).
-- **Lantern** (`lantern-field`, tweed diagonals; ink `lantern-ink`).
-- **Basalt** (`basalt-field`, a stone radial flecked with light and dark grains).
-- **Comet** (`comet-field`, a navy radial with a scatter of stars and a `comet-ice` glow).
-- **Forge** (`forge-field`, a fine dot grid with a 3px `forge-orange` rule along the bottom edge; the program-change rule turns orange too).
-- **Quartz** (`quartz-field`, a lilac gradient with two faint facet sheens; the name in `quartz-violet`).
+- **Studio Black** (`bg`): the window, the stage's dark, the overlays' ground.
+- **Panel** (`panel-bg`): the top bar, the inspector, the footer, the overlays' panels, dialogs.
+- **Raised** (`raised`): buttons, fields, knob bodies in the chrome, the stored scenes, the preset box, menus, keycaps, hover fills.
+- **Hairline** (`line1`): every 1px divider and border, and the primary button's fill.
+- **Strong Hairline** (`line2`): stronger borders, a knob's inactive track, off states, the chosen ChoiceBar segment's lighter fill.
+- **Ink** (`ink`): primary text and values.
+- **Dim Ink** (`ink-dim`): secondary text, captions, a block's description line.
+- **Faint Ink** (`ink-faint`, 3.5:1 on the ground): tags, axis labels, an empty scene, OFF. Never body copy.
+- **Stage Light** (`stage-light`): the warm light on the stage's floor, rising from below, and the tuner display's light.
+- **Board Tray** (`board-tray`): the board the pedals stand on.
+- **Letterbox** (`letterbox`): around the canvas when the window's aspect differs.
+- **Scrim** (`scrim`): over the main screen while an overlay is open.
+- **Dead LED** (`led-off`): an off LED's lens, near-black with no tint of the accent. It belongs to the pedal art (`PedalArt.h`), not the chrome.
 
 ### Named Rules
-**The Emerald Means On Rule.** Emerald marks the current, the active, the focused, or the correct, and nothing else. It never fills a surface, a button, or a heading. The only emerald inside an amp material is a detail the app's own head already has (Monolith's emerald bar), and that belongs to the head.
+**The Orange Means On Rule.** The accent marks what's on, selected, active, or being changed, and nothing else. It never fills a call to action: Record, Match, and Apply are primary buttons in the hairline colour, and they turn orange only while what they started is running.
 
-**The Materials Stay On Their Amps Rule.** An amp material appears as a full band, as an inner page's top band, or as that amp's mini on the shelf. Calm bands, doc sections, and components never borrow an amp's colors as accents.
+**The One Red Rule.** Red is a clip. Every other warning is a sentence in the neutral inks.
+
+**The Gear Keeps Its Own Colours Rule.** Heads, pedals, the cab, the speaker, and the markers carry their own materials in their art files (`AmpHead.cpp`, `PedalArt.cpp`, `CabView.cpp`, `InspectorParts.cpp`, `Board.cpp`), not in Theme.h. An enclosure can be any colour (candy teal, seafoam, royal purple). What gear can't do is light up in any colour but the accent. LEDs, lamps, knob pointers, and value marks on gear are the accent or ink, never teal, emerald, or ice cyan.
+
+**The No Hex In Components Rule.** Chrome components take every colour from `ui::theme` by name. Changing the chrome's look means changing Theme.h.
 
 ## Typography
 
-**Display Font:** Geist (with system-ui, -apple-system, Segoe UI, sans-serif), self-hosted at 300, 400, 500 and 600.
-**Badge Script:** Fraunces SemiBold Italic (with Georgia, serif), self-hosted, only for the Ember and Lantern names.
-**Mono:** ui-monospace, SF Mono, Menlo, Consolas.
+**Interface Font:** Geist at 300, 400, 500 and 600, bundled and loaded from memory (falls back to the system UI font).
+**Badge Script:** Fraunces SemiBold Italic, only for the lettering on the Ember and Lantern badges (and pedals' silkscreen where their art calls for a serif).
 
-**Character:** Geist, the app's own face, does almost everything at 400 and 600. The voice comes from each amp's name taking its badge's lettering: light and wide for Glass, gold script for Ember, spaced capitals for Monolith, Basalt and Quartz, a skewed face with streaks for Comet, condensed capitals for Forge.
+**Character:** Geist does the whole interface at small, dense sizes, mostly 11 to 15 px. Only three things are large: the preset's name, so it reads from a step back, an overlay's title, and the tuner's note. The gear's silkscreen and badges carry the personality: each head and pedal letters its name in its own way.
 
 ### Hierarchy
-- **Display** (`display`): an amp's name, beside or under its head. Monolith, Basalt and Quartz step down to `clamp(36px, 4.6vw, 3.6rem)` because of their wide tracking. Names never wrap.
-- **Page title** (`page-title`): an inner page's h1 on its material band ("Download BellyDSP", "Stats", "Nothing here.").
-- **Headline** (`headline`): a calm band's h2, max 16em, ending with a full stop ("Match a tone from a song.").
-- **Statement** (`statement`): the overview's h1, a plain sentence about what BellyDSP is, max 17em, above the download. On purpose, it's smaller than the Glass name beside it.
-- **Title** (`title`): a doc section's h2, sticky in its 300px column on wide screens.
-- **Voice** (`voice`): an amp's one-line voice under its name, max 22em.
-- **Lead** (`lead`): the paragraph under a headline or page title, in dim ink, max 34 to 38em.
-- **Body** (`body`, 16px/1.6): copy in dim ink, max 44em in docs. h3 is 17 to 20px at 600.
-- **Label** (`label`, 13 to 14px): nav, shelf names, captions, meta lines, the program-change line, tile labels.
+- **Tuner note** (`tuner-note`): the tuner overlay's note, readable from across the room. Its sharp is 60 px and its octave 32 px, both light.
+- **Preset name** (`preset-name`): the top bar's preset, in ink. The scene sits under it at 15 px medium ink, after the tag ("Factory") at 12 px faint. A long name squeezes to 80%, then ellipsizes.
+- **Overlay title** (`overlay-title`): each overlay's header.
+- **Inspector title** (`inspector-title`): the selected block's name in the inspector header.
+- **Title** (`title`): an effect page's title, the scene line, and the Audio device's status line. Dialog titles and the brand use 15 px at 600.
+- **Stage line** (`stage-line`): the one short line under the amp or cab ("High gain · Monolith"), with the class in dim ink and the name in ink at 500.
+- **Body** (`body`): buttons, menus, combo boxes, scene names, pill segments.
+- **Value large** (`value-large`): the value under an inspector's large knob.
+- **Value** (`value`): values in fields, meters, and tables.
+- **Label** (`label`): knob captions (at 500), toggles' labels, explanatory lines.
+- **Value small** (`value-small`): the value under every normal inspector knob (RD4-7).
+- **Caption** (`caption`): axis labels, keycaps' words, small meta.
+- **Section heading** (`section-heading`): the inspector's section names in tracked capitals ("TONE", "STEREO"), followed by a hairline that runs to the column's edge. A section's switch sits at the heading's right.
 
 ### Named Rules
-**The Name Is The Display Rule.** Display scale belongs to the amp names. Statements, page titles, and headlines sit below it, and nothing sits above a heading as a label.
+**The Tabular Numbers Rule.** Every number that changes live (knob values, Hz, ms, cents, CPU, BPM) uses tabular figures.
 
-**The One Family Rule.** Geist sets everything except the two amps whose badges are script (Ember, Lantern), which get Fraunces. No third face. Comet's slant is a skew because Geist has no italic.
-
-**The Tabular Numbers Rule.** Numbers that get compared (tables, stat values, `.num`) use tabular figures.
+**The Read From A Step Back Rule.** Size goes where the player looks while playing: the preset name, the scene, the tuner's note, the lit scene. The rest of the chrome stays small.
 
 ## Layout
 
-- **Container:** max width `max` (1240px), centered, with a side gutter of 16px, 32px at 720px and up, and 56px at 1280px and up.
-- **The chrome** is sticky at the top: the bar (`bar`, 56px) over the shelf (`shelf`, 64px, or 84px at 960px and up). Anchor jumps use a scroll padding of both together.
-- **Amp bands:** full width. Their content is a grid, one column on narrow screens and `4fr / 8fr` (copy / head) from 960px with a 48px gap. Bands alternate with `flip` (`8fr / 4fr`, the copy moved second), so the heads zigzag down the page. Vertical padding is `clamp(72px, 9vw, 128px)`.
-- **The opening band** is Glass at a shorter padding (`clamp(40px, 5vw, 72px)`). Its minimum height leaves the top of Ember's band showing at the bottom of the first viewport.
-- **Calm bands:** a hairline on top and `clamp(80px, 10vw, 136px)` of vertical padding. A head block (headline and lead) sits `clamp(40px, 5vw, 64px)` above the content.
-- **Inner pages:** a single-column material band at the top (`clamp(56px, 7vw, 104px)` vertical padding), then the doc.
-- **The doc:** sections divided by hairlines, `clamp(48px, 6vw, 80px)` of padding, and from 960px a `300px / 1fr` grid with the h2 sticky under the chrome.
-- **Grid items** always get `min-width: 0`, so long code and wide tables scroll inside their own box.
+The app is one fixed logical canvas, 1280 x 760, scaled uniformly to the window (half size at the smallest) and letterboxed in `letterbox`. Spacing follows a 4-point grid (`xs` through `xxl`). Controls are 28 high and toggles 24 including their focus margin.
 
-### Responsive rules
-- **Below 960px the shelf keeps its names and scrolls sideways.** The scrollbar is hidden, the minis shrink from 48 x 32 to 36 x 24, and the current amp scrolls itself into view without moving the page.
-- **Below 720px the top bar keeps the mark, Source and Download.** Overview, Download and Stats leave the nav (at 320px there's no room for all of them), and the bar button drops its "for macOS" suffix. The mark links to the overview, and Stats is in every page's footer.
-- **Below 720px the match result** shows at 640px wide and scrolls sideways so its lines stay readable.
-- **Below 960px Comet's streaks** move inside the column instead of hanging into the gutter.
+- **Top bar** (`top-bar`, 52 high, across): the brand (dot plus "BellyDSP", opening its menu), A and B, undo and redo, then the preset box between the previous and next arrows, Save, the CPU, the In and Out meters, and Tuner, Match tone, and Settings at the right. The open one is underlined in orange.
+- **Stage** (980 x 350, left): a dark room lit from below, with a pool of warm light on the floor under the gear. At the top left is the shelf of mini heads (the playing one at full brightness with a 2px orange underline, the others at 62%) and the amp's name. At the top right is the Amp / Cab / EQ pill. Amp mode shows the playing head at about 0.86 of its designed size. Cab mode shows the library, the speaker in its baffle with the mics on it, and the match curve, room mic, and auto-align. EQ mode shows the shown EQ's graph over its live spectrum. One short line sits at the stage's foot, with the rate or a message on the right.
+- **Board** (980 x 280, under the stage, on `board-tray`): two rows of pedals at 0.665 of their size in chain order. The top row has PRE with its labelled switch, the pre section, the amp's marker, Gate B, and the cab's marker. The bottom row has POST with its switch and the post section. Patch lines run between the pedals.
+- **Inspector** (300 wide, top bar to footer, `panel-bg`): one scrolling column, 291 usable (clear of the scroll bar), padded 16 at the sides. Every block's inspector has the same grammar:
+  1. The header: the block's gear in small on a plinth, its name (`inspector-title`), where it sits in dim ink, its switch at the top right, a hairline.
+  2. What it's doing, if the block has a meter (gates, compressors, harmonizer).
+  3. Its mode as a ChoiceBar across the column.
+  4. Its main controls as large knobs, two to a row.
+  5. The rest in sections under section headings, with knobs three to a row, selectors and fields on rows of their own, and tables for voices and bands.
+- **Footer** (`footer`, 78 high, across): the eight scenes, Store, and the tuner's reading at the right.
+- **Overlays** (the tuner, Match tone, Settings) cover the area between the top bar and the footer (1280 x 630) under a scrim, with their pages in 1200 x 598. The top bar and the footer stay usable. Each has one header: the title, a line about it, its keys as keycaps, and Close, over a hairline. Content sits in panels on the ground.
+
+### Named Rules
+**The Nothing Hidden Rule.** Preset, scene, the board's state, the amp's knobs, and the selected block's controls are all on one screen. Depth goes in the inspector's sections or an overlay, never behind tabs that hide the rig.
+
+**The Stage Follows The Selection Rule.** The amp's marker puts the stage on the amp and the cab's marker on the cab. An EQ pedal shows its graph and the next other pedal puts the stage back. Any other pedal leaves the stage where it is.
 
 ## Elevation & Depth
 
-The page is flat. Depth comes from the hairlines between flat fields and from material bands sitting edge to edge against the black. Only objects cast shadows: the amp heads and the large screenshots. The shadows are soft and drop straight down, never offset.
+The chrome is flat: panels on the ground, separated by hairlines, with no shadows. Depth belongs to the gear and to light. The stage is lit from below (`stage-light`, a faint accent warmth in the pool's middle). Heads and pedals cast soft shadows straight down. Knob bodies have a small drop shadow, and a selected pedal rises 3 pt (1.5 pt on hover) while its shadow falls further and softer. LEDs and the jewel lamp glow.
 
 ### Shadow Vocabulary
-- **Head on its band** (`filter: drop-shadow(0 30px 34px rgba(0, 0, 0, 0.32))`): every band's head image, following the head's own outline.
-- **Featured screenshot** (`box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45)`): a lone large screenshot on a calm band. Screenshots in a group (the Match tone steps, the rig shots) drop it.
-- **Mini ring** (`box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08)`): the shelf's minis, as the app draws them. A ring, not a shadow.
+- **Pedal on the board** (a black drop shadow, 55% alpha, about 8 px blur, 3 px down, growing with the lift): every pedal and marker. Selected: 70%.
+- **Knob body** (black at 35%, 6 px blur, 3 px down; large knobs 9 px blur, 4 px down): every chrome knob.
+- **LED halo** (the accent radially, 0.62 alpha at the lens to 0.16 at 42% of the way out, reaching 24 pt): a lit pedal LED.
+- **Selected ring** (a 3.5 pt accent ring outside the body, under the art): the selected pedal or marker.
+- **Focus ring** (a 1px accent outline 3.5 px outside the control, 4px radius): keyboard focus only.
 
 ### Named Rules
-**The Objects Cast, The Page Doesn't Rule.** Cards, buttons, tiles, notices and bands never get a shadow. When a surface needs separating, use a hairline.
+**The Gear Casts, The Chrome Doesn't Rule.** Panels, buttons, scenes, and overlays never get a shadow. Light and shadow come from the stage and the gear.
 
 ## Shapes
 
-Softly rounded rectangles, small radii, 1px strokes. Buttons and framed boxes (notices, stat tiles, charts) use `md` (10px). Screenshots use `lg` (12px), the bar button, pre blocks and tooltips `sm` (8px), inline code `code` (5px), and minis `mini` (3px, or 4px at full size). Status marks are circles: the 7px mark dot, the 6px chain dot, and the 26px step counters. The focus ring is a 2px emerald outline, offset 3px, at a 4px radius. Dividers are always 1px solid, except for one convention: dashed borders mark the chain's input and output, which are endpoints and not blocks.
+Small, soft radii in the chrome: 6px (`control`) for buttons, fields, ChoiceBars, pads, the preset box, and the scenes; 8px (`menu`) for menus; 10px (`card`) for overlay panels, dialogs, and cards; 12px (`window`) for the window; and 3px (`mini`) for the minis. Switches are pills, 28 x 16 with an 8 px dot. LEDs, knobs, and status dots are circles. Borders are always 1px. The gear has its own shapes: the heads are 960 x 262 bodies with a radius of 14 (`head`), a handle, and feet, with the panel and grille inset at 6. The pedals are all 172 pt tall, 92 to 150 wide, with jacks standing above the body.
 
 ## Components
 
-### Top bar
-The app's top bar: plain, dark, and dense.
-- **Layout:** a 56px row with a hairline under it. The mark sits on the left, then the nav pushed right, then the download button.
-- **The mark:** "BellyDSP" in Geist 600 at 15px, after a 7px emerald dot.
-- **Nav:** 14px dim-ink links that go to ink on hover. The current page gets ink plus a 2px emerald underline on the bar's bottom edge.
-- **Download button** (`bar-download`): solid ink on the ground, 14px at 500, 8px radius, white on hover. On the overview a script adds "for macOS" or "for Windows".
+### Rendered gear (signature)
+The family that makes it a rig. Everything is procedural, cached per scale (one render per pedal and scale, never per frame; tests count the renders), and drawn in its own materials.
+- **Amp heads (nine):** Glass, Ember, Monolith, Forge, Basalt, Comet, Quartz, and Lantern, plus Custom for a user's capture. Each has pebble tolex with rolled edges, woven grille cloth (twill, basketweave, rib, plain, depending on the head), a badge in its own lettering, skirted gear knobs in its skin with a pointer line and a printed 0 to 10 scale, and no value arcs (the value shows on hover and drag). A jewel lamp in a knurled bezel glows in the accent while a capture is loaded and is smoked ruby otherwise.
+- **Pedals (fourteen):** Gate A, Gate B, the pre and post compressors, Boost, Overdrive, the pre and post EQs, Harmonizer, Multivoicer, Bloom, Chorus, Delay, and Reverb. Each has its own enclosure finish (hammertone, anodised, brushed, metal-flake, powder, glitter, crinkle, enamel), knobs, silkscreen, LED, and footswitch. The pre and post twins share a design and differ in colourway and a PRE or POST pill.
+- **The cab's front and the speaker:** tolex, piping, a woven grille, and a badge. On the stage the speaker sits in its baffle (a steel basket with eight bolts and a paper cone, lit from below) with the close mics on it.
+- **Board markers:** a dark steel plate with four screws, at the pedals' height, carrying the playing head in small (`drawSmallHead`) or the cab's front, the name in silkscreen, and the switch as a jewel.
+- **LED states:** off is a near-black lens (`led-off`) with a small cold highlight. On is the accent with a 24 pt halo and a white-hot centre. When an LED comes on it blooms for 0.35 s (34 pt wide, fading as the square of the time left). Every LED shows its own block's switch, even inside a section that's off (there at 60%).
+- **Dimmed bypass:** a pedal that's off, or whose section is off, draws its whole enclosure at 55% brightness and 45% saturation, from a dimmed copy kept in the same cache entry. Markers dim their gear the same way.
+- **Interaction:** a click on the footswitch switches the block. A click anywhere else selects it (raised and ringed in orange). A drag along the row reorders the section. A right-click is MIDI learn.
 
-### The shelf
-The page's index: the app's shelf of eight minis, each with its name.
-- **Minis:** each one is drawn in CSS the way the app draws it: the body, a panel bar across the top, and one detail of its own (Lantern's amber light, Comet's streak, Forge's orange line, Quartz's gem, Monolith's emerald bar).
-- **Links:** 14px dim ink, going to ink on hover and when current. Spread across the width from 960px, scrolling sideways with 24px gaps below that.
-- **The shelf light:** a 2px emerald bar on the shelf's bottom edge, sized to the current mini and moved under it with `transform` and `width` at `520ms cubic-bezier(0.16, 1, 0.3, 1)`. The current amp is the band crossing a reading line 30% of the way down the space below the chrome. Between amp bands, the last amp passed stays lit. Inner pages show the shelf as plain links to the overview's bands, with no light.
+### Knobs
+- **Sizes:** large (80 px hit area, in a 104 x 120 box) for a block's main controls; normal (64 px, in a 76 x 86 box) and compact (52 px, in a 68 x 74 box) everywhere else, three to a row.
+- **Chrome style:** a 270° track (from -135° to +135°) in the skin's track colour, with an orange value arc from the start to the value (hidden at the minimum), and a body with a radial gradient, a 1 px ring, and a 3 x 10 pointer.
+- **Values always shown:** in the inspector, every knob shows its value under its caption, in `value-small` (large knobs in `value-large`). The value turns orange while dragged.
+- **Gestures:** a drag of 200 pt covers the range (shift is four times finer), the wheel and arrow keys move 1/50 of the range, a double-click resets, and a right-click is MIDI learn.
 
-### Amp band
-The site's signature: one amp, in its own material, at page scale.
-- **Structure:** a full-width section in one of the eight materials (`b-<amp>`), with the material's grain on a `::before` layer behind the content (hidden in forced-colors mode). Inside: the copy column (name, voice, an optional note in soft ink at max 30em, then the program-change line) and the head figure.
-- **The program-change line:** "Amp N, program change N" at 13px soft ink, after an 18px rule (orange on Forge). It's information a player uses, not a numbered label.
-- **The head:** the app's own rendered head, full column width, with the head shadow.
-- **Arrival motion:** where `animation-timeline: view()` is supported and reduced motion isn't requested, the head rises from 44px below at 96.5% scale, with a shallow shadow, to rest with its full shadow, over `entry 5%` to `cover 40%` of its view timeline. The page is complete without it.
-- **Buttons on light materials** are re-inked: Glass and Lantern swap the solid button to their ink and the ghost border to their ink at about 30%.
+### ChoiceBar and segmented controls
+- **ChoiceBar:** a choice parameter's options as equal segments in a raised, hairline-bordered box (radius 6, rows of 28), optionally wrapped into rows (the overdrive's circuits two by two, the harmonizer's twelve keys). The chosen segment is lighter with its name in orange, and a hovered one goes to ink. Long lists stay combo boxes.
+- **Pill:** the stage's Amp / Cab / EQ and the tuner's tunings. Options sit side by side in a raised hairline capsule, 30 high, 13 px medium. The chosen one is on a lighter segment in orange.
+- **Text segmented:** options in 12 px faint ink, the chosen one in ink with a 1px orange underline.
 
-### Calm band
-The quiet room between amps.
-- **Style:** the ground, a hairline on top, generous padding, a headline and a dim lead, then content. No material, no accent beyond what's active.
-
-### Inner-page material band
-The amp band, reused as an inner page's header: a single column, a page title, a lead in soft ink, and the page's own controls (the download buttons at min 250px wide, the version line, the OS note, notices with a 30% text-colored border). Download uses Lantern, Stats uses Basalt, and the 404 uses Monolith, vertically centered at nearly full viewport height.
-
-### Doc layout
-Long-form content under an inner-page band: hairline-separated sections, the h2 sticky on the left in 300px from 960px, and the body on the right in dim ink with ink for `strong`. Its parts are a requirements table (a 30% header column with hairline rows), two OS columns from 900px, numbered steps in 26px circled counters, pre blocks that wrap the copyable line, a changelog of hairline-separated versions, and stat tiles in a 1px-gap hairline grid (two columns, four from 720px) with 28 to 38px tabular values.
+### Switches and pads
+- **Switch:** a 28 x 16 pill with a 1px border and an 8 px dot, the label 12 px to its right. Off: the dot on the left, muted. On: the border and dot orange, the dot on the right.
+- **Labelled switch:** the board's PRE and POST, the pill plus "ON" in orange or "OFF" in faint ink.
+- **Pad switch:** a raised 40 px box (radius 6) with an LED at its left (orange with a glow when on), its name in 13 px medium, and an optional faint second line. Used for the reverb's Freeze, Gate B's link to Gate A, and Tap.
 
 ### Buttons
-Big, quiet, and confident. A button can carry a second line.
-- **Shape:** gently rounded (`md`, 10px), at least 52px tall, padded 10px 22px, 16px Geist 500. It can stack a 12px meta line at 72% opacity.
-- **Solid** (`button-solid`): ink on the ground, white on hover. One per group: the download for this computer.
-- **Ghost** (`button-ghost`): transparent, with a strong-hairline border that goes to dim ink on hover. Used for the other OS, the source, the build plan, and first-launch steps.
-- **Press:** moves down 1px. Transitions are 160ms on the shared ease-out.
-- **Detected:** on the download page, the script marks this computer's button, which turns solid and moves first.
+- **Default:** raised fill, 1px border, radius 6, 28 high, body type. Hover lightens.
+- **Primary:** filled in the hairline colour under a stronger border, in medium ink. Orange only while running (Record while recording, Play while playing).
+- **Icon buttons:** square buttons with drawn icons (the preset arrows, undo, redo, copy).
 
-### Match tone steps (tm)
-The song and the take side by side (columns in the ratio of the screenshots' real widths, `1042fr / 570fr`), and the match under both at full width, with tops aligned. Each step is an h3 at 17px, a framed screenshot with no shadow, and a dim paragraph at max 40em.
+### Scenes footer
+Eight buttons, each a tabular number at 14 px semibold and a name at 13 px. A stored scene is ink on a raised button. An empty one is a faint outline. The current one is filled orange with `on-accent` text, and on a change the light glides to its new place. When armed for storing, every button is outlined in orange. Store follows the scenes, then the tuner's reading: "Tuner" with its T keycap, or while tuning, the note at 26 px semibold and a 128 px cents meter, orange within 3 cents.
 
-### Rig layouts
-- **Chain row:** the signal chain as cells with a 9px radius and a strong-hairline border. Active blocks get a 60% emerald border and a 6px emerald dot. Input and output are dashed and dim.
-- **Rig split:** a definition list (terms at 600, a hairline between entries) beside the featured Amp-page screenshot, `4fr / 7fr` from 960px.
-- **Rig shots:** a two-column grid of framed screenshots with no shadow. A `wide` shot spans both columns. Captions are 14px dim ink, max 34em.
+### Inspector parts
+The header plinth, the section headings, the gate meter (state word with an LED, a -100 to 0 dBFS bar orange while open, threshold ticks you can drag, the reduction), the compressor meter (the static curve and three seconds of reduction), the harmonizer's display, tables for voices and bands, and the EQ's nine faders. A control the current mode doesn't use is dimmed (35%). An off voice or effect is dimmed (45%).
 
-### Facts list
-The engineering's evidence: a definition list, `240px / 1fr` from 840px, with each term at 600 and a hairline across both columns. Definitions are in dim ink, with the measured number in ink at 500 ("**0, 0, 0**", "**6%**"). Credits reuse it.
+### Overlays, menus, dialogs, keycaps
+- **Overlay panels:** `panel-bg`, hairline border, radius 10, with small uppercase labels naming the panel. Match tone's six steps carry numbered badges (waiting is a faint ring, next and running are orange with the panel's border warmed, done uses the orange wash).
+- **The tuner:** the note at `tuner-note` (orange in tune), a chevron each side, and a 960 px scale of 41 segments, with string chips under it.
+- **Menus:** a raised panel with radius 8 and a faint top highlight, 30 px items, hairline separators, shortcuts as keycaps, and the ticked item in orange.
+- **Dialogs:** `panel-bg`, radius 10, a `line2` border, the title at 15 px semibold, a hairline over the buttons, the main one primary.
+- **Keycaps:** small raised caps (radius 4, 20 px min width) with the key at 11 px medium, followed by its word ("Esc closes").
 
-### Footer
-A hairline on top, 14px dim ink: the copyright and licence on the left, then Privacy, Stats and Source.
+### Motion
+All motion runs on 60 Hz message-thread timers and can be finished at once for snapshots. Meters run at 30 Hz.
+- **LED bloom:** 0.35 s, an orange radial glow fading as the square of the time left.
+- **Scene glide:** 0.16 s, cubic ease-out, the lit fill sliding to the new scene.
+- **Stage crossfade:** 0.18 s, smoothstep, the new view rising over the old.
 
 ## Do's and Don'ts
 
 ### Do:
-- **Do** set every new surface on the ground, with hairlines for structure.
-- **Do** give an amp's content its own material band, with its tints for text and its re-inked buttons, and its real head from the app.
-- **Do** build materials from CSS gradients, the way the app builds its textures, with the grain on its own layer.
-- **Do** set an amp's name in its badge's lettering, at display scale, on one line.
-- **Do** keep one solid button per group, for the download that fits this computer.
-- **Do** put every motion behind `prefers-reduced-motion: no-preference`, and use the shared ease (`cubic-bezier(0.16, 1, 0.3, 1)`).
-- **Do** show measured numbers in ink at 500 inside dim copy, in tabular figures where they're compared.
-- **Do** revise this document when the app's redesigned world lands. The site follows the app.
+- **Do** take every chrome colour, type style, radius, and size from `src/ui/Theme.h` by name.
+- **Do** light what's on in the accent and dim what's off: a bypassed pedal at 55% brightness and 45% saturation, its LED the dead lens.
+- **Do** draw new gear procedurally, cache it per scale, and draw its state (LED, rings, dimming) without re-rendering.
+- **Do** give every inspector knob its value under its caption, in tabular figures.
+- **Do** follow the inspector grammar for a new block: header, meter, mode, large knobs, then sections.
+- **Do** keep motion to the three tokens (`ledGlowSeconds` 0.35, `sceneGlideSeconds` 0.16, `stageFadeSeconds` 0.18) and let snapshots finish it.
+- **Do** say warnings in words, in the neutral inks.
 
 ### Don't:
-- **Don't** use emerald for decoration, fills, headings, or buttons. It means on, active, or correct.
-- **Don't** use an amp material outside its band, its inner-page band, or its mini.
-- **Don't** put a label or a number above a heading.
-- **Don't** use mockups, stock, or illustrations. Only the app's real snapshots and heads.
-- **Don't** shadow surfaces. Only heads and a lone featured screenshot cast a shadow, soft and straight down.
-- **Don't** add a third typeface or set body text in Fraunces.
-- **Don't** hide the download: the bar keeps its Download button at every width.
+- **Don't** fill a call to action with orange; use the primary button.
+- **Don't** use red for anything but a clip.
+- **Don't** let a light on gear (an LED, lamp, pointer, or value mark) take any colour but the accent or ink.
+- **Don't** shadow chrome panels, buttons, or scenes.
+- **Don't** put a value arc on the head's gear knobs; arcs belong to the inspector.
+- **Don't** render art per frame.
+- **Don't** use another company's product or amp names, or their art or trade dress.
+
+## The website (follows the app)
+
+**Status: pending a re-skin to the app's orange world.** PRODUCT.md binds "the site looks like the app". The site at bellydsp.com was drawn in the app's previous look and hasn't been re-skinned yet: its accent is still emerald (`site-emerald`), its materials and imagery show the old eight heads and the old layout's snapshots (`tools/site/make_site_assets.py` still crops the old coordinates), and its tokens are the `site-` ones in the frontmatter. What follows records the site as it currently ships. The re-skin isn't designed yet. When it lands, this section gets rewritten from the built site.
+
+**North star as shipped: "The Amp Shelf, Unrolled."** A near-black ground, 1px hairlines, Geist throughout, and emerald only for what's current, active, or correct. The eight amp heads are laid out as page-scale material bands (silver Glass, oxblood Ember, black Monolith, tweed Lantern, stone Basalt, navy Comet, steel-and-black Forge, lilac Quartz), built from CSS gradients, each with the app's own rendered head as its object. Calm dark bands sit between them. The only imagery is real app snapshots and heads.
+
+- **Colors:** `site-ground`, `site-surface`, `site-hairline`, and `site-hairline-strong` for structure; `site-ink`, `site-ink-dim` (6.4:1), and `site-ink-faint` (hairline marks only) for text; `site-emerald` for the shelf light, the current nav underline, active chain dots, the mark's dot, focus, and selection. The eight `site-*-field` materials appear only as their amp's band, inner-page band, or shelf mini.
+- **Typography:** Geist at 300 to 600. Fraunces SemiBold Italic for the Ember and Lantern names. Display scale (`site-display`) belongs to the amp names, with `site-page-title`, `site-headline`, `site-statement`, `site-title`, `site-voice`, `site-lead`, `site-body`, and `site-label` below it. Compared numbers are tabular.
+- **Layout:** a max width of 1240 with gutters of 16, 32 from 720 px, and 56 from 1280 px. A sticky 56 px bar over a 64 (84 from 960) px shelf. Amp bands use `4fr / 8fr` from 960 px, zigzagging with `flip`. Docs use `300px / 1fr` with sticky h2s. Below 960 the shelf scrolls sideways, and below 720 the bar keeps the mark, Source, and Download.
+- **Depth:** flat. Only heads (`drop-shadow(0 30px 34px rgba(0,0,0,0.32))`) and a lone featured screenshot (`0 24px 48px rgba(0,0,0,0.45)`) cast shadows.
+- **Shapes:** buttons and framed boxes at 10px, screenshots at 12, the bar button and pre blocks at 8, code at 5, minis at 3. Status marks are circles. Dashed borders only for the chain's input and output.
+- **Components:** the top bar with the emerald-dot mark and the solid Download; the shelf of CSS minis with its emerald light (520 ms on `cubic-bezier(0.16, 1, 0.3, 1)`); amp bands with the head rising in on scroll where `animation-timeline: view()` is supported and motion isn't reduced; calm bands; inner-page material bands (Download on Lantern, Stats on Basalt, 404 on Monolith); solid and ghost 52 px buttons (one solid per group); chain row, rig shots, facts list, stat tiles, and the footer.
+- **Rules as shipped:** emerald means on, and materials stay on their amps. Objects cast shadows and the page doesn't. No label above a heading. No third typeface. The Download button stays in the bar at every width.

@@ -366,7 +366,7 @@ public:
                 g.fillEllipse (juce::Rectangle<float> (4.0f, 4.0f).withCentre ({ xFor (target[i].first), yFor (target[i].second) }));
             }
         }
-        // The spectra: thin lines, the target in ink and the match in emerald, under the EQ curve.
+        // The spectra: thin lines, the target in ink and the match in the accent (orange), under the EQ curve.
         const auto spectrumPath = [this] (const std::vector<std::pair<double, double>>& points) {
             juce::Path path;
             for (size_t i = 0; i < points.size(); ++i)
@@ -653,7 +653,7 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        // A 3 px track (line-2), emerald up to the value, a 9 px dot at it, and a tick at 0 dB.
+        // A 3 px track (line-2), the accent (orange) up to the value, a 9 px dot at it, and a tick at 0 dB.
         const auto r = getLocalBounds().toFloat().reduced (5.0f, 0.0f);
         const auto y = r.getCentreY();
         g.setColour (line2);
