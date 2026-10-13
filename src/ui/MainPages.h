@@ -4,82 +4,14 @@
 #pragma once
 
 #include "Pages.h"
-#include "ScenesBar.h"
-#include "SectionTabs.h"
 
 namespace ui
 {
 
-/// The Pre FX and Post FX pages (ASSUMPTIONS UH1): a row of tabs for the section's blocks in their current
-/// order, each with its own on dot, and the selected block's editor below. Dragging a tab reorders the
-/// section (the same setSectionOrder() call, applied with the chain's click-free dip). The pre section's
-/// gate tab holds both gates, with a Gate A / Gate B switch at the right of the tab row (UH2).
-class SectionPage final : public ControlGroup
-{
-public:
-    SectionPage (AmpSimProcessor& processor, Section section, std::function<BlockPage& (BlockId)> pageOf);
-    ~SectionPage() override;
-
-    void select (BlockId id);
-    BlockId getSelected() const noexcept { return selected; }
-    TabRow& getTabs() noexcept { return tabs; }
-    Section getSection() const noexcept { return section; }
-
-    /// The gate tab's two gates (pre section only).
-    void showGateB (bool b);
-    bool isShowingGateB() const noexcept { return gateB; }
-
-    /// The block page showing under the tabs.
-    BlockPage* getShownBlockPage() const noexcept { return shown; }
-
-    void refresh() override;
-    void pageShown() override;
-    void pageHidden() override;
-    void resized() override;
-
-private:
-    void showSelected();
-    void updateTabs();
-    BlockId pageBlock() const;
-
-    const Section section;
-    std::function<BlockPage& (BlockId)> pageOf;
-    TabRow tabs;
-    std::unique_ptr<Segmented> gateChoice;
-    BlockId selected;
-    bool gateB = false, showing = false;
-    BlockPage* shown = nullptr;
-};
-
-/// The EQ node's page (UH1): the post EQ, with tabs to switch to the pre EQ (which is also on the Pre FX
-/// page; one editor, shown wherever it was asked for last).
-class EqView final : public ControlGroup
-{
-public:
-    EqView (AmpSimProcessor& processor, BlockPage& postEq, BlockPage& preEq);
-
-    void showPre (bool pre);
-    bool isShowingPre() const noexcept { return pre; }
-    TabRow& getTabs() noexcept { return tabs; }
-
-    void refresh() override;
-    void pageShown() override;
-    void pageHidden() override;
-    void resized() override;
-
-private:
-    void showSelected();
-    BlockPage& current() const { return pre ? preEq : postEq; }
-
-    BlockPage &postEq, &preEq;
-    TabRow tabs;
-    bool pre = false, showing = false;
-};
-
 /// A page header in the effect pages' style: the title (15 px medium) and a line about it (12 px faint).
 void paintPageHeader (juce::Graphics& g, juce::Rectangle<int> area, const juce::String& title, const juce::String& subtitle);
 
-/// The Input page (UH1): the input gain, the input calibration, and a note on where the guitar comes in.
+/// The Input page (in Settings): the input gain, the input calibration, and a note on where the guitar comes in.
 class InputPage final : public ControlGroup
 {
 public:
@@ -94,8 +26,9 @@ private:
     juce::Label *interfaceLabel = nullptr, *calibrationNote = nullptr, *routingNote = nullptr;
 };
 
-/// The Output page (UH6): the output level, A/B compare with Copy, the tempo with Tap, the CPU meter, the
-/// eight scenes with Store, and the footswitch's controllers with the list of MIDI mappings.
+/// The Output page (in Settings): the output level and the limiter, A/B compare with Copy, the tempo with Tap, the
+/// CPU meter and the CPU saver, and the footswitch's controllers with the list of MIDI mappings. (The scenes are in
+/// the main screen's footer.)
 class OutputPage final : public ControlGroup
 {
 public:
@@ -105,7 +38,6 @@ public:
     std::function<void (bool b)> onAbSelect;
     std::function<void()> onAbCopy, onTap, onMidiMappings;
 
-    ScenesBar& getScenesBar() noexcept { return scenes; }
     CpuMeter& getCpuMeter() noexcept { return cpu; }
     juce::Button& getMidiButton() noexcept { return *midi; }
 
@@ -122,8 +54,37 @@ private:
     IconButton abCopy { "Copy", IconButton::Icon::copy };
     ValueField *tempo = nullptr, *tapCc = nullptr, *freezeCc = nullptr, *sceneCc = nullptr;
     juce::Label *tapLabel = nullptr, *freezeLabel = nullptr, *sceneLabel = nullptr, *note = nullptr;
-    ScenesBar scenes;
     CpuMeter cpu;
+};
+
+/// Settings, an overlay over the main screen: the Input and Output pages, one at a time under a segmented control
+/// (Input; Output and MIDI), with its title and Close (Escape closes it too).
+class SettingsPage final : public ControlGroup
+{
+public:
+    explicit SettingsPage (AmpSimProcessor& processor);
+    ~SettingsPage() override;
+
+    std::function<void()> onClose;
+
+    void showOutput (bool output);
+    bool isShowingOutput() const noexcept { return showingOutput; }
+    InputPage& getInputPage() noexcept { return input; }
+    OutputPage& getOutputPage() noexcept { return output; }
+    Segmented& getTabs() noexcept { return tabs; }
+    juce::Button& getCloseButton() noexcept { return close; }
+
+    void refresh() override;
+    void pageShown() override;
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+private:
+    InputPage input;
+    OutputPage output;
+    Segmented tabs { juce::StringArray { "Input", "Output and MIDI" } };
+    juce::TextButton close { "Close" };
+    bool showingOutput = false;
 };
 
 } // namespace ui

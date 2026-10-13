@@ -32,11 +32,11 @@ bool isPack (const juce::File& folder)
     return folder.getChildFile ("cabpack.json").existsAsFile() || audioFilesIn (folder) >= 2;
 }
 
-constexpr int columnGap = 40, leftWidth = 220, rightWidth = 240, padTop = 6;
-constexpr int entryHeight = 52, maxVisibleEntries = 6;
+constexpr int leftWidth = 250, rightWidth = 260, columnGap = 32;
+constexpr int entryHeight = 52;
 constexpr int groupHeadingHeight = 28, groupHeadingPad = 6; // a 16 px line of 12 px text, 6 above and below
 constexpr int libraryHintHeight = 44;                      // "Put IR files ... in <folder>", up to 3 lines
-constexpr float speakerSize = 380.0f, speakerScale = speakerSize / 400.0f, speakerRadius = 160.0f; // the reference's SVG units
+constexpr float speakerRadius = 160.0f; // the reference's SVG units (the speaker is 400 of them across)
 constexpr float maxRadius = 0.95f; // markers stay inside 95% of the speaker's radius
 } // namespace
 
@@ -314,34 +314,35 @@ public:
     // The markers' angles: for looks only, never saved (UH8). The reference's starting places.
     std::array<float, 2> angle { std::atan2 (-0.05f, -0.12f), std::atan2 (0.30f, 0.42f) };
     std::array<bool, 2> hasPack {};
+    float scale = 0.95f; // pixels per SVG unit: the component is the speaker's 400 units across
 
     float radiusOf (int mic) const { return position[(size_t) mic]->convertFrom0to1 (position[(size_t) mic]->getValue()) * maxRadius; }
 
     juce::Point<float> marker (int mic) const
     {
-        const auto r = radiusOf (mic) * speakerRadius * speakerScale;
+        const auto r = radiusOf (mic) * speakerRadius * scale;
         return getLocalBounds().toFloat().getCentre() + juce::Point<float> (std::cos (angle[(size_t) mic]), std::sin (angle[(size_t) mic])) * r;
     }
 
     void paint (juce::Graphics& g) override
     {
         const auto c = getLocalBounds().toFloat().getCentre();
-        const auto ring = [&g, c] (float r, juce::Colour colour)
+        const auto ring = [this, &g, c] (float r, juce::Colour colour)
         {
             g.setColour (colour);
-            g.drawEllipse (juce::Rectangle<float> (2.0f * r * speakerScale, 2.0f * r * speakerScale).withCentre (c), 1.0f);
+            g.drawEllipse (juce::Rectangle<float> (2.0f * r * scale, 2.0f * r * scale).withCentre (c), 1.0f);
         };
         ring (190.0f, line1);
         ring (160.0f, line2);
         for (auto r : { 132.0f, 104.0f, 76.0f })
             ring (r, line1);
-        const auto cap = juce::Rectangle<float> (88.0f * speakerScale, 88.0f * speakerScale).withCentre (c);
+        const auto cap = juce::Rectangle<float> (88.0f * scale, 88.0f * scale).withCentre (c);
         g.setColour (surface);
         g.fillEllipse (cap);
         ring (44.0f, line2);
         g.setColour (line2);
-        g.drawLine (c.x - 6.0f * speakerScale, c.y, c.x + 6.0f * speakerScale, c.y, 1.0f);
-        g.drawLine (c.x, c.y - 6.0f * speakerScale, c.x, c.y + 6.0f * speakerScale, 1.0f);
+        g.drawLine (c.x - 6.0f * scale, c.y, c.x + 6.0f * scale, c.y, 1.0f);
+        g.drawLine (c.x, c.y - 6.0f * scale, c.x, c.y + 6.0f * scale, 1.0f);
 
         // The markers: an 11 unit ring (filled with the background) with a 3 unit dot, the letter up and
         // to the right; mic B first, so A sits on top. A mic without a pack is dimmed.
@@ -350,12 +351,12 @@ public:
             const auto colour = (m == 0 ? accent : ink).withMultipliedAlpha (hasPack[(size_t) m] ? 1.0f : 0.35f);
             const auto p = marker (m);
             g.setColour (bg);
-            g.fillEllipse (juce::Rectangle<float> (22.0f * speakerScale, 22.0f * speakerScale).withCentre (p));
+            g.fillEllipse (juce::Rectangle<float> (22.0f * scale, 22.0f * scale).withCentre (p));
             g.setColour (colour);
-            g.drawEllipse (juce::Rectangle<float> (22.0f * speakerScale, 22.0f * speakerScale).withCentre (p), 1.5f * speakerScale);
-            g.fillEllipse (juce::Rectangle<float> (6.0f * speakerScale, 6.0f * speakerScale).withCentre (p));
-            g.setFont (geist (Weight::medium, 13.0f * speakerScale));
-            g.drawText (m == 0 ? "A" : "B", juce::Rectangle<float> (p.x + 18.0f * speakerScale, p.y - 12.0f * speakerScale - 13.0f, 20.0f, 14.0f),
+            g.drawEllipse (juce::Rectangle<float> (22.0f * scale, 22.0f * scale).withCentre (p), 1.5f * scale);
+            g.fillEllipse (juce::Rectangle<float> (6.0f * scale, 6.0f * scale).withCentre (p));
+            g.setFont (geist (Weight::medium, 13.0f * scale));
+            g.drawText (m == 0 ? "A" : "B", juce::Rectangle<float> (p.x + 18.0f * scale, p.y - 12.0f * scale - 13.0f, 20.0f, 14.0f),
                         juce::Justification::bottomLeft, false);
         }
     }
@@ -363,7 +364,7 @@ public:
     int markerAt (juce::Point<float> p) const
     {
         for (int m = 0; m < 2; ++m)
-            if (hasPack[(size_t) m] && marker (m).getDistanceFrom (p) <= 20.0f * speakerScale)
+            if (hasPack[(size_t) m] && marker (m).getDistanceFrom (p) <= 20.0f * scale)
                 return m;
         return -1;
     }
@@ -402,7 +403,7 @@ public:
     {
         // The distance from the centre over the speaker's radius, clamped to 0.95, is the position across
         // the cone: pos_x = r / 0.95. The angle only places the marker.
-        const auto d = (p - getLocalBounds().toFloat().getCentre()) / (speakerRadius * speakerScale);
+        const auto d = (p - getLocalBounds().toFloat().getCentre()) / (speakerRadius * scale);
         const auto r = juce::jmin (maxRadius, std::hypot (d.x, d.y));
         if (r > 0.001f)
             angle[(size_t) dragging] = std::atan2 (d.y, d.x);
@@ -439,7 +440,7 @@ public:
     {
         g.setFont (geist (Weight::regular, 12.0f));
         g.setColour (isMouseOver() ? inkDim : inkFaint);
-        g.drawFittedText (text, getLocalBounds(), juce::Justification::centredRight, 1, 0.85f);
+        g.drawFittedText (text, getLocalBounds(), juce::Justification::centredLeft, 1, 0.85f);
     }
     void mouseEnter (const juce::MouseEvent&) override { repaint(); }
     void mouseExit (const juce::MouseEvent&) override { repaint(); }
@@ -452,6 +453,98 @@ public:
 private:
     CabView& view;
     const int mic;
+};
+
+// ---- The cab in the inspector ----------------------------------------------------------------------
+
+/// The cab's inspector: its switch, the two close mics (each its file, Distance and Level, Flip phase and Mute, its
+/// pan, delay, and channel), and the cuts. The controls are the view's (made, attached, and owned there); this
+/// holds and lays them out.
+class CabView::Panel final : public ControlGroup
+{
+public:
+    explicit Panel (CabView& v) : ControlGroup (v.getProcessor()), view (v)
+    {
+        addAndMakeVisible (*view.cabOn);
+        for (int m = 0; m < 2; ++m)
+        {
+            auto& c = view.mics[(size_t) m];
+            addAndMakeVisible (*view.links[(size_t) m]);
+            for (auto* control : std::initializer_list<juce::Component*> { c.distance, c.level, c.flip, c.mute, c.pan, c.delay, c.channel })
+                addAndMakeVisible (*control);
+        }
+        for (auto* control : std::initializer_list<juce::Component*> { view.lowCut, view.highCut, view.lowCutOn, view.highCutOn, view.lowSlope, view.highSlope })
+            addAndMakeVisible (*control);
+    }
+
+    static inline const juce::String subtitle { "Close mics A and B, and the cuts. The library, the speaker, the room mic, and the match curve are on the stage" };
+
+    void layout (InspectorLayout& l)
+    {
+        for (int m = 0; m < 2; ++m)
+        {
+            auto& c = view.mics[(size_t) m];
+            l.section (m == 0 ? "Mic A, close mic 1" : "Mic B, close mic 2");
+            juce::Rectangle<int> linkArea;
+            l.area (&linkArea, 18);
+            if (l.isPlacing())
+                view.links[(size_t) m]->setBounds (linkArea.withTrimmedLeft (16));
+            l.knobs ({ c.distance, c.level });
+            l.switches ({ c.flip, c.mute });
+            l.fields ({ { "Pan", c.pan }, { "Delay", c.delay }, { "Channel", c.channel } });
+        }
+        l.section ("Cuts");
+        l.switches ({ view.lowCutOn, view.highCutOn });
+        l.knobs ({ view.lowCut, view.highCut });
+        l.fields ({ { "Low cut slope", view.lowSlope }, { "High cut slope", view.highSlope } }, 2);
+    }
+
+    int preferredHeight (int width) override
+    {
+        InspectorLayout l ({ BlockPage::padding, BlockPage::headerHeight (subtitle, width) + BlockPage::padding, width - 2 * BlockPage::padding, 0 }, false);
+        layout (l);
+        return l.getBottom() + BlockPage::padding + 8;
+    }
+
+    void resized() override
+    {
+        const auto w = view.cabOn->getPreferredWidth();
+        view.cabOn->setBounds (getWidth() - BlockPage::padding - w + Switch::margin, BlockPage::padding + (22 - Switch::preferredHeight) / 2, w,
+                               Switch::preferredHeight);
+        InspectorLayout l ({ BlockPage::padding, BlockPage::headerHeight (subtitle, getWidth()) + BlockPage::padding, getWidth() - 2 * BlockPage::padding, 0 },
+                           true);
+        layout (l);
+        texts = l.getTexts();
+        repaint();
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        const auto width = getWidth() - 2 * BlockPage::padding;
+        g.setFont (geist (Weight::semibold, 16.0f));
+        g.setColour (ink);
+        g.drawText ("Cab", juce::Rectangle<int> (BlockPage::padding, BlockPage::padding, width - 60, 22), juce::Justification::centredLeft, false);
+        const auto height = BlockPage::headerHeight (subtitle, getWidth());
+        g.setFont (font (Text::label));
+        g.setColour (inkFaint);
+        const juce::Rectangle<int> lines (BlockPage::padding, BlockPage::padding + 26, width, height - BlockPage::padding - 26 - 14);
+        g.drawFittedText (subtitle, lines, juce::Justification::topLeft, juce::jmax (1, lines.getHeight() / 16), 1.0f);
+        g.setColour (line1);
+        g.fillRect (BlockPage::padding, height - 1, width, 1);
+        InspectorLayout::paintTexts (g, texts);
+
+        // Each mic's colour, as its marker on the speaker: a dot before its file.
+        for (int m = 0; m < 2; ++m)
+        {
+            const auto link = view.links[(size_t) m]->getBounds();
+            g.setColour (m == 0 ? accent : ink);
+            g.fillEllipse (juce::Rectangle<float> (8.0f, 8.0f).withCentre ({ (float) link.getX() - 12.0f, (float) link.getCentreY() }));
+        }
+    }
+
+private:
+    CabView& view;
+    std::vector<InspectorLayout::Text> texts;
 };
 
 // ---- CabView -------------------------------------------------------------------------------------
@@ -494,17 +587,14 @@ CabView::CabView (AmpSimProcessor& p) : ControlGroup (p)
         c.channel = &addField (AmpSimProcessor::cabParamId (m, "channel"), "");
         c.channel->setShowsBar (false);
         c.channel->setTooltip ("Which channel of a stereo IR file this mic uses");
-        c.panLabel = &addLabel ("Pan", Text::caption, inkFaint);
-        c.delayLabel = &addLabel ("Delay", Text::caption, inkFaint);
-        c.channelLabel = &addLabel ("Ch", Text::caption, inkFaint);
     }
 
     lowCut = &addKnob ("cab_lowcut_freq", "Low cut", " Hz", Knob::Size::compact);
     lowCut->setFormatter ([] (float v) { return juce::String (juce::roundToInt (v)) + " Hz"; });
     highCut = &addKnob ("cab_highcut_freq", "High cut", " Hz", Knob::Size::compact);
     highCut->setFormatter ([] (float v) { return juce::String (v / 1000.0f, 1) + " kHz"; });
-    lowCutOn = &addSwitch ("cab_lowcut_on", {});
-    highCutOn = &addSwitch ("cab_highcut_on", {});
+    lowCutOn = &addSwitch ("cab_lowcut_on", "Low cut");
+    highCutOn = &addSwitch ("cab_highcut_on", "High cut");
     lowCutOn->setTooltip ("Low cut on or off");
     highCutOn->setTooltip ("High cut on or off");
     lowSlope = &addField ("cab_lowcut_slope", "");
@@ -516,8 +606,7 @@ CabView::CabView (AmpSimProcessor& p) : ControlGroup (p)
         f->setTooltip ("Slope per octave");
     }
 
-    roomLabel = &addLabel ("Room", Text::label, inkDim);
-    roomLevel = &addField (AmpSimProcessor::cabParamId (AmpSimProcessor::roomMic, "level"), " dB");
+    roomLevel =&addField (AmpSimProcessor::cabParamId (AmpSimProcessor::roomMic, "level"), " dB");
     roomPreDelay = &addField (AmpSimProcessor::cabParamId (AmpSimProcessor::roomMic, "predelay"), " ms");
     roomPreDelay->setShowsBar (false);
     roomLevel->setShowsBar (false);
@@ -537,8 +626,34 @@ CabView::CabView (AmpSimProcessor& p) : ControlGroup (p)
     matchAmount->setTooltip ("How much of the curve applies: its dB times this");
     matchAmountLabel = &addLabel ("Amount", Text::caption, inkFaint);
 
+    // The cab's switch is its bypass, inverted: on while the cab plays (the board's cab marker has the same dot).
+    cabOn = &adopt (std::make_unique<Switch> ("On"));
+    cabOn->setClickingTogglesState (true);
+    tagged (*cabOn, "cab_bypass");
+    cabOn->setTooltip ("The cab on or off (off sends the amp's output on without a speaker)");
+    cabOn->onClick = [this]
+    {
+        if (auto* bypass = state.getParameter ("cab_bypass"))
+        {
+            const auto wanted = cabOn->getToggleState() ? 0.0f : 1.0f;
+            if (! juce::exactlyEqual (bypass->getValue(), wanted))
+            {
+                beginUndoStep (state);
+                bypass->beginChangeGesture();
+                bypass->setValueNotifyingHost (wanted);
+                bypass->endChangeGesture();
+            }
+        }
+    };
+
+    panel = std::make_unique<Panel> (*this);
     rescan();
     refresh();
+}
+
+ControlGroup& CabView::getPanel() noexcept
+{
+    return *panel;
 }
 
 CabView::~CabView()
@@ -749,6 +864,7 @@ void CabView::refresh()
     list->repaint();
     scrollSelectionIntoView();
     follow->setToggleState (ampSim.isCabFollowing(), juce::dontSendNotification);
+    cabOn->setToggleState (state.getRawParameterValue ("cab_bypass")->load() < 0.5f, juce::dontSendNotification);
 
     for (int m = 0; m < AmpSimProcessor::numCabMics; ++m)
     {
@@ -796,29 +912,17 @@ void CabView::pageShown()
 
 void CabView::paint (juce::Graphics& g)
 {
-    // The headings (CSS .card h3: 12 px medium ink-faint, 14 px under).
+    // The headings (12 px medium ink-faint).
     g.setFont (geist (Weight::medium, 12.0f));
     g.setColour (inkFaint);
     g.drawText ("Cabinet", leftColumn.withHeight (16), juce::Justification::centredLeft, false);
-    g.drawText ("Microphones", rightColumn.withHeight (16), juce::Justification::centredLeft, false);
     g.drawText ("Room mic", roomHeading, juce::Justification::centredLeft, false);
     g.drawText ("Match curve", matchHeading, juce::Justification::centredLeft, false);
-
-    // The mics' tags (an 8 px dot and the name, 14 px medium) and the line under each mic.
-    for (int m = 0; m < 2; ++m)
-    {
-        const auto tag = juce::Rectangle<int> (rightColumn.getX(), micTops[(size_t) m], 120, 17);
-        g.setColour (m == 0 ? accent : ink);
-        g.fillEllipse (juce::Rectangle<float> (8.0f, 8.0f).withCentre ({ (float) tag.getX() + 4.0f, (float) tag.getCentreY() }));
-        g.setFont (geist (Weight::medium, 14.0f));
-        g.setColour (ink);
-        g.drawText (m == 0 ? "Mic A" : "Mic B", tag.withTrimmedLeft (18), juce::Justification::centredLeft, false);
-        g.setColour (line1);
-        g.fillRect (rightColumn.getX(), micBottoms[(size_t) m], rightColumn.getWidth(), 1);
-    }
+    g.setColour (line1);
+    g.fillRect (rightColumn.getX(), roomHeading.getY() - 14, rightColumn.getWidth(), 1);
 
     // The readout under the speaker: "Mic A Cap   Mic B Cone" (12 px faint, the zone in ink, medium).
-    const auto readoutArea = juce::Rectangle<int> (centreColumn.getX(), speaker->getBottom() + 16, centreColumn.getWidth(), 16);
+    const auto readoutArea = juce::Rectangle<int> (centreColumn.getX(), speaker->getBottom() + 10, centreColumn.getWidth(), 16);
     if (! readout.contains ("|"))
     {
         g.setFont (geist (Weight::regular, 12.0f));
@@ -847,110 +951,66 @@ void CabView::paint (juce::Graphics& g)
 
 void CabView::resized()
 {
+    // Three columns on the stage, under its top line (the stage's Amp / Cab / EQ control is at its right end):
+    // the library on the left, the speaker in the middle, the match curve and the room mic on the right.
     clearHeadings();
-    auto area = getLocalBounds().withTrimmedTop (padTop);
+    constexpr int side = 24, top = 22, bottomPad = 40;
+    auto area = getLocalBounds().withTrimmedLeft (side).withTrimmedRight (side).withTrimmedTop (top).withTrimmedBottom (bottomPad);
     leftColumn = area.removeFromLeft (leftWidth);
     area.removeFromLeft (columnGap);
-    rightColumn = area.removeFromRight (rightWidth);
+    rightColumn = area.removeFromRight (rightWidth).withTrimmedTop (38); // under the stage's control
     area.removeFromRight (columnGap);
     centreColumn = area;
 
-    // Left: the heading, the list (up to six entries' height, then it scrolls), Follow, the drop zone.
-    auto y = leftColumn.getY() + 16 + 14;
+    // Left: the heading, the list (it scrolls), Follow, the drop zone at the bottom.
+    constexpr int dropHeight = 62;
+    dropZone->setBounds (leftColumn.getX(), leftColumn.getBottom() - dropHeight, leftColumn.getWidth(), dropHeight);
+    const auto followY = dropZone->getY() - 12 - 16;
+    follow->setBounds (leftColumn.getX() - Switch::margin, followY - Switch::margin, follow->getPreferredWidth(), Switch::preferredHeight);
+    const auto listTop = leftColumn.getY() + 16 + 12;
     layoutList();
-    // At most six entries' height, and never more than leaves room for everything under the list in this
-    // column (Follow, the drop zone, the room mic, auto-align: the heights laid out below), so a long list
-    // scrolls instead of pushing auto-align off the page.
-    const auto belowList = 12 + 16 + 22 + 66 + 28 + 16 + 12 + 22 + 10 + 16 + 22 + Switch::preferredHeight;
-    const auto fits = leftColumn.getBottom() - y - belowList;
-    const auto maxHeight = juce::jmin (maxVisibleEntries * entryHeight, juce::jmax (groupHeadingHeight + 2 * entryHeight, fits));
-    const auto listHeight = entries.empty() ? 76 : juce::jmin (listContentHeight, maxHeight);
-    const auto scrolls = ! entries.empty() && listContentHeight > maxHeight;
-    listViewport->setBounds (leftColumn.getX(), y, leftColumn.getWidth(), listHeight);
+    const auto room = followY - 14 - listTop;
+    const auto listHeight = entries.empty() ? juce::jmin (room, 76) : juce::jmin (listContentHeight, room);
+    const auto scrolls = ! entries.empty() && listContentHeight > room;
+    listViewport->setBounds (leftColumn.getX(), listTop, leftColumn.getWidth(), listHeight);
     list->setSize (leftColumn.getWidth() - (scrolls ? 8 : 0), entries.empty() ? listHeight : listContentHeight);
-    y += listHeight + 12;
-    follow->setBounds (leftColumn.getX() - Switch::margin, y - Switch::margin, follow->getPreferredWidth(), Switch::preferredHeight);
-    y += 16 + 22;
-    dropZone->setBounds (leftColumn.getX(), y, leftColumn.getWidth(), 66);
 
-    // Centre: the speaker over the readout, centred in the column.
-    const auto contentHeight = (int) speakerSize + 16 + 16;
-    speaker->setBounds (juce::Rectangle<int> ((int) speakerSize, (int) speakerSize)
-                            .withCentre ({ centreColumn.getCentreX(), centreColumn.getY() + (centreColumn.getHeight() - contentHeight) / 2 + (int) speakerSize / 2 }));
+    // Centre: the speaker as large as the column allows, over its readout.
+    const auto speakerSize = (float) juce::jmin (centreColumn.getWidth(), centreColumn.getHeight() - 30);
+    speaker->scale = speakerSize / 400.0f;
+    speaker->setBounds (juce::Rectangle<int> ((int) speakerSize, (int) speakerSize).withCentre ({ centreColumn.getCentreX(), centreColumn.getY() + (int) speakerSize / 2 }));
 
-    // At the foot of the centre column, as wide as the speaker: the match curve's line (its heading, Amount,
-    // and switch), then its view.
+    // Right: the match curve's line (its heading, Amount, and switch) over its view; then the room mic and the
+    // alignment.
     {
-        constexpr int viewHeight = 58;
-        const auto width = juce::jmin ((int) speakerSize, centreColumn.getWidth());
-        auto strip = juce::Rectangle<int> (width, 22 + 8 + viewHeight).withCentre ({ centreColumn.getCentreX(), 0 }).withBottomY (centreColumn.getBottom());
+        constexpr int viewHeight = 64;
+        auto strip = rightColumn.withHeight (22 + 8 + viewHeight);
         auto row = strip.removeFromTop (22);
         strip.removeFromTop (8);
         matchView->setBounds (strip);
-        matchHeading = row.withWidth (120).withSizeKeepingCentre (120, 16);
+        matchHeading = row.withWidth (100).withSizeKeepingCentre (100, 16);
         matchOn->setBounds (row.getRight() - matchOn->getPreferredWidth() + Switch::margin, row.getCentreY() - Switch::preferredHeight / 2,
                             matchOn->getPreferredWidth(), Switch::preferredHeight);
-        auto left = row.withRight (matchOn->getX() - 12);
+        auto left = row.withRight (matchOn->getX() - 8);
         matchAmount->setBounds (left.removeFromRight (56));
         left.removeFromRight (4);
         matchAmountLabel->setBounds (left.removeFromRight (juce::roundToInt (textWidth (font (Text::caption), "Amount")) + 4));
     }
 
-    // Right: the heading, then each mic (tag 17, 12, knobs 74, 10, the switches 16, 8, the fields 22,
-    // 18, a line, 18), the cuts, the room and the alignment.
-    const auto x0 = rightColumn.getX(), x1 = rightColumn.getRight();
-    y = rightColumn.getY() + 16 + 14;
-    const auto sm = Knob::cssSize (Knob::Size::compact);
-    for (int m = 0; m < 2; ++m)
-    {
-        auto& c = mics[(size_t) m];
-        micTops[(size_t) m] = y;
-        links[(size_t) m]->setBounds (x0 + 80, y, rightWidth - 80, 17);
-        y += 17 + 12;
-        c.distance->setCssPosition (x0, y);
-        c.level->setCssPosition (x1 - sm.x, y);
-        y += sm.y + 10;
-        c.flip->setBounds (x0 - Switch::margin, y - Switch::margin, c.flip->getPreferredWidth(), Switch::preferredHeight);
-        c.mute->setBounds (x1 - c.mute->getPreferredWidth() + Switch::margin, y - Switch::margin, c.mute->getPreferredWidth(), Switch::preferredHeight);
-        y += 16 + 8;
-        auto row = juce::Rectangle<int> (x0, y, rightWidth, 22);
-        for (auto [label, field, width] : { std::tuple<juce::Label*, ValueField*, int> { c.panLabel, c.pan, 50 }, { c.delayLabel, c.delay, 44 }, { c.channelLabel, c.channel, 52 } })
-        {
-            const auto labelWidth = juce::roundToInt (textWidth (font (Text::caption), label->getText())) + 4;
-            label->setBounds (row.removeFromLeft (labelWidth));
-            field->setBounds (row.removeFromLeft (width));
-            row.removeFromLeft (10);
-        }
-        y += 22 + 18;
-        micBottoms[(size_t) m] = y;
-        y += 1 + 18;
-    }
-
-    // The cuts: each knob, and under it its switch (a bare pill) and its slope, inside the knob's width.
-    lowCut->setCssPosition (x0, y);
-    highCut->setCssPosition (x1 - sm.x, y);
-    y += sm.y + 6;
-    lowCutOn->setBounds (x0 - Switch::margin, y - Switch::margin, lowCutOn->getPreferredWidth(), Switch::preferredHeight);
-    lowSlope->setBounds (x0 + 28 + 6, y - 2, 46, 20);
-    highSlope->setBounds (x1 - 46, y - 2, 46, 20);
-    highCutOn->setBounds (x1 - 46 - 6 - 28 - Switch::margin, y - Switch::margin, highCutOn->getPreferredWidth(), Switch::preferredHeight);
-
-    // Left, under the drop zone: the room mic (level, pre-delay, mute, its file) and the alignment.
-    y = dropZone->getBottom() + 28;
-    roomHeading = { leftColumn.getX(), y, leftColumn.getWidth(), 16 };
-    y += 16 + 12;
-    auto room = juce::Rectangle<int> (leftColumn.getX(), y, leftColumn.getWidth(), 22);
-    roomLevelLabel->setBounds (room.removeFromLeft (juce::roundToInt (textWidth (font (Text::caption), "Level")) + 4));
-    roomLevel->setBounds (room.removeFromLeft (66));
-    room.removeFromLeft (10);
-    roomPreDelayLabel->setBounds (room.removeFromLeft (juce::roundToInt (textWidth (font (Text::caption), "Pre-delay")) + 4));
-    roomPreDelay->setBounds (room.removeFromLeft (juce::jmin (66, room.getWidth())));
+    auto y = matchView->getBottom() + 28;
+    roomHeading = { rightColumn.getX(), y, rightColumn.getWidth(), 16 };
+    y += 16 + 10;
+    auto roomRow = juce::Rectangle<int> (rightColumn.getX(), y, rightColumn.getWidth(), 22);
+    roomLevelLabel->setBounds (roomRow.removeFromLeft (juce::roundToInt (textWidth (font (Text::caption), "Level")) + 4));
+    roomLevel->setBounds (roomRow.removeFromLeft (70));
+    roomRow.removeFromLeft (12);
+    roomPreDelayLabel->setBounds (roomRow.removeFromLeft (juce::roundToInt (textWidth (font (Text::caption), "Pre-delay")) + 4));
+    roomPreDelay->setBounds (roomRow.removeFromLeft (juce::jmin (70, roomRow.getWidth())));
     y += 22 + 10;
-    roomMute->setBounds (leftColumn.getX() - Switch::margin, y - Switch::margin, roomMute->getPreferredWidth(), Switch::preferredHeight);
-    links[(size_t) AmpSimProcessor::roomMic]->setBounds (leftColumn.getX() + 80, y, leftColumn.getWidth() - 80, 16);
-    y += 16 + 22;
-    align->setBounds (leftColumn.getX() - Switch::margin, y - Switch::margin, align->getPreferredWidth(), Switch::preferredHeight);
-    roomLabel->setVisible (false);
+    roomMute->setBounds (rightColumn.getX() - Switch::margin, y - Switch::margin, roomMute->getPreferredWidth(), Switch::preferredHeight);
+    links[(size_t) AmpSimProcessor::roomMic]->setBounds (rightColumn.getX() + 80, y, rightColumn.getWidth() - 80, 16);
+    y += 16 + 18;
+    align->setBounds (rightColumn.getX() - Switch::margin, y - Switch::margin, align->getPreferredWidth(), Switch::preferredHeight);
 }
 
 // ---- Dropping files ------------------------------------------------------------------------------

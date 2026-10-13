@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "Blocks.h"
 #include "Controls.h"
 #include "Meters.h"
 #include "PluginProcessor.h"
@@ -10,44 +11,53 @@
 namespace ui
 {
 
-/// The top bar (handoff 4.3), 56 high with a 1 px line along the bottom, 24 px in from each side, 20 px
-/// between its three parts:
-///   left    the brand: a 7 px emerald dot and "BellyDSP" (the handoff's placeholder was "rig"), 15 px
-///           semibold, in a 136 px column
-///   centre  the previous-preset arrow, the preset's name (14 px medium) with its tag ("Factory" or
-///           "User", 12 px faint) in a 300 x 32 box, the next arrow, and Save (outlined)
-///   right   the Tuner button (the note it hears in emerald while the tuner is engaged, "-" otherwise;
-///           a 1 px emerald underline while the tuner page is open), then the In and Out meters
-/// A click on the name opens the preset browser; the arrows step through the presets (UH6). A click on the
-/// brand opens a small menu with the version, the licence, "Check for updates...", the source code, and the
-/// licences (ASSUMPTIONS DS9).
-/// The editor wires the buttons to what they do.
+/// The top bar (the redesign's FIRST VIEWPORT), 52 high on the panel colour with a hairline along its bottom:
+///   left    the brand (an orange dot and "BellyDSP", 15 px semibold; a click opens the version, licence,
+///           updates, source, and licences menu: ASSUMPTIONS DS9), then A and B, and undo and redo
+///   centre  the previous-preset arrow, the preset's name (14 px medium) over its tag ("Factory" or "User") and the
+///           current scene ("Scene 2: Lead"), the next arrow, and Save. A click on the name opens the browser.
+///   right   the CPU, the In and Out meters, then the buttons that open the tuner (with the note it hears while
+///           it's engaged), Match tone, and Settings; the open one is underlined in orange
+/// The editor wires the buttons to what they do; tooltips name the keys (the arrows, T, Cmd-Z).
 class TopBar final : public juce::Component
 {
 public:
     explicit TopBar (AmpSimProcessor& processor);
     ~TopBar() override;
 
-    std::function<void()> onPresetMenu, onSave, onPrevious, onNext, onTuner, onBrand;
+    std::function<void()> onPresetMenu, onSave, onPrevious, onNext, onTuner, onBrand, onUndo, onRedo, onMatchTone, onSettings;
+    std::function<void (bool b)> onAbSelect;
 
-    /// Message thread: the preset's name and tag.
+    /// Message thread: the preset's name and tag, the current scene, A or B.
     void refresh();
 
-    /// The tuner button: open (the page shows) and the note it shows ("-" when the tuner isn't engaged).
-    void setTuner (bool pageOpen, const juce::String& note);
+    /// The tuner button: open (the overlay shows) and the note it shows ("-" when the tuner isn't engaged).
+    void setTuner (bool open, const juce::String& note);
     const juce::String& getTunerNote() const noexcept { return tunerNote; }
+    /// Which overlay is open (its button is underlined).
+    void setOverlay (Overlay overlay);
 
-    /// Message thread, at the meter rate: the processor's peaks, `seconds` since the last.
+    /// Message thread, at the meter rate: the processor's peaks, `seconds` since the last, and the CPU load.
     void updateMeters (const AmpSimProcessor::Peaks& peaks, double seconds);
+    void setCpuLoad (float percent) { cpu.setLoad (percent); }
 
     LevelMeter& getInputMeter() noexcept { return inputMeter; }
     LevelMeter& getOutputMeter() noexcept { return outputMeter; }
+    CpuMeter& getCpuMeter() noexcept { return cpu; }
     juce::Button& getPresetButton() noexcept;
     juce::Button& getBrandButton() noexcept;
     juce::Button& getTunerButton() noexcept;
+    juce::Button& getMatchToneButton() noexcept;
+    juce::Button& getSettingsButton() noexcept;
     juce::Button& getSaveButton() noexcept { return save; }
+    juce::Button& getAbButton (bool b) noexcept { return b ? abB : abA; }
+    juce::Button& getUndoButton() noexcept { return undo; }
+    juce::Button& getRedoButton() noexcept { return redo; }
+    juce::Button& getPreviousButton() noexcept { return previous; }
+    juce::Button& getNextButton() noexcept { return next; }
     juce::String getShownPresetName() const;
     juce::String getShownTag() const;
+    juce::String getShownScene() const;
 
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -55,15 +65,17 @@ public:
 private:
     class BrandButton;
     class PresetButton;
-    class TunerButton;
+    class BarButton;
 
     AmpSimProcessor& ampSim;
     std::unique_ptr<BrandButton> brand;
     std::unique_ptr<PresetButton> preset;
-    std::unique_ptr<TunerButton> tuner;
+    std::unique_ptr<BarButton> tuner, matchTone, settings;
     IconButton previous { "Previous preset", IconButton::Icon::left }, next { "Next preset", IconButton::Icon::right };
-    juce::TextButton save { "Save" };
+    IconButton undo { "Undo", IconButton::Icon::undo }, redo { "Redo", IconButton::Icon::redo };
+    juce::TextButton save { "Save" }, abA { "A" }, abB { "B" };
     LevelMeter inputMeter { "In", 1 }, outputMeter { "Out", 2 };
+    CpuMeter cpu;
     juce::String tunerNote { "-" };
 };
 

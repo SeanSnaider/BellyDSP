@@ -325,7 +325,7 @@ public:
             setParam (p, "output_limit_on", 0.0f); // the levels as they are, for the loudness measurements
             std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
-            ed.showPage (ui::PageId::toneMatch);
+            ed.openOverlay (ui::Overlay::toneMatch);
             auto& page = ed.getToneMatchPage();
             auto& session = page.getSession();
             auto snap = [&] (const juce::String& name) {
@@ -472,7 +472,7 @@ public:
             p.prepareToPlay (fs, blockSize);
             std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
-            ed.showPage (ui::PageId::toneMatch);
+            ed.openOverlay (ui::Overlay::toneMatch);
             auto& page = ed.getToneMatchPage();
             auto& session = page.getSession();
             expect (session.setTargetFile (fixtures().getChildFile ("target_same.wav")));

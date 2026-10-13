@@ -316,7 +316,7 @@ public:
             p.prepareToPlay (fs, blockSize);
             std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
-            ed.showPage (ui::PageId::amp);
+            ed.selectBlock (ui::BlockId::amp);
             auto& amp = ed.getAmpView();
             ed.refresh();
 

@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Sean Snaider
 
-// The GUI after the UI handoff (docs/ui/amp-ui-handoff/): the designed pages rendered at 2x next to the
-// handoff's screenshots (build/proof/compare_<page>.png), and their behaviour.
+// The GUI's parts on the main screen (the app redesign): the amp on the stage and its heads, the cab, the tuner, the
+// top bar's keys, rendered at 2x into build/proof, and their behaviour. (The comparisons with the old UI handoff's
+// screenshots are retired: the redesign's direction contract is the source of truth now. MainScreenTests.cpp has the
+// main screen's own tests and snapshots.)
 
 #include "PluginEditor.h"
 #include "Presets.h"
@@ -37,26 +39,6 @@ bool savePng (const juce::Image& image, const juce::File& file)
     file.deleteFile();
     juce::FileOutputStream stream (file);
     return stream.openedOk() && juce::PNGImageFormat().writeImageToStream (image, stream);
-}
-
-juce::File handoffScreenshot (const juce::String& name)
-{
-    return juce::File (AMPSIM_SOURCE_DIR).getChildFile ("docs/ui/amp-ui-handoff/screenshots").getChildFile (name);
-}
-
-/// Ours on the left, the handoff's on the right, at the same size, with a thin gap.
-bool writeComparison (const juce::Image& ours, const juce::String& screenshot, const juce::String& name)
-{
-    const auto theirs = juce::ImageFileFormat::loadFrom (handoffScreenshot (screenshot));
-    if (! theirs.isValid())
-        return false;
-    const auto w = juce::jmax (ours.getWidth(), theirs.getWidth()), h = juce::jmax (ours.getHeight(), theirs.getHeight());
-    juce::Image both (juce::Image::RGB, 2 * w + 16, h, true);
-    juce::Graphics g (both);
-    g.fillAll (juce::Colour (0xff3a3a3a));
-    g.drawImageAt (ours, 0, 0);
-    g.drawImageAt (theirs, w + 16, 0);
-    return savePng (both, proofDir().getChildFile ("compare_" + name + ".png"));
 }
 
 /// A copy of an example capture whose metadata names its tone (and a make and model the UI must not show).
@@ -197,7 +179,7 @@ struct DressedHead final : juce::Component
 class EditorTests final : public juce::UnitTest
 {
 public:
-    EditorTests() : juce::UnitTest ("Editor after the UI handoff", "ampsim") {}
+    EditorTests() : juce::UnitTest ("Editor parts", "ampsim") {}
 
     void runTest() override
     {
@@ -209,7 +191,7 @@ public:
             logMessage ("  -> bundled fonts loaded: " + juce::String (ui::theme::bundledFontsLoaded() ? "yes" : "no") + " (Geist 300/400/500/600, Fraunces SemiBold Italic)");
         }
 
-        beginTest ("amp page: each amp wears its head, its own knobs, its capture's voice; the UI follows program changes; compared with the handoff");
+        beginTest ("amp page: each amp wears its head, its own knobs, its capture's voice; the UI follows program changes");
         {
             AmpSimProcessor p;
             p.loadModel (0, taggedCapture ("wavenet_a1_standard.nam", "clean", "glass_clean.nam"));
@@ -227,11 +209,10 @@ public:
 
             std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
-            ed.showPage (ui::PageId::amp);
+            ed.selectBlock (ui::BlockId::amp);
             auto& amp = ed.getAmpView();
 
             const std::array<const char*, 3> names { "glass", "ember", "monolith" };
-            const std::array<const char*, 3> shots { "01_amp_glass.png", "02_amp_ember.png", "03_amp_monolith.png" };
             const std::array<const char*, 3> voices { "Clean", "Crunch", "High gain" };
             juce::StringArray files, seen;
             for (int s = 0; s < 3; ++s)
@@ -250,7 +231,6 @@ public:
                 const auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f);
                 const auto file = proofDir().getChildFile ("editor_amp_" + juce::String (names[(size_t) s]) + ".png");
                 expect (savePng (image, file));
-                expect (writeComparison (image, shots[(size_t) s], "amp_" + juce::String (names[(size_t) s])));
                 files.add (file.getFileName());
                 seen.add (amp.getVoiceText() + " / " + amp.getModelText() + " / " + amp.getRateText());
             }
@@ -456,7 +436,7 @@ public:
             waitForLoads (p);
             std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
-            ed.showPage (ui::PageId::amp);
+            ed.selectBlock (ui::BlockId::amp);
             auto& amp = ed.getAmpView();
             play (p, 0.6, [&] { amp.getSpectrum().update(); });
             juce::StringArray pages;
@@ -485,7 +465,7 @@ public:
                         + pages.joinIntoString (", "));
         }
 
-        beginTest ("cab page: the library lists packs and IRs; a pick loads close mic 1, assigns it, and stops following; mics move on packs only; compared with the handoff");
+        beginTest ("cab page: the library lists packs and IRs; a pick loads close mic 1, assigns it, and stops following; mics move on packs only");
         {
             // A library of three cabs: a pack and two IR files.
             const auto library = tempDir().getChildFile ("cab_library");
@@ -505,7 +485,7 @@ public:
             p.parameters.state.setProperty ("presetName", "Open string clean", nullptr);
             std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
-            ed.showPage (ui::PageId::cab);
+            ed.setStageMode (ui::StageMode::cab, false);
             auto& cab = ed.getCabView();
             const auto& entries = cab.getEntries();
             expectEquals ((int) entries.size(), 3);
@@ -530,7 +510,6 @@ public:
 
             const auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f);
             expect (savePng (image, proofDir().getChildFile ("editor_cab_page.png")));
-            expect (writeComparison (image, "04_cab.png", "cab"));
 
             // Dragging mic A out to the cone's edge: pos_x follows the distance (clamped at 0.95 of the radius).
             const auto from = cab.markerPosition (0);
@@ -583,7 +562,7 @@ public:
             p.prepareToPlay (fs, blockSize);
             std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
-            ed.showPage (ui::PageId::cab);
+            ed.setStageMode (ui::StageMode::cab, false);
             auto& cab = ed.getCabView();
             ed.refresh();
             expect (cab.getMatchCurveDrawnDb().empty(), "no curve: the view says so");
@@ -608,10 +587,10 @@ public:
             const auto peak = *std::max_element (full.begin(), full.end());
             expectGreaterThan (peak, 5.0f);
 
-            // The view sits under the speaker's readout, inside the page, as wide as the speaker.
+            // The view sits in the stage's right column, inside the stage, the column's width.
             const auto bounds = cab.getMatchCurveViewBounds();
             expect (cab.getLocalBounds().contains (bounds), bounds.toString());
-            expectEquals (bounds.getWidth(), 380);
+            expectEquals (bounds.getWidth(), 260);
             const auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f);
             expect (savePng (image, proofDir().getChildFile ("editor_cab_match_curve.png")));
             const auto crop = image.getClippedImage (editor->getLocalArea (&cab, bounds).expanded (24, 48).withTrimmedBottom (24) * 2);
@@ -655,7 +634,7 @@ public:
             p.parameters.state.setProperty ("presetName", "Tech Death", nullptr);
             std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
-            ed.showPage (ui::PageId::cab);
+            ed.setStageMode (ui::StageMode::cab, false);
             auto& cab = ed.getCabView();
             const auto& entries = cab.getEntries();
 
@@ -793,14 +772,14 @@ public:
                         + " IRs); choosing \"Dynamic, upper, var. 2\" loaded close mic 2, saved as factory:irs/Vintage 4x12/...");
         }
 
-        beginTest ("tuner page: a real tone through the tuner thread, in tune and 13 cents sharp; strings, targeting, tunings; compared with the handoff");
+        beginTest ("tuner page: a real tone through the tuner thread, in tune and 13 cents sharp; strings, targeting, tunings");
         {
             AmpSimProcessor p;
             p.prepareToPlay (fs, blockSize);
             p.parameters.state.setProperty ("presetName", "Open string clean", nullptr);
             std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
-            ed.showPage (ui::PageId::tuner);
+            ed.openOverlay (ui::Overlay::tuner);
             expectEquals (getParam (p, "tuner_on"), 1.0f); // opening the page engages the tuner
             auto& tuner = ed.getTunerPage();
             tuner.setTuning (0);
@@ -842,7 +821,6 @@ public:
             expect (! sharp.inTune && sharp.state == "Sharp" && std::abs (sharp.centsValue - 13.0) < 1.0, sharp.cents);
             const auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f);
             expect (savePng (image, proofDir().getChildFile ("editor_tuner_sharp.png")));
-            expect (writeComparison (image, "05_tuner.png", "tuner"));
 
             // Targeting the A string: the same E reads 500 cents flat of it (off the scale); again lets go.
             tuner.clickString (1);
@@ -856,8 +834,8 @@ public:
             expect (! tuner.isStringDone (0));
             expectEquals ((int) p.parameters.state.getProperty ("tunerTuning"), 1);
 
-            // Leaving the page disengages the tuner, and the button's note goes back to a dash.
-            ed.showPage (ui::PageId::amp);
+            // Closing the overlay disengages the tuner, and the button's note goes back to a dash.
+            ed.closeOverlay();
             ed.refresh();
             expectEquals (getParam (p, "tuner_on"), 0.0f);
             expectEquals (ed.getTopBar().getTunerNote(), juce::String ("-"));
@@ -886,7 +864,7 @@ public:
             const auto back = ed.stepPreset (-1);
             expectEquals (back, first);
 
-            // Undo and redo from the keyboard (the handoff's frame has no buttons for them).
+            // Undo and redo from the keyboard (and the top bar's buttons).
             p.parameters.copyState();
             p.undoManager.clearUndoHistory();
             p.undoManager.beginNewTransaction();
@@ -905,10 +883,10 @@ public:
             wrongRate.prepareToPlay (44100.0, blockSize);
             std::unique_ptr<juce::AudioProcessorEditor> warned (wrongRate.createEditor());
             auto& we = dynamic_cast<AmpSimEditor&> (*warned);
-            we.showPage (ui::PageId::amp);
+            we.selectBlock (ui::BlockId::amp);
             we.refresh();
             const auto onAmp = we.getAmpView().getRateText();
-            we.showPage (ui::PageId::cab);
+            we.setStageMode (ui::StageMode::cab, false);
             we.refresh();
             expectEquals (onAmp, juce::String ("44.1 kHz: muted, set the interface to 48 kHz"));
             expectEquals (we.getStatusText(), onAmp);
@@ -917,7 +895,7 @@ public:
                         + juce::String (afterUndo, 1) + ", Shift-Cmd-Z back to " + juce::String (afterRedo, 1) + "; at 44.1 kHz: \"" + onAmp + "\"");
         }
 
-        beginTest ("a knob mid-drag shows its value underlined in emerald on an amp panel (compared with the handoff's crop)");
+        beginTest ("a knob mid-drag shows its value on the amp panel, on the stage at the head's scale");
         {
             AmpSimProcessor p;
             p.loadModel (0, exampleModel ("wavenet_a1_standard.nam"));
@@ -925,7 +903,7 @@ public:
             p.prepareToPlay (fs, blockSize);
             std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
-            ed.showPage (ui::PageId::amp);
+            ed.selectBlock (ui::BlockId::amp);
             ed.refresh();
             auto& gain = ed.getAmpView().getKnob (0, 0);
             const auto centre = gain.getLocalBounds().getCentre().toFloat();
@@ -936,9 +914,8 @@ public:
             gain.mouseUp (mouseEvent (gain, centre.translated (0.0f, -30.0f), centre, 0, true));
             expectEquals (label, juce::String ("6.5"));
             expect (savePng (full, proofDir().getChildFile ("editor_knob_dragging.png")));
-            const auto crop = full.getClippedImage ({ 508, 307, 840, 300 });
+            const auto crop = full.getClippedImage (editor->getLocalArea (&gain, gain.getLocalBounds()).expanded (60, 30) * 2);
             expect (savePng (crop, proofDir().getChildFile ("editor_knob_dragging_crop.png")));
-            expect (writeComparison (crop, "06_knob_dragging.png", "knob_dragging"));
             logMessage ("  -> Gain dragged 30 points up from 5.0: the label reads \"" + label + "\" mid-drag; build/proof/editor_knob_dragging.png");
         }
     }

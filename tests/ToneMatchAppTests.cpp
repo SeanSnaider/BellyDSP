@@ -113,12 +113,12 @@ public:
                           "within the minute (" + juce::String ((juce::int64) dropped) + " samples past the end were refused)");
         }
 
-        beginTest ("the brand menu opens the tone match page; Close goes back to the page before it; it's never restored at startup");
+        beginTest ("the brand menu opens the tone match overlay; Close goes back to the main screen as it was; it's never restored at startup");
         {
             AmpSimProcessor p;
             std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
-            ed.showPage (ui::PageId::cab);
+            ed.selectBlock (ui::BlockId::cab);
             const auto menu = ed.brandMenu();
             const juce::PopupMenu::Item* item = nullptr;
             for (juce::PopupMenu::MenuItemIterator it (menu); it.next();)
@@ -127,12 +127,13 @@ public:
             expect (item != nullptr && item->isEnabled);
             if (item != nullptr && item->action)
                 item->action();
-            expect (ed.getShownPage() == ui::PageId::toneMatch && ed.getToneMatchPage().isVisible());
-            expectEquals (p.parameters.state.getProperty ("uiPage").toString(), juce::String ("cab"));
+            expect (ed.getOverlay() == ui::Overlay::toneMatch && ed.getToneMatchPage().isVisible());
+            expectEquals (p.parameters.state.getProperty ("uiStage").toString(), juce::String ("cab"));
             if (ed.getToneMatchPage().onClose)
                 ed.getToneMatchPage().onClose();
-            expect (ed.getShownPage() == ui::PageId::cab);
-            logMessage ("  -> \"Match tone...\" showed the page over the cab page; Close went back to the cab page; the saved page stayed \"cab\"");
+            expect (ed.getOverlay() == ui::Overlay::none && ! ed.getToneMatchPage().isVisible());
+            expect (ed.getStageMode() == ui::StageMode::cab && ed.getSelectedBlock() == ui::BlockId::cab);
+            logMessage ("  -> \"Match tone...\" opened the overlay over the cab on the stage; Close went back to it; the saved stage stayed \"cab\"");
         }
 
         beginTest ("the page: record the DI through the app, load a target, match, Apply in one undo step (knobs, EQ, cab), undo, redo, Discard; snapshots at 2x");
@@ -143,7 +144,7 @@ public:
             p.prepareToPlay (fs, blockSize);
             std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
-            ed.showPage (ui::PageId::toneMatch);
+            ed.openOverlay (ui::Overlay::toneMatch);
             auto& page = ed.getToneMatchPage();
             auto& session = page.getSession();
             auto snap = [&] (const juce::String& name) {
@@ -279,7 +280,7 @@ public:
             p.prepareToPlay (fs, blockSize);
             std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
-            ed.showPage (ui::PageId::toneMatch);
+            ed.openOverlay (ui::Overlay::toneMatch);
             auto& page = ed.getToneMatchPage();
             auto& session = page.getSession();
             const auto glass = p.getAmpCapture (0);
@@ -493,7 +494,7 @@ public:
             p.prepareToPlay (fs, blockSize);
             std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
-            ed.showPage (ui::PageId::toneMatch);
+            ed.openOverlay (ui::Overlay::toneMatch);
             auto& page = ed.getToneMatchPage();
             auto& session = page.getSession();
             expect (session.setTargetFile (fixtures().getChildFile ("target_anything.wav")));

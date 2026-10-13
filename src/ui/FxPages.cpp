@@ -22,24 +22,6 @@ int indexOf (juce::AudioProcessorValueTreeState& state, const juce::String& id)
 {
     return juce::roundToInt (state.getRawParameterValue (id)->load());
 }
-
-/// Puts a combo box where a knob would be, under a caption like the knob's (a synced time's note).
-void placeInKnobCell (juce::Label* caption, juce::ComboBox* box, juce::Rectangle<int> cell)
-{
-    if (caption != nullptr)
-        caption->setBounds (cell.removeFromTop (captionHeight + 2));
-    box->setBounds (cell.withSizeKeepingCentre (juce::jmax (64, cell.getWidth() - 4), controlHeight));
-}
-
-/// Column headings over a table of fields.
-void paintColumns (juce::Graphics& g, juce::Rectangle<int> area, std::initializer_list<const char*> names)
-{
-    g.setFont (font (Text::label));
-    g.setColour (textDim);
-    const auto width = area.getWidth() / (int) names.size();
-    for (const auto* name : names)
-        g.drawText (name, area.removeFromLeft (width), juce::Justification::centred, false);
-}
 } // namespace
 
 // ---- HarmonizerPage --------------------------------------------------------------------------------------
@@ -52,8 +34,10 @@ HarmonizerPage::HarmonizerPage (AmpSimProcessor& p)
     for (const auto* name : ampsim::harmony::scaleNames)
         scales.add (name);
     scale = &addCombo ("harm_scale", scales);
-    outOfKey = &addCombo ("harm_out_of_key", { "Out of key: parallel", "Out of key: snap" });
-    floor = &addCombo ("harm_floor", { "Lowest note 110 Hz (A)", "Lowest note 80 Hz (low E)", "Lowest note 60 Hz (drop)" });
+    outOfKey = &addCombo ("harm_out_of_key", { "Parallel", "Snap to the key" });
+    floor = &addCombo ("harm_floor", { "110 Hz (A)", "80 Hz (low E)", "60 Hz (drop)" });
+    outOfKey->setTooltip ("What a note outside the key does: shift in parallel, or snap to the key");
+    floor->setTooltip ("The lowest note the harmonizer listens for");
     glide = &addKnob ("harm_glide", "Glide", " ms");
     level = &addKnob ("harm_level", "Level");
 
@@ -79,60 +63,46 @@ HarmonizerPage::HarmonizerPage (AmpSimProcessor& p)
     for (int v = 0; v < ampsim::Harmonizer::maxVoices; ++v)
     {
         auto& row = rows[(size_t) v];
-        row.on = &addSwitch (params::HarmonizerParameters::voiceId (v, "on"), "Voice " + juce::String (v + 1));
-        row.mode = &addCombo (params::HarmonizerParameters::voiceId (v, "mode"), { "Diatonic", "Chromatic" });
+        row.on = &addSwitch (params::HarmonizerParameters::voiceId (v, "on"), {});
+        row.on->setTooltip ("Voice " + juce::String (v + 1) + " on or off");
+        row.mode = &addCombo (params::HarmonizerParameters::voiceId (v, "mode"), { "Diatonic (steps)", "Chromatic (semitones)" });
         for (size_t k = 0; k < row.fields.size(); ++k)
             row.fields[k] = &addField (params::HarmonizerParameters::voiceId (v, what[k]), suffix[k]);
     }
     refresh();
 }
 
-void HarmonizerPage::layoutContent (juce::Rectangle<int> area)
+void HarmonizerPage::describe (InspectorLayout& l)
 {
-    auto toolbar = area.removeFromTop (controlHeight);
-    place (root, toolbar, 70);
-    place (scale, toolbar, 190);
-    place (outOfKey, toolbar, 180);
-    place (floor, toolbar, 210);
-    area.removeFromTop (space::m);
-
-    // The custom scale, the glide and level, and what it hears; then the voices.
-    const auto voicesHeight = cardHeight (18 + 4 * 30);
-    const auto size = area.getHeight() >= knobCardHeight() + space::m + voicesHeight ? Knob::Size::normal : Knob::Size::compact;
-    glide->setKnobSize (size);
-    level->setKnobSize (size);
-    std::vector<CardItem> notes;
-    for (auto* button : customNotes)
-        notes.push_back ({ button, 32, controlHeight });
-    const auto insides = layoutCards (area.removeFromTop (knobCardHeight (size)),
-                                      { { "Custom scale", notes }, { "Glide and level", { { glide }, { level } } }, { "Hearing", {}, 240 } });
-    hearingArea = insides.back().withSizeKeepingCentre (insides.back().getWidth(), juce::jmin (insides.back().getHeight(), 48));
-    area.removeFromTop (space::m);
-
-    auto voices = card (area, "Voices");
-    columnsArea = voices.removeFromTop (18).withTrimmedLeft (100 + 120 + space::s);
-    const auto rowHeight = juce::jmin (32, voices.getHeight() / ampsim::Harmonizer::maxVoices);
-    for (auto& r : rows)
+    l.labelled ("Key", root);
+    l.labelled ("Scale", scale);
+    l.labelled ("Out of key", outOfKey);
+    l.labelled ("Lowest note", floor);
+    l.section ("Hearing");
+    l.area (&hearingArea, 44);
+    l.section ("Glide and level");
+    l.knobs ({ glide, level });
+    l.section ("Custom scale");
+    l.buttons ({ customNotes[0], customNotes[1], customNotes[2], customNotes[3], customNotes[4], customNotes[5] }, 26);
+    l.buttons ({ customNotes[6], customNotes[7], customNotes[8], customNotes[9], customNotes[10], customNotes[11] }, 26);
+    for (int v = 0; v < ampsim::Harmonizer::maxVoices; ++v)
     {
-        auto line = voices.removeFromTop (rowHeight).reduced (0, 3);
-        place (r.on, line, 100, switchHeight, 0);
-        place (r.mode, line, 120, controlHeight, space::s);
-        const auto width = line.getWidth() / (int) r.fields.size();
-        for (auto* field : r.fields)
-            field->setBounds (line.removeFromLeft (width).reduced (3, 0));
+        auto& r = rows[(size_t) v];
+        l.section ("Voice " + juce::String (v + 1), r.on);
+        l.labelled ("Interval", r.mode);
+        l.fields ({ { "Steps", r.fields[0] }, { "Semitones", r.fields[1] }, { "Octave", r.fields[2] },
+                    { "Level", r.fields[3] }, { "Pan", r.fields[4] }, { "Humanize", r.fields[5] } });
     }
 }
 
 void HarmonizerPage::paintContent (juce::Graphics& g)
 {
-    paintColumns (g, columnsArea, { "Steps", "Semitones", "Octave", "Level", "Pan", "Humanize" });
-
     // What it hears now, in a box.
     g.setColour (background);
     g.fillRoundedRectangle (hearingArea.toFloat(), radiusControl);
     g.setColour (theme::text);
-    g.setFont (font (Text::body));
-    g.drawFittedText (hearing, hearingArea.reduced (12, 0), juce::Justification::centredLeft, 2, 0.85f);
+    g.setFont (font (Text::label));
+    g.drawFittedText (hearing, hearingArea.reduced (10, 0), juce::Justification::centredLeft, 2, 0.9f);
 }
 
 void HarmonizerPage::refresh()
@@ -180,8 +150,8 @@ void HarmonizerPage::refresh()
 
 namespace
 {
-/// The interval picker beside a voice's semitones: a small chevron in ink-faint (ink on hover), no box, so the
-/// table stays quiet. A click opens the named intervals.
+/// The interval picker inside a voice's semitones field: a small chevron in ink-faint (ink on hover), no box, so
+/// the fields stay quiet. A click opens the named intervals.
 class ChevronButton final : public juce::Button
 {
 public:
@@ -249,8 +219,6 @@ MultivoicerPage::MultivoicerPage (AmpSimProcessor& p)
     for (int v = 0; v < ampsim::Multivoicer::maxVoices; ++v)
     {
         auto& row = rows[(size_t) v];
-        row.number = &addLabel (juce::String (v + 1), Text::value, theme::text);
-        row.number->setJustificationType (juce::Justification::centred);
         for (size_t k = 0; k < row.fields.size(); ++k)
             row.fields[k] = &addField (params::MultivoicerParameters::voiceId (v, what[k]), suffix[k]);
         row.picker = &adopt (std::make_unique<ChevronButton>());
@@ -276,53 +244,32 @@ juce::PopupMenu MultivoicerPage::intervalMenu (int voice)
     return menu;
 }
 
-void MultivoicerPage::layoutContent (juce::Rectangle<int> area)
+void MultivoicerPage::describe (InspectorLayout& l)
 {
-    auto toolbar = area.removeFromTop (controlHeight);
-    place (engine, toolbar, 200, controlHeight, space::s);
-    place (mixMode, toolbar, 96, controlHeight, space::l);
-    place (highPass, toolbar);
-    startingPoints->setBounds (toolbar.removeFromRight (170));
-    toolbar.removeFromRight (space::l);
-    for (auto it = shapes.rbegin(); it != shapes.rend(); ++it)
+    l.labelled ("Engine", engine);
+    l.labelled ("Mix mode", mixMode);
+    l.section ("Shapes");
+    l.buttons ({ shapes[0], shapes[1] });
+    l.buttons ({ shapes[2], shapes[3] });
+    l.buttons ({ startingPoints });
+    l.section ("Ensemble");
+    l.knobs ({ voices, mix, spread });
+    l.switches ({ highPass });
+    l.knobs ({ highPassHz });
+    for (int v = 0; v < ampsim::Multivoicer::maxVoices; ++v)
     {
-        const auto width = (int) std::ceil (textWidth (font (Text::body), (*it)->getButtonText())) + 24;
-        (*it)->setBounds (toolbar.removeFromRight (width));
-        toolbar.removeFromRight (space::s);
-    }
-    area.removeFromTop (space::m);
-
-    // The ensemble's knobs, two by two, in a card on the left; the voices' table in a card on the right.
-    const auto size = area.getHeight() >= cardHeight (2 * Knob::preferredHeight (Knob::Size::normal) + space::s) ? Knob::Size::normal : Knob::Size::compact;
-    const auto knobWidth = Knob::preferredWidth (size), knobHeight = Knob::preferredHeight (size);
-    auto left = card (area.removeFromLeft (2 * cardPadding + 2 * knobWidth + space::m), "Ensemble");
-    left = left.withSizeKeepingCentre (left.getWidth(), juce::jmin (left.getHeight(), 2 * knobHeight + space::s));
-    placeKnobs (left.removeFromTop (knobHeight), { voices, mix }, size, space::m);
-    left.removeFromTop (space::s);
-    placeKnobs (left.removeFromTop (knobHeight), { spread, highPassHz }, size, space::m);
-    area.removeFromLeft (space::m);
-
-    auto table = card (area, "Voices");
-    columnsArea = table.removeFromTop (18).withTrimmedLeft (32);
-    const auto rowHeight = juce::jmin (30, table.getHeight() / ampsim::Multivoicer::maxVoices);
-    for (auto& r : rows)
-    {
-        auto line = table.removeFromTop (rowHeight).reduced (0, 2);
-        r.number->setBounds (line.removeFromLeft (32));
-        const auto width = line.getWidth() / (int) r.fields.size();
-        for (auto* field : r.fields)
+        auto& r = rows[(size_t) v];
+        l.section ("Voice " + juce::String (v + 1));
+        l.fields ({ { "Interval", r.fields[0] }, { "Fine", r.fields[1] }, { "Delay", r.fields[2] },
+                    { "Pan", r.fields[3] }, { "Level", r.fields[4] }, { "Drift", r.fields[5] } });
+        if (l.isPlacing())
         {
-            auto cell = line.removeFromLeft (width).reduced (3, 0);
-            if (field == r.fields[0])
-                r.picker->setBounds (cell.removeFromRight (18)); // the chevron, inside the Interval column
-            field->setBounds (cell);
+            // The chevron inside the interval's field, at its right end.
+            auto cell = r.fields[0]->getBounds();
+            r.picker->setBounds (cell.removeFromRight (18));
+            r.fields[0]->setBounds (cell);
         }
     }
-}
-
-void MultivoicerPage::paintContent (juce::Graphics& g)
-{
-    paintColumns (g, columnsArea, { "Interval", "Fine", "Delay", "Pan", "Level", "Drift" });
 }
 
 void MultivoicerPage::refresh()
@@ -334,7 +281,6 @@ void MultivoicerPage::refresh()
     for (int v = 0; v < ampsim::Multivoicer::maxVoices; ++v)
     {
         const auto alpha = v < count ? 1.0f : unusedAlpha;
-        rows[(size_t) v].number->setAlpha (alpha);
         for (auto* field : rows[(size_t) v].fields)
             field->setAlpha (alpha);
         rows[(size_t) v].picker->setAlpha (alpha);
@@ -428,11 +374,11 @@ public:
         {
             const auto x = chip (slot).getRight() + gap * 0.5f, y = (float) getHeight() * 0.5f;
             juce::Path arrow;
-            arrow.startNewSubPath (x - 6.0f, y);
-            arrow.lineTo (x + 5.0f, y);
-            arrow.startNewSubPath (x + 1.0f, y - 4.0f);
-            arrow.lineTo (x + 5.0f, y);
-            arrow.lineTo (x + 1.0f, y + 4.0f);
+            arrow.startNewSubPath (x - 4.0f, y);
+            arrow.lineTo (x + 3.0f, y);
+            arrow.startNewSubPath (x, y - 3.0f);
+            arrow.lineTo (x + 3.0f, y);
+            arrow.lineTo (x, y + 3.0f);
             g.strokePath (arrow, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         }
 
@@ -453,16 +399,12 @@ private:
     {
         g.setColour (surfaceRaised);
         g.fillRoundedRectangle (r, radiusControl);
-        g.setColour (lifted ? accent : outline.brighter (0.15f));
+        g.setColour (lifted ? accent : outline);
         g.drawRoundedRectangle (r.reduced (0.5f), radiusControl, lifted ? 1.5f : 1.0f);
         const auto name = shown[index].substring (0, 1).toUpperCase() + shown[index].substring (1);
-        g.setFont (font ("Semibold", 11.0f));
-        g.setColour (textDim);
-        auto area = r.reduced (10.0f, 0.0f);
-        g.drawText (juce::String (index + 1), area.removeFromLeft (14.0f), juce::Justification::centredLeft, false);
         g.setColour (theme::text);
-        g.setFont (font (Text::body));
-        g.drawText (name, area, juce::Justification::centred, false);
+        g.setFont (font (Text::label));
+        g.drawFittedText (name, r.reduced (4.0f, 0.0f).toNearestInt(), juce::Justification::centred, 1, 0.8f);
     }
 
     std::function<juce::StringArray()> getOrder;
@@ -470,141 +412,69 @@ private:
     juce::StringArray shown;
     int dragging = -1, target = -1;
     float grab = 0.0f, dragX = 0.0f;
-    static constexpr float gap = 24.0f;
+    static constexpr float gap = 14.0f;
 };
 
-/// One of Bloom's effects: its switch and controls, in a card.
-class BloomPage::EffectCard final : public ControlGroup
+BloomPage::BloomPage (AmpSimProcessor& p) : BlockPage (p, BlockId::bloom, "Bloom", "Three effects in one block, in the order shown")
 {
-public:
-    EffectCard (AmpSimProcessor& p, juce::String name, const juce::String& onId) : ControlGroup (p), title (std::move (name))
-    {
-        on = &addSwitch (onId, "On");
-    }
-
-    juce::String title;
-    Switch* on = nullptr;
-    std::vector<juce::Component*> combos;  // the first row
-    std::vector<Switch*> switches;         // the second row
-    std::vector<Knob*> knobs;
-    juce::ComboBox* note = nullptr;        // shown instead of the rate knob when synced
-    Knob* rate = nullptr;
-    juce::Label* footnote = nullptr;       // a line along the bottom (the flanger's latency)
-
-    using ControlGroup::addCombo;
-    using ControlGroup::addKnob;
-    using ControlGroup::addLabel;
-    using ControlGroup::addSwitch;
-
-    void paint (juce::Graphics& g) override
-    {
-        drawCard (g, getLocalBounds().toFloat());
-        g.setFont (font (Text::title));
-        g.setColour (theme::text);
-        g.drawText (title, getLocalBounds().reduced (space::m).withHeight (controlHeight), juce::Justification::centredLeft, false);
-    }
-
-    void resized() override
-    {
-        auto area = getLocalBounds().reduced (space::m);
-        auto header = area.removeFromTop (controlHeight);
-        on->setBounds (header.removeFromRight (on->getPreferredWidth()).withSizeKeepingCentre (on->getPreferredWidth(), switchHeight));
-        area.removeFromTop (space::s);
-        if (footnote != nullptr)
-            footnote->setBounds (area.removeFromBottom (32));
-
-        if (! combos.empty())
-        {
-            auto row = area.removeFromTop (controlHeight);
-            const auto width = (row.getWidth() - space::s * ((int) combos.size() - 1)) / (int) combos.size();
-            for (auto* c : combos)
-                place (c, row, width);
-            area.removeFromTop (space::s);
-        }
-        if (! switches.empty())
-        {
-            auto row = area.removeFromTop (switchHeight);
-            for (auto* s : switches)
-                place (s, row, space::m);
-            area.removeFromTop (space::m);
-        }
-
-        // The knobs in rows of as many as fit, each row centred.
-        const auto size = Knob::Size::compact;
-        const auto perRow = juce::jmax (1, (area.getWidth() + 2) / (Knob::preferredWidth (size) + 2));
-        for (size_t i = 0; i < knobs.size(); i += (size_t) perRow)
-        {
-            std::vector<Knob*> line (knobs.begin() + (long) i, knobs.begin() + (long) juce::jmin (knobs.size(), i + (size_t) perRow));
-            auto row = area.removeFromTop (Knob::preferredHeight (size));
-            placeKnobs (row.withSizeKeepingCentre (knobRowWidth ((int) line.size(), size, 2), row.getHeight()), line, size, 2);
-            area.removeFromTop (space::s);
-        }
-        if (note != nullptr && rate != nullptr)
-            note->setBounds (rate->getBounds().withSizeKeepingCentre (rate->getWidth() + 6, controlHeight));
-    }
-};
-
-BloomPage::BloomPage (AmpSimProcessor& p) : BlockPage (p, BlockId::bloom, "Bloom", "Three effects in one block")
-{
-    // In the header: Bloom's mix and the order of its effects.
-    mixLabel = &addLabel ("Mix", Text::label, textDim);
-    mixLabel->setJustificationType (juce::Justification::centredRight);
     mix = &addField ("bloom_mix", " %");
     chips = &adopt (std::make_unique<OrderChips> ([&p] { return p.getBloomOrder(); }, [&p] (const juce::StringArray& order) { p.setBloomOrder (order); }));
 
-    crush = &adopt (std::make_unique<EffectCard> (p, "Bitcrush", "bloom_crush_on"));
-    crush->knobs = { &crush->addKnob ("bloom_crush_bits", "Bits", " bits", Knob::Size::compact), &crush->addKnob ("bloom_crush_rate", "Rate", " Hz", Knob::Size::compact),
-                     &crush->addKnob ("bloom_crush_tone", "Tone", " Hz", Knob::Size::compact), &crush->addKnob ("bloom_crush_mix", "Mix", " %", Knob::Size::compact) };
-    crush->switches = { &crush->addSwitch ("bloom_crush_dither", "Dither (hiss, not gated decays)") };
+    crush.title = "Bitcrush";
+    crush.on = &addSwitch ("bloom_crush_on", {});
+    crush.knobs = { &addKnob ("bloom_crush_bits", "Bits", " bits"), &addKnob ("bloom_crush_rate", "Rate", " Hz"),
+                    &addKnob ("bloom_crush_tone", "Tone", " Hz"), &addKnob ("bloom_crush_mix", "Mix", " %") };
+    crush.switches = { &addSwitch ("bloom_crush_dither", "Dither (hiss, not gated decays)") };
 
-    phaser = &adopt (std::make_unique<EffectCard> (p, "Phaser", "bloom_phaser_on"));
-    phaser->combos = { &phaser->addCombo ("bloom_phaser_mode", { "Classic", "Modern", "Vibe" }),
-                       &phaser->addCombo ("bloom_phaser_stages", { "2 stages", "4 stages", "6 stages", "8 stages", "12 stages" }),
-                       &phaser->addCombo ("bloom_phaser_shape", { "Sine", "Triangle" }) };
-    phaser->switches = { &phaser->addSwitch ("bloom_phaser_sync", "Sync"), &phaser->addSwitch ("bloom_phaser_classic_fb", "Feedback (later version)") };
-    phaser->rate = &phaser->addKnob ("bloom_phaser_rate", "Rate", " Hz", Knob::Size::compact);
-    phaser->knobs = { phaser->rate, &phaser->addKnob ("bloom_phaser_depth", "Depth", " %", Knob::Size::compact),
-                      &phaser->addKnob ("bloom_phaser_low", "Low", " Hz", Knob::Size::compact), &phaser->addKnob ("bloom_phaser_high", "High", " Hz", Knob::Size::compact),
-                      &phaser->addKnob ("bloom_phaser_feedback", "Resonance", " %", Knob::Size::compact),
-                      &phaser->addKnob ("bloom_phaser_stereo", "Stereo", " deg", Knob::Size::compact), &phaser->addKnob ("bloom_phaser_mix", "Mix", " %", Knob::Size::compact) };
-    phaser->note = &phaser->addCombo ("bloom_phaser_note", noteNames());
+    phaser.title = "Phaser";
+    phaser.on = &addSwitch ("bloom_phaser_on", {});
+    phaser.combos = { { "Mode", &addCombo ("bloom_phaser_mode", { "Classic", "Modern", "Vibe" }) },
+                      { "Stages", &addCombo ("bloom_phaser_stages", { "2 stages", "4 stages", "6 stages", "8 stages", "12 stages" }) },
+                      { "Shape", &addCombo ("bloom_phaser_shape", { "Sine", "Triangle" }) } };
+    phaser.switches = { &addSwitch ("bloom_phaser_sync", "Sync"), &addSwitch ("bloom_phaser_classic_fb", "Feedback (later version)") };
+    phaser.rate = &addKnob ("bloom_phaser_rate", "Rate", " Hz");
+    phaser.knobs = { phaser.rate, &addKnob ("bloom_phaser_depth", "Depth", " %"), &addKnob ("bloom_phaser_low", "Low", " Hz"),
+                     &addKnob ("bloom_phaser_high", "High", " Hz"), &addKnob ("bloom_phaser_feedback", "Resonance", " %"),
+                     &addKnob ("bloom_phaser_stereo", "Stereo", " deg"), &addKnob ("bloom_phaser_mix", "Mix", " %") };
+    phaser.note = &addCombo ("bloom_phaser_note", noteNames());
 
-    flanger = &adopt (std::make_unique<EffectCard> (p, "Flanger", "bloom_flanger_on"));
-    flanger->combos = { &flanger->addCombo ("bloom_flanger_shape", { "Triangle", "Sine", "Random" }) };
-    flanger->switches = { &flanger->addSwitch ("bloom_flanger_sync", "Sync"), &flanger->addSwitch ("bloom_flanger_negative", "Negative"),
-                          &flanger->addSwitch ("bloom_flanger_tz", "Through-zero") };
-    flanger->rate = &flanger->addKnob ("bloom_flanger_rate", "Rate", " Hz", Knob::Size::compact);
-    flanger->knobs = { &flanger->addKnob ("bloom_flanger_manual", "Manual", " ms", Knob::Size::compact),
-                       &flanger->addKnob ("bloom_flanger_depth", "Depth", " %", Knob::Size::compact), flanger->rate,
-                       &flanger->addKnob ("bloom_flanger_feedback", "Feedback", " %", Knob::Size::compact),
-                       &flanger->addKnob ("bloom_flanger_stereo", "Stereo", " deg", Knob::Size::compact), &flanger->addKnob ("bloom_flanger_mix", "Mix", " %", Knob::Size::compact) };
-    flanger->note = &flanger->addCombo ("bloom_flanger_note", noteNames());
-    flanger->switches[2]->setTooltip ("Through-zero flanging: the dry signal is delayed 5 ms (reported to the host) while it's on");
-    latency = flanger->footnote = &flanger->addLabel ({}, Text::label, warn);
-    latency->setJustificationType (juce::Justification::centredLeft);
+    flanger.title = "Flanger";
+    flanger.on = &addSwitch ("bloom_flanger_on", {});
+    flanger.combos = { { "Shape", &addCombo ("bloom_flanger_shape", { "Triangle", "Sine", "Random" }) } };
+    flanger.switches = { &addSwitch ("bloom_flanger_sync", "Sync"), &addSwitch ("bloom_flanger_negative", "Negative"),
+                         &addSwitch ("bloom_flanger_tz", "Through-zero") };
+    flanger.rate = &addKnob ("bloom_flanger_rate", "Rate", " Hz");
+    flanger.knobs = { &addKnob ("bloom_flanger_manual", "Manual", " ms"), &addKnob ("bloom_flanger_depth", "Depth", " %"), flanger.rate,
+                      &addKnob ("bloom_flanger_feedback", "Feedback", " %"), &addKnob ("bloom_flanger_stereo", "Stereo", " deg"),
+                      &addKnob ("bloom_flanger_mix", "Mix", " %") };
+    flanger.note = &addCombo ("bloom_flanger_note", noteNames());
+    flanger.switches[2]->setTooltip ("Through-zero flanging: the dry signal is delayed 5 ms (reported to the host) while it's on");
+    for (auto* e : { &crush, &phaser, &flanger })
+        e->on->setTooltip (e->title + " on or off, inside Bloom");
+    latency = &addLabel ({}, Text::label, warn);
+    latency->setJustificationType (juce::Justification::topLeft);
     refresh();
 }
 
-void BloomPage::layoutContent (juce::Rectangle<int> area)
+void BloomPage::describe (InspectorLayout& l)
 {
-    // In the header: the order, then the mix.
-    auto header = headerSpace;
-    mix->setBounds (header.removeFromRight (96).withSizeKeepingCentre (96, controlHeight));
-    header.removeFromRight (space::s);
-    mixLabel->setBounds (header.removeFromRight (32));
-    header.removeFromRight (space::xl);
-    const auto chipsWidth = juce::jmin (header.getWidth(), 420);
-    chips->setBounds (header.removeFromRight (chipsWidth).withSizeKeepingCentre (chipsWidth, 30));
+    l.labelled ("Mix", mix, 24);
+    l.section ("Order");
+    l.row (chips, 30);
 
-    // The three effects side by side, in the order they run.
-    std::map<juce::String, EffectCard*> byName { { "bitcrush", crush }, { "phaser", phaser }, { "flanger", flanger } };
-    const auto width = (area.getWidth() - 2 * space::m) / 3;
+    // The three effects in the order they run.
+    std::map<juce::String, Effect*> byName { { "bitcrush", &crush }, { "phaser", &phaser }, { "flanger", &flanger } };
     for (const auto& name : shownOrder.isEmpty() ? ampSim.getBloomOrder() : shownOrder)
         if (auto* effect = byName[name])
         {
-            effect->setBounds (area.removeFromLeft (width));
-            area.removeFromLeft (space::m);
+            l.section (effect->title, effect->on);
+            for (const auto& [caption, combo] : effect->combos)
+                l.labelled (caption, combo);
+            l.switches (effect->switches);
+            l.knobs (effect->knobs);
+            l.inCell (effect->note, effect->rate);
         }
+    l.row (latency, 32);
 }
 
 void BloomPage::refresh()
@@ -622,21 +492,23 @@ void BloomPage::refresh()
     {
         shownPhaserMode = mode;
         const auto modern = mode == 1;
-        for (auto* c : std::initializer_list<juce::Component*> { phaser->combos[1], phaser->combos[2], phaser->knobs[2], phaser->knobs[3], phaser->knobs[4] })
+        for (auto* c : std::initializer_list<juce::Component*> { phaser.combos[1].second, phaser.combos[2].second, phaser.knobs[2], phaser.knobs[3], phaser.knobs[4] })
             dim (c, modern);
-        dim (phaser->switches[1], mode == 0);
+        dim (phaser.switches[1], mode == 0);
     }
     if (const auto sync = isOn (state, "bloom_phaser_sync") ? 1 : 0; sync != shownPhaserSync)
     {
         shownPhaserSync = sync;
-        phaser->rate->setVisible (sync == 0);
-        phaser->note->setVisible (sync == 1);
+        phaser.rate->setVisible (sync == 0);
+        phaser.note->setVisible (sync == 1);
+        resized(); // the note takes the rate's caption
     }
     if (const auto sync = isOn (state, "bloom_flanger_sync") ? 1 : 0; sync != shownFlangerSync)
     {
         shownFlangerSync = sync;
-        flanger->rate->setVisible (sync == 0);
-        flanger->note->setVisible (sync == 1);
+        flanger.rate->setVisible (sync == 0);
+        flanger.note->setVisible (sync == 1);
+        resized();
     }
 
     latency->setText (ampSim.getLatencySamples() > 0 ? "Through-zero adds " + juce::String (ampSim.getLatencySamples() * 1000.0 / 48000.0, 1)
@@ -660,23 +532,27 @@ ChorusPage::ChorusPage (AmpSimProcessor& p) : BlockPage (p, BlockId::chorus, "Ch
     highPassHz = &addKnob ("chorus_hp_freq", "Protect below", " Hz");
     analog = &addSwitch ("chorus_analog", "Analog");
     noise = &addSwitch ("chorus_noise", "Noise");
-    highPass = &addSwitch ("chorus_hp", "On");
+    highPass = &addSwitch ("chorus_hp", "Low-end protection");
     mode->setTooltip ("Classic: one voice. Dimension: a wide, gentle doubling that cancels in mono. Tri: three voices.");
     highPass->setTooltip ("Low-end protection: below the frequency only the dry signal passes, so the low strings stay solid");
     refresh();
 }
 
-void ChorusPage::layoutContent (juce::Rectangle<int> area)
+void ChorusPage::describe (InspectorLayout& l)
 {
-    auto toolbar = area.removeFromTop (controlHeight);
-    place (mode, toolbar, 140);
-    place (shape, toolbar, 130, controlHeight, space::l);
-    place (sync, toolbar);
-    area.removeFromTop (space::m);
-
-    layoutCards (area.removeFromTop (knobCardHeight()), { { "Speed and depth", { { rate }, { depth } } }, { "Blend", { { mix }, { width } } },
-                                                          { "Low-end protection", { { highPass }, { highPassHz } } }, { "Character", { { analog }, { noise } } } });
-    placeInKnobCell (nullptr, note, rate->getBounds());
+    l.labelled ("Mode", mode);
+    l.labelled ("Shape", shape);
+    l.switches ({ sync });
+    l.section ("Speed and depth");
+    l.knobs ({ rate, depth });
+    l.inCell (note, rate);
+    l.section ("Blend");
+    l.knobs ({ mix, width });
+    l.section ("Low end");
+    l.switches ({ highPass });
+    l.knobs ({ highPassHz });
+    l.section ("Character");
+    l.switches ({ analog, noise });
 }
 
 void ChorusPage::refresh()
@@ -687,6 +563,7 @@ void ChorusPage::refresh()
     shownSync = synced;
     note->setVisible (synced == 1);
     rate->setVisible (synced == 0);
+    resized(); // the note takes the rate's caption
 }
 
 // ---- DelayPage -------------------------------------------------------------------------------------------
@@ -698,10 +575,8 @@ DelayPage::DelayPage (AmpSimProcessor& p) : BlockPage (p, BlockId::delay, "Delay
     sync = &addSwitch ("delay_sync", "Sync to tempo");
     note = &addCombo ("delay_note", noteNames());
     rightNote = &addCombo ("delay_note_right", noteNames());
-    noteLabel = &addLabel ("Time", Text::label, textDim);
-    rightNoteLabel = &addLabel ("Right time", Text::label, textDim);
-    for (auto* l : { noteLabel, rightNoteLabel })
-        l->setJustificationType (juce::Justification::centred);
+    note->setTooltip ("The time, as a note at the tempo");
+    rightNote->setTooltip ("The right side's time, as a note at the tempo");
 
     time = &addKnob ("delay_time", "Time", " ms");
     rightTime = &addKnob ("delay_time_right", "Right time", " ms");
@@ -721,30 +596,28 @@ DelayPage::DelayPage (AmpSimProcessor& p) : BlockPage (p, BlockId::delay, "Delay
     refresh();
 }
 
-void DelayPage::layoutContent (juce::Rectangle<int> area)
+void DelayPage::describe (InspectorLayout& l)
 {
-    auto toolbar = area.removeFromTop (controlHeight);
-    place (mode, toolbar, 130);
-    place (stereo, toolbar, 130, controlHeight, space::l);
-    place (sync, toolbar);
-    area.removeFromTop (space::m);
-
-    const auto size = knobSizeFor (area.getWidth() - 4 * 24 - 3 * space::m, 9, controlGap);
-    for (auto* knob : { time, rightTime, offset, feedback, mix, lowCut, highCut, modDepth, modRate, duck, tempo })
-        knob->setKnobSize (size);
-    layoutCards (area.removeFromTop (knobCardHeight (size)), { { "Time", { { time }, { rightTime }, { feedback }, { mix } } },
-                                                               { "Tone of the repeats", { { lowCut }, { highCut } } },
-                                                               { "Modulation", { { modDepth }, { modRate } } },
-                                                               { "Ducking", { { duck } } } });
-
+    l.labelled ("Mode", mode);
+    l.labelled ("Stereo", stereo);
+    l.switches ({ sync });
+    l.section ("Time");
+    l.knobs ({ time, rightTime, feedback });
     // The synced times sit where the time knobs are; the offset shares the right time's place.
-    offset->setBounds (rightTime->getBounds());
-    placeInKnobCell (noteLabel, note, time->getBounds());
-    placeInKnobCell (rightNoteLabel, rightNote, rightTime->getBounds());
-
-    area.removeFromTop (space::m);
-    auto row = area.removeFromTop (knobCardHeight (size));
-    layoutCards (row.removeFromLeft (juce::jmin (row.getWidth(), 360)), { { "Tempo, shared by every synced effect", { { tempo }, { tap, 64, 32 } } } });
+    if (l.isPlacing())
+        offset->setBounds (rightTime->getBounds());
+    l.inCell (note, time);
+    l.inCell (rightNote, rightTime);
+    l.section ("Mix and ducking");
+    l.knobs ({ mix, duck });
+    l.section ("Tone of the repeats");
+    l.knobs ({ lowCut, highCut });
+    l.section ("Modulation");
+    l.knobs ({ modDepth, modRate });
+    l.section ("Tempo, for every synced effect");
+    l.knobs ({ tempo });
+    if (l.isPlacing())
+        tap->setBounds (tempo->getBounds().translated (tempo->getWidth() + 8, 0).withSizeKeepingCentre (72, controlHeight));
 }
 
 void DelayPage::refresh()
@@ -757,13 +630,12 @@ void DelayPage::refresh()
 
     shownState = newState;
     note->setVisible (synced);
-    noteLabel->setVisible (synced);
     time->setVisible (! synced);
     const bool dual = layout == 2;
     rightNote->setVisible (synced && dual);
-    rightNoteLabel->setVisible (synced && dual);
     rightTime->setVisible (! synced && dual);
     offset->setVisible (layout == 0);
+    resized(); // the notes take the times' captions
 }
 
 // ---- ReverbPage ------------------------------------------------------------------------------------------
@@ -774,6 +646,7 @@ ReverbPage::ReverbPage (AmpSimProcessor& p) : BlockPage (p, BlockId::reverb, "Re
     freeze = &addSwitch ("reverb_freeze", "Freeze");
     preDelaySync = &addSwitch ("reverb_predelay_sync", "Sync pre-delay");
     preDelayNote = &addCombo ("reverb_predelay_note", noteNames());
+    preDelayNote->setTooltip ("The pre-delay, as a note at the tempo");
     mix = &addKnob ("reverb_mix", "Mix", " %");
     preDelay = &addKnob ("reverb_predelay", "Pre-delay", " ms");
     decay = &addKnob ("reverb_decay", "Decay", " s");
@@ -795,23 +668,20 @@ ReverbPage::ReverbPage (AmpSimProcessor& p) : BlockPage (p, BlockId::reverb, "Re
     refresh();
 }
 
-void ReverbPage::layoutContent (juce::Rectangle<int> area)
+void ReverbPage::describe (InspectorLayout& l)
 {
-    auto toolbar = area.removeFromTop (controlHeight);
-    place (engine, toolbar, 130, controlHeight, space::l);
-    place (freeze, toolbar);
-    place (preDelaySync, toolbar, space::s);
-    place (preDelayNote, toolbar, 100);
-    area.removeFromTop (space::m);
-
-    const auto knobSize = knobSizeFor (area.getWidth() - 2 * 24 - space::m, 11, controlGap);
-    for (auto* knob : { mix, preDelay, decay, size, earlyLate, diffusion, width, lowDecay, highDecay, lowCut, highCut, modDepth, modRate, ducking, shimmer })
-        knob->setKnobSize (knobSize);
-    layoutCards (area.removeFromTop (knobCardHeight (knobSize)), { { "Space", { { mix }, { preDelay }, { decay }, { size }, { earlyLate }, { diffusion }, { width } } },
-                                                                   { "Tone", { { lowDecay }, { highDecay }, { lowCut }, { highCut } } } });
-    area.removeFromTop (space::m);
-    layoutCards (area.removeFromTop (knobCardHeight (knobSize)), { { "Motion", { { modDepth }, { modRate }, { ducking } } },
-                                                                   { "Shimmer (Room and Hall)", { { shimmer }, { shimmerInterval, 84 } } } });
+    l.labelled ("Engine", engine);
+    l.switches ({ freeze, preDelaySync });
+    l.section ("Space");
+    l.knobs ({ mix, decay, size, preDelay, earlyLate, diffusion, width });
+    l.inCell (preDelayNote, preDelay);
+    l.section ("Tone");
+    l.knobs ({ lowDecay, highDecay, lowCut, highCut });
+    l.section ("Motion");
+    l.knobs ({ modDepth, modRate, ducking });
+    l.section ("Shimmer (Room and Hall)");
+    l.knobs ({ shimmer });
+    l.labelled ("Interval", shimmerInterval);
 }
 
 void ReverbPage::refresh()
@@ -821,7 +691,8 @@ void ReverbPage::refresh()
         return;
     shownSync = synced;
     preDelayNote->setVisible (synced == 1);
-    preDelay->setAlpha (synced == 1 ? unusedAlpha : 1.0f);
+    preDelay->setVisible (synced == 0);
+    resized(); // the note takes the pre-delay's caption
 }
 
 } // namespace ui

@@ -573,7 +573,7 @@ public:
             play (p, guitarDI ((int) (0.5 * fs)));
             std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
-            ed.showPage (ui::PageId::amp);
+            ed.selectBlock (ui::BlockId::amp);
             ed.refresh();
             auto& amp = ed.getAmpView();
             expect (amp.getShownGainSteps() == std::vector<float> { 0.0f, 2.5f, 5.0f, 7.5f, 10.0f });

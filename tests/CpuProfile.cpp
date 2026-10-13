@@ -606,9 +606,9 @@ int runGuiBenchmark (double secondsPerPage)
               << editor->getHeight() << " (the window is on screen while it runs), the defaults rig playing\n"
               << "Each page for " << secondsPerPage << " s: the message thread's CPU time (timers, meters, the analyzer, repaints) as a share of one core\n\n";
 
-    const auto measurePage = [&] (ui::PageId page, const juce::String& name)
+    const auto measurePage = [&] (std::function<void()> show, const juce::String& name)
     {
-        ed.showPage (page);
+        show();
         juce::MessageManager::getInstance()->runDispatchLoopUntil (300); // the page's first paint, not measured
         const auto wall0 = juce::Time::getMillisecondCounterHiRes();
         const auto main0 = threadCpuSeconds(), process0 = processCpuSeconds(), audio0 = audioCpu.load();
@@ -620,18 +620,17 @@ int runGuiBenchmark (double secondsPerPage)
                   << num (100.0 * audioThread / wall, 1, 5) << "%,  other threads " << num (100.0 * std::max (0.0, others) / wall, 1, 5) << "%\n";
     };
 
-    for (int i = 0; i < ui::numPages; ++i)
-    {
-        const auto page = (ui::PageId) i;
-        if (page == ui::PageId::tuner)
-        {
-            setParam (*p, "tuner_on", 1.0f);
-            measurePage (page, "tuner (engaged)");
-            setParam (*p, "tuner_on", 0.0f);
-            continue;
-        }
-        measurePage (page, ui::pageName (page));
-    }
+    // The main screen with the stage on each of its modes, then with a few pedals selected, then each overlay.
+    measurePage ([&] { ed.selectBlock (ui::BlockId::amp); }, "main screen, amp");
+    measurePage ([&] { ed.setStageMode (ui::StageMode::cab); }, "main screen, cab");
+    measurePage ([&] { ed.setStageMode (ui::StageMode::eq); }, "main screen, EQ");
+    measurePage ([&] { ed.setStageMode (ui::StageMode::amp); ed.selectBlock (ui::BlockId::gateA); }, "amp, Gate A selected");
+    measurePage ([&] { ed.selectBlock (ui::BlockId::harmonizer); }, "amp, harmonizer selected");
+    measurePage ([&] { ed.selectBlock (ui::BlockId::delay); }, "amp, delay selected");
+    measurePage ([&] { ed.openOverlay (ui::Overlay::tuner); }, "tuner (engaged)");
+    measurePage ([&] { ed.openOverlay (ui::Overlay::settings); }, "settings");
+    measurePage ([&] { ed.openOverlay (ui::Overlay::toneMatch); }, "match tone");
+    ed.closeOverlay();
 
     editor->setVisible (false);
     editor.reset();

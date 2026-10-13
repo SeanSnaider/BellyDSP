@@ -439,19 +439,18 @@ void EqGraph::timerCallback()
 
 // ---- EqPage ----------------------------------------------------------------------------------------------
 
+
 EqPage::EqPage (AmpSimProcessor& p, bool isPost)
     : BlockPage (p, isPost ? BlockId::postEq : BlockId::preEq, "EQ",
-                 isPost ? "After the cab" : "Before the amp"),
-      post (isPost),
+                 isPost ? "After the cab. Its graph is on the stage: pick EQ at the stage's top right" : "Before the amp. Its graph is on the stage: pick EQ at the stage's top right"),
       prefix (isPost ? "eq_post" : "eq_pre")
 {
     using EP = params::EqualizerParameters;
-    graph = &adopt (std::make_unique<EqGraph> (p, prefix, post));
     mode = &addCombo (prefix + "_mode", { "Graphic", "Parametric" });
 
     static const char* sliderNames[] = { "63", "125", "250", "500", "1k", "2k", "4k", "8k", "16k" };
     for (int m = 0; m < ampsim::Equalizer::numGraphicBands; ++m)
-        sliders.push_back (&addFader (EP::sliderId (prefix, m), sliderNames[m], " dB"));
+        sliders.push_back (&addFader (EP::sliderId (prefix, m), sliderNames[m], ""));
 
     for (int b = 0; b < ampsim::Equalizer::numParametricBands; ++b)
     {
@@ -464,34 +463,30 @@ EqPage::EqPage (AmpSimProcessor& p, bool isPost)
     }
 
     const juce::StringArray slopes { "12 dB/oct", "24 dB/oct", "48 dB/oct" };
-    lowCut = &addSwitch (prefix + "_lowcut_on", {});
-    highCut = &addSwitch (prefix + "_highcut_on", {});
-    lowCutFrequency = &addKnob (prefix + "_lowcut_freq", "Frequency", " Hz", Knob::Size::compact);
-    highCutFrequency = &addKnob (prefix + "_highcut_freq", "Frequency", " Hz", Knob::Size::compact);
+    lowCut = &addSwitch (prefix + "_lowcut_on", "Low cut");
+    highCut = &addSwitch (prefix + "_highcut_on", "High cut");
+    lowCutFrequency = &addKnob (prefix + "_lowcut_freq", "Low cut", " Hz");
+    highCutFrequency = &addKnob (prefix + "_highcut_freq", "High cut", " Hz");
     lowCutSlope = &addCombo (prefix + "_lowcut_slope", slopes);
     highCutSlope = &addCombo (prefix + "_highcut_slope", slopes);
     refresh();
 }
 
-EqPage::~EqPage()
-{
-    stopTimer();
-}
+EqPage::~EqPage() = default;
 
 void EqPage::showMode (bool parametric)
 {
+    // Only the mode's own controls show (the other mode's do nothing while it plays).
     for (auto* s : sliders)
         s->setVisible (! parametric);
     for (auto& band : bands)
         for (auto* c : std::initializer_list<juce::Component*> { band.type, band.frequency, band.gain, band.q })
             c->setVisible (parametric);
-    resized(); // the cards follow the mode
-    graph->repaint();
+    resized(); // the column follows the mode (and the inspector, which measures it each refresh, its height)
 }
 
 void EqPage::refresh()
 {
-    graph->refreshCurve();
     const auto parametric = juce::roundToInt (state.getRawParameterValue (prefix + "_mode")->load());
     if (parametric != shownMode)
     {
@@ -500,64 +495,137 @@ void EqPage::refresh()
     }
 }
 
-void EqPage::pageShown()
+void EqPage::describe (InspectorLayout& l)
 {
-    // The analyzer reads this EQ's tap from now on: drop what the ring holds from before.
-    ampSim.setAnalyzerTap (post ? AmpSimProcessor::AnalyzerTap::postSection : AmpSimProcessor::AnalyzerTap::preSection);
+    l.labelled ("Mode", mode);
+    if (shownMode != 1)
+    {
+        // Graphic: the nine octave sliders, five and four to a row.
+        l.section ("Octave bands");
+        constexpr int faderHeight = 132;
+        for (int start = 0; start < (int) sliders.size(); start += 5)
+        {
+            std::vector<juce::Component*> line;
+            for (int m = start; m < juce::jmin ((int) sliders.size(), start + 5); ++m)
+                line.push_back (sliders[(size_t) m]);
+            while (line.size() < 5)
+                line.push_back (nullptr);
+            juce::Rectangle<int> rowArea;
+            l.area (&rowArea, faderHeight);
+            if (l.isPlacing())
+            {
+                const auto w = rowArea.getWidth() / 5;
+                for (auto* c : line)
+                {
+                    const auto cell = rowArea.removeFromLeft (w);
+                    if (c != nullptr)
+                        c->setBounds (cell.reduced (3, 0));
+                }
+            }
+        }
+    }
+    else
+    {
+        // Parametric: each band's type, then its frequency, gain, and Q (the graph's handles are the quick way;
+        // these are for exact values).
+        for (size_t b = 0; b < bands.size(); ++b)
+        {
+            l.section ("Band " + juce::String ((int) b + 1));
+            l.labelled ("Type", bands[b].type);
+            l.fields ({ { "Frequency", bands[b].frequency }, { "Gain", bands[b].gain }, { "Q", bands[b].q } });
+        }
+    }
+
+    l.section ("Cuts");
+    l.switches ({ lowCut, highCut });
+    l.knobs ({ lowCutFrequency, highCutFrequency });
+    l.labelled ("Low slope", lowCutSlope);
+    l.labelled ("High slope", highCutSlope);
+}
+
+// ---- EqStage ---------------------------------------------------------------------------------------------
+
+EqStage::EqStage (AmpSimProcessor& p) : ControlGroup (p)
+{
+    postGraph = std::make_unique<EqGraph> (p, "eq_post", true);
+    preGraph = std::make_unique<EqGraph> (p, "eq_pre", false);
+    addAndMakeVisible (*postGraph);
+    addChildComponent (*preGraph);
+    choice = std::make_unique<Segmented> (juce::StringArray { "Post EQ, after the cab", "Pre EQ, before the amp" });
+    choice->setTooltip ("Which EQ's graph the stage shows (picking an EQ pedal on the board picks it too)");
+    choice->onChange = [this] (int i)
+    {
+        showPre (i == 1);
+        if (onChoose)
+            onChoose (i == 1);
+    };
+    addAndMakeVisible (*choice);
+}
+
+EqStage::~EqStage()
+{
+    stopTimer();
+}
+
+void EqStage::tap()
+{
+    // The analyzer reads the shown EQ's tap from now on: drop what the ring holds from before.
+    ampSim.setAnalyzerTap (pre ? AmpSimProcessor::AnalyzerTap::preSection : AmpSimProcessor::AnalyzerTap::postSection);
     ampSim.getAnalyzerRing().discardAll();
-    graph->getAnalyzer().reset();
+    getShownGraph().getAnalyzer().reset();
+}
+
+void EqStage::showPre (bool shouldShowPre)
+{
+    choice->setSelected (shouldShowPre ? 1 : 0);
+    if (shouldShowPre == pre)
+        return;
+    pre = shouldShowPre;
+    postGraph->setVisible (! pre);
+    preGraph->setVisible (pre);
+    if (showing)
+        tap();
+    refresh();
+}
+
+void EqStage::refresh()
+{
+    getShownGraph().refreshCurve();
+}
+
+void EqStage::pageShown()
+{
+    showing = true;
+    tap();
+    refresh();
     startTimerHz (meterFps);
 }
 
-void EqPage::pageHidden()
+void EqStage::pageHidden()
 {
+    showing = false;
     stopTimer();
-    const auto mine = post ? AmpSimProcessor::AnalyzerTap::postSection : AmpSimProcessor::AnalyzerTap::preSection;
+    const auto mine = pre ? AmpSimProcessor::AnalyzerTap::preSection : AmpSimProcessor::AnalyzerTap::postSection;
     if (ampSim.getAnalyzerTap() == mine)
         ampSim.setAnalyzerTap (AmpSimProcessor::AnalyzerTap::off);
 }
 
-void EqPage::layoutContent (juce::Rectangle<int> area)
+void EqStage::paint (juce::Graphics& g)
 {
-    if (! headerSpace.isEmpty())
-        mode->setBounds (headerSpace.removeFromRight (140).withSizeKeepingCentre (140, controlHeight));
+    // The graph's frame: a hairline box on the stage's dark.
+    g.setColour (bg.withAlpha (0.6f));
+    g.fillRoundedRectangle (postGraph->getBounds().toFloat().expanded (1.0f), radiusControl);
+    g.setColour (line1);
+    g.drawRoundedRectangle (postGraph->getBounds().toFloat().expanded (1.5f), radiusControl, 1.0f);
+}
 
-    // The graph on top; along the bottom, the sliders (graphic) or a card per band (parametric), and the cuts.
-    constexpr int fieldHeight = 23, fieldGap = 3;
-    auto bottom = area.removeFromBottom (cardHeight (4 * fieldHeight + 3 * fieldGap));
-    area.removeFromBottom (space::m);
-    graph->setBounds (area);
-
-    layoutCards (bottom.removeFromRight (juce::jmin (bottom.getWidth() / 2, 2 * 236 + space::m)),
-                 { { "Low cut", { { lowCut }, { lowCutFrequency }, { lowCutSlope, 96 } } },
-                   { "High cut", { { highCut }, { highCutFrequency }, { highCutSlope, 96 } } } });
-    bottom.removeFromRight (space::m);
-
-    if (shownMode != 1)
-    {
-        // Graphic: the nine octave sliders in one card.
-        auto inside = card (bottom, "Octave bands");
-        const auto width = juce::jmin (72, inside.getWidth() / (int) sliders.size());
-        auto faders = inside.withSizeKeepingCentre (width * (int) sliders.size(), inside.getHeight());
-        for (auto* s : sliders)
-            s->setBounds (faders.removeFromLeft (width).reduced (4, 0));
-        return;
-    }
-
-    // Parametric: a card per band, with its type and then its frequency, gain, and Q as fields (the graph's
-    // handles are the quick way; these are for exact values).
-    const auto gap = space::s;
-    const auto width = (bottom.getWidth() - gap * ((int) bands.size() - 1)) / (int) bands.size();
-    for (size_t b = 0; b < bands.size(); ++b)
-    {
-        auto inside = card (bottom.removeFromLeft (width), "Band " + juce::String ((int) b + 1));
-        bottom.removeFromLeft (gap);
-        for (auto* c : std::initializer_list<juce::Component*> { bands[b].type, bands[b].frequency, bands[b].gain, bands[b].q })
-        {
-            c->setBounds (inside.removeFromTop (fieldHeight));
-            inside.removeFromTop (fieldGap);
-        }
-    }
+void EqStage::resized()
+{
+    // The choice on the stage's top line (the stage's own Amp / Cab / EQ control is at its right), the graph under it.
+    choice->setBounds (24, 22, choice->getPreferredWidth(), Segmented::preferredHeight);
+    const auto graph = juce::Rectangle<int> (24, 62, getWidth() - 48, getHeight() - 62 - 40);
+    postGraph->setBounds (graph);
+    preGraph->setBounds (graph);
 }
 
 } // namespace ui

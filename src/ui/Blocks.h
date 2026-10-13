@@ -8,8 +8,10 @@
 namespace ui
 {
 
-/// Everything on the chain strip, in signal order (BUILD_PLAN "Default signal chain"): the input, the
-/// pre section, the amp, Gate B, the cab, the post section, and the output. Each has a page.
+/// Every block of the signal chain, in signal order (BUILD_PLAN "Default signal chain"): the input, the pre
+/// section, the amp, Gate B, the cab, the post section, and the output. On the main screen the pre and post
+/// blocks and Gate B are pedals on the board, the amp and the cab are markers between them, and the selected
+/// block's controls are in the inspector; the input and the output are in Settings.
 enum class BlockId
 {
     input,
@@ -45,8 +47,8 @@ enum class Section
 struct BlockInfo
 {
     BlockId id;
-    const char* name;        // on the chain block and the page's title
-    const char* pageName;    // the page's snapshot name: editor_<pageName>.png
+    const char* name;        // on the pedal, and the inspector's title
+    const char* pageName;    // its permanent short name: snapshots (editor_<pageName>.png) and the selection in the app state
     Section section;
     const char* onParameter; // the block's switch ("" for none)
     bool switchInverted;     // the cab's switch is cab_bypass: on when the parameter is off
@@ -59,31 +61,37 @@ juce::Colour sectionColour (Section section);
 /// A reorderable block of `section` by its saved order name ("gate", "comp", ...), or count if none.
 BlockId blockFor (Section section, const juce::String& orderName);
 
+/// A block by its permanent short name (BlockInfo::pageName; "io" finds the input), or count if none.
+BlockId blockNamed (const juce::String& pageName);
+
 constexpr int numBlocks = (int) BlockId::count;
 
-/// The main area's pages (handoff 2 and 4.4): one per node of the signal chain along the bottom, and the
-/// tuner, opened from the top bar. The effect blocks live on the Pre FX and Post FX pages as tabs; the
-/// EQ node's page shows the post EQ (with a switch to the pre EQ).
-enum class PageId
+/// What the stage shows (its segmented control, top right): the playing amp, the cab, or an EQ's graph.
+enum class StageMode
 {
-    input,
-    preFx,
     amp,
-    eq,
     cab,
-    postFx,
-    output,
-    tuner,
-    toneMatch, // opened from the brand menu (docs/TONE_MATCH.md)
+    eq,
     count
 };
 
-constexpr int numPages = (int) PageId::count;
+constexpr int numStageModes = (int) StageMode::count;
 
-/// A page's permanent name (its snapshot name, and the app state's "page last shown").
-const char* pageName (PageId page);
+/// A stage mode's permanent name (the app state's "stage last shown", and snapshots), and its label.
+const char* stageModeName (StageMode mode);
+const char* stageModeLabel (StageMode mode);
 
-/// The page a block's editor is on (Gate B is on the Pre FX page's gate tab, with Gate A).
-PageId pageFor (BlockId block);
+/// What opens over the main screen and closes back to it: the tuner, the Match tone page, and Settings (the
+/// Input and Output pages: the levels, the limiter, the CPU saver, A/B, the tempo, MIDI).
+enum class Overlay
+{
+    none,
+    tuner,
+    toneMatch,
+    settings
+};
+
+/// An overlay's permanent name (snapshots).
+const char* overlayName (Overlay overlay);
 
 } // namespace ui

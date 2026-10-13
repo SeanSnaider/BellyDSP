@@ -51,45 +51,56 @@ juce::Colour sectionColour (Section section)
     return theme::sectionInOut;
 }
 
-const char* pageName (PageId page)
-{
-    switch (page)
-    {
-        case PageId::input:  return "input";
-        case PageId::preFx:  return "pre_fx";
-        case PageId::amp:    return "amp";
-        case PageId::eq:     return "eq";
-        case PageId::cab:    return "cab";
-        case PageId::postFx: return "post_fx";
-        case PageId::output: return "output";
-        case PageId::tuner:  return "tuner";
-        case PageId::toneMatch: return "tone_match";
-        case PageId::count:  break;
-    }
-    return "amp";
-}
-
-PageId pageFor (BlockId block)
-{
-    if (block == BlockId::input)
-        return PageId::input;
-    if (block == BlockId::output)
-        return PageId::output;
-    if (block == BlockId::amp)
-        return PageId::amp;
-    if (block == BlockId::cab)
-        return PageId::cab;
-    if (block == BlockId::gateB)
-        return PageId::preFx;
-    return info (block).section == Section::post ? PageId::postFx : PageId::preFx;
-}
-
 BlockId blockFor (Section section, const juce::String& orderName)
 {
     for (const auto& b : blocks)
         if (b.section == section && orderName == b.orderName)
             return b.id;
     return BlockId::count;
+}
+
+BlockId blockNamed (const juce::String& name)
+{
+    for (const auto& b : blocks)
+        if (name == b.pageName)
+            return b.id;
+    return BlockId::count;
+}
+
+const char* stageModeName (StageMode mode)
+{
+    switch (mode)
+    {
+        case StageMode::cab:   return "cab";
+        case StageMode::eq:    return "eq";
+        case StageMode::amp:
+        case StageMode::count: break;
+    }
+    return "amp";
+}
+
+const char* stageModeLabel (StageMode mode)
+{
+    switch (mode)
+    {
+        case StageMode::cab:   return "Cab";
+        case StageMode::eq:    return "EQ";
+        case StageMode::amp:
+        case StageMode::count: break;
+    }
+    return "Amp";
+}
+
+const char* overlayName (Overlay overlay)
+{
+    switch (overlay)
+    {
+        case Overlay::tuner:     return "tuner";
+        case Overlay::toneMatch: return "tone_match";
+        case Overlay::settings:  return "settings";
+        case Overlay::none:      break;
+    }
+    return "none";
 }
 
 } // namespace ui

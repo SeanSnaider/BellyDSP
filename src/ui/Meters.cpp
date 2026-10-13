@@ -21,8 +21,8 @@ float toDb (float linear)
 
 LevelMeter::LevelMeter (juce::String title, int numChannels) : label (std::move (title)), channels ((size_t) juce::jmax (1, numChannels))
 {
-    setTooltip ("Peak level, -60 to 0 dBFS. A bright cap at the end means a clip; click to clear it. On the Out meter, a bright cap with "
-                "\"limit\" under it means the output limiter is holding the level under its ceiling (-1 dBFS unless changed on the Output page).");
+    setTooltip ("Peak level, -60 to 0 dBFS. A red cap at the end means a clip; click to clear it. On the Out meter, a bright cap with "
+                "\"limit\" under it means the output limiter is holding the level under its ceiling (-1 dBFS unless changed in Settings, Output).");
     setMouseCursor (juce::MouseCursor::PointingHandCursor);
 }
 
@@ -126,7 +126,8 @@ void LevelMeter::paint (juce::Graphics& g)
     }
     if (isClipped() || isLimiting())
     {
-        g.setColour (ink);
+        // A latched clip is the one thing drawn in red; the limiter working is ink (the protection doing its job).
+        g.setColour (isClipped() ? clip : ink);
         g.fillRect (bar.withLeft (bar.getRight() - 3.0f));
     }
     if (isLimiting())
