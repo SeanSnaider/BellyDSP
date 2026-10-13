@@ -143,29 +143,44 @@ public:
             expect (ed.getInspector().getContent() == &ed.getAmpView().getPanel());
             expect (ed.getBoard().getSelected() == ui::BlockId::amp);
 
-            // Every pedal on the board, in chain order: the pre section, the amp, Gate B, the cab on the top row; the
-            // post section on the bottom row. Every pedal inside the board.
-            const auto& board = ed.getBoard();
+            // Every pedal on the board, in three tabs (RD5-1): the pre section; the amp, Gate B, and the cab; the post
+            // section. Pre FX is open by default. Each tab's gear is on one row under the strip, left to right in chain
+            // order, inside the board, at a scale larger than the two-row board's 0.665.
+            auto& board = ed.getBoard();
+            expect (board.getTab() == ui::BoardTab::pre, "Pre FX by default");
             int pedals = 0;
-            juce::StringArray tops, bottoms;
             for (int b = 0; b < ui::numBlocks; ++b)
-                if (auto* pedal = board.getPedal ((ui::BlockId) b))
-                {
+                if (board.getPedal ((ui::BlockId) b) != nullptr)
                     ++pedals;
-                    expect (board.getLocalBounds().contains (pedal->getBounds()), ui::info ((ui::BlockId) b).name);
-                }
             expectEquals (pedals, 14);
-            for (auto id : board.getShownOrder (ui::Section::pre))
-                tops.add (ui::info (id).name);
-            for (auto id : board.getShownOrder (ui::Section::post))
-                bottoms.add (ui::info (id).name);
-            expect (board.getPedal (ui::BlockId::preEq)->getRight() <= board.getMarker (ui::BlockId::amp)->getX());
-            expect (board.getMarker (ui::BlockId::amp)->getRight() <= board.getPedal (ui::BlockId::gateB)->getX());
-            expect (board.getPedal (ui::BlockId::gateB)->getRight() <= board.getMarker (ui::BlockId::cab)->getX());
-            expect (board.getPedal (ui::BlockId::postEq)->getY() > board.getPedal (ui::BlockId::gateA)->getY());
-            expectGreaterThan (board.getPedalScale(), 0.6f);
-            logMessage ("  -> top row: " + tops.joinIntoString (", ") + ", the amp, Gate B, the cab; bottom row: " + bottoms.joinIntoString (", ")
-                        + "; pedals at " + juce::String (board.getPedalScale(), 3) + " of their size");
+            juce::StringArray rows;
+            for (int t = 0; t < ui::numBoardTabs; ++t)
+            {
+                const auto tab = (ui::BoardTab) t;
+                board.setTab (tab);
+                const auto blocks = board.getTabBlocks (tab);
+                juce::StringArray names;
+                const juce::Component* previous = nullptr;
+                for (auto id : blocks)
+                {
+                    auto* c = board.getPedal (id) != nullptr ? board.getPedal (id) : board.getMarker (id);
+                    expect (c != nullptr && c->isVisible() && board.isShown (id), ui::info (id).name);
+                    expect (board.getLocalBounds().contains (c->getBounds()), ui::info (id).name + juce::String (" inside the board"));
+                    expect (c->getY() >= board.getTabStrip().getBottom(), "under the strip");
+                    if (previous != nullptr)
+                    {
+                        expect (previous->getRight() <= c->getX(), "in chain order, not overlapping");
+                        expectEquals (c->getY(), previous->getY(), "one row");
+                    }
+                    previous = c;
+                    names.add (id == ui::BlockId::amp ? juce::String ("the amp") : id == ui::BlockId::cab ? juce::String ("the cab") : juce::String (ui::info (id).name));
+                }
+                expectGreaterThan (board.getPedalScale (tab), 0.75f, ui::boardTabLabel (tab));
+                rows.add (juce::String (ui::boardTabLabel (tab)) + " (" + names.joinIntoString (", ") + ") at " + juce::String (board.getPedalScale (tab), 3));
+            }
+            expect (board.getTabBlocks (ui::BoardTab::ampCab) == std::vector<ui::BlockId> { ui::BlockId::amp, ui::BlockId::gateB, ui::BlockId::cab });
+            board.setTab (ui::BoardTab::pre);
+            logMessage ("  -> " + rows.joinIntoString ("; ") + " of their size; the strip " + board.getTabStrip().getBounds().toString());
         }
 
         beginTest ("selecting a pedal: a click on it shows its every control in the inspector and raises it; the amp's knobs by default");
@@ -185,7 +200,10 @@ public:
                 expect (id.startsWith ("amp") || id == "input_gain" || id == "output_gain", "not the amp's: " + id);
             expectEquals (ampIds.size(), 7 * AmpSimProcessor::numAmps + 3, "the amps' seven knobs each (only the playing amp's shown), the switch, in and out");
 
-            // A click on the delay pedal (above its footswitch): its page in the inspector, nothing switched.
+            // A click on the delay pedal (above its footswitch), on the Post FX tab: its page in the inspector, nothing
+            // switched.
+            click (board.getTabStrip(), board.getTabArea (ui::BoardTab::post).getCentre());
+            expect (board.isShown (ui::BlockId::delay));
             auto& delay = *board.getPedal (ui::BlockId::delay);
             const auto foot = board.getFootswitchArea (ui::BlockId::delay);
             click (delay, { foot.getCentreX(), foot.getY() - 30.0f });
@@ -215,7 +233,8 @@ public:
             }
             expectEquals (ed.getPage (ui::BlockId::reverb).getGenericCount(), 0); // the pages cover their blocks themselves
 
-            // The amp marker selects the amp, and the stage shows it; the cab marker the cab.
+            // The amp marker selects the amp, and the stage shows it; the cab marker the cab (on the Amp & Cab tab).
+            click (board.getTabStrip(), board.getTabArea (ui::BoardTab::ampCab).getCentre());
             click (*board.getMarker (ui::BlockId::cab), { 30.0f, 40.0f });
             ed.finishAnimations();
             expect (ed.getSelectedBlock() == ui::BlockId::cab && ed.getStageMode() == ui::StageMode::cab);
@@ -347,6 +366,229 @@ public:
                         "build/proof/redesign/board.png, board_delay_crop.png");
         }
 
+        beginTest ("board tabs: a click on a tab shows its blocks and hides the others; the LED strips mirror every block's switch and its section's, open or not");
+        {
+            AmpSimProcessor p;
+            std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+            auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
+            auto& board = ed.getBoard();
+            auto& strip = board.getTabStrip();
+
+            // Each tab by a click anywhere on it (its name, or its LEDs): its blocks show and every other tab's hide; the
+            // pre and post sections' switches show on their own tabs only. The open tab is app state, not a parameter.
+            const auto paramsBefore = p.getParameters().size();
+            board.setTab (ui::BoardTab::post); // so that the first click (Pre FX) changes the tab
+            juce::StringArray shown;
+            for (int t = 0; t < ui::numBoardTabs; ++t)
+            {
+                const auto tab = (ui::BoardTab) t;
+                const auto area = board.getTabArea (tab);
+                const auto at = t == 1 ? board.getTabLedCentre (tab, 1) : juce::Point<float> (area.getX() + 20.0f, area.getCentreY());
+                click (strip, at);
+                expect (board.getTab() == tab, ui::boardTabLabel (tab));
+                int visible = 0;
+                for (int b = 0; b < ui::numBlocks; ++b)
+                {
+                    const auto id = (ui::BlockId) b;
+                    if (board.getPedal (id) == nullptr && board.getMarker (id) == nullptr)
+                        continue;
+                    expect (board.isShown (id) == (ui::boardTabFor (id) == tab), juce::String (ui::boardTabLabel (tab)) + ": " + ui::info (id).name);
+                    visible += board.isShown (id) ? 1 : 0;
+                }
+                expectEquals (visible, (int) board.getTabBlocks (tab).size());
+                expect (board.getSectionSwitch (ui::Section::pre)->isVisible() == (tab == ui::BoardTab::pre));
+                expect (board.getSectionSwitch (ui::Section::post)->isVisible() == (tab == ui::BoardTab::post));
+                expectEquals (p.parameters.state.getProperty ("uiBoardTab").toString(), juce::String (ui::boardTabName (tab)));
+                shown.add (juce::String (ui::boardTabLabel (tab)) + " " + juce::String (visible));
+            }
+            expectEquals (p.getParameters().size(), paramsBefore);
+            // A right-click on the strip opens nothing.
+            strip.mouseDown (mouseEvent (strip, board.getTabArea (ui::BoardTab::pre).getCentre(), juce::ModifierKeys::rightButtonModifier));
+            strip.mouseUp (mouseEvent (strip, board.getTabArea (ui::BoardTab::pre).getCentre(), juce::ModifierKeys::rightButtonModifier));
+            expect (board.getTab() == ui::BoardTab::post);
+
+            // The LEDs, from the parameters, on every tab (the Post FX tab is open): the overdrive and the delay on, the
+            // cab off, Gate B on; then each section switched off.
+            for (const auto* id : { "gate_a_on", "comp_pre_on", "boost_on", "eq_pre_on", "eq_post_on", "comp_post_on", "harm_on", "mv_on", "bloom_on", "chorus_on",
+                                    "reverb_on" })
+                setParam (p, id, 0.0f);
+            setParam (p, "od_on", 1.0f);
+            setParam (p, "delay_on", 1.0f);
+            setParam (p, "gate_b_on", 1.0f);
+            setParam (p, "amp_bypass", 0.0f);
+            setParam (p, "cab_bypass", 1.0f);
+            board.refresh();
+            const auto ledsSay = [&board] (ui::BoardTab t)
+            {
+                juce::String text;
+                for (const auto& led : board.getTabLeds (t))
+                    text << (led.dimmed ? (led.lit ? "o" : "_") : (led.lit ? "O" : "."));
+                return text;
+            };
+            const auto check = [&] (const juce::String& when)
+            {
+                for (int t = 0; t < ui::numBoardTabs; ++t)
+                {
+                    const auto tab = (ui::BoardTab) t;
+                    const auto leds = board.getTabLeds (tab);
+                    const auto blocks = board.getTabBlocks (tab);
+                    expectEquals ((int) leds.size(), (int) blocks.size());
+                    for (size_t i = 0; i < leds.size(); ++i)
+                    {
+                        const auto id = blocks[i];
+                        const auto& bi = ui::info (id);
+                        const auto parameter = id == ui::BlockId::amp ? juce::String ("amp_bypass") : juce::String (bi.onParameter);
+                        const auto inverted = id == ui::BlockId::amp || bi.switchInverted;
+                        const auto on = (getParam (p, parameter) >= 0.5f) != inverted;
+                        const auto sectionOff = (bi.section == ui::Section::pre && getParam (p, "pre_fx_on") < 0.5f)
+                                                || (bi.section == ui::Section::post && getParam (p, "post_fx_on") < 0.5f);
+                        expect (leds[i].id == id && leds[i].lit == on && leds[i].dimmed == sectionOff, when + ": " + bi.name);
+                    }
+                }
+            };
+            check ("both sections on");
+            const auto allOn = ledsSay (ui::BoardTab::pre) + " | " + ledsSay (ui::BoardTab::ampCab) + " | " + ledsSay (ui::BoardTab::post);
+            expectEquals (ledsSay (ui::BoardTab::ampCab), juce::String ("OO."));
+            setParam (p, "pre_fx_on", 0.0f);
+            board.refresh();
+            check ("the pre section off");
+            // Gate B isn't in the pre section (the chain bypasses it by gate_b_on alone): neither its LED nor its pedal dims.
+            expect (! board.getTabLeds (ui::BoardTab::ampCab)[1].dimmed && ! board.isDimmed (ui::BlockId::gateB));
+            expect (board.isDimmed (ui::BlockId::overdrive) && board.isLit (ui::BlockId::overdrive));
+            setParam (p, "post_fx_on", 0.0f);
+            board.refresh();
+            check ("both sections off");
+            const auto bothOff = ledsSay (ui::BoardTab::pre) + " | " + ledsSay (ui::BoardTab::ampCab) + " | " + ledsSay (ui::BoardTab::post);
+
+            // As drawn: a lit LED is orange, an off one isn't, a dimmed lit one is a darker orange, on a tab that isn't
+            // open (Pre FX, with the Post FX tab open).
+            const auto image = strip.createComponentSnapshot (strip.getLocalBounds(), true, 2.0f);
+            const auto pixel = [&] (ui::BoardTab t, int index) { return image.getPixelAt (juce::roundToInt (board.getTabLedCentre (t, index).x * 2.0f), juce::roundToInt (board.getTabLedCentre (t, index).y * 2.0f)); };
+            const auto preOrder = board.getTabBlocks (ui::BoardTab::pre);
+            const auto odIndex = (int) (std::find (preOrder.begin(), preOrder.end(), ui::BlockId::overdrive) - preOrder.begin());
+            const auto boostIndex = (int) (std::find (preOrder.begin(), preOrder.end(), ui::BlockId::boost) - preOrder.begin());
+            const auto litDimmed = pixel (ui::BoardTab::pre, odIndex), off = pixel (ui::BoardTab::pre, boostIndex);
+            const auto litAmp = pixel (ui::BoardTab::ampCab, 0), offCab = pixel (ui::BoardTab::ampCab, 2);
+            const auto orange = [] (juce::Colour c) { return c.getRed() > 90 && c.getRed() > c.getBlue() + 60 && c.getHue() * 360.0f > 15.0f && c.getHue() * 360.0f < 50.0f; };
+            expect (orange (litAmp) && litAmp.getBrightness() > 0.85f, litAmp.toDisplayString (false));
+            expect (orange (litDimmed) && litDimmed.getBrightness() < litAmp.getBrightness() * 0.8f, litDimmed.toDisplayString (false));
+            expect (! orange (off) && ! orange (offCab) && off.getBrightness() < 0.3f, off.toDisplayString (false) + " " + offCab.toDisplayString (false));
+            setParam (p, "pre_fx_on", 1.0f);
+            setParam (p, "post_fx_on", 1.0f);
+            board.refresh();
+            logMessage ("  -> tabs clicked, blocks shown: " + shown.joinIntoString (", ") + " (no parameter added); the LEDs (O lit, . off, o lit and dimmed, _ off "
+                        "and dimmed), Pre | Amp & Cab | Post: " + allOn + " with both sections on, " + bothOff + " with both off; drawn on the closed Pre FX tab: "
+                        "the overdrive's (lit, section off) #" + litDimmed.toDisplayString (false) + ", the boost's (off) #" + off.toDisplayString (false)
+                        + "; the amp's (lit) #" + litAmp.toDisplayString (false) + ", the cab's (off) #" + offCab.toDisplayString (false));
+        }
+
+        beginTest ("board tabs: a selection from outside the board opens its tab (the stage's Amp, Cab, and EQ, the EQ view's choice, code); the tab is "
+                   "remembered when the editor reopens");
+        {
+            AmpSimProcessor p;
+            std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+            auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
+            auto& board = ed.getBoard();
+            auto& control = ed.getStage().getModeControl();
+            juce::StringArray seen;
+            const auto saw = [&] (const juce::String& what) { seen.add (what + ": " + ui::boardTabLabel (board.getTab())); };
+
+            expect (board.getTab() == ui::BoardTab::pre && ed.getSelectedBlock() == ui::BlockId::amp, "first start: the amp selected, Pre FX open");
+            click (control, control.optionArea (1).getCentre()); // the stage's Cab
+            expect (ed.getSelectedBlock() == ui::BlockId::cab && board.getTab() == ui::BoardTab::ampCab);
+            saw ("the stage's Cab");
+            ed.selectBlock (ui::BlockId::delay);
+            expect (board.getTab() == ui::BoardTab::post && board.isShown (ui::BlockId::delay));
+            saw ("the delay selected in code");
+            click (control, control.optionArea (0).getCentre()); // the stage's Amp
+            expect (ed.getSelectedBlock() == ui::BlockId::amp && board.getTab() == ui::BoardTab::ampCab);
+            saw ("the stage's Amp");
+            // The stage's EQ selects the EQ pedal it shows (the post EQ first), and the board opens that pedal's tab
+            // (RD5-5): the EQ view's choice moves it to the pre EQ's tab.
+            click (control, control.optionArea (2).getCentre());
+            expect (ed.getSelectedBlock() == ui::BlockId::postEq && board.getTab() == ui::BoardTab::post);
+            saw ("the stage's EQ");
+            auto& choice = ed.getEqStage().getChoice();
+            click (choice, choice.optionArea (1).getCentre());
+            expect (ed.getSelectedBlock() == ui::BlockId::preEq && board.getTab() == ui::BoardTab::pre, ui::boardTabLabel (board.getTab()));
+            saw ("the EQ view's Pre");
+            ed.selectBlock (ui::BlockId::gateB);
+            expect (board.getTab() == ui::BoardTab::ampCab);
+            saw ("Gate B selected in code");
+
+            // A tab picked by hand stays until the selection moves, and the tab open when the editor closes is the one it
+            // opens on, whatever is selected.
+            click (board.getTabStrip(), board.getTabArea (ui::BoardTab::post).getCentre());
+            expect (board.getTab() == ui::BoardTab::post && ed.getSelectedBlock() == ui::BlockId::gateB, "a tab picked by hand keeps the selection");
+            editor.reset();
+            std::unique_ptr<juce::AudioProcessorEditor> again (p.createEditor());
+            auto& ed2 = dynamic_cast<AmpSimEditor&> (*again);
+            expect (ed2.getBoard().getTab() == ui::BoardTab::post && ed2.getSelectedBlock() == ui::BlockId::gateB);
+            logMessage ("  -> " + seen.joinIntoString ("; ") + "; Post FX picked by hand with Gate B selected, and a new editor opened on Post FX with Gate B "
+                        "still selected");
+        }
+
+        beginTest ("board tabs: on Pre FX and Post FX a drag reorders the section, a footswitch toggles as one undo step with its LED's bloom, a right-click is MIDI learn");
+        {
+            AmpSimProcessor p;
+            p.prepareToPlay (fs, blockSize);
+            std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+            auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
+            auto& board = ed.getBoard();
+            juce::StringArray log;
+
+            for (const auto tab : { ui::BoardTab::pre, ui::BoardTab::post })
+            {
+                click (board.getTabStrip(), board.getTabArea (tab).getCentre());
+                const auto section = tab == ui::BoardTab::pre ? ampsim::Chain::Section::pre : ampsim::Chain::Section::post;
+                const auto order = board.getTabBlocks (tab);
+                const auto first = order[0], second = order[1];
+
+                // The first pedal dragged onto the second's place: the section's order changes (the chain's dip applies it).
+                auto& pedal = *board.getPedal (first);
+                expect (pedal.isVisible());
+                const auto dx = (float) (board.getPedal (second)->getBounds().getCentreX() - pedal.getBounds().getCentreX());
+                board.dragPedal (first, dx);
+                const auto saved = p.getSectionOrder (section);
+                expect (saved[0] == juce::String (ui::info (second).orderName) && saved[1] == juce::String (ui::info (first).orderName), saved.joinIntoString (", "));
+                expect (board.getTabBlocks (tab)[1] == first && board.getPedal (first)->getX() > board.getPedal (second)->getX());
+                play (p, 0.05);
+                expect (p.getChain().getAppliedOrder (section).size() == order.size());
+
+                // A footswitch click (the second pedal, now first): on, lit with its bloom, one undo step; the tab's LED
+                // follows.
+                const auto id = second;
+                const auto parameter = juce::String (ui::info (id).onParameter);
+                setParam (p, parameter, 0.0f);
+                board.refresh();
+                auto& foot = *board.getPedal (id);
+                const auto area = board.getFootswitchArea (id);
+                p.parameters.copyState();
+                p.undoManager.clearUndoHistory();
+                ed.mouseDown (mouseEvent (foot, area.getCentre()));
+                click (foot, area.getCentre());
+                board.refresh();
+                expectEquals (getParam (p, parameter), 1.0f, parameter);
+                expect (board.isLit (id) && board.isGlowing (id), "lit, blooming");
+                expect (board.getTabLeds (tab)[0].id == id && board.getTabLeds (tab)[0].lit);
+                p.parameters.copyState();
+                expect (p.undoManager.undo());
+                board.refresh();
+                expectEquals (getParam (p, parameter), 0.0f, "one undo step");
+                expect (! board.getTabLeds (tab)[0].lit);
+
+                // A right-click: MIDI learn for its switch (it's tagged), nothing flipped, the tab kept.
+                expectEquals (foot.getProperties()[ui::parameterIdProperty].toString(), parameter);
+                foot.mouseDown (mouseEvent (foot, area.getCentre(), juce::ModifierKeys::rightButtonModifier));
+                foot.mouseUp (mouseEvent (foot, area.getCentre(), juce::ModifierKeys::rightButtonModifier));
+                expectEquals (getParam (p, parameter), 0.0f);
+                expect (board.getTab() == tab);
+                log.add (juce::String (ui::boardTabLabel (tab)) + ": " + ui::info (first).name + " dragged after " + ui::info (second).name + " (" + saved.joinIntoString (", ")
+                         + "), " + parameter + " on by its footswitch and off by one undo, tagged " + parameter);
+            }
+            logMessage ("  -> " + log.joinIntoString ("; "));
+        }
+
         beginTest ("keys: the arrows step the presets, 1 to 8 recall scenes, T opens and closes the tuner, Escape closes an overlay; a clicked knob keeps up and down only");
         {
             AmpSimProcessor p;
@@ -388,6 +630,20 @@ public:
             expect (ed.keyPressed (juce::KeyPress ('t', {}, 't')));
             expect (ed.getOverlay() == ui::Overlay::none && getParam (p, "tuner_on") < 0.5f);
 
+            // [ and ]: the board's previous and next tab, wrapping round (RD5-4).
+            auto& board = ed.getBoard();
+            expect (board.getTab() == ui::BoardTab::pre);
+            juce::StringArray stepped;
+            for (const auto key : { ']', ']', ']', '[', '[' })
+            {
+                expect (ed.keyPressed (juce::KeyPress (key, {}, (juce::juce_wchar) key)));
+                stepped.add (juce::String::charToString ((juce::juce_wchar) key) + " " + ui::boardTabLabel (board.getTab()));
+            }
+            expect (board.getTab() == ui::BoardTab::ampCab, ui::boardTabLabel (board.getTab()));
+            expect (board.isShown (ui::BlockId::gateB) && ! board.isShown (ui::BlockId::gateA) && ! board.isShown (ui::BlockId::delay));
+            expectEquals (p.parameters.state.getProperty ("uiBoardTab").toString(), juce::String ("ampcab"));
+            expect (ed.getSelectedBlock() == ui::BlockId::amp, "a tab key selects nothing");
+
             // Escape closes Settings; with nothing open it's left to the system.
             ed.openOverlay (ui::Overlay::settings);
             expect (ed.keyPressed (juce::KeyPress (juce::KeyPress::escapeKey)));
@@ -407,8 +663,8 @@ public:
             expect (ed.getTopBar().getTunerButton().getTooltip().contains ("(T)"));
             expect (dynamic_cast<juce::Button&> (ed.getScenesBar().getTile (1)).getTooltip().contains ("key 2"));
             logMessage ("  -> Right, Right, Left: \"" + first + "\", \"" + second + "\", \"" + first + "\"; 2 recalled \"" + sceneText
-                        + "\" (lit in the footer); 8 on an empty scene did nothing; T opened and closed the tuner; Escape closed Settings; a clicked knob "
-                        "ignored Right and took Up");
+                        + "\" (lit in the footer); 8 on an empty scene did nothing; T opened and closed the tuner; the tab keys: " + stepped.joinIntoString (", ")
+                        + "; Escape closed Settings; a clicked knob ignored Right and took Up");
         }
 
         beginTest ("the stage: Amp, Cab, and EQ on its segmented control, crossfading; the inspector follows; an EQ pedal picks the EQ shown");
@@ -712,6 +968,16 @@ public:
 
             ed.selectBlock (ui::BlockId::amp);
             const auto main = snap ("main_amp");
+
+            // The board's three tabs, the amp selected (RD5-1): the main screen with each one open.
+            auto& board = ed.getBoard();
+            for (const auto tab : { ui::BoardTab::pre, ui::BoardTab::ampCab, ui::BoardTab::post })
+            {
+                click (board.getTabStrip(), board.getTabArea (tab).getCentre());
+                expect (board.getTab() == tab);
+                snap (juce::String ("main_board_") + ui::boardTabName (tab));
+            }
+            click (board.getTabStrip(), board.getTabArea (ui::BoardTab::pre).getCentre());
             ed.selectBlock (ui::BlockId::overdrive);
             snap ("main_pedal_pre_overdrive");
             ed.selectBlock (ui::BlockId::delay);

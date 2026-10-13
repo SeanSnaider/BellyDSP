@@ -2151,7 +2151,8 @@ public:
                     == std::vector<ui::BlockId> { ui::BlockId::gateA, ui::BlockId::boost, ui::BlockId::preCompressor, ui::BlockId::overdrive, ui::BlockId::preEq });
             expect (board.getPedal (ui::BlockId::boost)->getX() < board.getPedal (ui::BlockId::preCompressor)->getX(), "drawn in the new order");
 
-            // The reverb to the front of the post section.
+            // The reverb to the front of the post section (on the Post FX tab).
+            board.setTab (ui::BoardTab::post);
             drag (ui::BlockId::reverb, centreOf (ui::BlockId::postEq) - juce::Point<float> (20.0f, 0.0f));
             const auto post = p.getSectionOrder (ampsim::Chain::Section::post);
             expect (post[0] == "reverb" && post[1] == "eq", post.joinIntoString (", "));
