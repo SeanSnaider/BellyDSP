@@ -1888,14 +1888,14 @@ public:
             editor->setSize (1280, 760);
             logMessage ("  -> " + wideFile.getFullPathName());
 
-            // The board alone: the pre section switched off (its row dimmed, the pedals keeping their own LEDs), the
+            // The board alone: the pre section switched off (its row dimmed, the pedals keeping their own LEDs: RD4-1), the
             // delay selected (raised).
             setParam (p, "pre_fx_on", 0.0f);
             ampSimEditor->selectBlock (ui::BlockId::delay);
             ampSimEditor->refresh();
             auto& board = ampSimEditor->getBoard();
             expect (! board.getSectionSwitch (ui::Section::pre)->isOn() && board.getSectionSwitch (ui::Section::post)->isOn());
-            expect (board.getPedal (ui::BlockId::boost)->getAlpha() < 1.0f && juce::exactlyEqual (board.getPedal (ui::BlockId::delay)->getAlpha(), 1.0f));
+            expect (board.isDimmed (ui::BlockId::boost) && board.isDimmed (ui::BlockId::delay) == ! board.isLit (ui::BlockId::delay));
             expect (board.getSelected() == ui::BlockId::delay && board.isLit (ui::BlockId::boost));
             const auto boardFile = proofDir().getChildFile ("editor_board.png");
             expect (savePng (board.createComponentSnapshot (board.getLocalBounds(), true, 2.0f), boardFile));
