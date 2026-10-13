@@ -43,7 +43,13 @@ Three pillars, weighted equally (Sean, 2026-10-13):
 
 - **What it is:** a standalone desktop app for macOS and Windows, built with C++ and JUCE. Every pixel is drawn in code.
 - **The window:** a 1280 x 760 canvas that scales with the window.
-- **Pages:** the top bar (presets, A/B, undo, tuner and meters), one page per section of the signal chain (Input, Pre FX, Amp, EQ, Cab, Post FX, Output), the tuner, and the Match tone page, with the chain along the bottom as navigation.
+- **Screens:** one main screen and three overlays (the redesign, on `main` since 2026-10-13):
+  - **Top bar:** the brand's menu, A and B, undo and redo, the preset with its scene between the previous and next arrows, Save, the CPU, the In and Out meters, and Tuner, Match tone, and Settings.
+  - **Stage:** a dark room lit from below. Amp shows the shelf of eight minis and the playing amp's head with its knobs; Cab shows the library, the speaker with its mics, and the room mic; EQ shows the pre or post EQ's graph over its spectrum.
+  - **Board:** under the stage, in three tabs: Pre FX, Amp & Cab (the amp, Gate B, and the cab), and Post FX. Each tab shows a row of LEDs, one per block, so a closed tab still shows what's on; `[` and `]` switch tabs, and selecting a block opens its tab.
+  - **Inspector:** a 300 px column at the right with the selected block's every control.
+  - **Scenes:** the eight scenes along the bottom, with Store and the tuner's reading.
+  - **Overlays:** the tuner, Match tone (six numbered steps), and Settings (Input, Output and MIDI, Audio device, About) open over the stage, the board, and the inspector.
 - **Redesign scope:** the whole look is open (Sean, 2026-10-13: "nothing is sacred"), including the pages the original UI handoff never designed. The website follows whatever the app becomes.
 - **Direction for the redesign:** the category standard, executed at full craft (Sean chose it on 2026-10-13 over the rolled directions):
   - **Layout:** a preset bar on top, the amp on a dark stage, a row of pedals, an inspector for the selected block, and scenes along the bottom.
@@ -63,7 +69,7 @@ Three pillars, weighted equally (Sean, 2026-10-13):
 
 ## Brand Commitments
 
-- **The name and mark:** BellyDSP, and the "B." mark (the app icon, `resources/icon/`).
+- **The name and mark:** BellyDSP, and the "B." mark (the app icon, `resources/icon/`): a white B with an orange (#ff8a00) dot on #121212. The dot was emerald until Sean had it redrawn to match the redesign on 2026-10-13; the site's tab icons are made from it.
 - **The site looks like the app:** the app's dark look, its accent, and the "B." mark carry over to the site (binding, Sean, 2026-10-13). The accent was emerald when Sean said this; the app redesign he chose the same day made it orange (#ff8a00), so the site follows the orange.
 - **Imagery:** real app snapshots rendered by the test suite, no mockups or stock (binding, Sean, 2026-10-13).
 - **The stats page stays public** (binding, Sean, 2026-10-13).
@@ -72,16 +78,15 @@ Three pillars, weighted equally (Sean, 2026-10-13):
 
 ## Evidence on Hand
 
-- **App snapshots,** rendered by the test suite into `build/proof/` and converted to WebP in `site/assets/img/` by `make_site_assets.py`:
-  - the Amp page with each of the eight amps on the shelf (`build/proof/amp_shelf/`);
-  - every block's page (`editor_<page>.png`);
-  - the cab with its built-in IRs, and the tuner;
-  - the tone match page in each state (`build/proof/tone_match/`);
-  - the nine amp heads (`amp_head_<material>.png`).
+- **App snapshots,** rendered by the test suite into `build/proof/redesign/` (the "Main screen", "Overlays", and tone match groups) and `build/proof/site/` (the "Editor parts" group), and converted to WebP in `site/assets/img/` by `make_site_assets.py`:
+  - the main screen (`main_amp.png`) and the board with each tab open (`main_board_pre.png`, `main_board_ampcab.png`, `main_board_post.png`);
+  - every block's inspector (`inspector_<block>.png`) and the stage's Cab and EQ modes (`stage_cab.png`, `stage_eq.png`);
+  - the tuner, Settings, and Match tone overlays in each state (`overlay_tuner_<state>.png`, `overlay_settings_<section>.png`, `overlay_tone_match_<state>.png`);
+  - the eight built-in heads as the stage dresses them (`build/proof/site/head_<material>.png`).
 - **Release notes:** `release-notes/0.1.0.md` and `0.2.0.md`.
 - **Real statistics:** download counts and active-install estimates, from the stats data.
 - **Measured numbers:**
-  - about 8,700 automated checks;
+  - about 8,700 automated checks (the last full run, in `docs/PROGRESS.md`: 8,945 passed in 469 tests);
   - the real-time safety test (0 allocations, frees, locks);
   - CPU per 128-sample buffer, on the Mac and on GitHub's Windows runner;
   - the tone matcher's benchmark results (`docs/TONE_MATCH.md`, `docs/BUILD_PLAN.md` "CPU").

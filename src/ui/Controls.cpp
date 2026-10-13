@@ -750,7 +750,7 @@ void Switch::paintButton (juce::Graphics& g, bool, bool)
     const bool on = getToggleState();
     const auto pill = juce::Rectangle<float> (box.getX(), box.getCentreY() - 8.0f, 28.0f, 16.0f);
 
-    // The border in the text colour at 90% (CSS: border 1px currentColor, opacity .9), emerald when on.
+    // The border in the text colour at 90% (CSS: border 1px currentColor, opacity .9), orange (the accent) when on.
     g.setColour ((on ? accent : textColour).withMultipliedAlpha (0.9f * alpha));
     g.drawRoundedRectangle (pill.reduced (0.5f), 7.5f, 1.0f);
     const auto dot = juce::Rectangle<float> (8.0f, 8.0f).withPosition (pill.getX() + (on ? 15.0f : 3.0f) + 1.0f, pill.getY() + 4.0f);
@@ -854,7 +854,7 @@ void PowerSwitch::paint (juce::Graphics& g)
         return;
     }
 
-    // The 7 px dot: emerald while the block is engaged, line-2 while it's bypassed (hovered: a step lighter).
+    // The 7 px dot: orange (the accent) while the block is engaged, line-2 while it's bypassed (hovered: a step lighter).
     const auto dot = juce::Rectangle<float> (7.0f, 7.0f).withCentre (getLocalBounds().toFloat().getCentre());
     g.setColour (on ? accent : (isMouseOver() ? inkFaint : line2));
     g.fillEllipse (dot);

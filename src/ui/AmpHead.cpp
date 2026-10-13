@@ -398,7 +398,7 @@ void drawBadge (juce::Graphics& g, Material material, juce::Rectangle<float> gri
         case Material::monolith:
         {
             // Geist 600, 24 px, tracking .28em, on a dark plate (padding 10 22 10 30, radius 4) with a 1 px
-            // #262928 ring outside and a 2 px emerald bar along its bottom inside.
+            // #262928 ring outside and a 2 px orange (the accent) bar along its bottom inside.
             const auto f = geist (Weight::semibold, 24.0f);
             const auto spacing = 0.28f * 24.0f;
             const auto widthOf = [&] (const juce::String& s) { return textWidth (f, s) + spacing * (float) s.length(); };

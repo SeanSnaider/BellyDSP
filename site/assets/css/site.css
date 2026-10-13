@@ -63,6 +63,8 @@ a:hover { text-decoration-color: currentColor; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: var(--r-control); }
 code, kbd, pre { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.875em; }
 code { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-mini); padding: 1px 5px; overflow-wrap: anywhere; }
+/* A key, as the app draws its keycaps: a small raised cap in Geist medium. */
+kbd { display: inline-block; min-width: 1.7em; padding: 0 5px; border: 1px solid var(--line-2); border-radius: 4px; background: var(--raised); color: var(--ink); font-family: inherit; font-size: 0.8em; font-weight: 500; line-height: 1.6; text-align: center; vertical-align: 0.1em; }
 pre { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-menu); padding: 12px 14px; overflow-x: auto; margin: 12px 0; }
 pre code { background: none; border: 0; padding: 0; }
 .num, table, .tile .value { font-variant-numeric: tabular-nums; }
@@ -238,20 +240,30 @@ p { margin: 0 0 12px; text-wrap: pretty; }
 figcaption { font-size: 14px; color: var(--ink-dim); margin-top: 14px; max-width: 34em; }
 
 /* The rest of the rig. */
-/* The board as the app lays it out: two rows on the board's tray, PRE and POST, each pedal a cell with its LED
-   lit in the accent (on), the amp and the cab as the steel markers among them. */
-.board { display: grid; gap: 10px; margin: 0 0 40px; padding: 14px 16px; background: var(--tray); border: 1px solid var(--line); border-radius: var(--r-card); }
+/* The board as the app lays it out: three tabs in signal order on the board's tray (Pre FX, Amp & Cab, Post FX), all
+   three shown at once. Each starts with its tab as the app's strip draws it (the stage's pill grammar: a raised
+   hairline capsule, the name, then a 7 px LED per block in the tab, 12 apart, lit in the accent), then its blocks as
+   cells, each pedal with its own LED; the amp and the cab are the raised steel markers, and the cable's ends ("to Amp
+   & Cab", "from Pre FX", "to Post FX") are named in dim ink (the app uses its faint ink; the site keeps text at 4.5:1). */
+.board { display: grid; gap: 0; margin: 0 0 40px; padding: 6px 16px; background: var(--tray); border: 1px solid var(--line); border-radius: var(--r-card); }
+.board .tab { display: grid; gap: 10px; align-items: center; padding: 12px 0; }
+.board .tab + .tab { border-top: 1px solid var(--line); }
+@media (min-width: 720px) { .board .tab { grid-template-columns: 196px minmax(0, 1fr); gap: 16px; } }
+.tab-nm { justify-self: start; display: inline-flex; align-items: center; gap: 10px; height: 30px; margin: 0; padding: 0 13px; border: 1px solid var(--line); border-radius: 15px; background: var(--raised); font-size: 13px; font-weight: 500; color: var(--ink); white-space: nowrap; }
+.leds { display: inline-flex; gap: 5px; }
+.leds i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 1.5px rgba(255, 138, 0, 0.16), 0 0 6px rgba(255, 138, 0, 0.5); }
 .chainrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; padding: 0; list-style: none; font-size: 14px; }
 .chainrow li { display: inline-flex; align-items: center; gap: 9px; border: 1px solid var(--line-2); border-radius: var(--r-control); padding: 7px 13px 7px 11px; background: var(--surface); }
 .chainrow li.on::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px rgba(255, 138, 0, 0.16), 0 0 8px rgba(255, 138, 0, 0.55); }
 .chainrow li.gear { background: var(--raised); border-color: #4a4a4a; font-weight: 500; }
-.chainrow li.row { border: 0; background: none; padding: 7px 4px 7px 0; min-width: 48px; font-size: 12px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; color: var(--ink-dim); }
+.chainrow li.end { border: 0; background: none; padding: 7px 4px; font-size: 13px; color: var(--ink-dim); }
 .rig { display: grid; gap: 40px; }
 @media (min-width: 960px) { .rig { grid-template-columns: minmax(0, 4fr) minmax(0, 7fr); gap: 56px; align-items: start; } }
 .rig-list { margin: 0; }
 .rig-list dt { font-weight: 600; padding-top: 18px; border-top: 1px solid var(--line); }
 .rig-list dt:first-child { padding-top: 0; border-top: 0; }
 .rig-list dd { margin: 6px 0 18px; color: var(--ink-dim); }
+.rig-list dd + dd { margin-top: -8px; }
 
 /* How it's built. */
 .facts { display: grid; gap: 0; margin: 0; }
@@ -402,7 +414,8 @@ summary:hover { color: var(--ink); }
   .tm-match .shot, .rig-cab .shot { overflow-x: auto; overscroll-behavior-x: contain; }
   .tm-match .shot img { width: 640px; max-width: none; }
   .rig-cab .shot img { width: 900px; max-width: none; }
-  .chainrow li.row { flex-basis: 100%; padding-bottom: 0; }
+  /* The cable's named ends would wrap in among the cells; the tabs' order already says where the signal goes. */
+  .chainrow li.end { display: none; }
 }
 /* Phones and tablets: Comet's streaks stay inside the column instead of the screen-edge gutter. */
 @media (max-width: 959px) {
