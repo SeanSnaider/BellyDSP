@@ -406,9 +406,12 @@ public:
 
         g.setFont (font (Text::caption));
         g.setColour (textDim);
+        // Every grid line labelled when there's room; in the Result step's narrow curve, every other one (50, 200, 1k, 5k).
+        const auto narrow = getWidth() < 360;
         for (auto [f, label] : std::initializer_list<std::pair<double, const char*>> { { 50.0, "50" }, { 100.0, "100" }, { 200.0, "200" }, { 500.0, "500" },
                                                                                        { 1000.0, "1k" }, { 2000.0, "2k" }, { 5000.0, "5k" }, { 10000.0, "10k" } })
-            g.drawText (label, juce::Rectangle<float> (xFor (f) + 3.0f, r.getBottom() - 15.0f, 30.0f, 12.0f), juce::Justification::centredLeft, false);
+            if (! narrow || f == 50.0 || f == 200.0 || f == 1000.0 || f == 5000.0)
+                g.drawText (label, juce::Rectangle<float> (xFor (f) + 3.0f, r.getBottom() - 15.0f, 30.0f, 12.0f), juce::Justification::centredLeft, false);
         for (auto db : { -12.0, -6.0, 6.0, 12.0 })
             g.drawText ((db > 0 ? "+" : "") + juce::String (juce::roundToInt (db)), juce::Rectangle<float> (r.getX() + 4.0f, yFor (db) - 13.0f, 30.0f, 12.0f),
                         juce::Justification::centredLeft, false);
@@ -1666,8 +1669,6 @@ void ToneMatchPage::resized()
         in.removeFromTop (6);
         auto separation = in.removeFromTop (Switch::preferredHeight);
         separateSwitch->setBounds (separation.removeFromLeft (separateSwitch->getPreferredWidth()).translated (-Switch::margin, 0));
-        separation.removeFromLeft (space::s);
-        separateNoteArea = separation;
         in.removeFromTop (6);
         hintArea = in;
     }
@@ -1736,7 +1737,7 @@ void ToneMatchPage::resized()
     // 4 Result: the closeness and the settings at the left, the curve at the right.
     {
         auto in = stepInside (resultCard);
-        resultTextArea = in.removeFromLeft (300);
+        resultTextArea = in.removeFromLeft (318);
         in.removeFromLeft (space::l);
         eqCurve->setBounds (in);
     }
@@ -1870,17 +1871,20 @@ void ToneMatchPage::paint (juce::Graphics& g)
         caption (getCleanupCaption(), cleanupCaptionArea, applies ? inkDim : inkFaint);
 
         const auto p = progressArea.toFloat();
-        g.setColour (line2);
-        g.fillRoundedRectangle (p, 3.0f);
-        if (session.isMatching() || session.hasResult())
-        {
-            g.setColour (accent);
-            g.fillRoundedRectangle (p.withWidth (p.getWidth() * (float) (session.isMatching() ? session.getProgress() : 1.0)), 3.0f);
-        }
         if (session.getError().isNotEmpty())
-            overlay::paintNote (g, statusArea.withHeight (juce::jmin (statusArea.getHeight(), 46)), statusText, true);
+        {
+            // The error in full, over the progress bar (which has nothing to say then) to the step's foot.
+            overlay::paintNote (g, statusArea.withTop (progressArea.getY() - 4), statusText, true);
+        }
         else
         {
+            g.setColour (line2);
+            g.fillRoundedRectangle (p, 3.0f);
+            if (session.isMatching() || session.hasResult())
+            {
+                g.setColour (accent);
+                g.fillRoundedRectangle (p.withWidth (p.getWidth() * (float) (session.isMatching() ? session.getProgress() : 1.0)), 3.0f);
+            }
             juce::String shown = statusText;
             if (shown.isEmpty() || applied)
             {
@@ -1976,7 +1980,7 @@ void ToneMatchPage::paint (juce::Graphics& g)
             return;
         }
         const auto& r = session.getResult();
-        auto big = in.removeFromTop (36);
+        auto big = in.removeFromTop (34);
         g.setFont (tabular (geist (Weight::light, 34.0f)));
         g.setColour (ink);
         const auto number = juce::String (juce::roundToInt (r.closeness));
@@ -1985,11 +1989,12 @@ void ToneMatchPage::paint (juce::Graphics& g)
         big.removeFromLeft (space::s);
         drawText (g, "closeness out of 100", big.removeFromTop (18), Text::label, inkDim);
         drawText (g, "Measures, not sound: only your ears judge that", big, Text::caption, inkFaint);
-        in.removeFromTop (space::s);
+        in.removeFromTop (space::xs);
         // The settings, one line each, broken only between items (packItems), continuation lines indented.
         const auto f = juce::Font (font (Text::label));
         g.setFont (f);
-        const auto lineHeight = (int) std::ceil (f.getHeight() * 1.25f);
+        // Up to nine lines in the step (a pedal, the tone, the curve's three items): 15 px apart, 12 px type.
+        const auto lineHeight = 15;
         for (int i = 0; i < resultLabels.size(); ++i)
         {
             const auto lines = packItems (f, resultLabels[i], resultItems[(size_t) i], (float) in.getWidth());

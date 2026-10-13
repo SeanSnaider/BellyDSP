@@ -199,7 +199,7 @@ private:
     juce::StringArray resultLabels;           // "Amp", "Tone", "Cab", "Match EQ"
     std::vector<juce::StringArray> resultItems; // each line's items, packed at paint time
     juce::Rectangle<int> header, targetCard, referenceCard, matchCard, resultCard, compareCard, applyCard, progressArea, statusArea, resultTextArea,
-        applyNoteArea, fileNameArea, takeCaptionArea, hintArea, modeLabelArea, compareStatusArea, appliedArea, separateNoteArea;
+        applyNoteArea, fileNameArea, takeCaptionArea, hintArea, modeLabelArea, compareStatusArea, appliedArea;
     bool applied = false;
 };
 

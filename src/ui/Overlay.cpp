@@ -198,9 +198,20 @@ void paintNote (juce::Graphics& g, juce::Rectangle<int> area, const juce::String
     g.drawRoundedRectangle (r.reduced (0.5f), radiusControl, 1.0f);
     g.setColour (strong ? ink : inkDim);
     g.fillRoundedRectangle (juce::Rectangle<float> (r.getX() + 6.0f, r.getY() + 7.0f, 2.0f, r.getHeight() - 14.0f), 1.0f);
-    g.setFont (geist (Weight::regular, 12.0f));
-    g.setColour (strong ? ink : inkDim);
-    g.drawFittedText (text, area.reduced (16, 6).withTrimmedRight (-4), juce::Justification::centredLeft, juce::jmax (1, (area.getHeight() - 8) / 15), 1.0f);
+    // The whole text, wrapped by word: at 12 px, or at 11 when that doesn't fit (an error is shown in full).
+    const auto box = area.reduced (16, 5).withTrimmedRight (-6).toFloat();
+    juce::TextLayout layout;
+    for (const auto size : { 12.0f, 11.0f })
+    {
+        juce::AttributedString words;
+        words.append (text, geist (Weight::regular, size), strong ? ink : inkDim);
+        words.setWordWrap (juce::AttributedString::byWord);
+        words.setJustification (juce::Justification::centredLeft);
+        layout.createLayout (words, box.getWidth());
+        if (layout.getHeight() <= box.getHeight())
+            break;
+    }
+    layout.draw (g, box.withSizeKeepingCentre (box.getWidth(), juce::jmin (box.getHeight(), layout.getHeight())));
 }
 
 void paintGroupLabel (juce::Graphics& g, juce::Rectangle<int> area, const juce::String& text)

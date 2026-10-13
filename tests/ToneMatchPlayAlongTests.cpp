@@ -501,7 +501,7 @@ public:
                 ed.refresh();
                 const auto file = shots.getChildFile (name + ".png");
                 expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), file));
-                expect (redesignCopy (file));
+                expect (redesignCopy (file, name == "22_recording" ? juce::String ("take_recording") : juce::String())); // 02_recording is the DI alone
                 pngs.add ("tone_match/" + file.getFileName());
             };
 

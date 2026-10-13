@@ -70,9 +70,9 @@ juce::File& proofDir()
     return dir;
 }
 
-bool redesignCopy (const juce::File& shot)
+bool redesignCopy (const juce::File& shot, const juce::String& state)
 {
-    auto name = shot.getFileNameWithoutExtension();
+    auto name = state.isNotEmpty() ? state : shot.getFileNameWithoutExtension();
     if (name.length() > 3 && juce::CharacterFunctions::isDigit (name[0]) && juce::CharacterFunctions::isDigit (name[1]) && name[2] == '_')
         name = name.substring (3);
     const auto copy = proofDir().getChildFile ("redesign").getChildFile ("overlay_tone_match_" + name + ".png");
