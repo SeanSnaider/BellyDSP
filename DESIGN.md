@@ -243,6 +243,14 @@ components:
   choice-bar-chosen:
     backgroundColor: "{colors.line1}"
     textColor: "{colors.accent}"
+  board-tabs:
+    backgroundColor: "{colors.raised}"
+    textColor: "{colors.ink-dim}"
+    typography: "{typography.body}"
+    height: "30px"
+  board-tabs-open:
+    backgroundColor: "{colors.line1}"
+    textColor: "{colors.accent}"
   knob-large:
     textColor: "{colors.ink}"
     typography: "{typography.value-large}"
@@ -439,7 +447,7 @@ The app is one fixed logical canvas, 1280 x 760, scaled uniformly to the window 
 
 - **Top bar** (`top-bar`, 52 high, across): the brand (dot plus "BellyDSP", opening its menu), A and B, undo and redo, then the preset box between the previous and next arrows, Save, the CPU, the In and Out meters, and Tuner, Match tone, and Settings at the right. The open one is underlined in orange.
 - **Stage** (980 x 350, left): a dark room lit from below, with a pool of warm light on the floor under the gear. At the top left is the shelf of mini heads (the playing one at full brightness with a 2px orange underline, the others at 62%) and the amp's name. At the top right is the Amp / Cab / EQ pill. Amp mode shows the playing head at about 0.86 of its designed size. Cab mode shows the library, the speaker in its baffle with the mics on it, and the match curve, room mic, and auto-align. EQ mode shows the shown EQ's graph over its live spectrum. One short line sits at the stage's foot, with the rate or a message on the right.
-- **Board** (980 x 280, under the stage, on `board-tray`): two rows of pedals at 0.665 of their size in chain order. The top row has PRE with its labelled switch, the pre section, the amp's marker, Gate B, and the cab's marker. The bottom row has POST with its switch and the post section. Patch lines run between the pedals.
+- **Board** (980 x 280, under the stage, on `board-tray`): three tabs (Sean's call, 2026-10-13). A strip of tabs runs along the top (`board-tabs`, the stage's pill grammar): Pre FX, Amp & Cab, and Post FX, each its name and a row of tiny LEDs, one per block in it in the order shown, so the closed tabs still show what's on. Under it the open tab's one row, its gear scaled to fit the row: Pre FX's five pedals in their saved order (at 1.18 of their size), the Amp & Cab tab's amp marker, Gate B, and cab marker as larger tiles centred on the cable, its ends named "from Pre FX" and "to Post FX" (1.18), and Post FX's eight pedals (0.83, the row's width). The open section's labelled switch (Pre FX section or Post FX section) sits at the strip's right. A patch line runs through each row behind the pedals, named for where it goes where the row has room. Selecting a block anywhere opens its tab; [ and ] step the tabs. The open tab is UI state (`uiBoardTab`), Pre FX the first time.
 - **Inspector** (300 wide, top bar to footer, `panel-bg`): one scrolling column, 291 usable (clear of the scroll bar), padded 16 at the sides. Every block's inspector has the same grammar:
   1. The header: the block's gear in small on a plinth, its name (`inspector-title`), where it sits in dim ink, its switch at the top right, a hairline.
   2. What it's doing, if the block has a meter (gates, compressors, harmonizer).
@@ -450,7 +458,7 @@ The app is one fixed logical canvas, 1280 x 760, scaled uniformly to the window 
 - **Overlays** (the tuner, Match tone, Settings) cover the area between the top bar and the footer (1280 x 630) under a scrim, with their pages in 1200 x 598. The top bar and the footer stay usable. Each has one header: the title, a line about it, its keys as keycaps, and Close, over a hairline. Content sits in panels on the ground.
 
 ### Named Rules
-**The Nothing Hidden Rule.** Preset, scene, the board's state, the amp's knobs, and the selected block's controls are all on one screen. Depth goes in the inspector's sections or an overlay, never behind tabs that hide the rig.
+**The Nothing Hidden Rule.** Preset, scene, the board's state, the amp's knobs, and the selected block's controls are all on one screen. Depth goes in the inspector's sections or an overlay. The board's tabs are the one place gear sits behind a tab, and only because every closed tab keeps an LED per block on the strip: what's on is never hidden.
 
 **The Stage Follows The Selection Rule.** The amp's marker puts the stage on the amp and the cab's marker on the cab. An EQ pedal shows its graph and the next other pedal puts the stage back. Any other pedal leaves the stage where it is.
 
@@ -482,7 +490,7 @@ The family that makes it a rig. Everything is procedural, cached per scale (one 
 - **Board markers:** a dark steel plate with four screws, at the pedals' height, carrying the playing head in small (`drawSmallHead`) or the cab's front, the name in silkscreen, and the switch as a jewel.
 - **LED states:** off is a near-black lens (`led-off`) with a small cold highlight. On is the accent with a 24 pt halo and a white-hot centre. When an LED comes on it blooms for 0.35 s (34 pt wide, fading as the square of the time left). Every LED shows its own block's switch, even inside a section that's off (there at 60%).
 - **Dimmed bypass:** a pedal that's off, or whose section is off, draws its whole enclosure at 55% brightness and 45% saturation, from a dimmed copy kept in the same cache entry. Markers dim their gear the same way.
-- **Interaction:** a click on the footswitch switches the block. A click anywhere else selects it (raised and ringed in orange). A drag along the row reorders the section. A right-click is MIDI learn.
+- **Interaction:** a click on the footswitch switches the block. A click anywhere else selects it (raised and ringed in orange). A drag along the row reorders the section. A right-click is MIDI learn. Markers scale with their tab (every size is the first board's times the Amp & Cab tab's scale over 0.665).
 
 ### Knobs
 - **Sizes:** large (80 px hit area, in a 104 x 120 box) for a block's main controls; normal (64 px, in a 76 x 86 box) and compact (52 px, in a 68 x 74 box) everywhere else, three to a row.
@@ -493,11 +501,12 @@ The family that makes it a rig. Everything is procedural, cached per scale (one 
 ### ChoiceBar and segmented controls
 - **ChoiceBar:** a choice parameter's options as equal segments in a raised, hairline-bordered box (radius 6, rows of 28), optionally wrapped into rows (the overdrive's circuits two by two, the harmonizer's twelve keys). The chosen segment is lighter with its name in orange, and a hovered one goes to ink. Long lists stay combo boxes.
 - **Pill:** the stage's Amp / Cab / EQ and the tuner's tunings. Options sit side by side in a raised hairline capsule, 30 high, 13 px medium. The chosen one is on a lighter segment in orange.
+- **Board tabs:** the pill with a row of 7 px LEDs after each name, 12 apart: lit is the accent with a small halo and a white-hot middle, off the dead lens (`led-off`) ringed so it reads on the capsule, and a section that's off draws its LEDs at 45%. The LEDs are indicators, not buttons: a click anywhere on a tab opens it. Its tooltip says in words what's on in it.
 - **Text segmented:** options in 12 px faint ink, the chosen one in ink with a 1px orange underline.
 
 ### Switches and pads
 - **Switch:** a 28 x 16 pill with a 1px border and an 8 px dot, the label 12 px to its right. Off: the dot on the left, muted. On: the border and dot orange, the dot on the right.
-- **Labelled switch:** the board's PRE and POST, the pill plus "ON" in orange or "OFF" in faint ink.
+- **Labelled switch:** the board's Pre FX section and Post FX section switches, the pill plus "ON" in orange or "OFF" in faint ink, named in 12 px dim ink to its left.
 - **Pad switch:** a raised 40 px box (radius 6) with an LED at its left (orange with a glow when on), its name in 13 px medium, and an optional faint second line. Used for the reverb's Freeze, Gate B's link to Gate A, and Tap.
 
 ### Buttons
