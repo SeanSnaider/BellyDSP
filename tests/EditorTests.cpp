@@ -155,20 +155,19 @@ struct DressedHead final : juce::Component
         addAndMakeVisible (jewel);
         const std::array<std::pair<const char*, const char*>, 7> specs { { { "Gain", "input_trim" }, { "Bass", "bass" }, { "Middle", "mid" }, { "Treble", "treble" },
                                                                            { "Presence", "presence" }, { "Depth", "depth" }, { "Master", "output_trim" } } };
-        const auto panel = ui::AmpHead::panelBox();
-        const auto knobsLeft = panel.getX() + 22.0f + 96.0f + 20.0f, knobsWidth = panel.getRight() - 22.0f - knobsLeft;
-        const auto css = ui::Knob::cssSize (ui::Knob::Size::normal);
         for (size_t k = 0; k < specs.size(); ++k)
         {
             auto knob = std::make_unique<ui::Knob> (p.parameters, AmpSimProcessor::ampParamId (0, specs[k].second), specs[k].first, " dB", ui::Knob::Size::normal,
                                                     ui::skinFor (material));
-            knob->setCssPosition (juce::roundToInt (knobsLeft + (knobsWidth - (float) css.x) * (float) k / 6.0f), juce::roundToInt (panel.getCentreY() - (float) css.y * 0.5f));
+            knob->setGearStyle (true); // as the stage's head wears them (RD4-8)
+            const auto at = ui::AmpView::knobCssPosition ((int) k);
+            knob->setCssPosition (at.x, at.y);
             addAndMakeVisible (*knob);
             knobs.push_back (std::move (knob));
         }
         setSize (ui::AmpHead::headWidth + ui::AmpHead::margin.getLeftAndRight(), ui::AmpHead::headHeight + ui::AmpHead::margin.getTopAndBottom());
         head.setBounds (getLocalBounds());
-        jewel.setBounds (juce::Rectangle<int> (30, 30).withCentre ({ juce::roundToInt (panel.getX() + 22.0f + 9.0f), juce::roundToInt (panel.getCentreY()) }));
+        jewel.setBounds (ui::AmpView::jewelBounds());
     }
 
     ui::AmpHead head;

@@ -532,11 +532,11 @@ public:
             expect (p.parameters.getRawParameterValue ("gate_a_on")->load() >= 0.5f, "undo must have switched it back on");
             nothingStarted ("undo");
 
-            // Now from the UI: the Amp page strip's switch, off, then on with a click.
+            // Now from the UI: Gate A's own pedal on the board (the amp's inspector holds only the amp: RD4-9), off,
+            // then on with a click on its footswitch.
             setParam (p, "gate_a_on", 0.0f);
             ed.refresh();
-            auto& gateSwitch = ed.getAmpView().getGateSwitch();
-            click (gateSwitch);
+            ed.getBoard().clickPedal (ui::BlockId::gateA, true);
             const auto clickMs = juce::Time::getMillisecondCounterHiRes();
             expect (p.parameters.getRawParameterValue ("gate_a_on")->load() >= 0.5f);
             ed.refresh();
@@ -575,9 +575,9 @@ public:
             ed.refresh();
             expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), proofDir().getChildFile ("gate_auto_learn_result_amp.png")));
 
-            // Exactly once: off and on again from the strip, and from the gate page's own switch: nothing more.
-            click (gateSwitch);
-            click (gateSwitch);
+            // Exactly once: off and on again from its footswitch, and from the gate page's own switch: nothing more.
+            ed.getBoard().clickPedal (ui::BlockId::gateA, true);
+            ed.getBoard().clickPedal (ui::BlockId::gateA, true);
             expect (p.parameters.getRawParameterValue ("gate_a_on")->load() >= 0.5f);
             ed.selectBlock (ui::BlockId::gateA);
             setParam (p, "gate_a_on", 0.0f);

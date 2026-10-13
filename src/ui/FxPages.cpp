@@ -759,6 +759,7 @@ DelayPage::DelayPage (AmpSimProcessor& p) : BlockPage (p, BlockId::delay, "Delay
     mix = &addKnob ("delay_mix", "Mix", " %", Knob::Size::large);
     rightTime = &addKnob ("delay_time_right", "Right time", " ms");
     offset = &addKnob ("delay_offset", "R offset", " ms");
+    offset->setValueShown (true); // placed in the right time's cell, not by the layout's knobs() (RD4-7)
     lowCut = &addKnob ("delay_lowcut", "Low cut", " Hz");
     highCut = &addKnob ("delay_highcut", "High cut", " Hz");
     modDepth = &addKnob ("delay_mod_depth", "Depth", " ms");

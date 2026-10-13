@@ -69,7 +69,7 @@ public:
 
     void runTest() override
     {
-        beginTest ("Amp page: the strip's Gate group has Gate A's switch; a click turns it on (one undo step), and the light only shows while it's on");
+        beginTest ("Gate A's switch: its pedal's footswitch and its inspector's switch turn it on (one undo step); the amp's inspector holds only the amp");
         {
             AmpSimProcessor p;
             p.prepareToPlay (fs, blockSize);
@@ -77,29 +77,50 @@ public:
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
             ed.selectBlock (ui::BlockId::amp);
             ed.refresh();
-            auto& amp = ed.getAmpView();
-            auto& gateSwitch = amp.getGateSwitch();
-            expect (gateSwitch.isVisible() && ! gateSwitch.getToggleState());
             expectEquals (getParam (p, "gate_a_on"), 0.0f);
+            // Sean's play test (2026-10-04, "the noise gate doesn't work") put Gate A's switch on the Amp page; now the
+            // gate is its own pedal, switched where it stands, and none of its controls is in the amp's inspector.
+            std::function<void (juce::Component&)> noGate = [&] (juce::Component& c)
+            {
+                const auto id = c.getProperties()[ui::parameterIdProperty].toString();
+                expect (! id.startsWith ("gate_"), id);
+                for (auto* child : c.getChildren())
+                    noGate (*child);
+            };
+            noGate (*ed.inspectorContentFor (ui::BlockId::amp));
             expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), proofDir().getChildFile ("playtest_amp_gate_off.png")));
 
             p.undoManager.beginNewTransaction(); // what the editor's own mouse press handler does first
-            click (gateSwitch);
+            ed.getBoard().clickPedal (ui::BlockId::gateA, true);
             p.parameters.copyState();            // what the parameter tree's timer does
             ed.refresh();
             const auto onAfterClick = getParam (p, "gate_a_on");
             play (p, guitarDI ((int) (0.5 * fs)));
             ed.refresh();
             expectEquals (onAfterClick, 1.0f);
-            expect (gateSwitch.getToggleState());
+            expect (ed.getBoard().isLit (ui::BlockId::gateA) && ! ed.getBoard().isDimmed (ui::BlockId::gateA));
             expect (p.undoManager.canUndo());
             expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), proofDir().getChildFile ("playtest_amp_gate_on.png")));
-            const auto strip = amp.createComponentSnapshot (amp.getLocalBounds().withTrimmedTop (amp.getHeight() - 100), true, 3.0f);
-            expect (savePng (strip, proofDir().getChildFile ("playtest_amp_strip_crop.png")));
             p.undoManager.undo();
             expectEquals (getParam (p, "gate_a_on"), 0.0f);
-            logMessage ("  -> gate_a_on 0 at the start, 1 after a click on the strip's switch, 0 again after undo; build/proof/playtest_amp_gate_off.png, "
-                        "playtest_amp_gate_on.png, playtest_amp_strip_crop.png");
+
+            // Its inspector's own switch does the same.
+            ed.selectBlock (ui::BlockId::gateA);
+            ed.refresh();
+            auto* headerSwitch = ed.getPage (ui::BlockId::gateA).getHeaderSwitch();
+            expect (headerSwitch != nullptr);
+            if (headerSwitch != nullptr)
+            {
+                p.undoManager.beginNewTransaction();
+                click (*headerSwitch);
+                p.parameters.copyState();
+                ed.refresh();
+                expectEquals (getParam (p, "gate_a_on"), 1.0f);
+                p.undoManager.undo();
+                expectEquals (getParam (p, "gate_a_on"), 0.0f);
+            }
+            logMessage ("  -> gate_a_on 0 at the start, 1 after a click on Gate A's footswitch, 0 again after undo; the same from its inspector's "
+                        "switch; no gate_ control in the amp's inspector; build/proof/playtest_amp_gate_off.png, playtest_amp_gate_on.png");
         }
 
         beginTest ("Out meter: \"limit\" and an ink cap while the output limiter works, gone 1.5 s after; the Output page has the limiter's switch and ceiling");

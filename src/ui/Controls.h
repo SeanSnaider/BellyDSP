@@ -211,8 +211,22 @@ public:
     /// The amp panels underline the value while dragging; the chrome turns it emerald (handoff 4.1).
     bool isPanelStyle() const noexcept { return skin != theme::Skin::chrome; }
 
-    /// What the label shows now: the caption, or the value while dragging or hovered.
+    /// What the label shows now: the caption, or the value while dragging or hovered (never with the value shown under
+    /// it: then the caption stays).
     juce::String getShownLabel() const;
+
+    /// The value always shown on a line under the caption (RD4-7: every knob in an inspector, in 11 px tabular), as
+    /// a large knob does in 14 px. Adds valueLineHeight to the knob's height (getPreferredHeight()).
+    void setValueShown (bool shouldShow);
+    bool isValueShown() const noexcept { return valueShown || size == Size::large; }
+    static constexpr int valueLineHeight = 14;
+    int getPreferredHeight() const { return preferredHeight (size) + (valueShown && size != Size::large ? valueLineHeight : 0); }
+
+    /// The gear style (RD4-8: the amp head's knobs on the stage): a skirted knob in its skin with a pointer line
+    /// across its skirt and cap, a printed 0-to-10 scale round it, and no value arcs (the arcs are the inspector's).
+    /// Its value still shows on hover and drag, as the label.
+    void setGearStyle (bool shouldBeGear);
+    bool isGearStyle() const noexcept { return gear; }
 
     void paint (juce::Graphics&) override;
 
@@ -235,6 +249,7 @@ private:
     juce::String caption;
     Size size;
     theme::Skin skin;
+    bool valueShown = false, gear = false;
 };
 
 /// A value in a field with a bar behind it, for tables (the voices of the harmonizer and multivoicer)
@@ -333,6 +348,12 @@ public:
     /// Flips it (a click, Space, or Enter), as one gesture in its own undo step.
     void toggle();
 
+    /// The labelled toggle (the board's PRE and POST switches, RD4-3): a 28 x 16 pill (the Switch's) with its state
+    /// in words after it, "ON" in orange or "OFF" in ink-faint, instead of the bare dot. labelledWidth fits it.
+    void setLabelled (bool shouldBeLabelled);
+    bool isLabelled() const noexcept { return labelled; }
+    static constexpr int labelledWidth = 62, labelledHeight = 24;
+
     std::function<void()> onChange;
     /// Called after the user flips it (toggle()), with the parameter's new value (true: 1). Never when
     /// the parameter moves it.
@@ -343,7 +364,7 @@ private:
     juce::RangedAudioParameter& parameter;
     const bool inverted;
     juce::ParameterAttachment attachment;
-    bool on = false, keyboardFocus = false;
+    bool on = false, keyboardFocus = false, labelled = false;
 };
 
 /// A small square button with a drawn icon (copy, the preset arrows), styled like a TextButton.

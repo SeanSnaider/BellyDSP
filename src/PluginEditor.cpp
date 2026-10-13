@@ -130,15 +130,26 @@ public:
         }
     }
 
+    /// On the stage's Cab and EQ views the line sits at the right of the foot (the cab's short line has its left).
+    void setRightAligned (bool shouldBeRight)
+    {
+        if (shouldBeRight != rightAligned)
+        {
+            rightAligned = shouldBeRight;
+            repaint();
+        }
+    }
+
     void paint (juce::Graphics& g) override
     {
         g.setFont (geist (Weight::regular, 12.0f));
         g.setColour (inkDim);
-        g.drawFittedText (message, getLocalBounds(), juce::Justification::centredLeft, 1, 0.9f);
+        g.drawFittedText (message, getLocalBounds(), rightAligned ? juce::Justification::centredRight : juce::Justification::centredLeft, 1, 0.9f);
     }
 
 private:
     juce::String message;
+    bool rightAligned = false;
 };
 
 AmpSimEditor::AmpSimEditor (AmpSimProcessor& p) : AudioProcessorEditor (&p), ampSim (p)
@@ -340,7 +351,8 @@ void AmpSimEditor::layoutCanvas()
     if (overlay != ui::Overlay::none)
         statusLine->setBounds (overlayArea().getX() + ui::OverlayFrame::padSide, overlayArea().getBottom() - 16, overlayArea().getWidth() - 2 * ui::OverlayFrame::padSide, 14);
     else
-        statusLine->setBounds (stageArea().getX() + 24, stageArea().getBottom() - 30, stageArea().getWidth() - 48, 16);
+        statusLine->setBounds (stageArea().getX() + stageArea().getWidth() / 2, stageArea().getBottom() - 30, stageArea().getWidth() / 2 - 24, 16);
+    statusLine->setRightAligned (overlay == ui::Overlay::none);
     statusLine->toFront (false);
 }
 
@@ -557,8 +569,8 @@ void AmpSimEditor::refreshState()
     topBar.setTuner (overlay == ui::Overlay::tuner, note);
 
     // The message: the sample rate first, then the gate's first switch-on learning the noise floor, then
-    // MIDI learn waiting for a controller, then a preset that couldn't load or loaded with gaps (or a
-    // factory preset's notes).
+    // MIDI learn waiting for a controller, then a preset that couldn't load or loaded with gaps. A preset's notes
+    // are the preset box's tooltip (RD4-6).
     juce::String message;
     if (! ampSim.isSampleRateOk())
         message = rateText (ampSim.getDeviceSampleRate()) + ": muted, set the interface to 48 kHz";
@@ -572,9 +584,10 @@ void AmpSimEditor::refreshState()
     if (message.isEmpty())
         message = presetMessage.isNotEmpty() ? presetMessage : ampSim.getPresetWarnings().joinIntoString ("; ");
     statusText = message;
-    // While the stage shows the amp, its info row carries the message (the gate's first switch-on shows in the
-    // amp's inspector, beside the switch that started it, so the info row keeps its rate).
-    ampView->setStatus (message == ampSim.getAutoLearnPrompt() ? juce::String() : message);
+    topBar.setPresetNotes (presetNotes);
+    // While the stage shows the amp, its info row carries the message (the gate's first switch-on included: Gate A
+    // is switched from its own pedal now, RD4-9).
+    ampView->setStatus (message);
     const auto inInfoRow = overlay == ui::Overlay::none && stage->getMode() == ui::StageMode::amp;
     statusLine->set (inInfoRow ? juce::String() : message);
 }
@@ -641,6 +654,7 @@ void AmpSimEditor::loadPresetFile (const juce::File& file)
     const auto preset = presets::load (file, problem);
     const auto result = problem.isEmpty() ? ampSim.loadPreset (preset) : presets::ApplyResult { false, problem, {} };
     presetMessage = result.ok ? juce::String() : result.error;
+    presetNotes = result.ok ? preset["notes"].toString() : juce::String();
     if (result.ok)
         ampSim.parameters.state.setProperty (presetSourceKey, "user", nullptr);
     refreshState();
@@ -649,7 +663,9 @@ void AmpSimEditor::loadPresetFile (const juce::File& file)
 void AmpSimEditor::loadFactoryPreset (const juce::var& preset)
 {
     const auto result = ampSim.loadPreset (preset);
-    presetMessage = result.ok ? preset["notes"].toString() : result.error;
+    // A preset's notes are about the preset: the preset box's tooltip, not a line on the stage (RD4-6).
+    presetMessage = result.ok ? juce::String() : result.error;
+    presetNotes = result.ok ? preset["notes"].toString() : juce::String();
     if (result.ok)
         ampSim.parameters.state.setProperty (presetSourceKey, "factory", nullptr);
     refreshState();

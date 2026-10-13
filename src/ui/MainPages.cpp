@@ -348,6 +348,7 @@ AudioDevicePage::AudioDevicePage (AmpSimProcessor& p) : SettingsSection (p)
     deviceButton = &addButton ("Audio device settings...", [] { platform::device::showSettings(); });
     deviceButton->setTooltip ("The interface, its rate and buffer, and its inputs (the standalone app's own audio settings)");
     deviceButton->setHasFocusOutline (true);
+    shownKnown = platform::device::currentDevice().known;
 }
 
 bool AudioDevicePage::isRateOk() const
@@ -370,6 +371,11 @@ void AudioDevicePage::refresh()
     const auto info = platform::device::currentDevice();
     const auto rate = getRateText(), dev = info.name + info.type + juce::String (info.latency.bufferSize);
     deviceButton->setEnabled (info.known);
+    if (info.known != shownKnown)
+    {
+        shownKnown = info.known;
+        resized(); // the device's card fills with its rows, or folds to a line
+    }
     if (rate != shownRate || dev != shownDevice)
     {
         shownRate = rate;
@@ -378,38 +384,34 @@ void AudioDevicePage::refresh()
     }
 }
 
+bool AudioDevicePage::isDeviceCardFolded() const { return ! shownKnown; }
+
 void AudioDevicePage::paint (juce::Graphics& g)
 {
     paintPageHeader (g, getLocalBounds().withHeight (titleHeight), "Audio device", "The interface BellyDSP plays through");
     paintPanels (g);
 
-    // The requirement: 48 kHz, large, with what it means and what the device is doing now.
+    // The rate as one line of status (RD4-10): the light (orange while it runs at 48 kHz), what it's doing now, and the
+    // rule after it in ink-dim.
     {
-        auto in = ratePanel;
-        auto big = in.removeFromLeft (190);
-        g.setFont (tabular (geist (Weight::light, 44.0f)));
-        g.setColour (ink);
-        g.drawText ("48 kHz", big.removeFromTop (54), juce::Justification::centredLeft, false);
-        g.setFont (geist (Weight::regular, 12.0f));
-        g.setColour (inkFaint);
-        g.drawText ("only", big.removeFromTop (16), juce::Justification::centredLeft, false);
-
-        in.removeFromLeft (space::l);
         const auto ok = isRateOk() && ampSim.getDeviceSampleRate() > 0.0;
-        auto status = in.removeFromTop (24);
+        auto line = statusArea;
         g.setColour (ok ? accent : inkDim);
-        g.fillEllipse (juce::Rectangle<float> (8.0f, 8.0f).withCentre ({ (float) status.getX() + 4.0f, (float) status.getCentreY() }));
-        g.setFont (geist (Weight::medium, 14.0f));
+        g.fillEllipse (juce::Rectangle<float> (8.0f, 8.0f).withCentre ({ (float) line.getX() + 4.0f, (float) line.getCentreY() }));
+        line.removeFromLeft (18);
+        const auto statusFont = geist (Weight::medium, 15.0f);
+        const auto status = getRateText();
+        const auto w = juce::jmin ((float) line.getWidth(), textWidth (statusFont, status) + 2.0f);
+        g.setFont (statusFont);
         g.setColour (ink);
-        g.drawText (getRateText(), status.withTrimmedLeft (18), juce::Justification::centredLeft, true);
-        in.removeFromTop (space::s);
-        paintParagraphs (g, in, { "The built-in captures are trained at 48 kHz, so BellyDSP runs at 48 kHz and nothing else. At any other rate the output "
-                                  "is muted and the app says why. In the app, when the device can do 48 kHz, BellyDSP switches it back by itself "
-                                  "(another app, such as a music player, can move it)." },
-                         inkDim);
+        g.drawText (status, line.removeFromLeft ((int) std::ceil (w)), juce::Justification::centredLeft, true);
+        line.removeFromLeft (14);
+        g.setFont (geist (Weight::regular, 13.0f));
+        g.setColour (inkDim);
+        g.drawFittedText ("BellyDSP runs at 48 kHz only: the built-in captures are trained at 48 kHz.", line, juce::Justification::centredLeft, 1, 0.9f);
     }
 
-    // The device as it runs now.
+    // The device as it runs now, or, with no device of its own (outside the standalone app), one line that says so.
     const auto info = platform::device::currentDevice();
     if (info.known)
     {
@@ -424,13 +426,20 @@ void AudioDevicePage::paint (juce::Graphics& g)
     }
     else
     {
-        paintRows (g, deviceRows, { { "Rate", ampSim.getDeviceSampleRate() > 0.0 ? khz (ampSim.getDeviceSampleRate()) : juce::String ("-") } });
-        paintParagraphs (g, deviceRows.withTrimmedTop (40),
-                         { "No audio device of its own here: the device, its buffer, and its latencies show in the standalone app." }, inkFaint, 12.0f);
+        auto line = deviceRows;
+        g.setFont (tabular (geist (Weight::medium, 13.0f)));
+        g.setColour (ink);
+        const auto rate = ampSim.getDeviceSampleRate() > 0.0 ? khz (ampSim.getDeviceSampleRate()) : juce::String ("No rate yet");
+        g.drawText (rate, line.removeFromLeft (90), juce::Justification::centredLeft, false);
+        g.setFont (geist (Weight::regular, 13.0f));
+        g.setColour (inkFaint);
+        g.drawFittedText ("No audio device of its own here: the device, its buffer, and its latencies show in the standalone app.", line,
+                          juce::Justification::centredLeft, 1, 0.9f);
     }
 
     paintParagraphs (g, setupArea,
-                     { "Set the interface to 48 kHz.",
+                     { "Set the interface to 48 kHz. At any other rate the output is muted and the app says why; in the app, when the device can "
+                       "do 48 kHz, BellyDSP switches it back by itself (another app, such as a music player, can move it).",
                        "Turn its input gain to minimum. The level is set here, under Input, so the guitar never clips the interface.",
                        "Plug the guitar into input 1.",
                        "On Windows, use the interface's ASIO driver when it has one: it has the lowest latency." },
@@ -439,17 +448,30 @@ void AudioDevicePage::paint (juce::Graphics& g)
 
 void AudioDevicePage::resized()
 {
+    // The rate as a one-line status panel; under it the device and the setup (RD4-10). With a device (the standalone
+    // app), its card holds its six rows and its settings button beside the setup; without one, the card folds to a
+    // line across the page (its button hidden, not shown disabled) and the setup takes the width under it.
     panels.clear();
     auto area = getLocalBounds().withTrimmedTop (titleHeight + titleGap);
-    ratePanel = panel (area.removeFromTop (150), "Sample rate");
+    statusArea = panel (area.removeFromTop (56), {});
     area.removeFromTop (space::m);
-    auto row = area.removeFromTop (juce::jmin (area.getHeight(), 282));
-    auto device = panel (row.removeFromLeft ((row.getWidth() - space::m) / 2), "This device");
-    deviceButton->setBounds (device.removeFromBottom (controlHeight).withWidth (200));
-    device.removeFromBottom (space::m);
-    deviceRows = device;
-    row.removeFromLeft (space::m);
-    setupArea = panel (row, "Setup");
+    deviceButton->setVisible (shownKnown);
+    if (shownKnown)
+    {
+        auto row = area.removeFromTop (juce::jmin (area.getHeight(), 282));
+        auto device = panel (row.removeFromLeft ((row.getWidth() - space::m) / 2), "This device");
+        deviceButton->setBounds (device.removeFromBottom (controlHeight).withWidth (200));
+        device.removeFromBottom (space::m);
+        deviceRows = device;
+        row.removeFromLeft (space::m);
+        setupArea = panel (row, "Setup");
+    }
+    else
+    {
+        deviceRows = panel (area.removeFromTop (78), "This device");
+        area.removeFromTop (space::m);
+        setupArea = panel (area.removeFromTop (juce::jmin (area.getHeight(), 168)), "Setup");
+    }
 }
 
 // ---- AboutPage ---------------------------------------------------------------------------------------

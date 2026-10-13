@@ -13,14 +13,25 @@ namespace ui
 /// (AmpHead.h). The board shows them in chain order; the inspector shows the selected one's controls.
 ///
 /// The art is procedural and cached at the scale it's shown at (renderPedal), so drawing one each frame only blits
-/// an image. A pedal's state is drawn on top of its cached art: the LED (lit in theme::accent when on), and the
-/// selected and hovered rings.
+/// an image. A pedal's state is drawn on top of its cached art: the LED (lit in theme::accent with a halo when on,
+/// near-black when off), and the selected and hovered rings. A pedal that's off, or whose section is off, draws its
+/// enclosure dimmed (ASSUMPTIONS RD4-1): the cache keeps a dimmed copy of the art beside it, made in the same render.
 struct PedalState
 {
     bool on = false;
     bool selected = false;
     bool hovered = false;
+    bool sectionOff = false; ///< its section (pre_fx_on, post_fx_on) is off: dimmed even while its own switch is on
 };
+
+/// A dimmed enclosure's brightness and saturation, as fractions of the art's own (RD4-1).
+constexpr float dimBrightness = 0.55f, dimSaturation = 0.45f;
+
+/// The off LED's lens: near-black, with no tint of the accent (RD4-2).
+inline const juce::Colour ledOffColour { 0xff2a2a2a };
+
+/// Whether drawPedal dims a pedal in this state: off, or in a section that's off.
+inline bool pedalDimmed (const PedalState& s) { return ! s.on || s.sectionOff; }
 
 /// Whether a block is drawn as a pedal on the board (the pre and post blocks, and Gate B).
 bool isPedal (BlockId id);
@@ -46,10 +57,10 @@ juce::Rectangle<float> pedalBounds (juce::Rectangle<float> box, BlockId id);
 
 /// Where an enclosure's parts are, in its points at scale 1 (the art's top-left at 0, 0): the body (the art less the
 /// jacks standing above it), the LED's bezel and the reach of its glow when lit, the footswitch's nut, and the
-/// silkscreened name. Map one into pedalBounds() for hit-testing (x * bounds.getWidth() / pedalSize().x).
+/// silkscreened name. ledLens is the lens inside the bezel (the part that lights). Map one into pedalBounds() for hit-testing (x * bounds.getWidth() / pedalSize().x).
 struct PedalLayout
 {
-    juce::Rectangle<float> body, led, ledGlow, footswitch, name;
+    juce::Rectangle<float> body, led, ledGlow, footswitch, name, ledLens;
 };
 
 PedalLayout pedalLayout (BlockId id);

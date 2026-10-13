@@ -37,15 +37,16 @@ private:
     static juce::FontOptions font() { return geist (Weight::semibold, 15.0f); }
 };
 
-/// The preset's name (14 px medium) over its tag and the current scene (11 px, faint), centred in a box: the
-/// browser's handle.
+/// The preset's name over its tag and the current scene, centred in a box: the browser's handle. Read from a step back
+/// while playing (RD4-4): the name in 23 px semibold ink, the scene in 15 px medium ink, the tag before it in 12 px
+/// faint.
 class TopBar::PresetButton final : public juce::Button
 {
 public:
     PresetButton() : juce::Button ("Preset")
     {
-        setTooltip ("Presets: the factory five, your preset folder, open, and save as (the left and right arrows step through them)");
         setMouseCursor (juce::MouseCursor::PointingHandCursor);
+        setNotes ({});
     }
 
     void set (const juce::String& newName, const juce::String& newTag, const juce::String& newScene)
@@ -60,7 +61,19 @@ public:
         }
     }
 
-    juce::String name, tag, scene;
+    /// The preset's notes (a factory preset's words about itself): its tooltip, over the browser's hint (RD4-6).
+    void setNotes (const juce::String& newNotes)
+    {
+        notes = newNotes;
+        const juce::String hint ("Presets: the factory five, your preset folder, open, and save as (the left and right arrows step through them)");
+        setTooltip (notes.isEmpty() ? hint : notes + "\n\n" + hint);
+    }
+
+    juce::String name, tag, scene, notes;
+
+    static juce::FontOptions nameFont() { return geist (Weight::semibold, 23.0f); }
+    static juce::FontOptions sceneFont() { return geist (Weight::medium, 15.0f); }
+    static juce::FontOptions tagFont() { return geist (Weight::regular, 12.0f); }
 
     void paintButton (juce::Graphics& g, bool highlighted, bool) override
     {
@@ -70,23 +83,27 @@ public:
         g.setColour (line1);
         g.drawRoundedRectangle (box, radiusControl, 1.0f);
 
-        auto area = getLocalBounds().reduced (12, 3);
-        g.setFont (geist (Weight::semibold, 14.0f));
+        // The name on a baseline 25 px down, the scene's 17 px under it: both lines inside the 48 px box.
+        const auto area = getLocalBounds().reduced (12, 0).toFloat();
+        const auto nameBaseline = area.getY() + 25.0f, sceneBaseline = nameBaseline + 17.0f;
+        const juce::Font nf (nameFont());
+        g.setFont (nf);
         g.setColour (ink);
-        g.drawFittedText (name, area.removeFromTop (area.getHeight() / 2 + 2), juce::Justification::centredBottom, 1, 0.85f);
+        g.drawFittedText (name, juce::Rectangle<float> (area.getX(), nameBaseline - nf.getAscent(), area.getWidth(), nf.getAscent() + nf.getDescent()).toNearestInt(),
+                          juce::Justification::centred, 1, 0.8f);
 
-        // The tag, then the scene in ink-dim (the scene matters more while playing).
-        const auto small = geist (Weight::regular, 11.0f);
-        const auto tagText = tag.isEmpty() ? juce::String() : tag + "   ";
-        const auto tw = textWidth (small, tagText), sw = textWidth (geist (Weight::medium, 11.0f), scene);
-        auto x = (float) area.getCentreX() - (tw + sw) * 0.5f;
-        g.setFont (small);
+        // The tag in faint, then the scene in ink (the scene matters more while playing).
+        const auto tagText = tag.isEmpty() ? juce::String() : tag + "  ";
+        const auto tw = textWidth (tagFont(), tagText), sw = juce::jmin (area.getWidth() - tw, textWidth (sceneFont(), scene));
+        auto x = area.getCentreX() - (tw + sw) * 0.5f;
+        const juce::Font tf (tagFont()), sf (sceneFont());
+        g.setFont (tf);
         g.setColour (inkFaint);
-        g.drawText (tagText, juce::Rectangle<float> (x, (float) area.getY(), tw + 1.0f, (float) area.getHeight()), juce::Justification::centredTop, false);
+        g.drawText (tagText, juce::Rectangle<float> (x, sceneBaseline - tf.getAscent(), tw + 1.0f, tf.getAscent() + tf.getDescent()), juce::Justification::left, false);
         x += tw;
-        g.setFont (geist (Weight::medium, 11.0f));
-        g.setColour (inkDim);
-        g.drawText (scene, juce::Rectangle<float> (x, (float) area.getY(), sw + 2.0f, (float) area.getHeight()), juce::Justification::centredTop, false);
+        g.setFont (sf);
+        g.setColour (ink);
+        g.drawText (scene, juce::Rectangle<float> (x, sceneBaseline - sf.getAscent(), sw + 2.0f, sf.getAscent() + sf.getDescent()), juce::Justification::left, true);
     }
 };
 
@@ -198,6 +215,11 @@ juce::Button& TopBar::getSettingsButton() noexcept { return *settings; }
 juce::String TopBar::getShownPresetName() const { return preset->name; }
 juce::String TopBar::getShownTag() const { return preset->tag; }
 juce::String TopBar::getShownScene() const { return preset->scene; }
+juce::FontOptions TopBar::getPresetNameFont() { return PresetButton::nameFont(); }
+juce::FontOptions TopBar::getSceneFont() { return PresetButton::sceneFont(); }
+juce::Colour TopBar::getSceneColour() { return ink; }
+void TopBar::setPresetNotes (const juce::String& notes) { preset->setNotes (notes); }
+juce::String TopBar::getPresetNotes() const { return preset->notes; }
 
 void TopBar::refresh()
 {
@@ -292,7 +314,7 @@ void TopBar::resized()
     const auto saveWidth = 24 + (int) std::ceil (textWidth (geist (Weight::regular, 13.0f), "Save")) + 2;
     const auto boxWidth = juce::jlimit (180, 300, area.getWidth() - (28 + 4 + 4 + 28 + 8 + saveWidth));
     const auto groupWidth = 28 + 4 + boxWidth + 4 + 28 + 8 + saveWidth;
-    auto group = area.withSizeKeepingCentre (juce::jmin (groupWidth, area.getWidth()), 38);
+    auto group = area.withSizeKeepingCentre (juce::jmin (groupWidth, area.getWidth()), presetBoxHeight);
     previous.setBounds (group.removeFromLeft (28).withSizeKeepingCentre (28, 28));
     group.removeFromLeft (4);
     preset->setBounds (group.removeFromLeft (boxWidth));

@@ -177,6 +177,7 @@ public:
             waitForLoads (p);
 
             juce::StringArray report, files;
+            int knobsSeen = 0;
             for (const auto& d : designs())
             {
                 ed.selectBlock (d.id);
@@ -198,15 +199,39 @@ public:
                     if (knob != nullptr)
                         largeTop = juce::jmin (largeTop, knob->getY());
                 }
-                // The large knobs come before any normal-size knob: the most-used controls first.
+                // The large knobs come before any normal-size knob: the most-used controls first. And every knob shows its
+                // value under its caption, the secondary ones included (RD4-7): the flag, the room for the line, and the
+                // line drawn (bright text pixels in the knob's last 16 px).
+                juce::StringArray noValue;
                 std::function<void (juce::Component&)> walk = [&] (juce::Component& c)
                 {
-                    if (auto* k = dynamic_cast<ui::Knob*> (&c); k != nullptr && k->getKnobSize() != ui::Knob::Size::large && k->isVisible())
+                    auto* k = dynamic_cast<ui::Knob*> (&c);
+                    if (k != nullptr && k->getKnobSize() != ui::Knob::Size::large && k->isVisible())
                         otherTop = juce::jmin (otherTop, k->getY());
+                    const auto shown = [content] (juce::Component* x)
+                    {
+                        for (; x != nullptr && x != content; x = x->getParentComponent())
+                            if (! x->isVisible())
+                                return false;
+                        return x == content;
+                    };
+                    if (k != nullptr && shown (k) && ! k->getBounds().isEmpty())
+                    {
+                        ++knobsSeen;
+                        const auto image = k->createComponentSnapshot (k->getLocalBounds(), true, 2.0f);
+                        int bright = 0;
+                        for (int y = image.getHeight() - 2 * (ui::Knob::valueLineHeight + ui::Knob::margin + 2); y < image.getHeight(); ++y)
+                            for (int x = 0; x < image.getWidth(); ++x)
+                                if (const auto px = image.getPixelAt (x, y); px.getAlpha() > 120 && px.getBrightness() > 0.6f)
+                                    ++bright;
+                        if (! k->isValueShown() || k->getHeight() < k->getPreferredHeight() || bright < 8)
+                            noValue.add (k->getCaption());
+                    }
                     for (auto* child : c.getChildren())
                         walk (*child);
                 };
                 walk (*content);
+                expect (noValue.isEmpty(), juce::String (ui::info (d.id).pageName) + ": knobs without their value shown: " + noValue.joinIntoString (", "));
                 if (! d.large.isEmpty())
                     expectLessThan (largeTop, otherTop, juce::String (ui::info (d.id).pageName) + ": the large knobs come first");
 
@@ -234,6 +259,7 @@ public:
                             + " large, " + juce::String (content->getHeight()) + " px");
             }
             logMessage ("  -> " + report.joinIntoString ("; "));
+            logMessage ("  -> " + juce::String (knobsSeen) + " knobs shown across the inspectors, every one with its value under its caption");
             logMessage ("  -> build/proof/redesign/: " + files.joinIntoString (", "));
         }
 

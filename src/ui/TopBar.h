@@ -58,6 +58,14 @@ public:
     juce::String getShownPresetName() const;
     juce::String getShownTag() const;
     juce::String getShownScene() const;
+    /// The preset box's type (RD4-4): the name in 23 px semibold, the scene in 15 px medium ink; the box is 48 high.
+    static juce::FontOptions getPresetNameFont();
+    static juce::FontOptions getSceneFont();
+    static juce::Colour getSceneColour();
+    static constexpr int presetBoxHeight = 48;
+    /// The loaded preset's notes, shown as the preset box's tooltip (RD4-6; empty: none).
+    void setPresetNotes (const juce::String& notes);
+    juce::String getPresetNotes() const;
 
     void paint (juce::Graphics&) override;
     void resized() override;

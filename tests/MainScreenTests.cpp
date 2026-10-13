@@ -102,9 +102,17 @@ public:
             expect (bg == juce::Colour (0xff121212) && panelBg == juce::Colour (0xff1a1a1a) && raised == juce::Colour (0xff1f1f1f));
             expect (line1 == juce::Colour (0xff2c2c2c) && ink == juce::Colour (0xffe8e8e8) && inkDim == juce::Colour (0xff9a9a9a));
             expect (knobSkin (Skin::chrome).track == line2);
-            // The heads keep their own skins: Monolith's pointer is its emerald, Forge's its own orange, not the theme's.
-            expect (knobSkin (Skin::monolith).pointer == juce::Colour (0xff34d399));
-            expect (knobSkin (Skin::forge).pointer == juce::Colour (0xffff6a1f));
+            // One accent (RD4-8): no head's knob pointer is teal or emerald. Monolith's and Comet's are ink, Forge's the
+            // accent; every pointer is neutral (its saturation under 0.15) or the accent itself.
+            expect (knobSkin (Skin::monolith).pointer == ink && knobSkin (Skin::comet).pointer == ink);
+            expect (knobSkin (Skin::forge).pointer == accent);
+            for (int k = 0; k <= (int) Skin::custom; ++k)
+            {
+                const auto pointer = knobSkin ((Skin) k).pointer;
+                const auto hue = pointer.getHue() * 360.0f;
+                const auto tealOrGreen = pointer.getSaturation() > 0.2f && hue > 90.0f && hue < 200.0f;
+                expect (! tealOrGreen && (pointer == accent || pointer.getSaturation() < 0.5f || hue < 40.0f), "skin " + juce::String (k) + " #" + pointer.toDisplayString (false));
+            }
 
             // A latched clip is drawn red on the meter; nothing else is.
             ui::LevelMeter meter ("Out", 2);
@@ -167,11 +175,15 @@ public:
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
             auto& board = ed.getBoard();
 
-            // The amp's inspector: its seven knobs (the playing amp's), Gate A's switch and knobs, the levels.
+            // The amp's inspector holds only the amp (RD4-9): its seven knobs (the playing amp's), its switch, and the
+            // levels in and out of the chain round it. No Gate A: it's its own pedal, which still reaches it.
             const auto ampIds = taggedIn (ed.getInspector());
-            for (const auto* id : { "amp1_input_trim", "amp1_output_trim", "amp1_bass", "amp1_mid", "amp1_treble", "amp1_presence", "amp1_depth", "gate_a_on",
-                                    "gate_a_threshold", "input_gain", "output_gain", "amp_bypass" })
+            for (const auto* id : { "amp1_input_trim", "amp1_output_trim", "amp1_bass", "amp1_mid", "amp1_treble", "amp1_presence", "amp1_depth", "input_gain",
+                                    "output_gain", "amp_bypass" })
                 expect (ampIds.contains (id), id);
+            for (const auto& id : ampIds)
+                expect (id.startsWith ("amp") || id == "input_gain" || id == "output_gain", "not the amp's: " + id);
+            expectEquals (ampIds.size(), 7 * AmpSimProcessor::numAmps + 3, "the amps' seven knobs each (only the playing amp's shown), the switch, in and out");
 
             // A click on the delay pedal (above its footswitch): its page in the inspector, nothing switched.
             auto& delay = *board.getPedal (ui::BlockId::delay);
@@ -254,12 +266,67 @@ public:
             board.refresh();
             expect (! board.isLit (ui::BlockId::reverb));
 
-            // The post section's switch dims its row (each pedal keeps its own LED).
+            // A bypassed pedal is dimmed (RD4-1), and lights up whole when it's on: the overdrive on, the reverb off.
+            expect (! board.isDimmed (ui::BlockId::overdrive) && board.isDimmed (ui::BlockId::reverb));
+            const auto brightness = [&] (ui::BlockId id)
+            {
+                // The pedal's mean brightness (HSB), away from its LED and its halo: the enclosure itself.
+                auto& pedal = *board.getPedal (id);
+                const auto image = pedal.createComponentSnapshot (pedal.getLocalBounds(), true, 2.0f);
+                const auto fit = ui::pedalBounds (pedal.getLocalBounds().toFloat(), id);
+                const auto k = fit.getWidth() / ui::pedalSize (id).x;
+                const auto glow = ui::pedalLayout (id).ledGlow;
+                const auto halo = juce::Rectangle<float> (fit.getX() + glow.getX() * k, fit.getY() + glow.getY() * k, glow.getWidth() * k, glow.getHeight() * k) * 2.0f;
+                const auto body = ui::pedalLayout (id).body;
+                const auto inside = (juce::Rectangle<float> (fit.getX() + body.getX() * k, fit.getY() + body.getY() * k, body.getWidth() * k, body.getHeight() * k) * 2.0f).reduced (6.0f);
+                double sum = 0.0, saturation = 0.0;
+                int n = 0;
+                for (int y = (int) inside.getY(); y < (int) inside.getBottom(); ++y)
+                    for (int x = (int) inside.getX(); x < (int) inside.getRight(); ++x)
+                        if (! halo.contains ((float) x, (float) y))
+                        {
+                            const auto c = image.getPixelAt (x, y);
+                            sum += c.getBrightness();
+                            saturation += c.getSaturation();
+                            ++n;
+                        }
+                return std::pair<double, double> { sum / juce::jmax (1, n), saturation / juce::jmax (1, n) };
+            };
+            const auto odOn = brightness (ui::BlockId::overdrive);
+            setParam (p, "od_on", 0.0f);
+            board.refresh();
+            const auto odOff = brightness (ui::BlockId::overdrive);
+            expect (board.isDimmed (ui::BlockId::overdrive) && ! board.isLit (ui::BlockId::overdrive));
+            expectWithinAbsoluteError (odOff.first / odOn.first, (double) ui::dimBrightness, 0.06, "off at about 55% brightness");
+            expectLessThan (odOff.second, odOn.second * 0.7, "off at lower saturation");
+            setParam (p, "od_on", 1.0f);
+            board.refresh();
+
+            // The post section's switch dims its row the same way, and each pedal keeps its own LED: the chorus is on,
+            // so it's lit and dimmed; the boost, before the amp, isn't touched.
+            setParam (p, "chorus_on", 1.0f);
             setParam (p, "post_fx_on", 0.0f);
             board.refresh();
-            expect (board.getPedal (ui::BlockId::delay)->getAlpha() < 1.0f && juce::exactlyEqual (board.getPedal (ui::BlockId::boost)->getAlpha(), 1.0f));
+            expect (board.isDimmed (ui::BlockId::chorus) && board.isLit (ui::BlockId::chorus));
+            expect (board.isDimmed (ui::BlockId::delay) && ! board.isDimmed (ui::BlockId::overdrive));
+            expect (juce::exactlyEqual (board.getPedal (ui::BlockId::chorus)->getAlpha(), 1.0f), "dimmed by the art, not by fading over the tray");
+            const auto chorusInSectionOff = brightness (ui::BlockId::chorus);
             setParam (p, "post_fx_on", 1.0f);
             board.refresh();
+            const auto chorusOn = brightness (ui::BlockId::chorus);
+            expectWithinAbsoluteError (chorusInSectionOff.first / chorusOn.first, (double) ui::dimBrightness, 0.06, "a section that's off: the same dimming");
+            setParam (p, "chorus_on", 0.0f);
+            board.refresh();
+            logMessage ("  -> the overdrive's enclosure off: " + juce::String (odOff.first / odOn.first, 2) + " of its brightness on, saturation "
+                        + juce::String (odOff.second, 2) + " from " + juce::String (odOn.second, 2) + "; the chorus in a section that's off: "
+                        + juce::String (chorusInSectionOff.first / chorusOn.first, 2) + " of its brightness, its LED still lit");
+
+            // The sections' switches are labelled toggles (RD4-3): ON or OFF beside the pill, under the row's name.
+            for (auto section : { ui::Section::pre, ui::Section::post })
+            {
+                auto* toggle = board.getSectionSwitch (section);
+                expect (toggle != nullptr && toggle->isLabelled() && toggle->getWidth() >= ui::PowerSwitch::labelledWidth, "a labelled toggle");
+            }
 
             // A right-click on a pedal is MIDI learn for its switch (it's tagged with it), and never flips it.
             expectEquals (od.getProperties()[ui::parameterIdProperty].toString(), juce::String ("od_on"));
@@ -494,6 +561,115 @@ public:
             expect (ed.sceneMenuFor (0).getNumItems() >= 3);
             logMessage ("  -> scene 1 stored and lit; scene 4 stored, the light gliding from " + from.toString() + "; scene 1 recalled (delay on) and the "
                         "light glided back on its own in " + juce::String (juce::Time::getMillisecondCounterHiRes() - t0, 0) + " ms");
+        }
+
+        beginTest ("from a step back: the preset's name at 23 px and its scene at 15 px in ink; one short line under the amp and the cab, the notes in the "
+                   "preset's tooltip; the head's knobs are gear with no value arcs");
+        {
+            WithBuiltInCaptures builtIns;
+            AmpSimProcessor p;
+            p.prepareToPlay (fs, blockSize);
+            std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+            auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
+            for (int i = 0; i < 6 && ed.getTopBar().getShownPresetName() != "Tech Death"; ++i)
+            {
+                ed.stepPreset (1);
+                waitForLoads (p);
+                ed.refresh();
+            }
+            p.recallScene (1);
+            ed.refresh();
+            expectEquals (ed.getTopBar().getShownPresetName(), juce::String ("Tech Death"));
+
+            // The type (RD4-4): the name 22 to 24 px semibold, the scene about 15 px in ink (not grey), in a 48 px box.
+            const auto nameFont = juce::Font (ui::TopBar::getPresetNameFont()), sceneFont = juce::Font (ui::TopBar::getSceneFont());
+            expect (nameFont.getHeightInPoints() >= 22.0f && nameFont.getHeightInPoints() <= 24.0f, juce::String (nameFont.getHeightInPoints()));
+            expect (sceneFont.getHeightInPoints() >= 14.5f && sceneFont.getHeightInPoints() <= 15.5f, juce::String (sceneFont.getHeightInPoints()));
+            expect (ui::TopBar::getSceneColour() == ui::theme::ink);
+            auto& box = ed.getTopBar().getPresetButton();
+            expectEquals (box.getHeight(), ui::TopBar::presetBoxHeight);
+            // As drawn: the name's ink (the brightest pixels in the box's top 28 px) at least 15 px tall (its capitals);
+            // the scene's line has ink pixels too (in grey #9a9a9a it would have none this bright).
+            const auto image = box.createComponentSnapshot (box.getLocalBounds(), true, 2.0f);
+            int top = 1 << 30, bottom = -1, sceneInk = 0;
+            for (int y = 0; y < image.getHeight(); ++y)
+                for (int x = 0; x < image.getWidth(); ++x)
+                    if (image.getPixelAt (x, y).getBrightness() > 0.82f)
+                    {
+                        if (y < 2 * 28)
+                        {
+                            top = juce::jmin (top, y);
+                            bottom = juce::jmax (bottom, y);
+                        }
+                        else
+                            ++sceneInk;
+                    }
+            const auto nameHeight = (float) (bottom - top + 1) / 2.0f;
+            expectGreaterOrEqual (nameHeight, 15.0f, "the name's capitals on screen");
+            expectGreaterThan (sceneInk, 60, "the scene in ink");
+            expectEquals (ed.getTopBar().getShownScene(), juce::String ("Scene 2: Lead"));
+
+            // One short line under the amp (RD4-5): its class and its name; the capture's file in its tooltip; the rate at
+            // the right. The preset's notes are the preset box's tooltip, never a line on the stage (RD4-6).
+            auto& amp = ed.getAmpView();
+            const juce::String dot (juce::CharPointer_UTF8 (" \xc2\xb7 "));
+            expectEquals (amp.getInfoLine(), "High gain" + dot + "Monolith");
+            expect (amp.getInfoTooltip().contains (amp.getModelText()) && amp.getModelText() == "Monolith (built in, gain set)", amp.getInfoTooltip());
+            expectEquals (amp.getRateText(), juce::String ("48 kHz"));
+            const auto notes = ed.getTopBar().getPresetNotes();
+            expect (notes.isNotEmpty(), "Tech Death has notes");
+            expect (box.getTooltip().startsWith (notes));
+            expect (! ed.getStatusText().contains (notes.substring (0, 20)), ed.getStatusText());
+            ed.setStageMode (ui::StageMode::cab, false);
+            ed.refresh();
+            ed.finishAnimations();
+            const auto cabLine = ed.getCabView().getInfoLine();
+            expect (cabLine.contains (dot) && ! cabLine.startsWith ("No IR"), cabLine);
+            expect (ed.getStatusText().isEmpty(), ed.getStatusText());
+            ed.setStageMode (ui::StageMode::amp, false);
+            ed.refresh();
+
+            // The head's knobs are gear (RD4-8): no value arc. At full travel a chrome knob's arc ring is orange; a gear
+            // knob's ring (where the arc would be: radius 30 to 35 round the hit area's centre) has no orange in it, for
+            // every amp's skin.
+            const auto arcPixels = [] (ui::Knob& knob)
+            {
+                const auto img = knob.createComponentSnapshot (knob.getLocalBounds(), true, 2.0f);
+                const juce::Point<float> c { (float) knob.getWidth(), (float) (ui::Knob::margin + 32) * 2.0f };
+                int n = 0;
+                for (int y = 0; y < img.getHeight(); ++y)
+                    for (int x = 0; x < img.getWidth(); ++x)
+                    {
+                        const auto r = c.getDistanceFrom ({ (float) x + 0.5f, (float) y + 0.5f }) / 2.0f;
+                        const auto px = img.getPixelAt (x, y);
+                        if (r > 30.0f && r < 35.0f && px.getAlpha() > 100 && std::abs ((int) px.getRed() - 255) < 50 && std::abs ((int) px.getGreen() - 138) < 50
+                            && px.getBlue() < 90)
+                            ++n;
+                    }
+                return n;
+            };
+            juce::StringArray arcs;
+            for (int a = 0; a < AmpSimProcessor::numAmps; ++a)
+            {
+                setParam (p, AmpSimProcessor::ampModelParamId, (float) a);
+                ed.refresh();
+                auto& knob = amp.getKnob (a, 1); // Bass (no gain-set dots round it)
+                setParam (p, ui::AmpView::knobParameter (a, 1), 12.0f);
+                knob.repaint();
+                expect (knob.isGearStyle(), "amp " + juce::String (a));
+                const auto n = arcPixels (knob);
+                expectEquals (n, 0, "amp " + juce::String (a) + ": orange where an arc would be");
+                arcs.add (juce::String (n));
+            }
+            auto& chrome = amp.getPanel().getKnob (0, 1);
+            const auto control = arcPixels (chrome);
+            expectGreaterThan (control, 100, "the inspector's knob at full travel has its arc");
+            setParam (p, AmpSimProcessor::ampModelParamId, 2.0f);
+            ed.refresh();
+            logMessage ("  -> the preset's name " + juce::String (nameHeight, 1) + " px of capitals in " + juce::String (nameFont.getHeightInPoints(), 0)
+                        + " px semibold, the scene in 15 px ink (" + juce::String (sceneInk) + " ink pixels at 2x); the amp's line \"" + amp.getInfoLine()
+                        + "\", the cab's \"" + cabLine + "\"; the notes in the tooltip (" + juce::String (notes.length()) + " characters); orange pixels "
+                        "in the arc's ring: " + arcs.joinIntoString (", ") + " on the nine heads' knobs, " + juce::String (control) + " on the inspector's");
         }
 
         beginTest ("snapshots: the main screen with the amp, a pre and a post pedal, the Cab and EQ stage modes, each overlay, and at a small window size");

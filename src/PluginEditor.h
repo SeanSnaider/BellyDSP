@@ -193,7 +193,7 @@ private:
     std::unique_ptr<StatusLine> statusLine;
     std::unique_ptr<juce::TooltipWindow> tooltips;
 
-    juce::String presetMessage, statusText;
+    juce::String presetMessage, presetNotes, statusText;
     double lastMeterMs = 0.0;
     int ticks = 0;
     std::unique_ptr<juce::FileChooser> chooser;

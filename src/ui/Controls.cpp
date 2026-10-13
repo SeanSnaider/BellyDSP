@@ -358,6 +358,93 @@ void ParameterControl::hideTextEntry (bool apply)
 
 // ---- Knob ----------------------------------------------------------------------------------------
 
+/// The amp head's knobs as gear (RD4-8; Knob::setGearStyle), at the hit area's centre, in a skin: what a real amp
+/// panel has, and none of the UI's value arcs.
+///   scale    eleven ticks printed on the panel round the knob, -135 to +135 degrees (0, 5, and 10 longer), in the
+///            skin's label colour at 55%
+///   skirt    a disc 0.80 of the hit area, darker than the cap (the skin's b, a step down, lit from the top left),
+///            its 1 px rim in the skin's ring, and a soft drop shadow on the panel
+///   flutes   24 grip grooves round the cap's edge
+///   cap      0.54 of the hit area, the skin's own a-to-b gradient with its highlight up and to the left
+///   pointer  a 2 px line across the skirt (from its edge to the cap's) and on into the cap, in the skin's pointer
+///            colour: the mark that says where it's set, readable without an arc
+static void drawGearKnob (juce::Graphics& g, const KnobSkin& colours, juce::Point<float> centre, float hit, float angle)
+{
+    const auto polar = [centre] (float r, float a) { return centre.translated (r * std::sin (a), -r * std::cos (a)); };
+    const auto skirtR = hit * 0.40f, capR = hit * 0.27f;
+
+    // The printed scale.
+    for (int i = 0; i <= 10; ++i)
+    {
+        const auto a = arcStart + (arcEnd - arcStart) * (float) i / 10.0f;
+        const auto major = i % 5 == 0;
+        juce::Path tick;
+        tick.startNewSubPath (polar (skirtR + 3.0f, a));
+        tick.lineTo (polar (skirtR + (major ? 8.0f : 6.0f), a));
+        g.setColour (colours.label.withMultipliedAlpha (major ? 0.7f : 0.5f));
+        g.strokePath (tick, juce::PathStrokeType (major ? 1.6f : 1.1f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
+
+    // The skirt, its shadow and rim.
+    const auto skirt = juce::Rectangle<float> (2.0f * skirtR, 2.0f * skirtR).withCentre (centre);
+    {
+        juce::Path disc;
+        disc.addEllipse (skirt);
+        juce::DropShadow (juce::Colours::black.withAlpha (0.55f), 7, { 0, 3 }).drawForPath (g, disc);
+    }
+    const auto skirtLit = colours.a.interpolatedWith (colours.b, 0.55f), skirtDark = colours.b.darker (0.45f);
+    g.setGradientFill (juce::ColourGradient (skirtLit, skirt.getX() + skirtR * 0.5f, skirt.getY() + skirtR * 0.4f, skirtDark, skirt.getRight(), skirt.getBottom(), true));
+    g.fillEllipse (skirt);
+    g.setColour (colours.ring);
+    g.drawEllipse (skirt.reduced (0.5f), 1.0f);
+    // A faint lit edge along the skirt's top left: it's a raised ring, not a printed disc.
+    {
+        juce::Path rim;
+        rim.addCentredArc (centre.x, centre.y, skirtR - 1.5f, skirtR - 1.5f, 0.0f, -2.2f, 0.5f, true);
+        g.setColour (juce::Colours::white.withAlpha (0.16f));
+        g.strokePath (rim, juce::PathStrokeType (1.0f));
+    }
+
+    // The pointer across the skirt.
+    {
+        juce::Path mark;
+        mark.startNewSubPath (polar (skirtR - 1.5f, angle));
+        mark.lineTo (polar (capR + 1.0f, angle));
+        g.setColour (colours.pointer);
+        g.strokePath (mark, juce::PathStrokeType (2.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
+
+    // The cap: its shadow on the skirt, the grip's flutes, the gradient, the pointer's line into it.
+    const auto cap = juce::Rectangle<float> (2.0f * capR, 2.0f * capR).withCentre (centre);
+    g.setColour (juce::Colours::black.withAlpha (0.45f));
+    g.fillEllipse (cap.translated (0.0f, 1.5f).expanded (1.0f));
+    {
+        const juce::Point<float> highlight { cap.getX() + 0.38f * cap.getWidth(), cap.getY() + 0.30f * cap.getHeight() };
+        juce::ColourGradient gradient (colours.a, highlight, colours.b, highlight.translated (highlight.getDistanceFrom (cap.getBottomRight()), 0.0f), true);
+        gradient.clearColours();
+        gradient.addColour (0.0, colours.a);
+        gradient.addColour (0.8, colours.b);
+        gradient.addColour (1.0, colours.b);
+        g.setGradientFill (gradient);
+        g.fillEllipse (cap);
+    }
+    g.setColour (colours.ring.withAlpha (0.55f));
+    for (int i = 0; i < 24; ++i)
+    {
+        const auto a = juce::MathConstants<float>::twoPi * (float) i / 24.0f;
+        g.drawLine (juce::Line<float> (polar (capR - 0.6f, a), polar (capR - 2.6f, a)), 0.8f);
+    }
+    g.drawEllipse (cap.reduced (0.4f), 0.8f);
+    {
+        juce::Path mark;
+        mark.startNewSubPath (polar (capR - 2.0f, angle));
+        mark.lineTo (polar (capR * 0.35f, angle));
+        g.setColour (colours.pointer);
+        g.strokePath (mark, juce::PathStrokeType (2.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
+}
+
+
 Knob::Knob (juce::AudioProcessorValueTreeState& s, const juce::String& parameterId, juce::String captionText, juce::String unit, Size knobSize,
             Skin knobSkinChoice)
     : ParameterControl (s, parameterId, std::move (unit)), caption (std::move (captionText)), size (knobSize), skin (knobSkinChoice)
@@ -401,8 +488,26 @@ void Knob::valueChanged()
 
 juce::String Knob::getShownLabel() const
 {
-    // A large knob always shows its value on a line of its own, so its caption stays.
-    return (isDragging() || isHovered()) && size != Size::large ? getValueText() : caption;
+    // A knob that shows its value on a line of its own (a large one, any in an inspector) keeps its caption.
+    return (isDragging() || isHovered()) && ! isValueShown() ? getValueText() : caption;
+}
+
+void Knob::setValueShown (bool shouldShow)
+{
+    if (shouldShow != valueShown)
+    {
+        valueShown = shouldShow;
+        repaint();
+    }
+}
+
+void Knob::setGearStyle (bool shouldBeGear)
+{
+    if (shouldBeGear != gear)
+    {
+        gear = shouldBeGear;
+        repaint();
+    }
 }
 
 juce::Rectangle<int> Knob::getTextEntryBounds() const
@@ -426,59 +531,77 @@ void Knob::paint (juce::Graphics& g)
     const auto t = getNormalisedValue();
     const auto angle = arcStart + t * (arcEnd - arcStart);
 
-    juce::Path track;
-    track.addCentredArc (centre.x, centre.y, radius, radius, 0.0f, arcStart, arcEnd, true);
-    g.setColour (colours.track);
-    g.strokePath (track, stroke);
+    if (gear)
+    {
+        drawGearKnob (g, colours, centre, hit, angle);
+    }
+    else
+    {
+        juce::Path track;
+        track.addCentredArc (centre.x, centre.y, radius, radius, 0.0f, arcStart, arcEnd, true);
+        g.setColour (colours.track);
+        g.strokePath (track, stroke);
 
-    if (t >= 0.005f) // hidden at the minimum
-    {
-        juce::Path arc;
-        arc.addCentredArc (centre.x, centre.y, radius, radius, 0.0f, arcStart, angle, true);
-        g.setColour (accent);
-        g.strokePath (arc, stroke);
+        if (t >= 0.005f) // hidden at the minimum
+        {
+            juce::Path arc;
+            arc.addCentredArc (centre.x, centre.y, radius, radius, 0.0f, arcStart, angle, true);
+            g.setColour (accent);
+            g.strokePath (arc, stroke);
+        }
+
+        // The body: a soft shadow, the 1 px ring, the gradient (highlight up and to the left), the pointer.
+        const auto bodySize = size == Size::normal ? 40.0f : large ? 52.0f : 32.0f;
+        const auto body = juce::Rectangle<float> (bodySize, bodySize).withCentre (centre);
+        {
+            juce::Path disc;
+            disc.addEllipse (body.expanded (1.0f));
+            juce::DropShadow (juce::Colours::black.withAlpha (0.35f), large ? 9 : 6, { 0, large ? 4 : 3 }).drawForPath (g, disc);
+            g.setColour (colours.ring);
+            g.fillPath (disc);
+        }
+        {
+            // CSS radial-gradient(circle at 38% 30%, a, b 80%): the farthest-corner circle from that point,
+            // with b reached at 80% of its radius.
+            const juce::Point<float> highlight { body.getX() + 0.38f * bodySize, body.getY() + 0.30f * bodySize };
+            const auto farthest = highlight.getDistanceFrom (body.getBottomRight());
+            juce::ColourGradient gradient (colours.a, highlight, colours.b, highlight.translated (farthest, 0.0f), true);
+            gradient.clearColours();
+            gradient.addColour (0.0, colours.a);
+            gradient.addColour (0.8, colours.b);
+            gradient.addColour (1.0, colours.b);
+            g.setGradientFill (gradient);
+            g.fillEllipse (body);
+        }
+        if (large)
+        {
+            // The large knob's cap: a faint machined ring just inside the body's edge.
+            g.setColour (juce::Colours::white.withAlpha (0.06f));
+            g.drawEllipse (body.reduced (5.0f), 1.0f);
+        }
+        {
+            // The pointer: 3 wide, a quarter of the body long, a tenth of it in from the edge (10 and 4 on the 40 px body).
+            juce::Path pointer;
+            pointer.addRoundedRectangle (-1.5f, -bodySize * 0.5f + bodySize / 10.0f, 3.0f, bodySize / 4.0f, 1.5f);
+            g.setColour (colours.pointer);
+            g.fillPath (pointer, juce::AffineTransform::rotation (angle).translated (centre));
+        }
     }
 
-    // The body: a soft shadow, the 1 px ring, the gradient (highlight up and to the left), the pointer.
-    const auto bodySize = size == Size::normal ? 40.0f : large ? 52.0f : 32.0f;
-    const auto body = juce::Rectangle<float> (bodySize, bodySize).withCentre (centre);
+    // The label, or the value while dragging (and on hover): orange in the chrome, underlined in orange
+    // on an amp panel. A large knob keeps its caption and shows its value on a line under it, always; so does any
+    // knob in an inspector (valueShown), in the small type step.
+    if (! isEditingText() && valueShown && ! large)
     {
-        juce::Path disc;
-        disc.addEllipse (body.expanded (1.0f));
-        juce::DropShadow (juce::Colours::black.withAlpha (0.35f), large ? 9 : 6, { 0, large ? 4 : 3 }).drawForPath (g, disc);
-        g.setColour (colours.ring);
-        g.fillPath (disc);
+        const auto labelArea = juce::Rectangle<float> (box.getX() - 4.0f, wrap.getBottom() + 6.0f, box.getWidth() + 8.0f, 16.0f);
+        g.setFont (geist (Weight::medium, 12.0f));
+        g.setColour (colours.label);
+        g.drawText (caption, labelArea, juce::Justification::centred, false);
+        g.setFont (tabular (geist (Weight::medium, 11.0f)));
+        g.setColour (isDragging() ? accent : ink);
+        g.drawFittedText (getValueText(), labelArea.translated (0.0f, 15.0f).withHeight ((float) valueLineHeight).toNearestInt(), juce::Justification::centred, 1, 0.8f);
     }
-    {
-        // CSS radial-gradient(circle at 38% 30%, a, b 80%): the farthest-corner circle from that point,
-        // with b reached at 80% of its radius.
-        const juce::Point<float> highlight { body.getX() + 0.38f * bodySize, body.getY() + 0.30f * bodySize };
-        const auto farthest = highlight.getDistanceFrom (body.getBottomRight());
-        juce::ColourGradient gradient (colours.a, highlight, colours.b, highlight.translated (farthest, 0.0f), true);
-        gradient.clearColours();
-        gradient.addColour (0.0, colours.a);
-        gradient.addColour (0.8, colours.b);
-        gradient.addColour (1.0, colours.b);
-        g.setGradientFill (gradient);
-        g.fillEllipse (body);
-    }
-    if (large)
-    {
-        // The large knob's cap: a faint machined ring just inside the body's edge.
-        g.setColour (juce::Colours::white.withAlpha (0.06f));
-        g.drawEllipse (body.reduced (5.0f), 1.0f);
-    }
-    {
-        // The pointer: 3 wide, a quarter of the body long, a tenth of it in from the edge (10 and 4 on the 40 px body).
-        juce::Path pointer;
-        pointer.addRoundedRectangle (-1.5f, -bodySize * 0.5f + bodySize / 10.0f, 3.0f, bodySize / 4.0f, 1.5f);
-        g.setColour (colours.pointer);
-        g.fillPath (pointer, juce::AffineTransform::rotation (angle).translated (centre));
-    }
-
-    // The label, or the value while dragging (and on hover): emerald in the chrome, underlined in emerald
-    // on an amp panel. A large knob keeps its caption and shows its value on a line under it, always.
-    if (! isEditingText() && large)
+    else if (! isEditingText() && large)
     {
         const auto labelArea = juce::Rectangle<float> (box.getX() - 4.0f, wrap.getBottom() + 6.0f, box.getWidth() + 8.0f, 16.0f);
         g.setFont (geist (Weight::medium, 12.0f));
@@ -705,8 +828,32 @@ PowerSwitch::PowerSwitch (juce::AudioProcessorValueTreeState& s, const juce::Str
     attachment.sendInitialUpdate();
 }
 
+void PowerSwitch::setLabelled (bool shouldBeLabelled)
+{
+    labelled = shouldBeLabelled;
+    repaint();
+}
+
 void PowerSwitch::paint (juce::Graphics& g)
 {
+    if (labelled)
+    {
+        // The labelled toggle: the Switch's pill (orange border and dot on the right when on; ink-dim, dot on the left,
+        // when off; a step lighter hovered), then ON or OFF in 11 px semibold capitals.
+        const auto box = getLocalBounds().toFloat().reduced (2.0f);
+        const auto pill = juce::Rectangle<float> (box.getX() + 1.0f, box.getCentreY() - 8.0f, 28.0f, 16.0f);
+        const auto tone = on ? accent : (isMouseOver() ? ink : inkDim);
+        g.setColour (tone.withMultipliedAlpha (0.9f));
+        g.drawRoundedRectangle (pill.reduced (0.5f), 7.5f, 1.0f);
+        g.fillEllipse (juce::Rectangle<float> (8.0f, 8.0f).withPosition (pill.getX() + (on ? 16.0f : 4.0f), pill.getY() + 4.0f));
+        g.setFont (juce::Font (geist (Weight::semibold, 11.0f)).withExtraKerningFactor (0.06f));
+        g.setColour (on ? accent : inkFaint);
+        g.drawText (on ? "ON" : "OFF", box.withTrimmedLeft (36.0f), juce::Justification::centredLeft, false);
+        if (keyboardFocus)
+            drawFocusRing (g, pill);
+        return;
+    }
+
     // The 7 px dot: emerald while the block is engaged, line-2 while it's bypassed (hovered: a step lighter).
     const auto dot = juce::Rectangle<float> (7.0f, 7.0f).withCentre (getLocalBounds().toFloat().getCentre());
     g.setColour (on ? accent : (isMouseOver() ? inkFaint : line2));

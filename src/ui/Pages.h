@@ -197,6 +197,8 @@ public:
 
     BlockId getBlockId() const noexcept { return id; }
     const juce::String& getTitle() const noexcept { return title; }
+    /// The block's own switch in the header (nullptr if it has none).
+    Switch* getHeaderSwitch() noexcept { return onSwitch; }
 
     int preferredHeight (int width) override;
     void paint (juce::Graphics&) override;

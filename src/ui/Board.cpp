@@ -90,7 +90,7 @@ public:
     void paint (juce::Graphics& g) override
     {
         const auto box = getLocalBounds().toFloat();
-        drawPedal (g, box, id, { on, board.selected == id, hovered && board.dragged != id });
+        drawPedal (g, box, id, { on, board.selected == id, hovered && board.dragged != id, sectionOff });
 
         // An LED that has just come on blooms for a moment (the art's own glow is the steady state).
         if (const auto left = glowLeft(); left > 0.0f)
@@ -100,7 +100,7 @@ public:
             const auto lift = board.selected == id ? 3.0f : 0.0f;
             const auto led = pedalLayout (id).led;
             const juce::Point<float> c { fit.getX() + led.getCentreX() * k, fit.getY() + (led.getCentreY() - lift) * k };
-            const auto r = 22.0f * k;
+            const auto r = 34.0f * k;
             juce::ColourGradient bloom (accent.withAlpha (0.6f * left * left), c, accent.withAlpha (0.0f), c.translated (r, 0.0f), true);
             g.setGradientFill (bloom);
             g.fillEllipse (juce::Rectangle<float> (2.0f * r, 2.0f * r).withCentre (c));
@@ -181,6 +181,11 @@ private:
     juce::RangedAudioParameter* parameter = nullptr;
     bool on = false, hovered = false, dragging = false;
     float downX = 0.0f;
+
+public:
+    bool sectionOff = false; // its section is off: drawn dimmed (RD4-1), its LED still telling its own switch
+
+private:
     double glowStart = -1.0;
 };
 
@@ -352,6 +357,7 @@ Board::Board (AmpSimProcessor& p) : ampSim (p)
     postSwitch->setTooltip ("The whole post section on or off (each pedal keeps its own switch)");
     for (auto* s : { preSwitch.get(), postSwitch.get() })
     {
+        s->setLabelled (true);
         s->onChange = [this] { refresh(); repaint(); };
         addAndMakeVisible (*s);
     }
@@ -394,6 +400,12 @@ bool Board::isLit (BlockId id) const
 {
     auto* pedal = pedalFor (id);
     return pedal != nullptr && pedal->isOn();
+}
+
+bool Board::isDimmed (BlockId id) const
+{
+    auto* pedal = pedalFor (id);
+    return pedal != nullptr && pedalDimmed ({ pedal->isOn(), false, false, pedal->sectionOff });
 }
 
 void Board::clickPedal (BlockId id, bool onFootswitch)
@@ -470,8 +482,14 @@ void Board::refresh()
     {
         pedal->poll();
         glowing = glowing || pedal->glowLeft() > 0.0f;
+        // A section that's off dims its pedals as a pedal that's off is dimmed (RD4-1): one treatment for "not sounding".
         const auto section = info (pedal->id).section;
-        pedal->setAlpha (section == Section::amp || sectionOn (section) ? 1.0f : 0.45f);
+        const auto off = section != Section::amp && ! sectionOn (section);
+        if (off != pedal->sectionOff)
+        {
+            pedal->sectionOff = off;
+            pedal->repaint();
+        }
     }
     if (glowing && ! isTimerRunning())
         startTimerHz (animationFps);
@@ -535,8 +553,9 @@ void Board::resized()
     rows[1] = rows[0].withY (rowPad + rowHeight + rowGap);
     for (int r = 0; r < 2; ++r)
     {
+        // The section's labelled toggle under its name.
         auto* s = r == 0 ? preSwitch.get() : postSwitch.get();
-        s->setBounds (juce::Rectangle<int> (17, 17).withCentre ({ sidePad + 4, rows[(size_t) r].getCentreY() + 8 }));
+        s->setBounds (sidePad - 3, rows[(size_t) r].getCentreY() + 2, PowerSwitch::labelledWidth, PowerSwitch::labelledHeight);
     }
     layoutRows();
 }
