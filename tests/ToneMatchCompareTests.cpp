@@ -333,6 +333,7 @@ public:
                 ed.refresh();
                 const auto file = shots.getChildFile (name + ".png");
                 expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), file));
+                expect (redesignCopy (file));
                 return file.getFileName();
             };
             juce::StringArray pngs;
@@ -503,6 +504,7 @@ public:
             page.refresh();
             const auto file = shots.getChildFile ("14_compare_same_part.png");
             expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), file));
+            expect (redesignCopy (file));
             page.togglePreview();
             expectWithinAbsoluteError (fractionAfter, fraction + 0.025f, 0.08f);
             logMessage ("  -> same part on the fixtures' target_same.wav: the target's loop 2.0 to 6.0 s maps to the DI's " + juce::String ((double) di.first / fs, 3)

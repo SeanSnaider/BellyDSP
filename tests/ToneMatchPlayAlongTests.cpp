@@ -501,6 +501,7 @@ public:
                 ed.refresh();
                 const auto file = shots.getChildFile (name + ".png");
                 expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), file));
+                expect (redesignCopy (file, name == "22_recording" ? juce::String ("take_recording") : juce::String())); // 02_recording is the DI alone
                 pngs.add ("tone_match/" + file.getFileName());
             };
 
@@ -609,6 +610,7 @@ public:
             page.refresh();
             const auto shot = proofDir().getChildFile ("tone_match").getChildFile ("24_play_guitar_only.png");
             expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), shot));
+            expect (redesignCopy (shot));
             page.toggleTargetPlay();
 
             // Another range: the stem was of the old one, so it's gone and the full song plays.

@@ -265,6 +265,7 @@ public:
             shot.getParentDirectory().createDirectory();
             ed.refresh();
             expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), shot));
+            expect (redesignCopy (shot));
 
             // A same-part match of this take: its DTW path goes into take.json. (Anything is the default after a take
             // since Round 2, so Same part is chosen here.)

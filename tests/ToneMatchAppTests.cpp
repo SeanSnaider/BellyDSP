@@ -152,6 +152,7 @@ public:
                 ed.refresh();
                 const auto file = shots.getChildFile (name + ".png");
                 expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), file));
+                expect (redesignCopy (file));
                 return file.getFileName();
             };
             juce::StringArray pngs;
@@ -202,6 +203,8 @@ public:
 
             page.startMatch();
             expect (session.isMatching());
+            // The steps follow the flow (the six-step page, ASSUMPTIONS RD3-10): the match running, nothing to apply yet.
+            expect (page.getStepState (3) == ui::overlay::Step::active && page.getStepState (6) == ui::overlay::Step::waiting);
             const auto t0 = juce::Time::getMillisecondCounterHiRes();
             while (session.getProgress() < 0.3 && juce::Time::getMillisecondCounterHiRes() - t0 < 60000.0)
                 juce::Thread::sleep (20);
@@ -213,6 +216,9 @@ public:
             expect (session.hasResult(), session.getError());
             const auto r = session.getResult(); // a copy: Discard clears the session's
             pngs.add (snap ("04_result"));
+            expect (page.getStepState (3) == ui::overlay::Step::done && page.getStepState (4) == ui::overlay::Step::done
+                    && page.getStepState (5) == ui::overlay::Step::next && page.getStepState (6) == ui::overlay::Step::next);
+            expect (page.getStepNote (4).startsWith ("spectral error "), page.getStepNote (4));
             const auto note = page.getApplyNote();
             expectEquals (note, juce::String ("Apply sets these in one undo step: the compressors, boost, and overdrive as the match has them (it uses none), "
                                               "the pre EQ off (on now: compressor, boost, pre EQ). The gate stays as it is."));
@@ -239,6 +245,7 @@ public:
             expect (getParam (p, "gate_a_on") > 0.5f, "Apply must leave the noise gate on");
             expect (getParam (p, "pre_fx_on") > 0.5f, "Apply leaves the pre section's own switch alone");
             pngs.add (snap ("05_applied"));
+            expect (page.getStepState (6) == ui::overlay::Step::done && page.getStepNote (6) == "Applied");
 
             // One undo step puts everything back, the cab included; redo applies it again.
             expect (p.undoManager.canUndo());
@@ -357,6 +364,7 @@ public:
             ed.refresh();
             const auto shot = shots.getChildFile ("31_result_pedal.png");
             expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), shot));
+            expect (redesignCopy (shot));
 
             page.apply();
             waitForLoads (p);
@@ -515,6 +523,7 @@ public:
             const auto file = shots.getChildFile ("06_separation_error.png");
             ed.refresh();
             expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), file));
+            expect (redesignCopy (file));
             logMessage ("  -> the page says \"" + page.getStatusText() + "\"; snapshot tone_match/" + file.getFileName());
         }
     }

@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Sean Snaider
 
 #include "LookAndFeel.h"
+#include "Overlay.h"
 
 namespace ui
 {
@@ -32,7 +33,9 @@ LookAndFeel::LookAndFeel()
     set (juce::ComboBox::arrowColourId, inkFaint);
     set (juce::ComboBox::focusedOutlineColourId, accent);
 
-    set (juce::PopupMenu::backgroundColourId, surface);
+    // Not quite opaque, so the menu's window is transparent and its corners can be rounded (drawPopupMenuBackground
+    // paints the panel itself, fully opaque).
+    set (juce::PopupMenu::backgroundColourId, raised.withAlpha (0.996f));
     set (juce::PopupMenu::textColourId, ink);
     set (juce::PopupMenu::headerTextColourId, inkFaint);
     set (juce::PopupMenu::highlightedBackgroundColourId, line1);
@@ -61,7 +64,7 @@ LookAndFeel::LookAndFeel()
     set (juce::ScrollBar::thumbColourId, line2);
     set (juce::ScrollBar::trackColourId, juce::Colours::transparentBlack);
 
-    set (juce::AlertWindow::backgroundColourId, surface);
+    set (juce::AlertWindow::backgroundColourId, panelBg);
     set (juce::AlertWindow::textColourId, ink);
     set (juce::AlertWindow::outlineColourId, line2);
 
@@ -86,29 +89,41 @@ juce::Path LookAndFeel::roundedBox (juce::Rectangle<float> r, float radius, bool
 
 void LookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& button, const juce::Colour&, bool highlighted, bool down)
 {
-    // Outlined, like the top bar's Save (handoff 4.3): a 1 px line-2 border, ink-faint on hover, emerald
-    // when the button is toggled on (A or B, Store armed). Pressed: the surface fill.
+    // Outlined, like the top bar's Save (handoff 4.3): a 1 px line-2 border, ink-faint on hover, orange
+    // when the button is toggled on (A or B, Store armed). Pressed: the surface fill. A step's main action
+    // (setPrimary: Match, Apply, Record) is filled with the hairline colour under a stronger border, so it reads
+    // first without taking the accent, which stays for on and active.
     const auto bounds = button.getLocalBounds().toFloat().reduced (0.5f);
     const auto path = roundedBox (bounds, radiusControl, ! button.isConnectedOnLeft(), ! button.isConnectedOnRight());
+    const auto enabled = button.isEnabled();
+    if (isPrimary (button))
+    {
+        g.setColour ((button.getToggleState() ? accentDim : (down ? raised : (highlighted ? line2 : line1))).withMultipliedAlpha (enabled ? 1.0f : 0.5f));
+        g.fillPath (path);
+        const auto border = button.getToggleState() ? accent : (highlighted ? inkDim : inkFaint);
+        g.setColour (border.withMultipliedAlpha (enabled ? 1.0f : 0.45f));
+        g.strokePath (path, juce::PathStrokeType (1.0f));
+        return;
+    }
     if (down)
     {
         g.setColour (surface);
         g.fillPath (path);
     }
     const auto border = button.getToggleState() ? accent : (highlighted ? inkFaint : line2);
-    g.setColour (border.withMultipliedAlpha (button.isEnabled() ? 1.0f : 0.5f));
+    g.setColour (border.withMultipliedAlpha (enabled ? 1.0f : 0.5f));
     g.strokePath (path, juce::PathStrokeType (1.0f));
 }
 
-juce::Font LookAndFeel::getTextButtonFont (juce::TextButton&, int)
+juce::Font LookAndFeel::getTextButtonFont (juce::TextButton& button, int)
 {
-    return geist (Weight::regular, 13.0f);
+    return geist (isPrimary (button) ? Weight::medium : Weight::regular, 13.0f);
 }
 
 void LookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& button, bool highlighted, bool)
 {
     g.setFont (getTextButtonFont (button, button.getHeight()));
-    const auto colour = button.getToggleState() || highlighted ? ink : inkDim;
+    const auto colour = button.getToggleState() || highlighted || isPrimary (button) ? ink : inkDim;
     g.setColour (colour.withMultipliedAlpha (button.isEnabled() ? 1.0f : 0.45f));
     g.drawFittedText (button.getButtonText(), button.getLocalBounds().reduced (6, 2), juce::Justification::centred, 1, 0.85f);
 }
@@ -163,10 +178,16 @@ void LookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label& label)
 
 void LookAndFeel::drawPopupMenuBackground (juce::Graphics& g, int width, int height)
 {
+    // A raised panel with rounded corners and a hairline, and a faint lighter line along its top edge (light from
+    // above, as on the gear), on a transparent window.
     const auto bounds = juce::Rectangle<float> (0.0f, 0.0f, (float) width, (float) height);
-    g.fillAll (surface);
+    g.fillAll (juce::Colours::transparentBlack);
+    g.setColour (raised);
+    g.fillRoundedRectangle (bounds, 8.0f);
     g.setColour (line2);
-    g.drawRect (bounds, 1.0f);
+    g.drawRoundedRectangle (bounds.reduced (0.5f), 8.0f, 1.0f);
+    g.setColour (ink.withAlpha (0.05f));
+    g.fillRect (bounds.reduced (8.0f, 0.0f).withY (1.0f).withHeight (1.0f));
 }
 
 juce::Font LookAndFeel::getPopupMenuFont()
@@ -185,7 +206,7 @@ void LookAndFeel::getIdealPopupMenuItemSize (const juce::String& itemText, bool 
     }
 
     const auto f = getPopupMenuFont();
-    idealHeight = standardMenuItemHeight > 0 ? standardMenuItemHeight : 28;
+    idealHeight = standardMenuItemHeight > 0 ? standardMenuItemHeight : 30;
     idealWidth = juce::roundToInt (juce::GlyphArrangement::getStringWidth (f, itemText)) + idealHeight * 2 + 12;
 }
 
@@ -195,8 +216,8 @@ void LookAndFeel::drawPopupMenuItem (juce::Graphics& g, const juce::Rectangle<in
 {
     if (isSeparator)
     {
-        g.setColour (outline);
-        g.fillRect (area.reduced (8, 0).withSizeKeepingCentre (area.getWidth() - 16, 1));
+        g.setColour (line1);
+        g.fillRect (area.reduced (10, 0).withSizeKeepingCentre (area.getWidth() - 20, 1));
         return;
     }
 
@@ -204,7 +225,7 @@ void LookAndFeel::drawPopupMenuItem (juce::Graphics& g, const juce::Rectangle<in
     if (isHighlighted && isActive)
     {
         g.setColour (line1);
-        g.fillRoundedRectangle (r.toFloat(), 4.0f);
+        g.fillRoundedRectangle (r.toFloat(), 5.0f);
     }
 
     const auto colour = textColour != nullptr ? *textColour : (isTicked ? accent : text);
@@ -239,17 +260,16 @@ void LookAndFeel::drawPopupMenuItem (juce::Graphics& g, const juce::Rectangle<in
 
     if (shortcutKeyText.isNotEmpty())
     {
-        g.setColour (inkFaint);
-        g.setFont (font (Text::label));
-        g.drawText (shortcutKeyText, r.reduced (6, 0), juce::Justification::centredRight, true);
+        // The shortcut as a keycap at the right, as the overlays show their keys.
+        const auto w = overlay::keycapWidth (shortcutKeyText);
+        overlay::paintKeycap (g, shortcutKeyText, (float) r.getRight() - 8.0f - w, (float) r.getCentreY());
     }
 }
 
 void LookAndFeel::drawPopupMenuSectionHeader (juce::Graphics& g, const juce::Rectangle<int>& area, const juce::String& sectionName)
 {
-    g.setFont (geist (Weight::medium, 12.0f));
-    g.setColour (inkFaint);
-    g.drawFittedText (sectionName, area.reduced (12, 0).withTrimmedTop (4), juce::Justification::centredLeft, 1, 0.8f);
+    // As the overlays' group labels: small, uppercase, tracked, faint.
+    overlay::paintGroupLabel (g, area.reduced (14, 0).withTrimmedTop (6), sectionName);
 }
 
 // ---- Text ----------------------------------------------------------------------------------------
@@ -319,9 +339,30 @@ std::unique_ptr<juce::FocusOutline> LookAndFeel::createFocusOutlineForComponent 
     return std::make_unique<juce::FocusOutline> (std::make_unique<Ring>());
 }
 
-juce::Font LookAndFeel::getAlertWindowTitleFont() { return font (Text::title); }
+juce::Font LookAndFeel::getAlertWindowTitleFont() { return geist (Weight::semibold, 15.0f); }
 juce::Font LookAndFeel::getAlertWindowMessageFont() { return font (Text::body); }
 juce::Font LookAndFeel::getAlertWindowFont() { return font (Text::body); }
+
+void LookAndFeel::drawAlertBox (juce::Graphics& g, juce::AlertWindow& alert, const juce::Rectangle<int>& textArea, juce::TextLayout& textLayout)
+{
+    // A dialog in the overlays' world: the panel colour with radius 10 and a hairline, the title and message as JUCE
+    // lays them out (no icon: a problem is said in words), and a hairline over the buttons.
+    const auto bounds = alert.getLocalBounds().toFloat();
+    g.setColour (panelBg);
+    g.fillRoundedRectangle (bounds, radiusCard);
+    g.setColour (line2);
+    g.drawRoundedRectangle (bounds.reduced (0.5f), radiusCard, 1.0f);
+    g.setColour (alert.findColour (juce::AlertWindow::textColourId));
+    textLayout.draw (g, textArea.toFloat());
+    if (alert.getNumButtons() > 0)
+    {
+        const auto top = alert.getButton (0)->getY() - 14;
+        g.setColour (line1);
+        g.fillRect (juce::Rectangle<float> (1.0f, (float) top, bounds.getWidth() - 2.0f, 1.0f));
+    }
+}
+
+int LookAndFeel::getAlertWindowButtonHeight() { return controlHeight + 2; }
 
 void showMenu (juce::PopupMenu menu, juce::Component* target, juce::LookAndFeel* lookAndFeel, bool atMouse)
 {

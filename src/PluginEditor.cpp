@@ -6,6 +6,7 @@
 #include "platform/AppInfo.h"
 #include "platform/SampleRateGuard.h"
 #include "platform/Updater.h"
+#include "ui/Overlay.h"
 
 using namespace ui::theme;
 
@@ -192,12 +193,14 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p) : AudioProcessorEditor (&p), amp
 
     settingsPage = std::make_unique<ui::SettingsPage> (p);
     settingsPage->onClose = [this] { closeOverlay(); };
+    settingsPage->onLicences = [this] { showAbout(); };
     auto& output = settingsPage->getOutputPage();
     output.onAbSelect = [this] (bool b) { abSelect (b); };
     output.onAbCopy = [this] { ampSim.abCopyToOther(); };
     output.onTap = [this] { ampSim.tapTempo(); };
     output.onMidiMappings = [this] { showMidiMappings(); };
     tunerPage = std::make_unique<ui::TunerPage> (p);
+    tunerPage->onClose = [this] { closeOverlay(); };
     toneMatchPage = std::make_unique<ui::ToneMatchPage> (p);
     toneMatchPage->onClose = [this] { closeOverlay(); };
 
@@ -471,7 +474,7 @@ void AmpSimEditor::openOverlay (ui::Overlay o)
     }
     overlay = o;
     auto* page = overlayPage (o);
-    overlayFrame->hold (page, o == ui::Overlay::tuner ? juce::String ("Tuner") : juce::String());
+    overlayFrame->hold (page, {}); // each overlay draws its own header with Close (ui::overlay::paintHeader)
     overlayFrame->setVisible (true);
     overlayFrame->toFront (false);
     topBar.toFront (false);
@@ -973,6 +976,8 @@ juce::PopupMenu AmpSimEditor::sceneMenuFor (int index)
         window->addTextEditor ("name", safe->ampSim.getScenes().get (index).name);
         window->addButton ("Rename", 1, juce::KeyPress (juce::KeyPress::returnKey));
         window->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+        ui::setPrimary (*window->getButton (0));
+        window->setOpaque (false); // its LookAndFeel draws it as a rounded panel (ui::LookAndFeel::drawAlertBox)
         window->enterModalState (true, juce::ModalCallbackFunction::create ([safe, index, window, changed] (int result)
         {
             if (result == 1 && safe != nullptr)

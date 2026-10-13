@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "Overlay.h"
 #include "Pages.h"
 #include "ToneMatchSession.h"
 #include "tonematch/GuitarSeparator.h"
@@ -10,22 +11,27 @@
 namespace ui
 {
 
-/// The tone match page (docs/TONE_MATCH.md), opened from the brand menu's "Match tone...". The UI handoff
-/// didn't design it, so it's a quiet page in the handoff's tokens and components (ASSUMPTIONS TM): a header
-/// with the honest note, three cards across (Target, Your DI, Match), and the result under them.
+/// The tone match overlay (docs/TONE_MATCH.md), opened from the top bar's Match tone or the brand menu's "Match
+/// tone...". Laid out as its real flow (the redesign, phase 3; ASSUMPTIONS RD3-10 to RD3-19): six numbered steps, read
+/// left to right and top to bottom, each a panel with a badge that says where it stands (waiting, next, running,
+/// done) and its main action as the panel's primary button.
 ///
-///   Target    Choose file... (or drop one on the page), the waveform with the range to match (drag to
-///             select, drag an edge or the middle to adjust; 3 to 60 s), Play (the section, looped; Full song
-///             or Guitar only once a separated match made a stem; its level), and, when the build has it,
-///             "Separate the guitar first"; "Count-in before Play".
-///   Your DI   Record: with a target loaded, a play-along take (the count-in, then the section once while
-///             your DI records, lined up with it; docs/TONE_MATCH.md, "Play along"); without one, the clean
-///             DI up to a minute. Or Choose file... The mode: Same part or Anything. The count-in (on, 4 or
-///             2 beats, its tempo with Tap and the section's measured tempo as a suggestion, the click's
-///             level) and the latency offset. After a take, a quiet Save take (for the learning prototype).
-///   Match     the button, the progress with its stage, and Cancel.
-///   Result    the amp, Gain, tone, cab, and match EQ found; the closeness score with what it does and doesn't
-///             mean; the match EQ curve over what it was fitted to; Apply (one undo step) and Discard.
+///   1 The song    Choose file... (or drop one on the page), the waveform with the section to match (drag to
+///                 select, drag an edge or the middle to adjust; 3 to 60 s), Play (the section, looped; Full song
+///                 or Guitar only once a separated match made a stem), the song's level, "Count-in before Play",
+///                 and, when the build has it, "Separate the guitar first" with what the download takes.
+///   2 Your DI     Record: with a song loaded, a play-along take (the count-in, then the section once while your
+///                 DI records, lined up with it; docs/TONE_MATCH.md, "Play along"); without one, the clean DI up to
+///                 a minute. Or Choose file... What's recorded and how the take lined up, Save take (for the
+///                 learning prototype), and the count-in (on, 4 or 2 beats, its tempo with Tap and the section's
+///                 measured tempo, the click's level) with the latency offset.
+///   3 Match       what you played (Same part or Anything), "Clean up with my take" (Auto, On, Off) with why it
+///                 can't when it can't, Match and Cancel, the progress with its stage, and every error in full.
+///   4 Result      the closeness, what it chose (the amp, Gain, the effects, the tone, the cab, the match EQ or
+///                 curve), and the curve over what it was fitted to, with the target's and the match's spectra.
+///   5 Compare     Target, Match, Current (and Raw after a cleanup), level-matched, on the loop, with the live
+///                 mute and the level; Space and 1 to 4.
+///   6 Apply       what Apply sets, in one undo step, then Apply and Discard.
 ///
 /// It owns the ToneMatchSession, which does the work.
 class ToneMatchPage final : public ControlGroup, public juce::FileDragAndDropTarget, private juce::Timer
@@ -141,6 +147,19 @@ public:
     /// A pedal as the result card lists it ("Overdrive, Distortion;Drive 30;Tone 50;Level +0.0 dB": items split at ';').
     static juce::String pedalText (const ampsim::tonematch::Pedal& pedal);
 
+    // ---- The steps (for tests: the page's organisation) ----------------------------------------------------
+    static constexpr int numSteps = 6;
+    /// Step 1 to 6's title ("The song", "Your DI", "Match", "Result", "Compare", "Apply").
+    static juce::String stepTitle (int step);
+    /// Where step 1 to 6 stands now: waiting, next, running, or done.
+    overlay::Step getStepState (int step) const;
+    /// Step 1 to 6's panel, in the page's coordinates.
+    juce::Rectangle<int> getStepArea (int step) const;
+    /// What step 1 to 6's heading says at its right ("0:12.0 to 0:42.0", "Recording", "Done in 3.1 s").
+    juce::String getStepNote (int step) const;
+    /// Every control on the page with the step it belongs to (for tests: each sits inside its step's panel).
+    std::vector<std::pair<juce::Component*, int>> getStepControls() const;
+
 private:
     void timerCallback() override;
     void targetChanged();
@@ -179,7 +198,8 @@ private:
     juce::String resultText, statusText;
     juce::StringArray resultLabels;           // "Amp", "Tone", "Cab", "Match EQ"
     std::vector<juce::StringArray> resultItems; // each line's items, packed at paint time
-    juce::Rectangle<int> header, targetCard, referenceCard, matchCard, resultCard, progressArea, statusArea, resultTextArea, applyNoteArea;
+    juce::Rectangle<int> header, targetCard, referenceCard, matchCard, resultCard, compareCard, applyCard, progressArea, statusArea, resultTextArea,
+        applyNoteArea, fileNameArea, takeCaptionArea, hintArea, modeLabelArea, compareStatusArea, appliedArea;
     bool applied = false;
 };
 

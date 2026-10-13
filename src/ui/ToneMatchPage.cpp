@@ -35,14 +35,7 @@ void drawText (juce::Graphics& g, const juce::String& s, juce::Rectangle<int> ar
     g.drawText (s, area, j, true);
 }
 
-void drawWrapped (juce::Graphics& g, const juce::String& s, juce::Rectangle<int> area, Text style, juce::Colour colour)
-{
-    g.setFont (font (style));
-    g.setColour (colour);
-    g.drawFittedText (s, area, juce::Justification::topLeft, 4, 1.0f);
-}
-
-constexpr int waveformHeight = 72; // 84 until the cleanup switch took a row (ASSUMPTIONS TM53)
+constexpr int waveformHeight = 66; // 84 until the cleanup switch took a row (ASSUMPTIONS TM53); 66 in the six steps (RD3-18)
 
 const char* const honestNote =
     "A song only holds the rig's output, mixed with everything else, so the real amp can't be recovered. "
@@ -254,7 +247,7 @@ private:
 
 // ---- The match EQ curve ------------------------------------------------------------------------------------
 
-class ToneMatchPage::EqCurve final : public juce::Component
+class ToneMatchPage::EqCurve final : public juce::Component, public juce::SettableTooltipClient
 {
 public:
     void setResult (const ToneMatchSession::MatchResult* r)
@@ -302,6 +295,11 @@ public:
             for (size_t i = 0; i < f.size(); ++i)
                 curve.push_back ({ f[i], db[i] + offset });
         }
+        setTooltip (target.empty() ? juce::String()
+                    : usesCurve ? "Match curve as it plays (thick line) over what was left to fit (dots, faint ones barely count); the target's and the match's "
+                                  "long-term spectra as thin lines, level-matched"
+                                : "Match EQ (thick line) over what was left to fit (dots, faint ones barely count); the target's and the match's "
+                                  "long-term spectra as thin lines, level-matched");
         repaint();
     }
 
@@ -408,24 +406,24 @@ public:
 
         g.setFont (font (Text::caption));
         g.setColour (textDim);
+        // Every grid line labelled when there's room; in the Result step's narrow curve, every other one (50, 200, 1k, 5k).
+        const auto narrow = getWidth() < 360;
         for (auto [f, label] : std::initializer_list<std::pair<double, const char*>> { { 50.0, "50" }, { 100.0, "100" }, { 200.0, "200" }, { 500.0, "500" },
                                                                                        { 1000.0, "1k" }, { 2000.0, "2k" }, { 5000.0, "5k" }, { 10000.0, "10k" } })
-            g.drawText (label, juce::Rectangle<float> (xFor (f) + 3.0f, r.getBottom() - 15.0f, 30.0f, 12.0f), juce::Justification::centredLeft, false);
+            if (! narrow || f == 50.0 || f == 200.0 || f == 1000.0 || f == 5000.0)
+                g.drawText (label, juce::Rectangle<float> (xFor (f) + 3.0f, r.getBottom() - 15.0f, 30.0f, 12.0f), juce::Justification::centredLeft, false);
         for (auto db : { -12.0, -6.0, 6.0, 12.0 })
             g.drawText ((db > 0 ? "+" : "") + juce::String (juce::roundToInt (db)), juce::Rectangle<float> (r.getX() + 4.0f, yFor (db) - 13.0f, 30.0f, 12.0f),
                         juce::Justification::centredLeft, false);
-        g.drawText (target.empty() ? "The match EQ appears here"
-                                   : usesCurve ? "Match curve as it plays (thick line) over what was left to fit (dots, faint ones barely count)"
-                                               : "Match EQ (thick line) over what was left to fit (dots, faint ones barely count)",
+        // The caption (the full sentence is the tooltip, as the curve is drawn small in the Result step).
+        g.drawText (target.empty() ? "The match EQ appears here" : usesCurve ? "Match curve as it plays" : "Match EQ",
                     r.reduced (8.0f, 5.0f).withHeight (13.0f), juce::Justification::centredRight, false);
 
-        // The spectra's legend, under the EQ's caption: a short line in each colour before its name.
+        // The spectra's legend, under the caption: a short line in each colour before its name.
         if (! targetSpectrum.empty())
         {
             auto row = r.reduced (8.0f, 5.0f).withTrimmedTop (16.0f).withHeight (13.0f);
             const auto f = font (Text::caption);
-            const juce::String note ("long-term spectra, level-matched");
-            const auto noteWidth = textWidth (f, note);
             auto item = [&] (const juce::String& name, juce::Colour c) {
                 const auto w = textWidth (f, name);
                 auto area = row.removeFromRight (w + 22.0f);
@@ -434,10 +432,8 @@ public:
                 g.setColour (textDim);
                 g.drawText (name, area.withTrimmedLeft (18.0f), juce::Justification::centredLeft, false);
             };
-            g.setColour (textDim);
-            g.drawText (note, row.removeFromRight (noteWidth + 4.0f), juce::Justification::centredRight, false);
-            row.removeFromRight (10.0f);
             item ("Match", accent);
+            row.removeFromRight (6.0f);
             item ("Target", ink);
         }
     }
@@ -852,6 +848,9 @@ ToneMatchPage::ToneMatchPage (AmpSimProcessor& p)
     addAndMakeVisible (*eqCurve);
 
     modeChoice = std::make_unique<Segmented> (juce::StringArray { "Same part", "Anything" });
+    modeChoice->setPillStyle (true);
+    modeChoice->setOptionTooltips ({ "You played the target's part: the two are lined up in time and compared moment by moment",
+                                     "You played anything: long-term statistics (play the same kind of part)" });
     modeChoice->setSelected (1);
     modeChoice->onChange = [this] (int i) {
         session.setMode (i == 0 ? Mode::samePart : Mode::anything);
@@ -891,6 +890,11 @@ ToneMatchPage::ToneMatchPage (AmpSimProcessor& p)
         if (onClose)
             onClose();
     });
+    closeButton->setTooltip ("Back to the main screen (Esc). A match or a take keeps going");
+    closeButton->setHasFocusOutline (true);
+    // Each step's main action reads first (ui::setPrimary): Record, Match, Apply.
+    for (auto* b : { recordButton, matchButton, applyButton })
+        setPrimary (*b);
 
     // The comparison (A/B): the sources, Play, the loop, the level match, the live mute, the level.
     playButton = &addButton ("Play", [this] { togglePreview(); });
@@ -1019,8 +1023,9 @@ void ToneMatchPage::timerCallback()
 {
     session.poll();
     refresh();
-    repaint (matchCard);
-    repaint (referenceCard);
+    // Every step's badge and note can move (a take, the match's progress, the comparison's renders): the whole page,
+    // 15 times a second while it's open or something runs.
+    repaint();
     if (session.isTargetPlaying() || session.isPlayingAlong())
         waveform->repaint();
     if (! isShowing() && ! session.isRecording() && ! session.isMatching() && ! session.isRenderingCompare())
@@ -1399,10 +1404,12 @@ void ToneMatchPage::refresh()
     recordButton->setTooltip (session.getTarget().empty() ? "Record your DI (up to a minute)"
                                                           : "Play along: the count-in, then the section once while your DI records, lined up with it");
     recordButton->setEnabled (! matching);
+    recordButton->setToggleState (recording, juce::dontSendNotification); // orange while it records (active)
 
     // Hearing the target, and the count-in.
     targetPlayButton->setEnabled (! session.getTarget().empty() && ! take && ! matching);
     targetPlayButton->setButtonText (session.isTargetPlaying() ? "Stop" : "Play");
+    targetPlayButton->setToggleState (session.isTargetPlaying(), juce::dontSendNotification);
     songChoice->setVisible (session.hasGuitarStem());
     songChoice->setSelected (session.getSongSource(), juce::dontSendNotification);
     songLevelBar->setEnabled (! session.getTarget().empty());
@@ -1462,6 +1469,7 @@ void ToneMatchPage::refresh()
         c->setEnabled (ready && ! take);
     }
     playButton->setButtonText (session.isPreviewPlaying() ? "Stop" : "Play");
+    playButton->setToggleState (session.isPreviewPlaying(), juce::dontSendNotification);
     loopStrip->setPlayhead (session.isPreviewPlaying() && ampSim.getPreviewPlayer().isActive() ? ampSim.getPreviewPlayer().getPlayheadFraction() : -1.0f);
     sourceChoice->setSelected (session.getPreviewSource(), juce::dontSendNotification);
     const auto haveSpectra = ! session.getTargetSpectrum().empty() && ! session.getMatchSpectrum().empty();
@@ -1474,6 +1482,10 @@ void ToneMatchPage::refresh()
             eqCurve->setSpectra ({}, {}, {});
     }
 
+    // A segmented choice draws the same enabled or not: a disabled one is dimmed here, as a button dims itself.
+    for (auto* c : std::initializer_list<juce::Component*> { modeChoice.get(), cleanupChoice.get(), beatsChoice.get(), songChoice.get(), sourceChoice.get() })
+        c->setAlpha (c->isEnabled() ? 1.0f : 0.45f);
+
     if (session.getError().isNotEmpty())
         statusText = session.getError();
     else if (matching)
@@ -1484,82 +1496,212 @@ void ToneMatchPage::refresh()
         statusText = session.whyCantMatch();
 }
 
+// ---- The steps --------------------------------------------------------------------------------------------
+
+juce::String ToneMatchPage::stepTitle (int step)
+{
+    switch (step)
+    {
+        case 1: return "The song";
+        case 2: return "Your DI";
+        case 3: return "Match";
+        case 4: return "Result";
+        case 5: return "Compare";
+        case 6: return "Apply";
+        default: break;
+    }
+    return {};
+}
+
+overlay::Step ToneMatchPage::getStepState (int step) const
+{
+    // Where each step stands: running while what it started runs (the song playing, a recording or a take, the
+    // match, the comparison), done once it has what the next step needs, next when it's what to do now, else
+    // waiting. Every control stays usable whatever its step says (a DI can be recorded before a song is chosen).
+    using S = overlay::Step;
+    const auto hasTarget = ! session.getTarget().empty(), hasReference = ! session.getReference().empty(), result = session.hasResult();
+    switch (step)
+    {
+        case 1: return session.isTargetPlaying() ? S::active : hasTarget ? S::done : S::next;
+        case 2: return session.isRecording() ? S::active : hasReference ? S::done : hasTarget ? S::next : S::waiting;
+        case 3: return session.isMatching() ? S::active : result ? S::done : session.whyCantMatch().isEmpty() ? S::next : S::waiting;
+        case 4: return result ? S::done : S::waiting;
+        case 5: return ! result ? S::waiting : session.isPreviewPlaying() ? S::active : S::next;
+        case 6: return applied ? S::done : result && ! session.isMatching() ? S::next : S::waiting;
+        default: break;
+    }
+    return S::waiting;
+}
+
+juce::Rectangle<int> ToneMatchPage::getStepArea (int step) const
+{
+    switch (step)
+    {
+        case 1: return targetCard;
+        case 2: return referenceCard;
+        case 3: return matchCard;
+        case 4: return resultCard;
+        case 5: return compareCard;
+        case 6: return applyCard;
+        default: break;
+    }
+    return {};
+}
+
+juce::String ToneMatchPage::getStepNote (int step) const
+{
+    switch (step)
+    {
+        case 1:
+        {
+            if (session.isTargetPlaying())
+                return "Playing";
+            if (session.getTarget().empty())
+                return {};
+            const auto [start, end] = session.getRange();
+            return timeText (start) + " to " + timeText (end) + "  (" + juce::String (end - start, 1) + " s)";
+        }
+        case 2:
+            if (session.isPlayingAlong())
+                return session.getCountInRemaining() > 0 ? "Count-in" : "Recording the take";
+            if (session.isRecording())
+                return "Recording";
+            if (session.getReference().empty())
+                return {};
+            return (session.referenceIsTake() ? "Take, " : "") + juce::String (session.getReferenceSeconds(), 1) + " s";
+        case 3:
+            if (session.isMatching())
+                return juce::String (juce::roundToInt (100.0 * session.getProgress())) + "%";
+            if (session.hasResult())
+                return "Done in " + juce::String (session.getResult().runtimeSeconds, 1) + " s";
+            return {};
+        case 4:
+        {
+            if (! session.hasResult())
+                return {};
+            const auto& r = session.getResult();
+            return "spectral error " + juce::String (r.spectralErrorAfterEqDb, 1) + " dB, distortion " + juce::String (r.distortion, 1) + ", "
+                   + (r.mode == Mode::samePart ? "same part" : "anything") + (r.takeScored ? ", note by note" : "")
+                   + (session.getCleanupInfo().used ? ", cleaned up" : "");
+        }
+        case 5:
+            if (session.hasResult() && session.isRenderingCompare())
+                return "Rendering " + juce::String (juce::roundToInt (100.0 * session.getCompareProgress())) + "%";
+            return session.isPreviewPlaying() ? "Playing" : juce::String();
+        case 6: return applied ? "Applied" : (session.hasResult() ? "One undo step" : juce::String());
+        default: break;
+    }
+    return {};
+}
+
+std::vector<std::pair<juce::Component*, int>> ToneMatchPage::getStepControls() const
+{
+    return { { targetButton, 1 }, { waveform.get(), 1 }, { targetPlayButton, 1 }, { songChoice.get(), 1 }, { songLevelBar.get(), 1 },
+             { countInPlaySwitch.get(), 1 }, { separateSwitch.get(), 1 },
+             { recordButton, 2 }, { referenceButton, 2 }, { saveTakeButton, 2 }, { countInSwitch.get(), 2 }, { beatsChoice.get(), 2 }, { bpmField.get(), 2 },
+             { tapButton, 2 }, { suggestionButton, 2 }, { clickField.get(), 2 }, { offsetField.get(), 2 },
+             { modeChoice.get(), 3 }, { cleanupChoice.get(), 3 }, { matchButton, 3 }, { cancelButton, 3 },
+             { eqCurve.get(), 4 },
+             { playButton, 5 }, { sourceChoice.get(), 5 }, { loopStrip.get(), 5 }, { muteSwitch.get(), 5 }, { levelMatchSwitch.get(), 5 }, { levelBar.get(), 5 },
+             { applyButton, 6 }, { discardButton, 6 } };
+}
+
+// ---- Layout ---------------------------------------------------------------------------------------------------
+
+namespace
+{
+// The page in the 1200 x 598 the overlay frame gives it: the header, then the steps in two rows of three, read left
+// to right and top to bottom (ASSUMPTIONS RD3-10).
+constexpr int topRowY = overlay::headerHeight, topRowHeight = 296, bottomRowY = topRowY + topRowHeight + 10, stepGap = 12;
+constexpr int songWidth = 440, diWidth = 344, resultWidth = 588, compareWidth = 360;
+constexpr int pad = overlay::panelPadding;
+
+/// A step panel's inside, under its heading.
+juce::Rectangle<int> stepInside (juce::Rectangle<int> panel)
+{
+    return panel.reduced (pad).withTrimmedTop (overlay::stepHeadingHeight);
+}
+
+juce::Rectangle<int> centredY (juce::Rectangle<int> row, int width, int height)
+{
+    return row.withWidth (width).withSizeKeepingCentre (width, height);
+}
+} // namespace
+
 void ToneMatchPage::resized()
 {
     clearHeadings();
-    auto area = getLocalBounds();
-    header = area.removeFromTop (58);
-    closeButton->setBounds (header.getRight() - 80, header.getY(), 80, controlHeight);
+    const auto w = getWidth();
+    header = { 0, 0, w, overlay::headerHeight };
+    closeButton->setBounds (overlay::closeBounds (header));
 
-    area.removeFromTop (8);
-    auto row = area.removeFromTop (272);
-    targetCard = row.removeFromLeft (520);
-    row.removeFromLeft (space::m);
-    referenceCard = row.removeFromLeft (284);
-    row.removeFromLeft (space::m);
-    matchCard = row;
-    area.removeFromTop (space::m);
-    resultCard = area;
+    targetCard = { 0, topRowY, songWidth, topRowHeight };
+    referenceCard = { songWidth + stepGap, topRowY, diWidth, topRowHeight };
+    matchCard = { referenceCard.getRight() + stepGap, topRowY, w - referenceCard.getRight() - stepGap, topRowHeight };
+    const auto bottomHeight = getHeight() - bottomRowY;
+    resultCard = { 0, bottomRowY, resultWidth, bottomHeight };
+    compareCard = { resultWidth + stepGap, bottomRowY, compareWidth, bottomHeight };
+    applyCard = { compareCard.getRight() + stepGap, bottomRowY, w - compareCard.getRight() - stepGap, bottomHeight };
+    compareArea = compareCard;
 
-    // Target: the file (and the section, painted at the right), the waveform, Play with the song's choice
-    // and level, the two switches, the hint.
+    // 1 The song: the file, the waveform, Play with the song's choice and the section, the song's level and the
+    // count-in for Play, separation, the hint.
     {
-        auto in = card (targetCard, "Target");
+        auto in = stepInside (targetCard);
         auto top = in.removeFromTop (controlHeight);
         targetButton->setBounds (top.removeFromLeft (110));
-        sectionTextArea = top.removeFromRight (190);
+        top.removeFromLeft (space::m);
+        fileNameArea = top;
         in.removeFromTop (space::s);
         waveform->setBounds (in.removeFromTop (waveformHeight));
         in.removeFromTop (space::s);
         auto play = in.removeFromTop (controlHeight);
-        targetPlayButton->setBounds (play.removeFromLeft (72));
-        play.removeFromLeft (space::l);
-        songChoice->setBounds (play.removeFromLeft (songChoice->getPreferredWidth()).withSizeKeepingCentre (songChoice->getPreferredWidth(), Segmented::preferredHeight));
-        songLevelValueArea = play.removeFromRight (48);
-        songLevelBar->setBounds (play.removeFromRight (130));
-        songLevelLabelArea = play.removeFromRight (70);
-        in.removeFromTop (space::s);
-        auto switches = in.removeFromTop (Switch::preferredHeight);
-        separateSwitch->setBounds (switches.removeFromLeft (separateSwitch->getPreferredWidth()).translated (-Switch::margin, 0));
-        switches.removeFromLeft (space::xl);
-        countInPlaySwitch->setBounds (switches.removeFromLeft (countInPlaySwitch->getPreferredWidth()).translated (-Switch::margin, 0));
-        in.removeFromTop (2);
-        auto cleanupRow = in.removeFromTop (Switch::preferredHeight);
-        cleanupLabelArea = cleanupRow.removeFromLeft (140);
-        cleanupChoice->setBounds (cleanupRow.removeFromLeft (cleanupChoice->getPreferredWidth()).withSizeKeepingCentre (cleanupChoice->getPreferredWidth(), Segmented::preferredHeight));
-        cleanupRow.removeFromLeft (space::m);
-        cleanupCaptionArea = cleanupRow;
+        targetPlayButton->setBounds (play.removeFromLeft (64));
+        play.removeFromLeft (space::m);
+        songChoice->setBounds (centredY (play, songChoice->getPreferredWidth(), Segmented::preferredHeight));
+        sectionTextArea = play.removeFromRight (180);
+        in.removeFromTop (6);
+        auto level = in.removeFromTop (Switch::preferredHeight);
+        songLevelLabelArea = level.removeFromLeft (70);
+        songLevelBar->setBounds (level.removeFromLeft (110));
+        songLevelValueArea = level.removeFromLeft (48);
+        countInPlaySwitch->setBounds (level.removeFromRight (countInPlaySwitch->getPreferredWidth()).translated (Switch::margin, 0));
+        in.removeFromTop (6);
+        auto separation = in.removeFromTop (Switch::preferredHeight);
+        separateSwitch->setBounds (separation.removeFromLeft (separateSwitch->getPreferredWidth()).translated (-Switch::margin, 0));
+        in.removeFromTop (6);
+        hintArea = in;
     }
 
-    // Your DI: Record and Choose file, the status, the mode and what it means, then the count-in (on, beats;
-    // the tempo, Tap, the song's measured tempo; the click's level and the latency offset).
+    // 2 Your DI: Record and Choose file, what's recorded (and Save take), how the take lined up, then the count-in
+    // (on, beats; the tempo, Tap, the song's measured tempo; the click's level and the latency offset).
     {
-        auto in = card (referenceCard, "Your DI");
+        auto in = stepInside (referenceCard);
         auto top = in.removeFromTop (controlHeight);
-        recordButton->setBounds (top.removeFromLeft (140));
+        recordButton->setBounds (top.removeFromLeft (152));
         top.removeFromLeft (space::s);
         referenceButton->setBounds (top.removeFromLeft (110));
         in.removeFromTop (space::s);
-        statusLineArea = in.removeFromTop (18);
-        in.removeFromTop (10);
-        auto modeRow = in.removeFromTop (Segmented::preferredHeight);
-        modeChoice->setBounds (modeRow.withWidth (modeChoice->getPreferredWidth()));
-        saveTakeButton->setBounds (modeRow.removeFromRight (84));
-        in.removeFromTop (6);
-        modeCaptionArea = in.removeFromTop (30);
+        auto status = in.removeFromTop (24);
+        saveTakeButton->setBounds (status.removeFromRight (84));
+        status.removeFromRight (space::s);
+        statusLineArea = status;
+        takeCaptionArea = in.removeFromTop (30);
         in.removeFromTop (space::s);
+        modeLabelArea = in.removeFromTop (14); // the count-in's group label
+        in.removeFromTop (6);
         auto countRow = in.removeFromTop (Switch::preferredHeight);
         countInSwitch->setBounds (countRow.removeFromLeft (countInSwitch->getPreferredWidth()).translated (-Switch::margin, 0));
         countRow.removeFromLeft (space::m);
-        beatsChoice->setBounds (countRow.removeFromLeft (beatsChoice->getPreferredWidth()).withSizeKeepingCentre (beatsChoice->getPreferredWidth(), Segmented::preferredHeight));
-        in.removeFromTop (4);
+        beatsChoice->setBounds (centredY (countRow, beatsChoice->getPreferredWidth(), Segmented::preferredHeight));
+        in.removeFromTop (6);
         auto tempoRow = in.removeFromTop (controlHeight);
-        bpmField->setBounds (tempoRow.removeFromLeft (126));
+        bpmField->setBounds (tempoRow.removeFromLeft (128));
         tempoRow.removeFromLeft (space::s);
-        tapButton->setBounds (tempoRow.removeFromLeft (48));
+        tapButton->setBounds (tempoRow.removeFromLeft (52));
         tempoRow.removeFromLeft (space::s);
         suggestionButton->setBounds (tempoRow);
-        in.removeFromTop (4);
+        in.removeFromTop (6);
         auto levelRow = in.removeFromTop (controlHeight);
         const auto half = (levelRow.getWidth() - space::s) / 2;
         clickField->setBounds (levelRow.removeFromLeft (half));
@@ -1567,167 +1709,228 @@ void ToneMatchPage::resized()
         offsetField->setBounds (levelRow);
     }
 
-    // Match, and under it the comparison (once there's a result).
+    // 3 Match: what you played and what it means, the cleanup and why, Match and Cancel, the progress, the stage.
     {
-        auto in = card (matchCard, "Match");
-        auto top = in.removeFromTop (controlHeight);
-        matchButton->setBounds (top.removeFromLeft (110));
-        top.removeFromLeft (space::s);
-        cancelButton->setBounds (top.removeFromLeft (84));
+        auto in = stepInside (matchCard);
+        auto modeRow = in.removeFromTop (Segmented::pillHeight);
+        cleanupLabelArea = modeRow.removeFromLeft (86); // "You played"
+        modeChoice->setBounds (modeRow.withWidth (modeChoice->getPreferredWidth()));
+        in.removeFromTop (6);
+        modeCaptionArea = in.removeFromTop (28);
+        in.removeFromTop (space::s);
+        auto cleanupRow = in.removeFromTop (Switch::preferredHeight);
+        cleanupRow.removeFromLeft (152); // "Clean up with my take", painted
+        cleanupChoice->setBounds (centredY (cleanupRow, cleanupChoice->getPreferredWidth(), Segmented::preferredHeight));
+        in.removeFromTop (2);
+        cleanupCaptionArea = in.removeFromTop (28);
+        in.removeFromTop (space::m);
+        auto buttons = in.removeFromTop (30);
+        matchButton->setBounds (buttons.removeFromLeft (132));
+        buttons.removeFromLeft (space::s);
+        cancelButton->setBounds (buttons.removeFromLeft (90));
         in.removeFromTop (space::m);
         progressArea = in.removeFromTop (6);
         in.removeFromTop (space::s);
         statusArea = in; // the stage, or what went wrong (an error can take several lines)
-
-        // The comparison takes the bottom of the card: the sources (and their loudness under them), the
-        // loop, the live mute, the level match and the level.
-        auto compare = in.withTrimmedTop (30 + 4); // under two lines of status
-        compareArea = compare;
-        auto sources = compare.removeFromTop (controlHeight);
-        playButton->setBounds (sources.removeFromLeft (72));
-        sources.removeFromLeft (space::l);
-        sourceChoice->setBounds (sources.withWidth (sourceChoice->getPreferredWidth()).withSizeKeepingCentre (sourceChoice->getPreferredWidth(), Segmented::preferredHeight));
-        loudnessRow = compare.removeFromTop (14).withTrimmedLeft (72 + space::l);
-        compare.removeFromTop (6);
-        loopStrip->setBounds (compare.removeFromTop (34));
-        compare.removeFromTop (6);
-        muteSwitch->setBounds (compare.removeFromTop (Switch::preferredHeight).withWidth (muteSwitch->getPreferredWidth()).translated (-Switch::margin, 0));
-        compare.removeFromTop (2);
-        auto levels = compare.removeFromTop (Switch::preferredHeight);
-        levelMatchSwitch->setBounds (levels.removeFromLeft (levelMatchSwitch->getPreferredWidth()).translated (-Switch::margin, 0));
-        levels.removeFromLeft (space::l);
-        levelLabelArea = levels.removeFromLeft (34);
-        levelValueArea = levels.removeFromRight (44);
-        levelBar->setBounds (levels);
     }
 
-    // Result.
+    // 4 Result: the closeness and the settings at the left, the curve at the right.
     {
-        auto in = card (resultCard, "Result");
-        auto left = in.removeFromLeft (560);
+        auto in = stepInside (resultCard);
+        resultTextArea = in.removeFromLeft (318);
         in.removeFromLeft (space::l);
         eqCurve->setBounds (in);
-        auto buttons = left.removeFromBottom (controlHeight);
-        applyButton->setBounds (buttons.removeFromLeft (90));
+    }
+
+    // 5 Compare: the sources (their loudness under them), the loop, the live mute, the level match and the level.
+    {
+        auto in = stepInside (compareCard);
+        auto sources = in.removeFromTop (controlHeight);
+        playButton->setBounds (sources.removeFromLeft (64));
+        sources.removeFromLeft (space::m);
+        sourceChoice->setBounds (centredY (sources, sourceChoice->getPreferredWidth(), Segmented::preferredHeight));
+        loudnessRow = in.removeFromTop (14).withTrimmedLeft (64 + space::m);
+        in.removeFromTop (6);
+        loopStrip->setBounds (in.removeFromTop (34));
+        in.removeFromTop (space::s);
+        muteSwitch->setBounds (in.removeFromTop (Switch::preferredHeight).withWidth (muteSwitch->getPreferredWidth()).translated (-Switch::margin, 0));
+        in.removeFromTop (2);
+        auto levels = in.removeFromTop (Switch::preferredHeight);
+        levelMatchSwitch->setBounds (levels.removeFromLeft (levelMatchSwitch->getPreferredWidth()).translated (-Switch::margin, 0));
+        levels.removeFromLeft (space::m);
+        levelLabelArea = levels.removeFromLeft (34);
+        levelValueArea = levels.removeFromRight (46);
+        levelBar->setBounds (levels);
+        in.removeFromTop (6);
+        compareStatusArea = in;
+    }
+
+    // 6 Apply: what it sets, what it did, and the buttons at the foot.
+    {
+        auto in = stepInside (applyCard);
+        auto buttons = in.removeFromBottom (30);
+        const auto half = (buttons.getWidth() - space::s) / 2;
+        applyButton->setBounds (buttons.removeFromLeft (half));
         buttons.removeFromLeft (space::s);
-        discardButton->setBounds (buttons.removeFromLeft (90));
-        buttons.removeFromLeft (space::m);
-        applyNoteArea = buttons; // the score's caveat, beside the buttons
-        resultTextArea = left;
+        discardButton->setBounds (buttons);
+        in.removeFromBottom (space::s);
+        appliedArea = in.removeFromBottom (34);
+        in.removeFromBottom (space::s);
+        applyNoteArea = in;
     }
 }
 
 void ToneMatchPage::paint (juce::Graphics& g)
 {
-    paintHeadings (g);
+    overlay::paintHeader (g, header, "Match tone", "Recreate a recording's guitar tone with BellyDSP's own amps, cab, and EQ.", "Esc|closes");
 
-    // Header: the title, what it does, and the honest note.
+    // The steps' panels and headings: the running one's border in the accent.
+    for (int step = 1; step <= numSteps; ++step)
     {
-        auto h = header;
-        drawText (g, "Match tone", h.removeFromTop (20), Text::title, ink);
-        drawText (g, "Recreate a recording's guitar tone with BellyDSP's own amps, cabs, and EQ.", h.removeFromTop (18), Text::body, inkDim);
-        drawWrapped (g, honestNote, h.withTrimmedRight (100), Text::caption, inkFaint);
+        const auto state = getStepState (step);
+        overlay::paintPanel (g, getStepArea (step), state == overlay::Step::active);
+        auto note = getStepNote (step);
+        overlay::paintStepHeading (g, getStepArea (step).reduced (pad), step, stepTitle (step), state, note);
     }
 
-    // Target: the file, the section, the song's level, the hint.
+    const auto caption = [&g] (const juce::String& s, juce::Rectangle<int> area, juce::Colour c, int lines = 2) {
+        g.setFont (font (Text::caption));
+        g.setColour (c);
+        g.drawFittedText (s, area, juce::Justification::topLeft, lines, 0.92f);
+    };
+
+    // 1 The song: the file, the section, the song's level, separation, the hint.
     {
-        auto in = targetCard.reduced (cardPadding).withTrimmedTop (cardHeading);
-        auto top = in.removeFromTop (controlHeight).withTrimmedLeft (110 + space::m);
-        top.removeFromRight (sectionTextArea.getWidth());
         const auto name = session.getTargetName();
         g.setFont (font (Text::label));
         g.setColour (name.isEmpty() ? inkFaint : ink);
-        g.drawText (name.isEmpty() ? "No file" : name + "  (" + timeText (session.getTargetSeconds()) + ")", top, juce::Justification::centredLeft, true);
+        g.drawText (name.isEmpty() ? "No file: WAV, AIFF, FLAC, MP3, M4A" : name + "  (" + timeText (session.getTargetSeconds()) + ")", fileNameArea,
+                    juce::Justification::centredLeft, true);
         const auto [start, end] = session.getRange();
-        drawText (g, session.getTarget().empty() ? juce::String() : timeText (start) + " to " + timeText (end) + "  (" + juce::String (end - start, 1) + " s)",
-                  sectionTextArea, Text::value, inkDim, juce::Justification::centredRight);
-        drawText (g, "Song level", songLevelLabelArea, Text::label, session.getTarget().empty() ? inkFaint : inkDim, juce::Justification::centredRight);
+        drawText (g, session.getTarget().empty() ? juce::String() : juce::String (end - start, 1) + " s selected", sectionTextArea, Text::value, inkDim,
+                  juce::Justification::centredRight);
+        const auto noTarget = session.getTarget().empty();
+        drawText (g, "Song level", songLevelLabelArea, Text::label, noTarget ? inkFaint : inkDim);
         drawText (g, (session.getSongLevelDb() > 0.0f ? "+" : "") + juce::String (session.getSongLevelDb(), 1) + " dB", songLevelValueArea, Text::caption,
-                  session.getTarget().empty() ? inkFaint : inkDim, juce::Justification::centredRight);
-        // The cleanup's label and caption: what the choice does, or why it can't run.
-        drawText (g, "Clean up with my take", cleanupLabelArea, Text::label, session.cleanupApplies() ? inkDim : inkFaint, juce::Justification::centredLeft);
-        g.setFont (font (Text::caption));
-        g.setColour (session.cleanupApplies() ? inkDim : inkFaint);
-        g.drawFittedText (getCleanupCaption(), cleanupCaptionArea, juce::Justification::centredLeft, 2, 0.9f);
-
-        in.removeFromTop (space::s + waveformHeight + space::s + controlHeight + space::s + 2 * Switch::preferredHeight + 2 + 4);
-        juce::String hint = "Pick a section where the lead guitar dominates.";
+                  noTarget ? inkFaint : inkDim, juce::Justification::centredRight);
+        juce::String hint = "Pick 3 to 60 s where the lead guitar dominates.";
         if (session.hasSeparator())
         {
-            hint << " Separation (Demucs) keeps every guitar and takes about a minute per minute of audio.";
-            if (! separator->isInstalled())
-                hint << " The first time, it downloads the model (" << juce::String (juce::roundToInt ((double) ampsim::tonematch::GuitarSeparator::weightsBytes / 1.0e6))
-                     << " MB) from its author's page.";
+            if (separator->isInstalled())
+                hint << " Separation (Demucs) keeps every guitar and takes about a minute per minute of audio.";
+            else
+                hint << " The first time, separation downloads its model ("
+                     << juce::String (juce::roundToInt ((double) ampsim::tonematch::GuitarSeparator::weightsBytes / 1.0e6)) << " MB) from its author's page.";
         }
-        g.setFont (font (Text::caption));
-        g.setColour (inkFaint);
-        g.drawFittedText (hint, in, juce::Justification::topLeft, 2, 0.9f);
+        caption (hint, hintArea, inkFaint);
     }
 
-    // Your DI: what's recorded or chosen (or the take's progress), and what the mode means.
+    // 2 Your DI: what's recorded or chosen (or the take's progress), and how a take lined up.
     {
         const auto status = getReferenceStatus();
         const auto busy = session.isRecording();
-        drawText (g, status, statusLineArea, Text::label, busy ? accent : (session.getReference().empty() ? inkFaint : ink));
-        juce::String caption;
+        drawText (g, status, saveTakeButton->isVisible() ? statusLineArea : statusLineArea.getUnion (saveTakeButton->getBounds()), Text::label,
+                  busy ? accent : (session.getReference().empty() ? inkFaint : ink));
+        juce::String take;
         if (session.referenceIsTake() && ! busy)
         {
             const auto& t = session.getTake();
             const auto roundTrip = (t.latency.inputSamples + t.latency.outputSamples) / 48.0;
             const auto hasOffset = std::abs (t.offsetMs) > 0.01;
             if (! t.latency.known)
-                caption = "Played along, lined up by the offset only (" + juce::String ((double) t.alignSamples / 48.0, 1) + " ms; no device latency here).";
+                take = "Played along, lined up by the offset only (" + juce::String ((double) t.alignSamples / 48.0, 1) + " ms; no device latency here).";
             else if (! hasOffset)
-                caption = "Played along, lined up by your interface's round trip (" + juce::String (roundTrip, 1) + " ms).";
+                take = "Played along, lined up by your interface's round trip (" + juce::String (roundTrip, 1) + " ms).";
             else
-                caption = "Played along, lined up by " + juce::String ((double) t.alignSamples / 48.0, 1) + " ms (round trip " + juce::String (roundTrip, 1)
-                          + ", offset " + (t.offsetMs > 0 ? "+" : "") + juce::String (t.offsetMs, 1) + ").";
-            caption << (session.getMode() == Mode::samePart ? " Same part matches near that." : " Anything compares the long-term sound.");
+                take = "Played along, lined up by " + juce::String ((double) t.alignSamples / 48.0, 1) + " ms (round trip " + juce::String (roundTrip, 1)
+                       + ", offset " + (t.offsetMs > 0 ? "+" : "") + juce::String (t.offsetMs, 1) + ").";
         }
-        else if (session.getMode() == Mode::samePart)
-            caption = "Same part: you played the target's part. The two are lined up and compared moment by moment.";
+        else if (session.getTarget().empty())
+            take = "Record plays along with the song once one is chosen; without one it records up to a minute.";
         else
-            caption = "Anything: long-term statistics. Play the same kind of part (a lead for a lead, a similar register).";
-        g.setFont (font (Text::caption));
-        g.setColour (inkFaint);
-        g.drawFittedText (caption, modeCaptionArea, juce::Justification::topLeft, 2, 0.9f);
+            take = "Record counts in, plays the section once, and records your DI lined up with it.";
+        caption (take, takeCaptionArea, inkFaint);
+        overlay::paintGroupLabel (g, modeLabelArea, "Count-in and latency");
     }
 
-    // Match: the progress and the stage (or what's missing).
+    // 3 Match: the mode and the cleanup with what they mean, the progress, the stage (or what's missing, or the error).
     {
-        const auto p = progressArea.toFloat();
-        g.setColour (line2);
-        g.fillRoundedRectangle (p, 3.0f);
-        if (session.isMatching() || session.hasResult())
-        {
-            g.setColour (accent);
-            g.fillRoundedRectangle (p.withWidth (p.getWidth() * (float) (session.isMatching() ? session.getProgress() : 1.0)), 3.0f);
-        }
-        auto shown = statusText.isEmpty() ? (session.hasResult() ? "Done in " + juce::String (session.getResult().runtimeSeconds, 1) + " s." : "Ready")
-                                         : statusText;
-        if (statusText.isEmpty() && session.hasResult())
-        {
-            // With a result, the line also says what the comparison is doing and how the sources line up.
-            if (const auto c = session.getCompareStatus(); c.isNotEmpty())
-                shown << " " << c;
-            else if (session.isCurrentStale())
-                shown << " Current follows your settings once they stop moving.";
-            else
-            {
-                if (const auto cleanupText = getCleanupText(); cleanupText.isNotEmpty())
-                    shown << " " << cleanupText;
-                shown << (session.isAligned() ? " Same part: your DI is lined up with the target in time."
-                                              : " Anything: the target loops the range, your DI its whole take.");
-            }
-        }
-        g.setFont (font (Text::caption));
-        g.setColour (session.getError().isNotEmpty() ? ink : inkDim);
-        const auto area = session.hasResult() ? statusArea.withHeight (30) : statusArea;
-        g.drawFittedText (shown, area, juce::Justification::topLeft, juce::jmax (1, area.getHeight() / 15), 1.0f);
+        drawText (g, "You played", cleanupLabelArea, Text::label, inkDim);
+        juce::String mode;
+        if (session.referenceIsTake() && ! session.isRecording())
+            mode = session.getMode() == Mode::samePart ? "Same part matches near where the take lined up." : "Anything compares the long-term sound.";
+        else if (session.getMode() == Mode::samePart)
+            mode = "Same part: the target's part. The two are lined up and compared moment by moment.";
+        else
+            mode = "Anything: long-term statistics. Play the same kind of part (a lead for a lead, a similar register).";
+        caption (mode, modeCaptionArea, inkFaint);
 
-        if (session.hasResult())
+        const auto applies = session.cleanupApplies();
+        drawText (g, "Clean up with my take", juce::Rectangle<int> (modeCaptionArea.getX(), cleanupChoice->getY() - 2, 152, cleanupChoice->getHeight() + 4), Text::label,
+                  applies ? inkDim : inkFaint);
+        caption (getCleanupCaption(), cleanupCaptionArea, applies ? inkDim : inkFaint);
+
+        const auto p = progressArea.toFloat();
+        if (session.getError().isNotEmpty())
         {
-            // Under each source, its loudness as it is (before the level match).
+            // The error in full, over the progress bar (which has nothing to say then) to the step's foot.
+            overlay::paintNote (g, statusArea.withTop (progressArea.getY() - 4), statusText, true);
+        }
+        else
+        {
+            g.setColour (line2);
+            g.fillRoundedRectangle (p, 3.0f);
+            if (session.isMatching() || session.hasResult())
+            {
+                g.setColour (accent);
+                g.fillRoundedRectangle (p.withWidth (p.getWidth() * (float) (session.isMatching() ? session.getProgress() : 1.0)), 3.0f);
+            }
+            juce::String shown = statusText;
+            if (shown.isEmpty() || applied)
+            {
+                shown = session.hasResult() ? juce::String ("Matched: see the result, compare, then Apply.") : juce::String ("Ready.");
+                if (session.hasResult())
+                    if (const auto cleanupText = getCleanupText(); cleanupText.isNotEmpty())
+                        shown << " " << cleanupText;
+            }
+            caption (shown, statusArea, session.isMatching() ? ink : inkDim, 3);
+        }
+    }
+
+    // 5 Compare: the keys in its heading, the sources' loudness, the level, what the comparison is doing.
+    {
+        if (getStepNote (5).isEmpty())
+        {
+            // Space, then 1 to 3 (or 4), right to left at the heading's end.
+            const auto row = compareCard.reduced (pad).withHeight (22);
+            const auto f = geist (Weight::regular, 12.0f);
+            auto x = (float) row.getRight();
+            const auto word = [&] (const juce::String& s) {
+                const auto ww = textWidth (f, s);
+                x -= ww;
+                g.setFont (f);
+                g.setColour (inkFaint);
+                g.drawText (s, juce::Rectangle<float> (x, (float) row.getY(), ww + 2.0f, (float) row.getHeight()), juce::Justification::centredLeft, false);
+                x -= 5.0f;
+            };
+            const auto cap = [&] (const juce::String& k) {
+                x -= overlay::keycapWidth (k);
+                overlay::paintKeycap (g, k, x, (float) row.getCentreY());
+                x -= 4.0f;
+            };
+            word ("source");
+            cap (session.hasRawTarget() ? "4" : "3");
+            word ("to");
+            cap ("1");
+            x -= 8.0f;
+            word ("play");
+            cap ("Space");
+        }
+
+        if (! session.hasResult())
+            caption ("After a match: the target, the match, and your current sound, level-matched, on a loop.", stepInside (compareCard), inkFaint, 3);
+        else
+        {
             g.setFont (tabular (font (Text::caption)));
             for (int s = 0; s < (session.hasRawTarget() ? ToneMatchSession::numAllSources : ToneMatchSession::numSources); ++s)
             {
@@ -1743,51 +1946,78 @@ void ToneMatchPage::paint (juce::Graphics& g)
             g.drawText ("Level", levelLabelArea, juce::Justification::centredLeft, false);
             g.drawText ((session.getPreviewLevelDb() > 0.0f ? "+" : "") + juce::String (session.getPreviewLevelDb(), 1) + " dB", levelValueArea,
                         juce::Justification::centredRight, false);
+
+            juce::String status;
+            if (const auto c = session.getCompareStatus(); c.isNotEmpty())
+                status = c;
+            else if (session.isCurrentStale())
+                status = "Current follows your settings once they stop moving.";
+            else
+                status = session.isAligned() ? "Same part: your DI is lined up with the target in time."
+                                             : "Anything: the target loops the range, your DI its whole take.";
+            caption (status, compareStatusArea, inkFaint, 2);
         }
     }
 
-    // Result: the settings, the closeness, and what it means.
+    // 6 Apply: what it sets (with the pre effects that are on now), and what it did.
+    {
+        caption (session.hasResult() ? getApplyNote()
+                                     : "Apply sets the amp, its Gain and tone, the cab, the match EQ or curve, and the pre effects as the match has them, "
+                                       "in one undo step. The gate stays as it is. Nothing changes before.",
+                 applyNoteArea, session.hasResult() ? inkDim : inkFaint, 7);
+        if (applied)
+            overlay::paintNote (g, appliedArea, "Applied. Undo puts your settings back.", false);
+    }
+
+    // 4 Result: the closeness, what it chose, and what the score means.
     {
         auto in = resultTextArea;
         if (! session.hasResult())
         {
-            drawWrapped (g, "Nothing matched yet. The result is shown here first; nothing changes until you press Apply.", in.removeFromTop (40), Text::label, inkFaint);
+            caption ("Nothing matched yet. The result shows here first; nothing changes until you press Apply.", in.removeFromTop (34), inkDim);
+            in.removeFromTop (space::s);
+            caption (honestNote, in.removeFromTop (60), inkFaint, 4);
             return;
         }
         const auto& r = session.getResult();
-        const auto noteArea = in.removeFromBottom (34).withTrimmedBottom (4); // what Apply does: two caption lines above the buttons
         auto big = in.removeFromTop (34);
-        g.setFont (tabular (geist (Weight::light, 30.0f)));
+        g.setFont (tabular (geist (Weight::light, 34.0f)));
         g.setColour (ink);
-        g.drawText (juce::String (juce::roundToInt (r.closeness)), big.removeFromLeft (52), juce::Justification::centredLeft, false);
-        // With the cleanup used, the line says so (and "distortion distance" shortens to fit).
-        const auto cleaned = session.getCleanupInfo().used;
-        const auto shortText = cleaned || r.takeScored;
-        drawText (g, "closeness out of 100  (spectral error " + juce::String (r.spectralErrorAfterEqDb, 1) + " dB, " + (shortText ? "distortion " : "distortion distance ")
-                         + juce::String (r.distortion, 1) + ", " + (r.mode == Mode::samePart ? "same part" : "anything")
-                         + (r.takeScored ? ", note by note" : "") + (cleaned ? ", cleaned up" : "") + ")",
-                  big, Text::label, inkDim);
-        in.removeFromTop (space::s);
+        const auto number = juce::String (juce::roundToInt (r.closeness));
+        const auto nw = juce::roundToInt (textWidth (tabular (geist (Weight::light, 34.0f)), number)) + 4;
+        g.drawText (number, big.removeFromLeft (nw), juce::Justification::centredLeft, false);
+        big.removeFromLeft (space::s);
+        drawText (g, "closeness out of 100", big.removeFromTop (18), Text::label, inkDim);
+        drawText (g, "Measures, not sound: only your ears judge that", big, Text::caption, inkFaint);
+        in.removeFromTop (space::xs);
         // The settings, one line each, broken only between items (packItems), continuation lines indented.
         const auto f = juce::Font (font (Text::label));
         g.setFont (f);
-        g.setColour (ink);
-        const auto lineHeight = (int) std::ceil (f.getHeight() * 1.25f);
+        // Up to nine lines in the step (a pedal, the tone, the curve's three items): 15 px apart, 12 px type.
+        const auto lineHeight = 15;
         for (int i = 0; i < resultLabels.size(); ++i)
         {
             const auto lines = packItems (f, resultLabels[i], resultItems[(size_t) i], (float) in.getWidth());
             const auto indent = (int) std::ceil (juce::GlyphArrangement::getStringWidth (f, resultLabels[i] + "  "));
             for (int l = 0; l < lines.size(); ++l)
-                g.drawText (lines[l], in.removeFromTop (lineHeight).withTrimmedLeft (l == 0 ? 0 : indent), juce::Justification::centredLeft, false);
+            {
+                auto line = in.removeFromTop (lineHeight).withTrimmedLeft (l == 0 ? 0 : indent);
+                if (l == 0)
+                {
+                    // The label faint, its items in ink.
+                    const auto label = resultLabels[i] + "  ";
+                    g.setColour (inkFaint);
+                    g.drawText (label, line, juce::Justification::centredLeft, false);
+                    g.setColour (ink);
+                    g.drawText (lines[l].fromFirstOccurrenceOf (label, false, false), line.withTrimmedLeft (indent), juce::Justification::centredLeft, false);
+                }
+                else
+                {
+                    g.setColour (ink);
+                    g.drawText (lines[l], line, juce::Justification::centredLeft, false);
+                }
+            }
         }
-        in.removeFromTop (space::s);
-        // What Apply does, full width above the buttons; the score's caveat beside them.
-        g.setFont (font (Text::caption));
-        g.setColour (inkDim);
-        g.drawFittedText (getApplyNote(), noteArea, juce::Justification::bottomLeft, 2, 1.0f);
-        g.setColour (inkFaint);
-        g.drawFittedText ("The score measures the spectra and the distortion, not the sound: only your ears can judge that.", applyNoteArea,
-                          juce::Justification::centredLeft, 2, 1.0f);
     }
 }
 

@@ -104,6 +104,7 @@ public:
                 ed.refresh();
                 const auto f = shotDir.getChildFile (name + ".png");
                 expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), f));
+                expect (redesignCopy (f));
                 shots.add ("tone_match/" + f.getFileName());
             };
 

@@ -18,7 +18,7 @@ One screen on the 1280 x 760 canvas, scaled uniformly to the window and letterbo
 | Inspector | right 300, top bar to footer | The selected block's every control in one scrolling column, designed per block (phase 2, below): the header with the block's gear in small, its meter, its mode as a selector, its main controls as large knobs, then the rest in sections. A generic control still covers any parameter under a pedal's prefix its page doesn't |
 | Footer | across the bottom, 78 | The eight scenes (number and name; the current one lit orange, the light gliding to a new scene in 0.16 s; empty ones a faint outline), Store, and the tuner's reading (the note, the cents, Flat / Sharp / In tune) |
 
-Overlays (the tuner, Match tone, Settings) open over the stage, the board, and the inspector, leaving the top bar and the footer, and close back to the main screen as it was. The tuner has a header with Close; Match tone and Settings bring their own. Settings holds the Input page and the Output page (levels, the limiter, A/B with Copy, the tempo with Tap, the CPU meter and CPU saver, the footswitch's controllers and the MIDI mappings) under a segmented control.
+Overlays (the tuner, Match tone, Settings) open over the stage, the board, and the inspector, leaving the top bar and the footer, and close back to the main screen as it was (phase 3, below).
 
 Keys: Left and Right step the presets, 1 to 8 recall the stored scenes, T opens and closes the tuner, Escape closes an overlay, Cmd-Z and Shift-Cmd-Z undo and redo; while Match tone is open, its own keys (Space, 1 to 3) come first. A knob or a segmented control takes Up and Down when it has the focus, and Left and Right only when the keyboard gave it the focus (Tab), so the arrows keep stepping presets after a click on a knob. Tooltips name the keys.
 
@@ -50,6 +50,18 @@ Each block's inspector is designed, not reflowed (ASSUMPTIONS RD23 to RD36). One
 
 Selecting an EQ pedal puts the stage on its graph, and the next other pedal puts it back (RD23). The cab's stage is built around the speaker: the library at the left, the match curve, room mic, and auto-align at the right, and in the middle the speaker in its baffle with the close mics on it, large, dragged to move when they hold a pack (RD34). The board's amp and cab markers are gear: a steel plate with the amp's head in small or the cab's front, the name, and the switch as a pilot jewel (RD35).
 
+## The overlays (phase 3, built)
+
+Each overlay is a page in the 1200 x 598 the frame gives it, under one header (`ui::overlay::paintHeader`: the title, a line about it, its keys as keycaps, Close), made of panels on the ground (the panel colour, a hairline, radius 10) with small uppercase labels. ASSUMPTIONS RD3-1 to RD3-23.
+
+| Overlay | What |
+|---|---|
+| Tuner | Built to be read from a step back. The display: the note at 200 px (orange within 3 cents) with its sharp and octave, a chevron each side (the left lights when flat, the right when sharp, both orange in tune), the frequency, the cents, and the state, and a 960 px scale of 41 segments (2.5 cents apart; the lit one follows the cents, its neighbours lit in proportion; in tune the middle three light orange with a glow behind the note). Under it, the tuning's six strings as chips (click one to tune to it, again to let go; a string that's been in tune is checked) and the controls (the tunings, A4 with - and +, Mute output). The footer's reading shows the note and a small cents meter while the tuner is open |
+| Match tone | The flow as six numbered steps, two rows of three, read left to right then down: 1 The song (the file, the waveform and its section, Play, the song's level, the count-in for Play, separation), 2 Your DI (Record or a file, what's recorded and Save take, the count-in and latency), 3 Match (what you played, Clean up with my take, Match and Cancel, the progress, the stage or the error in full), 4 Result (the closeness and what it measured, the settings it chose, the curve), 5 Compare (Target, Match, Current, Raw, level-matched, the loop, the live mute; Space and 1 to 4), 6 Apply (what it sets, in one undo step; Apply, Discard). Each step's badge says where it stands (waiting, next, running, done); every control stays usable. The main actions (Record, Match, Apply) are primary buttons, filled but not orange |
+| Settings | A section list at the left and the chosen section's panels: Input (the level, the calibration, the routing); Output and MIDI (the level and limiter, A/B with Copy, the tempo with Tap, the CPU meter and saver, the footswitch's controllers and the MIDI mappings, the keys); Audio device (48 kHz only, said plainly, with what the device is at, its name, driver, buffer, and latencies in the standalone app, and the setup a player needs); About (the version, the licences with every notice a click away, updates, the source of this version) |
+
+Menus are rounded raised panels with keycap shortcuts and small uppercase section labels; dialogs (the scene Rename box) are rounded panels with their main button primary.
+
 ## Tokens
 
 Every colour, type style, size, and radius is in `src/ui/Theme.h`; components hold no hex values of their own (the amp heads' and pedals' materials are their art's, in `AmpHead.cpp` and `PedalArt.cpp`).
@@ -74,7 +86,8 @@ Type: Geist 300 to 600 and Fraunces SemiBold Italic, bundled. Motion: `stageFade
 |---|---|
 | Tokens, fonts | `src/ui/Theme.h`, `src/ui/Fonts.cpp` |
 | Knob, toggle, fields, bypass dot, segmented control (and its pill style) | `src/ui/Controls.*` |
-| LookAndFeel (buttons, menus, focus ring) | `src/ui/LookAndFeel.*` |
+| LookAndFeel (buttons and primary buttons, menus, dialogs, focus ring) | `src/ui/LookAndFeel.*` |
+| The overlays' header, panels, step badges, keycaps, notes | `src/ui/Overlay.*` |
 | Top bar, meters | `src/ui/TopBar.*`, `src/ui/Meters.*` |
 | The stage, the inspector, the overlay frame | `src/ui/MainScreen.*` |
 | The board | `src/ui/Board.*` (the pedal art: `src/ui/PedalArt.*`) |
@@ -84,13 +97,13 @@ Type: Geist 300 to 600 and Fraunces SemiBold Italic, bundled. Motion: `stageFade
 | The selector (`ChoiceBar`), the pad switch, the large knob | `src/ui/Controls.*` |
 | The meters (gate, compressor), the Tap pad, the harmonizer's display, the cab's front, the inspector's headings | `src/ui/InspectorParts.*` |
 | Scenes and the tuner's reading in the footer | `src/ui/ScenesBar.*` |
-| Settings, the Input and Output pages | `src/ui/MainPages.*` |
+| Settings and its sections (Input, Output and MIDI, Audio device, About) | `src/ui/MainPages.*` |
 | The tuner, Match tone | `src/ui/TunerPage.*`, `src/ui/ToneMatchPage.*` |
 | The window, selection, overlays, keys, menus, messages | `src/PluginEditor.*` |
 
-Proof: `ampsim_tests --proof-dir build/proof --only "Main screen"` writes `build/proof/redesign/` (the main screen with the amp, a pre and a post pedal, the harmonizer, the Cab and EQ stage modes, each overlay, a small window, a letterboxed one, the board alone), and with "Main screen inspectors": `inspector_<block>.png` for every block, `stage_cab_pack.png`, `board_markers.png`, `board_markers_cab_off.png`, and the meters (`gate_meter_open.png`, `gate_meter_closed.png`, `gate_meter_linked.png`, `compressor_meter.png`, `harmonizer_hearing.png`).
+Proof: `ampsim_tests --proof-dir build/proof --only "Main screen"` writes `build/proof/redesign/` (the main screen with the amp, a pre and a post pedal, the harmonizer, the Cab and EQ stage modes, each overlay, a small window, a letterboxed one, the board alone), and with "Main screen inspectors": `inspector_<block>.png` for every block, `stage_cab_pack.png`, `board_markers.png`, `board_markers_cab_off.png`, and the meters (`gate_meter_open.png`, `gate_meter_closed.png`, `gate_meter_linked.png`, `compressor_meter.png`, `harmonizer_hearing.png`). `--only "Overlays"` adds the tuner (`overlay_tuner_<state>.png` and its footer crops), Settings' four sections (`overlay_settings_<section>.png`, and the device at 44.1 kHz), a menu, and the Rename dialog; the tone match tests add every state of Match tone (`overlay_tone_match_<state>.png`).
 
 ## What's next
 
 - **Phase 2's finish:** built (above); still owed is the finish review of the main screen against the contract (the contract's FINISH line: the review, its verdict, DESIGN.md and its sidecar, every shipping raster's provenance), and Sean's listening and playing check RD.2 (PROGRESS).
-- **Phase 3, the rest of the app:** the tuner, Match tone, and Settings redesigned in the new world (they are reused and restyled in phase 1), the About window, the dialogs and menus, and the website re-skinned to follow the app (its images come from these snapshots; `tools/site/make_site_assets.py`'s crops still point at the old layout).
+- **Phase 3, the rest of the app:** the tuner, Match tone, Settings, the menus, and the dialogs are built (above). Left: the About window's own look (it keeps the OS's title bar and a plain scrolling text), and the website re-skinned to follow the app (its images come from these snapshots; `tools/site/make_site_assets.py`'s crops still point at the old layout, the tone match ones included).

@@ -243,6 +243,7 @@ set(AMPSIM_UI_SOURCES
     src/ui/ScenesBar.cpp
     src/ui/TopBar.cpp
     src/ui/TunerPage.cpp
+    src/ui/Overlay.cpp
     src/ui/AmpHead.cpp
     src/ui/PedalArt.cpp
     src/ui/AmpView.cpp
@@ -576,6 +577,7 @@ target_sources(ampsim_tests PRIVATE
     tests/InformedMaskTests.cpp
     tests/ToneMatchTakeScoreTests.cpp
     tests/ToneMatchCleanupTests.cpp
+    tests/OverlayTests.cpp
     tests/AudioDeviceTests.cpp
     tools/capture/CaptureEngine.cpp
     src/PluginProcessor.cpp
