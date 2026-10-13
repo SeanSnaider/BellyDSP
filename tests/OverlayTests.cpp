@@ -219,8 +219,22 @@ public:
             const auto wrongFile = redesignDir().getChildFile ("overlay_settings_device_44k.png");
             expect (savePng (wrongEditor->createComponentSnapshot (wrongEditor->getLocalBounds(), true, 2.0f), wrongFile));
             files.add (wrongFile.getFileName());
-            // No device of its own in the tests: its settings button is off.
-            expect (! settings.getDevicePage().getDeviceButton().isEnabled());
+            // No device of its own in the tests: its settings button is off, and hidden with the device's card folded to a
+            // line (RD4-10), not a half-empty card round a disabled button. The rate is one line of status, not a label
+            // over a giant figure: its panel is 56 high and its text on one line.
+            auto& device = settings.getDevicePage();
+            expect (! device.getDeviceButton().isEnabled());
+            expect (device.isDeviceCardFolded() && ! device.getDeviceButton().isVisible());
+            expectLessOrEqual (device.getStatusArea().getHeight(), 30, "one line");
+            juce::StringArray panelSizes;
+            for (const auto& panel : device.getPanels())
+            {
+                panelSizes.add ((panel.title.isEmpty() ? juce::String ("status") : panel.title) + " " + juce::String (panel.area.getHeight()));
+                if (panel.title == "This device")
+                    expectLessOrEqual (panel.area.getHeight(), 80, "folded to a line");
+                expect (panel.title != "Sample rate", "no tracked label over a giant 48 kHz");
+            }
+            logMessage ("  -> the device page's panels (height): " + panelSizes.joinIntoString (", "));
 
             // About: the licences open the editor's About window (wired), updates only when an updater runs, the
             // source of this version.

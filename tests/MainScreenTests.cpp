@@ -563,6 +563,115 @@ public:
                         "light glided back on its own in " + juce::String (juce::Time::getMillisecondCounterHiRes() - t0, 0) + " ms");
         }
 
+        beginTest ("from a step back: the preset's name at 23 px and its scene at 15 px in ink; one short line under the amp and the cab, the notes in the "
+                   "preset's tooltip; the head's knobs are gear with no value arcs");
+        {
+            WithBuiltInCaptures builtIns;
+            AmpSimProcessor p;
+            p.prepareToPlay (fs, blockSize);
+            std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+            auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
+            for (int i = 0; i < 6 && ed.getTopBar().getShownPresetName() != "Tech Death"; ++i)
+            {
+                ed.stepPreset (1);
+                waitForLoads (p);
+                ed.refresh();
+            }
+            p.recallScene (1);
+            ed.refresh();
+            expectEquals (ed.getTopBar().getShownPresetName(), juce::String ("Tech Death"));
+
+            // The type (RD4-4): the name 22 to 24 px semibold, the scene about 15 px in ink (not grey), in a 48 px box.
+            const auto nameFont = juce::Font (ui::TopBar::getPresetNameFont()), sceneFont = juce::Font (ui::TopBar::getSceneFont());
+            expect (nameFont.getHeightInPoints() >= 22.0f && nameFont.getHeightInPoints() <= 24.0f, juce::String (nameFont.getHeightInPoints()));
+            expect (sceneFont.getHeightInPoints() >= 14.5f && sceneFont.getHeightInPoints() <= 15.5f, juce::String (sceneFont.getHeightInPoints()));
+            expect (ui::TopBar::getSceneColour() == ui::theme::ink);
+            auto& box = ed.getTopBar().getPresetButton();
+            expectEquals (box.getHeight(), ui::TopBar::presetBoxHeight);
+            // As drawn: the name's ink (the brightest pixels in the box's top 28 px) at least 15 px tall (its capitals);
+            // the scene's line has ink pixels too (in grey #9a9a9a it would have none this bright).
+            const auto image = box.createComponentSnapshot (box.getLocalBounds(), true, 2.0f);
+            int top = 1 << 30, bottom = -1, sceneInk = 0;
+            for (int y = 0; y < image.getHeight(); ++y)
+                for (int x = 0; x < image.getWidth(); ++x)
+                    if (image.getPixelAt (x, y).getBrightness() > 0.82f)
+                    {
+                        if (y < 2 * 28)
+                        {
+                            top = juce::jmin (top, y);
+                            bottom = juce::jmax (bottom, y);
+                        }
+                        else
+                            ++sceneInk;
+                    }
+            const auto nameHeight = (float) (bottom - top + 1) / 2.0f;
+            expectGreaterOrEqual (nameHeight, 15.0f, "the name's capitals on screen");
+            expectGreaterThan (sceneInk, 60, "the scene in ink");
+            expectEquals (ed.getTopBar().getShownScene(), juce::String ("Scene 2: Lead"));
+
+            // One short line under the amp (RD4-5): its class and its name; the capture's file in its tooltip; the rate at
+            // the right. The preset's notes are the preset box's tooltip, never a line on the stage (RD4-6).
+            auto& amp = ed.getAmpView();
+            const juce::String dot (juce::CharPointer_UTF8 (" \xc2\xb7 "));
+            expectEquals (amp.getInfoLine(), "High gain" + dot + "Monolith");
+            expect (amp.getInfoTooltip().contains (amp.getModelText()) && amp.getModelText() == "Monolith (built in, gain set)", amp.getInfoTooltip());
+            expectEquals (amp.getRateText(), juce::String ("48 kHz"));
+            const auto notes = ed.getTopBar().getPresetNotes();
+            expect (notes.isNotEmpty(), "Tech Death has notes");
+            expect (box.getTooltip().startsWith (notes));
+            expect (! ed.getStatusText().contains (notes.substring (0, 20)), ed.getStatusText());
+            ed.setStageMode (ui::StageMode::cab, false);
+            ed.refresh();
+            ed.finishAnimations();
+            const auto cabLine = ed.getCabView().getInfoLine();
+            expect (cabLine.contains (dot) && ! cabLine.startsWith ("No IR"), cabLine);
+            expect (ed.getStatusText().isEmpty(), ed.getStatusText());
+            ed.setStageMode (ui::StageMode::amp, false);
+            ed.refresh();
+
+            // The head's knobs are gear (RD4-8): no value arc. At full travel a chrome knob's arc ring is orange; a gear
+            // knob's ring (where the arc would be: radius 30 to 35 round the hit area's centre) has no orange in it, for
+            // every amp's skin.
+            const auto arcPixels = [] (ui::Knob& knob)
+            {
+                const auto img = knob.createComponentSnapshot (knob.getLocalBounds(), true, 2.0f);
+                const juce::Point<float> c { (float) knob.getWidth(), (float) (ui::Knob::margin + 32) * 2.0f };
+                int n = 0;
+                for (int y = 0; y < img.getHeight(); ++y)
+                    for (int x = 0; x < img.getWidth(); ++x)
+                    {
+                        const auto r = c.getDistanceFrom ({ (float) x + 0.5f, (float) y + 0.5f }) / 2.0f;
+                        const auto px = img.getPixelAt (x, y);
+                        if (r > 30.0f && r < 35.0f && px.getAlpha() > 100 && std::abs ((int) px.getRed() - 255) < 50 && std::abs ((int) px.getGreen() - 138) < 50
+                            && px.getBlue() < 90)
+                            ++n;
+                    }
+                return n;
+            };
+            juce::StringArray arcs;
+            for (int a = 0; a < AmpSimProcessor::numAmps; ++a)
+            {
+                setParam (p, AmpSimProcessor::ampModelParamId, (float) a);
+                ed.refresh();
+                auto& knob = amp.getKnob (a, 1); // Bass (no gain-set dots round it)
+                setParam (p, ui::AmpView::knobParameter (a, 1), 12.0f);
+                knob.repaint();
+                expect (knob.isGearStyle(), "amp " + juce::String (a));
+                const auto n = arcPixels (knob);
+                expectEquals (n, 0, "amp " + juce::String (a) + ": orange where an arc would be");
+                arcs.add (juce::String (n));
+            }
+            auto& chrome = amp.getPanel().getKnob (0, 1);
+            const auto control = arcPixels (chrome);
+            expectGreaterThan (control, 100, "the inspector's knob at full travel has its arc");
+            setParam (p, AmpSimProcessor::ampModelParamId, 2.0f);
+            ed.refresh();
+            logMessage ("  -> the preset's name " + juce::String (nameHeight, 1) + " px of capitals in " + juce::String (nameFont.getHeightInPoints(), 0)
+                        + " px semibold, the scene in 15 px ink (" + juce::String (sceneInk) + " ink pixels at 2x); the amp's line \"" + amp.getInfoLine()
+                        + "\", the cab's \"" + cabLine + "\"; the notes in the tooltip (" + juce::String (notes.length()) + " characters); orange pixels "
+                        "in the arc's ring: " + arcs.joinIntoString (", ") + " on the nine heads' knobs, " + juce::String (control) + " on the inspector's");
+        }
+
         beginTest ("snapshots: the main screen with the amp, a pre and a post pedal, the Cab and EQ stage modes, each overlay, and at a small window size");
         {
             WithBuiltInCaptures builtIns;

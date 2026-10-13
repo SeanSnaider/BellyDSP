@@ -1020,6 +1020,31 @@ void CabView::refresh()
     const auto status = ampSim.getStatus();
     list->selectedPath = state.state.getProperty (AmpSimProcessor::cabPathKey (0)).toString();
     list->repaint();
+
+    // The short line (RD4-5): the cab's class (its heading on the list, less "Built in, ") and mic A's IR by its name
+    // on the list; an IR from elsewhere by its file's name.
+    {
+        juce::String cls, name;
+        const auto path = list->selectedPath;
+        for (const auto& e : entries)
+            if (e.file.getFullPathName() == path)
+            {
+                cls = e.group.startsWith ("Built in, ") ? e.group.fromFirstOccurrenceOf ("Built in, ", false, false) : e.group;
+                name = e.name;
+            }
+        if (name.isEmpty())
+        {
+            const auto file = juce::File::isAbsolutePath (path) ? juce::File (path) : juce::File();
+            cls = file == juce::File() ? juce::String ("No IR loaded") : juce::String ("Your IR");
+            name = file == juce::File() ? juce::String ("pick one from the list") : file.getFileNameWithoutExtension();
+        }
+        if (cls != lineClass || name != lineName)
+        {
+            lineClass = cls;
+            lineName = name;
+            repaint();
+        }
+    }
     scrollSelectionIntoView();
     follow->setToggleState (ampSim.isCabFollowing(), juce::dontSendNotification);
     cabOn->setToggleState (state.getRawParameterValue ("cab_bypass")->load() < 0.5f, juce::dontSendNotification);
@@ -1081,6 +1106,25 @@ void CabView::paint (juce::Graphics& g)
     drawInspectorHeading (g, leftColumn.withHeight (16), "Cabinet");
     drawInspectorHeading (g, roomHeading, "Room mic");
     drawInspectorHeading (g, matchHeading.withRight (matchAmountLabel->getX() - 4), "Match curve");
+
+    // The short line at the stage's foot (RD4-5), in the amp's info row's place and type: the class in ink-dim, a
+    // faint dot, the IR's name in ink.
+    const auto baseline = (float) getHeight() - 14.0f - 4.0f;
+    const auto classFont = geist (Weight::regular, 14.0f), nameFont = geist (Weight::medium, 14.0f);
+    const juce::String dot (juce::CharPointer_UTF8 (" \xc2\xb7 "));
+    auto x = 26.0f;
+    const auto draw = [&] (const juce::String& words, const juce::FontOptions& f, juce::Colour c)
+    {
+        const juce::Font font (f);
+        const auto w = juce::jmin ((float) getWidth() - 300.0f - x, textWidth (f, words));
+        g.setFont (font);
+        g.setColour (c);
+        g.drawText (words, juce::Rectangle<float> (x, baseline - font.getAscent(), w + 2.0f, font.getAscent() + font.getDescent()), juce::Justification::topLeft, true);
+        x += w;
+    };
+    draw (lineClass, classFont, inkDim);
+    draw (dot, classFont, inkFaint);
+    draw (lineName, nameFont, ink);
 }
 
 void CabView::paintOverChildren (juce::Graphics& g)

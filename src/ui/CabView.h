@@ -74,6 +74,9 @@ public:
     juce::Point<float> markerPosition (int mic) const;
     void dragMarker (int mic, juce::Point<float> from, juce::Point<float> to);
     juce::String getReadout() const;
+    /// The one short line at the stage's foot (RD4-5): the cab's class and the IR in close mic A ("Modern 4x12 ·
+    /// Dynamic, bright 60 W, var. 3"), as the amp's "High gain · Monolith".
+    juce::String getInfoLine() const { return lineClass.isEmpty() ? lineName : lineClass + juce::String (juce::CharPointer_UTF8 (" \xc2\xb7 ")) + lineName; }
     bool isMarkerDimmed (int mic) const;
 
     /// For tests: the match curve view's area (in this view's coordinates) and what it draws: the curve's
@@ -140,6 +143,7 @@ private:
     void scrollSelectionIntoView();
     juce::Rectangle<int> leftColumn, centreColumn, rightColumn, roomHeading;
     juce::String readout;
+    juce::String lineClass, lineName; // the short line at the stage's foot
     std::unique_ptr<Panel> panel; // last: destroyed first, while the controls it holds still exist
 };
 

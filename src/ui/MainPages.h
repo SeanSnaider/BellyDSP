@@ -95,6 +95,10 @@ public:
     juce::String getRateText() const;
     bool isRateOk() const;
     juce::Button& getDeviceButton() noexcept { return *deviceButton; }
+    /// Whether the device's card is folded to one line (no device of its own: outside the standalone app; RD4-10).
+    bool isDeviceCardFolded() const;
+    /// The one-line rate status's area (for tests).
+    juce::Rectangle<int> getStatusArea() const noexcept { return statusArea; }
 
     void refresh() override;
     void paint (juce::Graphics&) override;
@@ -102,8 +106,9 @@ public:
 
 private:
     juce::TextButton* deviceButton = nullptr;
-    juce::Rectangle<int> ratePanel, deviceRows, setupArea;
+    juce::Rectangle<int> statusArea, deviceRows, setupArea;
     juce::String shownRate, shownDevice;
+    bool shownKnown = false;
 };
 
 /// Settings' About section: the name and version, the licences (the app's AGPL, the captures' CC BY 4.0, the IRs'

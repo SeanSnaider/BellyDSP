@@ -536,6 +536,23 @@ public:
 
 // ---- The knobs ---------------------------------------------------------------------------------------
 
+juce::Rectangle<int> AmpView::jewelBounds()
+{
+    // The jewel lamp 40 px in from the panel's left, level with the knobs' centres (their hit areas' middle, 11 px above
+    // the panel's centre).
+    const auto panelBox = AmpHead::panelBox();
+    return juce::Rectangle<int> (64, 64).withCentre ({ juce::roundToInt (panelBox.getX() + 40.0f), juce::roundToInt (panelBox.getCentreY() - 11.0f) });
+}
+
+juce::Point<int> AmpView::knobCssPosition (int k)
+{
+    // From just past the jewel to 22 px from the panel's right, spread evenly (space-between).
+    const auto panelBox = AmpHead::panelBox();
+    const auto knobsLeft = panelBox.getX() + 82.0f, knobsWidth = panelBox.getRight() - 22.0f - knobsLeft;
+    const auto css = Knob::cssSize (Knob::Size::normal);
+    return { juce::roundToInt (knobsLeft + (knobsWidth - (float) css.x) * (float) k / (float) (numKnobs - 1)), juce::roundToInt (panelBox.getCentreY() - (float) css.y * 0.5f) };
+}
+
 juce::String AmpView::knobCaption (int index)
 {
     return ampKnobs[(size_t) juce::jlimit (0, numKnobs - 1, index)].caption;
@@ -734,14 +751,10 @@ AmpView::AmpView (AmpSimProcessor& p) : ControlGroup (p)
     grille->setBounds (AmpHead::grilleBox().toNearestInt());
     // The panel (RD4-8): the jewel lamp 40 px in from the panel's left, then the knobs from just past it to 22 px from
     // its right, spread evenly (space-between): no dead faceplate before Gain.
-    const auto panelBox = AmpHead::panelBox();
-    jewel.setBounds (juce::Rectangle<int> (64, 64).withCentre ({ juce::roundToInt (panelBox.getX() + 40.0f), juce::roundToInt (panelBox.getCentreY() - 11.0f) })); // level with the knobs' centres
-    const auto knobsLeft = panelBox.getX() + 74.0f, knobsWidth = panelBox.getRight() - 22.0f - knobsLeft;
-    const auto css = Knob::cssSize (Knob::Size::normal);
+    jewel.setBounds (jewelBounds());
     for (auto& set : knobs)
         for (int k = 0; k < numKnobs; ++k)
-            set[(size_t) k]->setCssPosition (juce::roundToInt (knobsLeft + (knobsWidth - (float) css.x) * (float) k / (float) (numKnobs - 1)),
-                                             juce::roundToInt (panelBox.getCentreY() - (float) css.y * 0.5f));
+            set[(size_t) k]->setCssPosition (knobCssPosition (k).x, knobCssPosition (k).y);
     gainStepDots->setBounds (knobs[0][0]->getBounds().expanded (GainSteps::pad));
 
     panel = std::make_unique<AmpPanel> (p, *this);

@@ -169,6 +169,11 @@ public:
     std::vector<float> getShownGainSteps() const;
     std::vector<bool> getLitGainSteps() const;
 
+    /// Where the jewel lamp and each knob (its CSS box's top left) sit on the head, in the head's own coordinates
+    /// (RD4-8: the lamp 40 px in, the knobs from just past it; no dead faceplate before Gain).
+    static juce::Rectangle<int> jewelBounds();
+    static juce::Point<int> knobCssPosition (int index);
+
     /// The knobs' captions and parameters, in the order across the panel.
     static juce::String knobCaption (int index);
     static juce::String knobParameter (int amp, int index);

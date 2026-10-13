@@ -137,6 +137,79 @@ float speck (float x, float y, float cell, int seed, float density, float radius
     return juce::jlimit (0.0f, 1.0f, r + 0.5f - d);
 }
 
+/// Pebble tolex grain (RD4-8): the vinyl's embossed pebbles as two octaves of value noise, a 1.7 px pebble over a 5 px
+/// unevenness, sharpened so each pebble reads as a bump lit from above (the noise's own slope down y lightens the top of
+/// each pebble and shades its bottom). -0.5 to 0.5; scale it by the grain's depth.
+float pebble (float x, float y, int seed)
+{
+    const auto fine = noise (x / 1.7f, y / 1.7f, seed) - 0.5f;
+    const auto lit = noise (x / 1.7f, (y - 0.6f) / 1.7f, seed) - noise (x / 1.7f, (y + 0.6f) / 1.7f, seed); // the slope towards the light
+    const auto coarse = noise (x / 5.0f, y / 5.0f, seed + 1) - 0.5f;
+    return juce::jlimit (-0.5f, 0.5f, 0.45f * fine + 0.55f * lit + 0.30f * coarse);
+}
+
+/// How far into a rounded box's rolled edge a point is: 1 on the edge, 0 from `depth` px in (a smooth falloff). The
+/// heads' shells roll over at their edges, so they darken there: it's what makes a shell read as a box, not a panel.
+float rolled (float x, float y, float w, float h, float depth)
+{
+    const auto d = std::min ({ x, y, w - x, h - y });
+    const auto t = juce::jlimit (0.0f, 1.0f, 1.0f - d / depth);
+    return t * t * (3.0f - 2.0f * t);
+}
+
+/// A woven grille cloth (RD4-8). Threads `pitch` px apart (`pitchY` for the weft, so a rib weave can have fat weft over
+/// thin warp), each rounded across its width (a sine profile), dipping where it passes under its neighbour, with fibre
+/// noise along it and a dark gap between threads where the cloth shows what's behind it (the speaker's dark). Which
+/// thread is on top at a crossing is the weave:
+///   plain   over one, under one: a checkerboard of crossings
+///   twill   over two, under two, shifted one each row: the diagonal rib (the Glass and Quartz cloths')
+///   basket  pairs of threads woven as one: a coarse checkerboard of 2 x 2 (Ember's)
+/// warp and weft are the vertical and the horizontal threads' colours at their lit crown; `behind` is the gap's.
+enum class Weave { plain, twill, basket };
+
+juce::Colour cloth (float x, float y, Weave weave, float pitch, float pitchY, juce::Colour warp, juce::Colour weft, juce::Colour behind, int seed)
+{
+    const auto i = (int) std::floor (x / pitch), j = (int) std::floor (y / pitchY);
+    const auto u = x / pitch - (float) i, v = y / pitchY - (float) j;
+    bool warpOnTop = false;
+    switch (weave)
+    {
+        case Weave::plain:  warpOnTop = ((i + j) & 1) == 0; break;
+        case Weave::twill:  warpOnTop = (((i - j) % 4 + 4) % 4) < 2; break;
+        case Weave::basket: warpOnTop = (((i >> 1) + (j >> 1)) & 1) == 0; break;
+    }
+    const auto across = warpOnTop ? u : v, along = warpOnTop ? v : u;
+    constexpr float gap = 0.1f;
+    const auto profile = std::sin (juce::MathConstants<float>::pi * juce::jlimit (0.0f, 1.0f, (across - gap) / (1.0f - 2.0f * gap)));
+    const auto dip = 0.62f + 0.38f * std::sin (juce::MathConstants<float>::pi * along); // darker where it dives under
+    const auto fibre = warpOnTop ? noise (x / (0.45f * pitch), y / (2.5f * pitchY), seed) : noise (x / (2.5f * pitch), y / (0.45f * pitchY), seed + 7);
+    const auto lum = juce::jlimit (0.0f, 1.0f, std::pow (profile, 0.8f) * dip * (0.86f + 0.28f * fibre));
+    return behind.interpolatedWith (warpOnTop ? warp : weft, lum);
+}
+
+/// patternImage, supersampled: the mean of a 2 x 2 grid of samples in each device pixel. The cloths' threads are 2 to 6
+/// px apart, near the device's own pixels at the stage's scale, where one sample per pixel would beat into moire.
+juce::Image patternImageSmooth (juce::Rectangle<float> area, float scale, const std::function<juce::Colour (float, float)>& pattern)
+{
+    const auto w = juce::jmax (1, juce::roundToInt (area.getWidth() * scale)), h = juce::jmax (1, juce::roundToInt (area.getHeight() * scale));
+    juce::Image image (juce::Image::ARGB, w, h, false);
+    juce::Image::BitmapData data (image, juce::Image::BitmapData::writeOnly);
+    for (int j = 0; j < h; ++j)
+        for (int i = 0; i < w; ++i)
+        {
+            float r = 0.0f, gr = 0.0f, b = 0.0f;
+            for (const auto [dx, dy] : { std::pair<float, float> { 0.25f, 0.25f }, { 0.75f, 0.25f }, { 0.25f, 0.75f }, { 0.75f, 0.75f } })
+            {
+                const auto c = pattern (((float) i + dx) / scale, ((float) j + dy) / scale);
+                r += c.getFloatRed();
+                gr += c.getFloatGreen();
+                b += c.getFloatBlue();
+            }
+            data.setPixelColour (i, j, juce::Colour::fromFloatRGBA (r * 0.25f, gr * 0.25f, b * 0.25f, 1.0f));
+        }
+    return image;
+}
+
 /// Renders a pattern over `area` (CSS pixels) into an image at `scale`, sampling each device pixel's centre.
 juce::Image patternImage (juce::Rectangle<float> area, float scale, const Pattern& pattern)
 {
@@ -158,6 +231,17 @@ void fillPattern (juce::Graphics& g, juce::Rectangle<float> box, float radius, f
     g.reduceClipRegion (shape);
     g.setOpacity (1.0f); // (drawImage takes the current colour's alpha as its opacity)
     g.drawImage (patternImage (box, scale, pattern), box);
+}
+
+/// fillPattern with the supersampled image (the cloths).
+void fillPatternSmooth (juce::Graphics& g, juce::Rectangle<float> box, float radius, float scale, const std::function<juce::Colour (float, float)>& pattern)
+{
+    juce::Path shape;
+    shape.addRoundedRectangle (box, radius);
+    const juce::Graphics::ScopedSaveState saved (g);
+    g.reduceClipRegion (shape);
+    g.setOpacity (1.0f);
+    g.drawImage (patternImageSmooth (box, scale, pattern), box);
 }
 
 /// Text as a path with CSS letter-spacing (added after every letter, the last included), centred in `box`
@@ -547,21 +631,27 @@ juce::Image AmpHead::render (Material material, float scale, const juce::String&
     switch (material)
     {
         case Material::glass:
+            // Cream pebble tolex (RD4-8): the cream gradient embossed with the pebble grain, the fine dot kept.
             fillPattern (g, head, radiusHead, scale, [h] (float x, float y)
             {
                 const auto base = vertical (juce::Colour (0xffe4e1d9), juce::Colour (0xffc9c5ba), y, h);
-                return blend (base, juce::Colours::black.withAlpha (0.07f * dot (x, y, 3.0f)));
+                return blend (shade (base, 0.13f * pebble (x, y, 101)), juce::Colours::black.withAlpha (0.05f * dot (x, y, 3.0f)));
             });
             break;
         case Material::ember:
+            // Oxblood pebble tolex (RD4-8): the wine gradient, embossed, with the old 4 px dot kept faint.
             fillPattern (g, head, radiusHead, scale, [h] (float x, float y)
             {
                 const auto base = vertical (juce::Colour (0xff55212a), juce::Colour (0xff3c1519), y, h);
-                return blend (base, juce::Colours::black.withAlpha (0.28f * dot (x, y, 4.0f)));
+                return blend (shade (base, 0.20f * pebble (x, y, 102)), juce::Colours::black.withAlpha (0.12f * dot (x, y, 4.0f)));
             });
             break;
         case Material::monolith:
-            fillPattern (g, head, radiusHead, scale, [h] (float, float y) { return vertical (juce::Colour (0xff1b1c1c), juce::Colour (0xff121313), y, h); });
+            // Black textured vinyl (RD4-8): a fine pebble in the near-black, faint enough to keep the monolith's slab.
+            fillPattern (g, head, radiusHead, scale, [h] (float x, float y)
+            {
+                return shade (vertical (juce::Colour (0xff1d1e1e), juce::Colour (0xff121313), y, h), 0.09f * pebble (x, y, 103));
+            });
             g.setColour (juce::Colour (0xff2a2d2c));
             g.drawRoundedRectangle (head.reduced (0.5f), radiusHead - 0.5f, 1.0f); // inset 0 0 0 1px
             break;
@@ -570,8 +660,7 @@ juce::Image AmpHead::render (Material material, float scale, const juce::String&
             fillPattern (g, head, radiusHead, scale, [h] (float x, float y)
             {
                 const auto base = vertical (juce::Colour (0xff1c1d1f), juce::Colour (0xff0f1011), y, h);
-                const auto grain = noise (x * 0.5f, y * 0.5f, 3) - 0.5f;
-                return blend (shade (base, 0.07f * grain), juce::Colours::white.withAlpha (0.035f * dot (x, y, 3.0f)));
+                return blend (shade (base, 0.12f * pebble (x, y, 104)), juce::Colours::white.withAlpha (0.03f * dot (x, y, 3.0f)));
             });
             break;
         case Material::basalt:
@@ -590,7 +679,7 @@ juce::Image AmpHead::render (Material material, float scale, const juce::String&
             fillPattern (g, head, radiusHead, scale, [h] (float x, float y)
             {
                 const auto base = vertical (juce::Colour (0xff1e2c5e), juce::Colour (0xff121a3f), y, h);
-                const auto c = blend (base, juce::Colours::black.withAlpha (0.22f * dot (x, y, 3.0f)));
+                const auto c = blend (shade (base, 0.10f * pebble (x, y, 106)), juce::Colours::black.withAlpha (0.14f * dot (x, y, 3.0f)));
                 return blend (c, juce::Colour (0xffa9c8ff).withAlpha (0.55f * speck (x, y, 4.0f, 31, 0.10f, 0.45f)));
             });
             break;
@@ -633,9 +722,24 @@ juce::Image AmpHead::render (Material material, float scale, const juce::String&
             fillPattern (g, head, radiusHead, scale, [h] (float x, float y)
             {
                 const auto base = vertical (juce::Colour (0xff60646a), juce::Colour (0xff4a4e53), y, h);
-                return blend (base, juce::Colours::black.withAlpha (0.12f * dot (x, y, 3.0f)));
+                return blend (shade (base, 0.14f * pebble (x, y, 109)), juce::Colours::black.withAlpha (0.06f * dot (x, y, 3.0f)));
             });
             break;
+    }
+    {
+        // Every shell rolls over at its edges (RD4-8): darker in the last 14 px all round, most at the bottom, as the
+        // light from above leaves the curve; drawn over the material so the grain shows through.
+        const auto w = head.getWidth();
+        const juce::Graphics::ScopedSaveState saved (g);
+        g.reduceClipRegion (body);
+        g.setOpacity (1.0f);
+        g.drawImage (patternImage (head, scale, [w, h] (float x, float y)
+                                   {
+                                       const auto edge = rolled (x, y, w, h, 14.0f);
+                                       const auto bottom = juce::jlimit (0.0f, 1.0f, (y - (h - 26.0f)) / 26.0f);
+                                       return juce::Colours::black.withAlpha (0.30f * edge + 0.18f * bottom * bottom);
+                                   }),
+                     head);
     }
     {
         // inset 0 1px 0 white (.12 on the tolex, .08 on the monolith): the body less itself moved down 1 px
@@ -804,117 +908,68 @@ juce::Image AmpHead::render (Material material, float scale, const juce::String&
         const auto left = tail (x / sigma), right = tail ((gw - x) / sigma);
         return juce::Colours::black.withAlpha (insetAlpha * juce::jmin (1.0f, top + bottom + left + right));
     };
+    // Every grille is woven cloth (RD4-8), each in its own weave and colours (the cloth's identity is the first art's):
+    // threads lit across their crowns, dark where they dive, the speaker's dark in the gaps, the inset shadow over it.
+    const auto weaveFill = [&] (Weave weave, float pitch, float pitchY, juce::Colour warp, juce::Colour weft, juce::Colour behind, int seed,
+                                std::function<juce::Colour (juce::Colour, float, float)> extra = {})
+    {
+        fillPatternSmooth (g, grille, radiusPanel, scale, [=] (float x, float y)
+        {
+            auto c = cloth (x, y, weave, pitch, pitchY, warp, weft, behind, seed);
+            if (extra)
+                c = extra (c, x, y);
+            return blend (c, inset (x, y));
+        });
+    };
     switch (material)
     {
         case Material::glass:
-            // repeating-linear-gradient(45deg, #2b2e2c 0 2px, #222423 2px 4px): along the direction (1, -1)/sqrt 2.
-            fillPattern (g, grille, radiusPanel, scale, [inset, gh] (float x, float y)
-            {
-                const auto t = (x - (y - gh)) * 0.70710678f;
-                const auto base = std::fmod (std::fmod (t, 4.0f) + 4.0f, 4.0f) < 2.0f ? juce::Colour (0xff2b2e2c) : juce::Colour (0xff222423);
-                return blend (base, inset (x, y));
-            });
+            // A dark grey 2/2 twill: the first art's 45 degree stripes, now as the diagonal rib the twill makes.
+            weaveFill (Weave::twill, 2.6f, 2.6f, juce::Colour (0xff3a3e3c), juce::Colour (0xff2e3130), juce::Colour (0xff0d0e0e), 201);
             break;
         case Material::ember:
-            // Basketweave: 3 px columns of two browns, crossed by 3 px bands of black .25 every 6 px (from the bottom).
-            fillPattern (g, grille, radiusPanel, scale, [inset, gh] (float x, float y)
-            {
-                auto base = std::fmod (x, 6.0f) < 3.0f ? juce::Colour (0xff3d322b) : juce::Colour (0xff2d2520);
-                if (std::fmod (gh - y, 6.0f) < 3.0f)
-                    base = blend (base, juce::Colours::black.withAlpha (0.25f));
-                return blend (base, inset (x, y));
-            });
+            // Basketweave in two browns, pairs of threads woven as one.
+            weaveFill (Weave::basket, 2.2f, 2.2f, juce::Colour (0xff57483d), juce::Colour (0xff3f342d), juce::Colour (0xff0f0b09), 202);
             break;
         case Material::monolith:
-            // Slot vents: 5 px of #0a0b0b, 4 px of #1d1f1f, from the bottom.
-            fillPattern (g, grille, radiusPanel, scale, [inset, gh] (float x, float y)
-            {
-                const auto base = std::fmod (gh - y, 9.0f) < 5.0f ? juce::Colour (0xff0a0b0b) : juce::Colour (0xff1d1f1f);
-                return blend (base, inset (x, y));
-            });
+            // A black rib weave: fat weft threads 5 px tall over a fine warp, so the cloth keeps the monolith's
+            // horizontal slats.
+            weaveFill (Weave::plain, 1.6f, 4.6f, juce::Colour (0xff191b1b), juce::Colour (0xff2a2d2d), juce::Colour (0xff040505), 203);
             break;
         case Material::forge:
-            // Perforated steel: round 3.6 px holes on a staggered (hexagonal) grid, 6 px apart in a row and rows
-            // 5.2 px apart (6 sin 60), each hole's lower lip catching a little light.
-            fillPattern (g, grille, radiusPanel, scale, [inset, gh] (float x, float y)
-            {
-                constexpr float pitch = 6.0f, row = 5.196f, r = 1.8f;
-                const auto metal = vertical (juce::Colour (0xff2e3135), juce::Colour (0xff222427), y, gh);
-                float hole = 0.0f, lip = 0.0f;
-                const auto j0 = (int) std::floor (y / row);
-                for (int j = j0 - 1; j <= j0 + 1; ++j)
-                {
-                    const auto offset = (j & 1) != 0 ? pitch * 0.5f : 0.0f;
-                    const auto cx = std::round ((x - offset) / pitch) * pitch + offset, cy = ((float) j + 0.5f) * row;
-                    const auto d = std::hypot (x - cx, y - cy);
-                    hole = juce::jmax (hole, juce::jlimit (0.0f, 1.0f, r + 0.5f - d));
-                    if (y > cy)
-                        lip = juce::jmax (lip, juce::jlimit (0.0f, 1.0f, 1.0f - std::abs (d - r - 0.6f) / 0.6f) * (y - cy) / (r + 0.6f));
-                }
-                auto c = shade (metal, 0.10f * lip);
-                c = c.interpolatedWith (juce::Colour (0xff050506), hole);
-                return blend (c, inset (x, y));
-            });
+            // Heavy black-and-steel cloth: a plain weave of black warp and gunmetal weft, the steel of the panel in it.
+            weaveFill (Weave::plain, 3.0f, 3.0f, juce::Colour (0xff26282b), juce::Colour (0xff4a4f55), juce::Colour (0xff050506), 204);
             break;
         case Material::basalt:
-            // A coarse plain weave of near-black yarn: 6 px cells, the thread on top alternating like a checkerboard,
-            // each thread rounded across its width (a sine profile) and dipping where it goes under (along it).
-            fillPattern (g, grille, radiusPanel, scale, [inset] (float x, float y)
-            {
-                constexpr float p = 6.0f;
-                const auto i = (int) std::floor (x / p), j = (int) std::floor (y / p);
-                const auto u = x / p - (float) i, v = y / p - (float) j;
-                const auto verticalOnTop = ((i + j) & 1) == 0;
-                const auto across = verticalOnTop ? u : v, along = verticalOnTop ? v : u;
-                const auto profile = std::sin (juce::MathConstants<float>::pi * juce::jlimit (0.0f, 1.0f, (across - 0.08f) / 0.84f));
-                const auto lum = profile * (0.7f + 0.3f * std::sin (juce::MathConstants<float>::pi * along));
-                const auto c = juce::Colour (0xff0b0c0d).interpolatedWith (juce::Colour (0xff3a3d41), lum);
-                return blend (c, inset (x, y));
-            });
+            // A coarse plain weave of near-black yarn (6 px), as before, now with its fibres.
+            weaveFill (Weave::plain, 6.0f, 6.0f, juce::Colour (0xff3a3d41), juce::Colour (0xff34373b), juce::Colour (0xff0b0c0d), 205);
             break;
         case Material::comet:
-            // A fine navy mesh: 3 px squares of the cloth between 1 px darker threads.
-            fillPattern (g, grille, radiusPanel, scale, [inset, gh] (float x, float y)
-            {
-                const auto cloth = vertical (juce::Colour (0xff15204a), juce::Colour (0xff0f173a), y, gh);
-                const auto thread = std::fmod (x, 3.0f) < 1.0f || std::fmod (y, 3.0f) < 1.0f;
-                return blend (thread ? shade (cloth, -0.35f) : cloth, inset (x, y));
-            });
+            // A fine navy plain weave, a lighter blue in the weft.
+            weaveFill (Weave::plain, 2.4f, 2.4f, juce::Colour (0xff1c2a5e), juce::Colour (0xff27397a), juce::Colour (0xff060a1c), 206);
             break;
         case Material::quartz:
-            // A light, fine cloth: a 3 px diagonal twill (the Glass weave's direction, mirrored) of two pale lilac-greys.
-            fillPattern (g, grille, radiusPanel, scale, [inset] (float x, float y)
-            {
-                const auto t = (x + y) * 0.70710678f;
-                const auto base = std::fmod (t, 3.0f) < 1.5f ? juce::Colour (0xffe3dbe9) : juce::Colour (0xffd2c7db);
-                return blend (base, inset (x, y));
-            });
+            // A light, fine lilac twill (the Glass weave's direction, mirrored by its colours).
+            weaveFill (Weave::twill, 2.4f, 2.4f, juce::Colour (0xffeee8f2), juce::Colour (0xffd9cfe2), juce::Colour (0xffa999b6), 207);
             break;
         case Material::lantern:
         {
-            // Oxblood cloth: a 4 px plain weave of two reds, a faint wheat thread every 24 px, and the lantern's glow, an
-            // amber light behind the cloth around the badge (an elliptical falloff, 300 x 70 px).
+            // Oxblood cloth: a plain weave of two reds, a faint wheat thread every 24 px, and the lantern's glow, an amber
+            // light behind the cloth around the badge (an elliptical falloff, 300 x 70 px).
             const auto cx = gw * 0.5f, cy = gh * 0.5f;
-            fillPattern (g, grille, radiusPanel, scale, [inset, cx, cy] (float x, float y)
-            {
-                const auto i = (int) std::floor (x / 2.0f), j = (int) std::floor (y / 2.0f);
-                auto c = ((i + j) & 1) == 0 ? juce::Colour (0xff5e2025) : juce::Colour (0xff47161a);
-                if (std::fmod (x, 24.0f) < 1.0f)
-                    c = c.interpolatedWith (juce::Colour (0xffc9a66b), 0.18f);
-                const auto dx = (x - cx) / 300.0f, dy = (y - cy) / 70.0f;
-                c = blend (c, juce::Colour (0xffff9a2e).withAlpha (0.32f * std::exp (-(dx * dx + dy * dy) * 2.0f)));
-                return blend (c, inset (x, y));
-            });
+            weaveFill (Weave::plain, 2.2f, 2.2f, juce::Colour (0xff7a2a30), juce::Colour (0xff5e1d22), juce::Colour (0xff1a0708), 208,
+                       [cx, cy] (juce::Colour c, float x, float y)
+                       {
+                           if (std::fmod (x, 24.0f) < 1.1f)
+                               c = c.interpolatedWith (juce::Colour (0xffc9a66b), 0.22f);
+                           const auto dx = (x - cx) / 300.0f, dy = (y - cy) / 70.0f;
+                           return blend (c, juce::Colour (0xffff9a2e).withAlpha (0.30f * std::exp (-(dx * dx + dy * dy) * 2.0f)));
+                       });
             break;
         }
         case Material::custom:
-            // A plain fine mesh in two dark greys (2 px checks).
-            fillPattern (g, grille, radiusPanel, scale, [inset] (float x, float y)
-            {
-                const auto i = (int) std::floor (x / 2.0f), j = (int) std::floor (y / 2.0f);
-                const auto base = ((i + j) & 1) == 0 ? juce::Colour (0xff27292c) : juce::Colour (0xff1e2022);
-                return blend (base, inset (x, y));
-            });
+            // A plain fine weave in two dark greys.
+            weaveFill (Weave::plain, 2.2f, 2.2f, juce::Colour (0xff36393c), juce::Colour (0xff2c2f31), juce::Colour (0xff0c0d0e), 209);
             break;
     }
 

@@ -130,15 +130,26 @@ public:
         }
     }
 
+    /// On the stage's Cab and EQ views the line sits at the right of the foot (the cab's short line has its left).
+    void setRightAligned (bool shouldBeRight)
+    {
+        if (shouldBeRight != rightAligned)
+        {
+            rightAligned = shouldBeRight;
+            repaint();
+        }
+    }
+
     void paint (juce::Graphics& g) override
     {
         g.setFont (geist (Weight::regular, 12.0f));
         g.setColour (inkDim);
-        g.drawFittedText (message, getLocalBounds(), juce::Justification::centredLeft, 1, 0.9f);
+        g.drawFittedText (message, getLocalBounds(), rightAligned ? juce::Justification::centredRight : juce::Justification::centredLeft, 1, 0.9f);
     }
 
 private:
     juce::String message;
+    bool rightAligned = false;
 };
 
 AmpSimEditor::AmpSimEditor (AmpSimProcessor& p) : AudioProcessorEditor (&p), ampSim (p)
@@ -340,7 +351,8 @@ void AmpSimEditor::layoutCanvas()
     if (overlay != ui::Overlay::none)
         statusLine->setBounds (overlayArea().getX() + ui::OverlayFrame::padSide, overlayArea().getBottom() - 16, overlayArea().getWidth() - 2 * ui::OverlayFrame::padSide, 14);
     else
-        statusLine->setBounds (stageArea().getX() + 24, stageArea().getBottom() - 30, stageArea().getWidth() - 48, 16);
+        statusLine->setBounds (stageArea().getX() + stageArea().getWidth() / 2, stageArea().getBottom() - 30, stageArea().getWidth() / 2 - 24, 16);
+    statusLine->setRightAligned (overlay == ui::Overlay::none);
     statusLine->toFront (false);
 }
 
