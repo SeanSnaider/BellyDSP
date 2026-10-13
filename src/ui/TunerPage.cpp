@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Sean Snaider
 
 #include "TunerPage.h"
+#include "Overlay.h"
 
 namespace ui
 {
@@ -13,12 +14,13 @@ namespace
 const juce::Identifier tunerTuningKey { "tunerTuning" }; // the chosen tuning (app view state)
 const char* const pitchNames[] { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
 
-// The column (CSS #page-tuner): the note (10 + 190), the readout (6 + 17 + 30), the scale (70), the
-// strings (34 + 54 + 34), the controls (18 + 24).
-constexpr int noteTop = 10, noteHeight = 190, readHeight = 17, scaleWidth = 720, scaleHeight = 70, stringSize = 54, stringGap = 14;
-constexpr int columnHeight = noteTop + noteHeight + 6 + readHeight + 30 + scaleHeight + 34 + stringSize + 34 + 1 + 18 + 24;
+// The page, in the 1200 x 598 the overlay frame gives it: the header (48), the display (368, from 56), and under it
+// the strings and the controls (162, from 436).
+constexpr int displayTop = 56, displayHeight = 368, lowerTop = 436, lowerHeight = 162, controlsWidth = 440;
+constexpr int noteHeight = 200, scaleWidth = 960, chipWidth = 100, chipHeight = 98, chipGap = 12;
+constexpr float noteSize = 200.0f;
 
-/// Draws text with its baseline at y (a CSS line box's baseline), left edge at x; returns its width.
+/// Draws text with its baseline at y, left edge at x, with extra tracking between glyphs; returns its width.
 float drawAt (juce::Graphics& g, const juce::String& s, const juce::FontOptions& f, float x, float baseline, float tracking = 0.0f)
 {
     juce::GlyphArrangement glyphs;
@@ -29,11 +31,22 @@ float drawAt (juce::Graphics& g, const juce::String& s, const juce::FontOptions&
     return textWidth (f, s) + tracking * (float) s.length();
 }
 
-/// The baseline of a CSS line box `height` high for a font (the content area centred in it).
+/// The baseline of a line box `height` high for a font (the content area centred in it).
 float baselineIn (const juce::FontOptions& f, float top, float height)
 {
     const juce::Font font (f);
     return top + (height - (font.getAscent() + font.getDescent())) * 0.5f + font.getAscent();
+}
+
+/// A chevron pointing right (+1) or left (-1), 22 wide and 40 tall, centred on c.
+juce::Path chevron (juce::Point<float> c, int direction)
+{
+    juce::Path p;
+    const auto d = (float) direction;
+    p.startNewSubPath (c.x - 9.0f * d, c.y - 20.0f);
+    p.lineTo (c.x + 11.0f * d, c.y);
+    p.lineTo (c.x - 9.0f * d, c.y + 20.0f);
+    return p;
 }
 } // namespace
 
@@ -52,7 +65,9 @@ TunerPage::TunerPage (AmpSimProcessor& p) : ControlGroup (p)
     for (const auto& t : tunings())
         names.add (t.name);
     tuningChoice = std::make_unique<Segmented> (names);
+    tuningChoice->setPillStyle (true);
     tuningChoice->onChange = [this] (int i) { setTuning (i); };
+    tuningChoice->setTooltip ("The tuning: its six strings show under the display");
     addAndMakeVisible (*tuningChoice);
 
     const auto stepA4 = [this] (float delta)
@@ -70,6 +85,10 @@ TunerPage::TunerPage (AmpSimProcessor& p) : ControlGroup (p)
         b->setHasFocusOutline (true);
     }
     mute = &addSwitch ("tuner_mute", "Mute output");
+    mute->setTooltip ("Silence the output while the tuner is open");
+    closeButton = &addButton ("Close", [this] { if (onClose) onClose(); });
+    closeButton->setTooltip ("Back to the main screen (T or Esc)");
+    closeButton->setHasFocusOutline (true);
 
     setTuning ((int) state.state.getProperty (tunerTuningKey, 0));
 }
@@ -118,6 +137,7 @@ void TunerPage::pageHidden()
 void TunerPage::refresh()
 {
     repaint (a4Area);
+    repaint (header);
 }
 
 void TunerPage::timerCallback()
@@ -185,147 +205,279 @@ void TunerPage::update (const ampsim::TunerReading& r)
     repaint();
 }
 
-juce::Rectangle<float> TunerPage::stringCircle (int index) const
+float TunerPage::segmentLight (double segmentCents, double cents)
 {
-    const auto total = 6 * stringSize + 5 * stringGap;
-    const auto x0 = (float) (getWidth() - total) * 0.5f;
-    return { x0 + (float) (index * (stringSize + stringGap)), (float) stringsArea.getY(), (float) stringSize, (float) stringSize };
+    // A segment lights fully under the cents and fades linearly to dark 3.75 cents (one and a half segments) away,
+    // so between two segments both are part lit and the position reads between them. Off the scale: the end
+    // segment, as a needle pinned at its stop.
+    const auto c = juce::jlimit (-50.0, 50.0, cents);
+    return (float) juce::jmax (0.0, 1.0 - std::abs (segmentCents - c) / 3.75);
+}
+
+int TunerPage::getLitChevrons() const
+{
+    if (! reading.hasReading)
+        return 0;
+    return shown.inTune ? 2 : (shown.centsValue < 0.0 ? -1 : 1);
+}
+
+juce::Rectangle<float> TunerPage::stringBox (int index) const
+{
+    const auto total = 6 * chipWidth + 5 * chipGap;
+    const auto x0 = (float) stringsArea.getX() + (float) (stringsArea.getWidth() - total) * 0.5f;
+    return { x0 + (float) (index * (chipWidth + chipGap)), (float) stringsArea.getY(), (float) chipWidth, (float) chipHeight };
 }
 
 void TunerPage::paint (juce::Graphics& g)
 {
-    const auto noteColour = shown.inTune ? accent : (reading.hasReading ? ink : inkFaint);
+    const auto has = reading.hasReading;
+    const auto inTune = has && shown.inTune;
 
-    // The note: 180 px light, tracking -.04em, line height 1; the sharp (56 px, 22 px down) and the octave
-    // (28 px, 22 px up from the bottom) beside it, 6 px apart (CSS .tn-note: flex, top-aligned).
-    {
-        const auto big = geist (Weight::light, 180.0f), acc = geist (Weight::light, 56.0f), oct = geist (Weight::light, 28.0f);
-        const auto top = (float) noteArea.getY();
-        const auto noteWidth = textWidth (big, shown.note) - 0.04f * 180.0f;
-        const auto accWidth = shown.accidental.isEmpty() ? 0.0f : textWidth (acc, shown.accidental);
-        const auto octWidth = textWidth (oct, shown.octave);
-        auto x = (float) getWidth() * 0.5f - (noteWidth + 6.0f + accWidth + 6.0f + octWidth) * 0.5f;
-        g.setColour (noteColour);
-        drawAt (g, shown.note, big, x, baselineIn (big, top, 180.0f), -0.04f * 180.0f);
-        x += noteWidth + 6.0f;
-        g.setColour (inkDim);
-        const juce::Font accFont (acc), octFont (oct);
-        drawAt (g, shown.accidental, acc, x, top + 22.0f + accFont.getAscent());
-        x += accWidth + 6.0f;
-        g.setColour (inkFaint);
-        drawAt (g, shown.octave, oct, x, top + (float) noteHeight - 22.0f - octFont.getDescent());
-    }
+    overlay::paintHeader (g, header, "Tuner",
+                          state.getRawParameterValue ("tuner_mute")->load() >= 0.5f ? "Listening to the clean DI. The output is muted while it's open."
+                                                                                     : "Listening to the clean DI. The output plays while you tune.",
+                          "T|or;Esc|closes it");
 
-    // The readout: "83.03 Hz", "Cents +13", the state; 14 px, 28 px apart, tabular figures.
+    // ---- The display: a dark panel lit from below, warmer while in tune --------------------------------------
     {
-        const auto faint = tabular (geist (Weight::regular, 14.0f)), bold = tabular (geist (Weight::medium, 14.0f));
-        const auto hzText = shown.hz + " Hz";
-        const auto w1 = textWidth (faint, hzText), w2 = textWidth (faint, "Cents") + 6.0f + textWidth (bold, shown.cents), w3 = textWidth (faint, shown.state);
-        auto x = (float) getWidth() * 0.5f - (w1 + 28.0f + w2 + 28.0f + w3) * 0.5f;
-        const auto baseline = baselineIn (faint, (float) readArea.getY(), (float) readHeight);
-        g.setColour (inkFaint);
-        x += drawAt (g, hzText, faint, x, baseline) + 28.0f;
-        x += drawAt (g, "Cents", faint, x, baseline) + 6.0f;
-        g.setColour (reading.hasReading ? ink : inkFaint);
-        x += drawAt (g, shown.cents, bold, x, baseline) + 28.0f;
-        g.setColour (shown.inTune ? accent : inkDim);
-        drawAt (g, shown.state, faint, x, baseline);
-    }
-
-    // The scale: the in-tune zone, ticks every 5 cents (longer at +-25, longest at 0), the labels, the needle.
-    {
-        const auto s = scaleArea.toFloat();
-        const auto xOf = [&s] (double cents) { return s.getX() + (float) ((juce::jlimit (-50.0, 50.0, cents) + 50.0) / 100.0) * s.getWidth(); };
-        if (shown.inTune)
+        const auto d = displayArea.toFloat();
+        g.setColour (panelBg);
+        g.fillRoundedRectangle (d, radiusCard);
         {
-            g.setColour (accentDim);
-            g.fillRoundedRectangle (juce::Rectangle<float> (xOf (0.0) - 22.0f, s.getY() + 6.0f, 44.0f, 40.0f), 4.0f);
-        }
-        for (int c = -50; c <= 50; c += 5)
-        {
-            const auto zero = c == 0, mid = c % 25 == 0;
-            g.setColour (zero ? inkDim : mid ? inkFaint : line2);
-            const auto top = zero ? 4.0f : mid ? 12.0f : 18.0f, height = zero ? 44.0f : mid ? 28.0f : 16.0f;
-            g.fillRect (juce::Rectangle<float> (xOf (c), s.getY() + top, 1.0f, height));
-            if (mid)
+            const juce::Graphics::ScopedSaveState saved (g);
+            juce::Path clip;
+            clip.addRoundedRectangle (d, radiusCard);
+            g.reduceClipRegion (clip);
+            g.setGradientFill (juce::ColourGradient (stageLight.withAlpha (0.55f), d.getCentreX(), d.getBottom() + 40.0f, panelBg.withAlpha (0.0f),
+                                                     d.getCentreX(), d.getY() + 40.0f, true));
+            g.fillRect (d);
+            if (inTune)
             {
-                g.setColour (inkFaint);
-                g.setFont (tabular (geist (Weight::regular, 11.0f)));
-                g.drawText (c > 0 ? "+" + juce::String (c) : juce::String (c), juce::Rectangle<float> (xOf (c) - 30.0f, s.getY() + 54.0f, 60.0f, 14.0f),
-                            juce::Justification::centredTop, false);
+                // A soft glow behind the note: the in-tune state reads from across the room.
+                const auto c = noteArea.toFloat().getCentre();
+                g.setGradientFill (juce::ColourGradient (accent.withAlpha (0.16f), c.x, c.y, accent.withAlpha (0.0f), c.x + 300.0f, c.y, true));
+                g.fillRect (d);
             }
         }
-        if (reading.hasReading)
+        g.setColour (inTune ? accent.withAlpha (0.45f) : line1);
+        g.drawRoundedRectangle (d.reduced (0.5f), radiusCard, 1.0f);
+    }
+
+    const auto noteColour = inTune ? accent : (has ? ink : inkFaint);
+
+    // The note: 200 px light, tracking -.04em; the sharp (60 px) at its top right and the octave (32 px) at its foot.
+    {
+        const auto big = geist (Weight::light, noteSize), acc = geist (Weight::light, 60.0f), oct = geist (Weight::light, 32.0f);
+        const auto top = (float) noteArea.getY();
+        const auto noteWidth = textWidth (big, shown.note) - 0.04f * noteSize;
+        const auto accWidth = shown.accidental.isEmpty() ? 0.0f : textWidth (acc, shown.accidental);
+        const auto octWidth = textWidth (oct, shown.octave);
+        const auto sideWidth = juce::jmax (accWidth, octWidth);
+        // The letter is centred on the page; the sharp and the octave hang off its right.
+        auto x = (float) noteArea.getCentreX() - noteWidth * 0.5f;
+        g.setColour (noteColour);
+        drawAt (g, shown.note, big, x, baselineIn (big, top, (float) noteHeight), -0.04f * noteSize);
+        x += noteWidth + 8.0f;
+        const juce::Font accFont (acc), octFont (oct);
+        g.setColour (inTune ? accent : inkDim);
+        drawAt (g, shown.accidental, acc, x, top + 30.0f + accFont.getAscent());
+        g.setColour (inkFaint);
+        drawAt (g, shown.octave, oct, x, top + (float) noteHeight - 34.0f - octFont.getDescent());
+        juce::ignoreUnused (sideWidth);
+
+        // The chevrons: the left one points right (tune up) and lights when flat, the right one when sharp; both in
+        // the accent when in tune.
+        const auto lit = getLitChevrons();
+        const auto cy = (float) noteArea.getCentreY() + 6.0f;
+        for (const auto side : { -1, 1 })
         {
-            const auto x = xOf (shown.centsValue);
-            g.setColour (shown.inTune ? accent : ink);
-            g.fillRoundedRectangle (juce::Rectangle<float> (x - 1.0f, s.getY(), 2.0f, 52.0f), 1.0f);
-            g.fillEllipse (juce::Rectangle<float> (10.0f, 10.0f).withCentre ({ x, s.getY() - 1.0f }));
+            const auto on = lit == side || lit == 2;
+            const auto c = juce::Point<float> ((float) noteArea.getCentreX() + (float) side * 300.0f, cy);
+            const auto path = chevron (c, -side);
+            if (on)
+            {
+                g.setColour ((lit == 2 ? accent : ink).withAlpha (0.12f));
+                g.strokePath (path, juce::PathStrokeType (12.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            }
+            g.setColour (on ? (lit == 2 ? accent : ink) : line2);
+            g.strokePath (path, juce::PathStrokeType (4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            g.setFont (geist (Weight::medium, 12.0f));
+            g.setColour (on ? (lit == 2 ? accent : inkDim) : inkFaint);
+            g.drawText (side < 0 ? "Flat" : "Sharp", juce::Rectangle<float> (c.x - 40.0f, cy + 30.0f, 80.0f, 16.0f), juce::Justification::centred, false);
         }
     }
 
-    // The strings: 54 px circles 14 apart, the note inside (16 px medium), the string's number under it.
+    // The readout: "82.56 Hz", "+2 cents", the state; tabular figures, the state in 16 medium.
     {
+        const auto faint = tabular (geist (Weight::regular, 15.0f)), bold = tabular (geist (Weight::medium, 15.0f)), stateFont = geist (Weight::medium, 16.0f);
+        const auto hzText = shown.hz + " Hz";
+        const auto centsWord = juce::String (" cents");
+        const auto w1 = textWidth (faint, hzText), w2 = textWidth (bold, shown.cents) + textWidth (faint, centsWord), w3 = textWidth (stateFont, shown.state);
+        const auto gap = 36.0f;
+        auto x = (float) readArea.getCentreX() - (w1 + gap + w2 + gap + w3) * 0.5f;
+        const auto baseline = baselineIn (faint, (float) readArea.getY(), (float) readArea.getHeight());
+        g.setColour (inkFaint);
+        x += drawAt (g, hzText, faint, x, baseline);
+        g.setColour (line2);
+        g.fillEllipse (juce::Rectangle<float> (3.0f, 3.0f).withCentre ({ x + gap * 0.5f, (float) readArea.getCentreY() }));
+        x += gap;
+        g.setColour (has ? ink : inkFaint);
+        x += drawAt (g, shown.cents, bold, x, baseline);
+        g.setColour (inkFaint);
+        x += drawAt (g, centsWord, faint, x, baseline);
+        g.setColour (line2);
+        g.fillEllipse (juce::Rectangle<float> (3.0f, 3.0f).withCentre ({ x + gap * 0.5f, (float) readArea.getCentreY() }));
+        x += gap;
+        g.setColour (inTune ? accent : (has ? ink : inkDim));
+        drawAt (g, shown.state, stateFont, x, baselineIn (stateFont, (float) readArea.getY(), (float) readArea.getHeight()));
+    }
+
+    // The scale: 41 segments, -50 to +50; taller at every 10 cents, taller still at +-25 and +-50, tallest at 0.
+    {
+        const auto s = scaleArea.toFloat();
+        const auto mid = s.getY() + 28.0f;
+        const auto xOf = [&s] (double cents) { return s.getX() + (float) ((cents + 50.0) / 100.0) * s.getWidth(); };
+        if (inTune)
+        {
+            g.setColour (accent.withAlpha (0.14f));
+            g.fillRoundedRectangle (juce::Rectangle<float> (xOf (0.0) - 46.0f, mid - 34.0f, 92.0f, 68.0f), 8.0f);
+        }
+        for (int k = -(numSegments / 2); k <= numSegments / 2; ++k)
+        {
+            const auto c = 2.5 * k;
+            const auto zero = k == 0, major = k % 10 == 0, ten = k % 4 == 0;
+            const auto h = zero ? 56.0f : major ? 44.0f : ten ? 36.0f : 28.0f;
+            const auto bar = juce::Rectangle<float> (12.0f, h).withCentre ({ xOf (c), mid });
+            const auto light = has ? segmentLight (c, shown.centsValue) : 0.0f;
+            const auto centreLit = inTune && std::abs (k) <= 1;
+            auto colour = zero ? line2.brighter (0.25f) : line2;
+            if (centreLit)
+                colour = accent;
+            else if (light > 0.0f)
+                colour = colour.interpolatedWith (inTune ? accent : ink, light);
+            g.setColour (colour);
+            g.fillRoundedRectangle (bar, 3.0f);
+            if (zero && ! centreLit)
+            {
+                g.setColour (accent.withAlpha (0.5f));
+                g.drawRoundedRectangle (bar.expanded (3.0f), 5.0f, 1.0f);
+            }
+            if (major || zero)
+            {
+                g.setColour (zero ? inkDim : inkFaint);
+                g.setFont (tabular (geist (Weight::regular, 12.0f)));
+                g.drawText (c > 0 ? "+" + juce::String (juce::roundToInt (c)) : juce::String (juce::roundToInt (c)),
+                            juce::Rectangle<float> (xOf (c) - 30.0f, mid + 38.0f, 60.0f, 14.0f), juce::Justification::centredTop, false);
+            }
+        }
+    }
+
+    // ---- The strings ---------------------------------------------------------------------------------------
+    {
+        overlay::paintPanel (g, stringsPanel);
+        auto in = stringsPanel.reduced (overlay::panelPadding + 4, overlay::panelPadding);
+        auto labelRow = in.removeFromTop (16);
+        overlay::paintGroupLabel (g, labelRow, "Strings, " + juce::String (tunings()[(size_t) tuning].name));
+        g.setFont (geist (Weight::regular, 12.0f));
+        g.setColour (inkFaint);
+        g.drawText (target >= 0 ? "Tuning to string " + juce::String (6 - target) + ". Click it again to let go"
+                                : "Click a string to tune to it; the nearest one is followed",
+                    labelRow, juce::Justification::centredRight, true);
+
         const auto& strings = tunings()[(size_t) tuning].midi;
         for (int i = 0; i < 6; ++i)
         {
-            const auto circle = stringCircle (i);
+            const auto box = stringBox (i);
             const auto current = i == shown.currentString;
-            const auto colour = current ? ink : done[(size_t) i] ? accent : inkDim;
-            g.setColour (current ? ink : done[(size_t) i] ? accent : line2);
-            g.drawEllipse (circle.reduced (0.5f), 1.0f);
-            g.setColour (colour);
-            g.setFont (geist (Weight::medium, 16.0f));
-            g.drawText (pitchNames[strings[(size_t) i] % 12], circle, juce::Justification::centred, false);
+            const auto targeted = i == target;
+            const auto isDone = done[(size_t) i];
+            g.setColour (current ? line1 : raised);
+            g.fillRoundedRectangle (box, 8.0f);
+            g.setColour (targeted ? accent : (current ? inkDim : line1));
+            g.drawRoundedRectangle (box.reduced (0.5f), 8.0f, targeted ? 1.5f : 1.0f);
+
+            // The string's number at the top left, a check at the top right once it's been in tune.
+            g.setFont (tabular (geist (Weight::medium, 11.0f)));
             g.setColour (inkFaint);
-            g.setFont (geist (Weight::regular, 11.0f));
-            g.drawText (juce::String (6 - i), circle.withY (circle.getBottom() + 7.0f).withHeight (13.0f), juce::Justification::centred, false);
+            g.drawText (juce::String (6 - i), box.reduced (10.0f, 8.0f).withHeight (14.0f), juce::Justification::centredLeft, false);
+            if (targeted)
+            {
+                g.setColour (accent);
+                g.setFont (geist (Weight::medium, 10.0f));
+                g.drawText ("TARGET", box.reduced (10.0f, 8.0f).withHeight (14.0f), juce::Justification::centredRight, false);
+            }
+            else if (isDone)
+            {
+                const auto c = juce::Point<float> (box.getRight() - 16.0f, box.getY() + 15.0f);
+                juce::Path tick;
+                tick.startNewSubPath (c.x - 4.5f, c.y);
+                tick.lineTo (c.x - 1.5f, c.y + 3.0f);
+                tick.lineTo (c.x + 4.5f, c.y - 3.5f);
+                g.setColour (accent);
+                g.strokePath (tick, juce::PathStrokeType (1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            }
+
+            // The note, large, and its octave beside it.
+            const auto midi = strings[(size_t) i];
+            const juce::String name (pitchNames[midi % 12]);
+            const auto noteFont = geist (Weight::medium, 30.0f), octFont = geist (Weight::regular, 14.0f);
+            const juce::String octave (midi / 12 - 1);
+            const auto nw = textWidth (noteFont, name), ow = textWidth (octFont, octave);
+            const auto x = box.getCentreX() - (nw + 2.0f + ow) * 0.5f;
+            const auto baseline = box.getY() + 66.0f;
+            g.setColour (isDone ? accent : (current ? ink : inkDim));
+            drawAt (g, name, noteFont, x, baseline);
+            g.setColour (inkFaint);
+            drawAt (g, octave, octFont, x + nw + 2.0f, baseline);
         }
     }
 
-    // The controls' line, and A4's label and value.
-    g.setColour (line1);
-    g.fillRect (controlsArea.getX(), controlsArea.getY() - 18, controlsArea.getWidth(), 1);
+    // ---- The controls ----------------------------------------------------------------------------------------
     {
-        const auto f = tabular (geist (Weight::regular, 13.0f));
+        overlay::paintPanel (g, controlsPanel);
+        auto in = controlsPanel.reduced (overlay::panelPadding + 4, overlay::panelPadding);
+        overlay::paintGroupLabel (g, in.removeFromTop (16), "Tuning");
+        overlay::paintGroupLabel (g, a4Area.withY (a4Area.getY() - 26).withHeight (16), "Reference and output");
+
         const auto a4 = state.getRawParameterValue ("tuner_a4")->load();
         const auto value = (std::abs (a4 - std::round (a4)) < 0.05f ? juce::String (juce::roundToInt (a4)) : juce::String (a4, 1)) + " Hz";
-        g.setFont (f);
+        g.setFont (geist (Weight::regular, 13.0f));
         g.setColour (inkDim);
-        g.drawText ("A4", a4Area.withWidth (20), juce::Justification::centredLeft, false);
-        g.setFont (tabular (geist (Weight::medium, 13.0f)));
+        g.drawText ("A4", a4Area.withWidth (24), juce::Justification::centredLeft, false);
+        g.setFont (tabular (geist (Weight::medium, 14.0f)));
         g.setColour (ink);
-        g.drawText (value, juce::Rectangle<int> (a4Down->getRight() + 8, a4Area.getY(), 58, a4Area.getHeight()), juce::Justification::centred, false);
+        g.drawText (value, a4Value, juce::Justification::centred, false);
     }
 }
 
 void TunerPage::resized()
 {
-    columnTop = (getHeight() - columnHeight) / 2;
-    auto y = columnTop + noteTop;
-    noteArea = { 0, y, getWidth(), noteHeight };
-    y += noteHeight + 6;
-    readArea = { 0, y, getWidth(), readHeight };
-    y += readHeight + 30;
-    scaleArea = { (getWidth() - scaleWidth) / 2, y, scaleWidth, scaleHeight };
-    y += scaleHeight + 34;
-    stringsArea = { 0, y, getWidth(), stringSize };
-    y += stringSize + 34 + 1 + 18;
+    const auto w = getWidth();
+    header = { 0, 0, w, overlay::headerHeight };
+    closeButton->setBounds (overlay::closeBounds (header));
 
-    // The controls: tunings at the left, A4 in the middle, Mute output at the right of the 720 px row.
-    controlsArea = { (getWidth() - scaleWidth) / 2, y, scaleWidth, 24 };
-    const auto segWidth = tuningChoice->getPreferredWidth();
-    tuningChoice->setBounds (controlsArea.getX(), controlsArea.getY() + 2, segWidth, Segmented::preferredHeight);
+    displayArea = { 0, displayTop, w, displayHeight };
+    noteArea = { 0, displayTop + 18, w, noteHeight };
+    readArea = { 0, displayTop + 226, w, 24 };
+    scaleArea = { (w - scaleWidth) / 2, displayTop + 270, scaleWidth, 84 };
+
+    controlsPanel = { w - controlsWidth, lowerTop, controlsWidth, lowerHeight };
+    stringsPanel = { 0, lowerTop, w - controlsWidth - space::m, lowerHeight };
+    stringsArea = stringsPanel.reduced (overlay::panelPadding + 4, 0).withTrimmedTop (overlay::panelPadding + 16 + 12).withHeight (chipHeight);
+
+    // The controls: the tunings (the pill) under their label; A4 with - and + and Mute output on the row under it.
+    auto in = controlsPanel.reduced (overlay::panelPadding + 4, overlay::panelPadding);
+    in.removeFromTop (16 + 8);
+    const auto segWidth = juce::jmin (in.getWidth(), tuningChoice->getPreferredWidth());
+    tuningChoice->setBounds (in.removeFromTop (Segmented::pillHeight).withWidth (segWidth));
+    in.removeFromTop (16 + 26 - 16);
+    auto row = in.removeFromBottom (controlHeight);
+    a4Area = row.withWidth (24 + 8 + 28 + 64 + 28);
+    a4Down->setBounds (a4Area.getX() + 32, row.getY(), 28, controlHeight);
+    a4Value = { a4Down->getRight(), row.getY(), 64, controlHeight };
+    a4Up->setBounds (a4Value.getRight(), row.getY(), 28, controlHeight);
     const auto muteWidth = mute->getPreferredWidth();
-    mute->setBounds (controlsArea.getRight() - muteWidth + Switch::margin, controlsArea.getCentreY() - Switch::preferredHeight / 2, muteWidth, Switch::preferredHeight);
-
-    // A4, centred in the space between (CSS justify-content: space-between over three items).
-    const auto a4Width = 20 + 8 + 24 + 8 + 58 + 8 + 24;
-    const auto left = controlsArea.getX() + segWidth, right = controlsArea.getRight() - (muteWidth - 2 * Switch::margin);
-    const auto a4X = left + (right - left - a4Width) / 2;
-    a4Area = { a4X, controlsArea.getY(), a4Width, 24 };
-    a4Down->setBounds (a4X + 28, controlsArea.getY(), 24, 24);
-    a4Up->setBounds (a4X + 28 + 24 + 8 + 58 + 8, controlsArea.getY(), 24, 24);
+    mute->setBounds (row.getRight() - muteWidth + Switch::margin, row.getCentreY() - Switch::preferredHeight / 2, muteWidth, Switch::preferredHeight);
 }
 
 void TunerPage::mouseUp (const juce::MouseEvent& e)
@@ -333,7 +485,7 @@ void TunerPage::mouseUp (const juce::MouseEvent& e)
     if (e.mods.isPopupMenu())
         return;
     for (int i = 0; i < 6; ++i)
-        if (stringCircle (i).contains (e.position))
+        if (stringBox (i).contains (e.position))
         {
             clickString (i);
             return;

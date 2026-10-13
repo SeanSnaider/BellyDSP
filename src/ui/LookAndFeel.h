@@ -47,6 +47,8 @@ public:
     juce::Font getAlertWindowTitleFont() override;
     juce::Font getAlertWindowMessageFont() override;
     juce::Font getAlertWindowFont() override;
+    void drawAlertBox (juce::Graphics&, juce::AlertWindow&, const juce::Rectangle<int>& textArea, juce::TextLayout&) override;
+    int getAlertWindowButtonHeight() override;
 
     /// The keyboard focus ring for JUCE's own controls (buttons, combo boxes): 1 px emerald, 3 px outside
     /// the control (handoff 5). None when a mouse click gave the focus (the CSS :focus-visible rule).

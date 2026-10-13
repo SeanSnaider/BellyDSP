@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <juce_core/juce_core.h>
+
 /// The audio device's latencies as the device reports them, for tone match's play-along takes
 /// (docs/TONE_MATCH.md, "Play along"): the song the app plays reaches the player's ears the output latency
 /// after the callback that wrote it, and what the player plays reaches the callback the input latency after
@@ -28,4 +30,19 @@ struct Latency
 };
 
 Latency reportedLatency();
+
+/// The open audio device as Settings shows it (ASSUMPTIONS RD34): its name and driver type, its rate and buffer, and
+/// its latencies. Not known outside the standalone app (the tests, a plugin later).
+struct Info
+{
+    bool known = false;
+    juce::String name, type;
+    Latency latency;
+};
+
+Info currentDevice();
+
+/// Opens the standalone app's own audio settings (the device, its rate and buffer, the inputs); false where there
+/// are none (the tests, a plugin).
+bool showSettings();
 } // namespace platform::device

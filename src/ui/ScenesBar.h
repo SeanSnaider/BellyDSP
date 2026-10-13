@@ -59,8 +59,10 @@ private:
     double glideStart = 0.0;
 };
 
-/// The tuner's reading in the footer: while the tuner is engaged, the note it hears (orange within 3 cents), the
-/// cents, and Flat, Sharp, or In tune; otherwise "Tuner" and its key. A click opens or closes the tuner.
+/// The tuner's reading in the footer, made to be read at a glance (phase 3, ASSUMPTIONS RD27): while the tuner is
+/// engaged, the note it hears large at the left (orange within 3 cents), and beside it a small cents meter (-50 to
+/// +50, its middle marked, a bar from the middle to the cents, orange when in tune) over the cents and Flat, Sharp,
+/// or In tune; otherwise "Tuner" and its key. A click opens or closes the tuner.
 class TunerReadout final : public juce::Component, public juce::SettableTooltipClient
 {
 public:
@@ -78,6 +80,7 @@ public:
 
 private:
     bool engaged = false, hasNote = false, inTune = false;
+    float centsValue = 0.0f;
     juce::String note, cents, verdict;
 };
 

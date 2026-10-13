@@ -36,4 +36,32 @@ Latency reportedLatency()
 #endif
     return {};
 }
+
+Info currentDevice()
+{
+    Info info;
+#if JucePlugin_Build_Standalone
+    if (auto* holder = juce::StandalonePluginHolder::getInstance())
+        if (auto* device = holder->deviceManager.getCurrentAudioDevice())
+        {
+            info.known = true;
+            info.name = device->getName();
+            info.type = device->getTypeName();
+            info.latency = reportedLatency();
+        }
+#endif
+    return info;
+}
+
+bool showSettings()
+{
+#if JucePlugin_Build_Standalone
+    if (auto* holder = juce::StandalonePluginHolder::getInstance())
+    {
+        holder->showAudioSettingsDialog();
+        return true;
+    }
+#endif
+    return false;
+}
 } // namespace platform::device

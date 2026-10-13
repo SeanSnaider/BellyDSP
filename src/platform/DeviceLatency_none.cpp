@@ -7,4 +7,6 @@
 namespace platform::device
 {
 Latency reportedLatency() { return {}; }
+Info currentDevice() { return {}; }
+bool showSettings() { return false; }
 } // namespace platform::device

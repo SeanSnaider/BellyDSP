@@ -216,16 +216,20 @@ void TunerReadout::set (bool isEngaged, const ampsim::TunerReading& reading)
     const auto newHasNote = isEngaged && reading.hasReading && reading.midiNote >= 0;
     juce::String newNote, newCents, newVerdict;
     auto newInTune = false;
+    auto newCentsValue = 0.0f;
     if (newHasNote)
     {
         newNote = juce::MidiMessage::getMidiNoteName (reading.midiNote, true, true, 4);
         const auto c = juce::roundToInt (reading.cents);
         newCents = (c > 0 ? "+" : "") + juce::String (c) + " ct";
         newInTune = std::abs (reading.cents) <= 3.0;
+        newCentsValue = (float) juce::jlimit (-50.0, 50.0, reading.cents);
         newVerdict = newInTune ? "In tune" : (reading.cents < 0.0 ? "Flat" : "Sharp");
     }
-    if (isEngaged != engaged || newHasNote != hasNote || newNote != note || newCents != cents || newVerdict != verdict || newInTune != inTune)
+    if (isEngaged != engaged || newHasNote != hasNote || newNote != note || newCents != cents || newVerdict != verdict || newInTune != inTune
+        || std::abs (newCentsValue - centsValue) > 0.05f)
     {
+        centsValue = newCentsValue;
         engaged = isEngaged;
         hasNote = newHasNote;
         note = newNote;
@@ -269,21 +273,36 @@ void TunerReadout::paint (juce::Graphics& g)
         return;
     }
 
-    // Right to left: the verdict, the cents, the note (large).
-    const auto verdictFont = geist (Weight::medium, 13.0f), centsFont = tabular (geist (Weight::regular, 13.0f)), noteFont = geist (Weight::semibold, 22.0f);
-    const auto vw = textWidth (verdictFont, verdict), cw = textWidth (centsFont, cents), nw = textWidth (noteFont, note);
-    auto x = area.getRight() - vw;
-    g.setFont (verdictFont);
-    g.setColour (inTune ? accent : inkDim);
-    g.drawText (verdict, juce::Rectangle<float> (x, area.getY(), vw + 2.0f, area.getHeight()), juce::Justification::centredLeft, false);
-    x -= 12.0f + cw;
-    g.setFont (centsFont);
-    g.setColour (inkDim);
-    g.drawText (cents, juce::Rectangle<float> (x, area.getY(), cw + 2.0f, area.getHeight()), juce::Justification::centredLeft, false);
-    x -= 12.0f + nw;
+    // The note large at the left; at the right, the cents meter over the cents and the verdict.
+    const auto noteFont = geist (Weight::semibold, 26.0f), small = tabular (geist (Weight::regular, 12.0f)), verdictFont = geist (Weight::medium, 12.0f);
+    const auto colour = inTune ? accent : ink;
+    auto meterColumn = area.removeFromRight (128.0f);
+    area.removeFromRight (12.0f);
     g.setFont (noteFont);
+    g.setColour (colour);
+    g.drawText (note, area, juce::Justification::centredRight, false);
+
+    // The meter: a 4 px track, ticks at -25 and +25, the middle marked, the bar from the middle to the cents.
+    const auto track = juce::Rectangle<float> (meterColumn.getX(), meterColumn.getY() + 9.0f, meterColumn.getWidth(), 4.0f);
+    const auto xOf = [&track] (float c) { return track.getX() + track.getWidth() * (c + 50.0f) / 100.0f; };
+    g.setColour (line2);
+    g.fillRoundedRectangle (track, 2.0f);
+    g.setColour (inkFaint);
+    for (const auto c : { -25.0f, 25.0f })
+        g.fillRect (juce::Rectangle<float> (xOf (c) - 0.5f, track.getY() - 2.0f, 1.0f, track.getHeight() + 4.0f));
+    const auto from = juce::jmin (xOf (0.0f), xOf (centsValue)), to = juce::jmax (xOf (0.0f), xOf (centsValue));
+    g.setColour (colour);
+    g.fillRoundedRectangle (juce::Rectangle<float> (from - 1.5f, track.getY(), juce::jmax (3.0f, to - from + 3.0f), track.getHeight()), 2.0f);
+    g.setColour (inTune ? accent : inkDim);
+    g.fillRect (juce::Rectangle<float> (xOf (0.0f) - 1.0f, track.getY() - 4.0f, 2.0f, track.getHeight() + 8.0f));
+
+    auto words = meterColumn.withTrimmedTop (20.0f);
+    g.setFont (small);
+    g.setColour (inkDim);
+    g.drawText (cents, words, juce::Justification::centredLeft, false);
+    g.setFont (verdictFont);
     g.setColour (inTune ? accent : ink);
-    g.drawText (note, juce::Rectangle<float> (x, area.getY(), nw + 2.0f, area.getHeight()), juce::Justification::centredLeft, false);
+    g.drawText (verdict, words, juce::Justification::centredRight, false);
 }
 
 void TunerReadout::mouseUp (const juce::MouseEvent& e)
