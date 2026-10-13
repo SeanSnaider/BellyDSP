@@ -236,6 +236,7 @@ void OutputPage::paint (juce::Graphics& g)
     const std::vector<std::pair<juce::StringArray, juce::String>> keys {
         { { "@left", "@right" }, "presets" },
         { { "1", "8" }, "scenes" },
+        { { "[", "]" }, "board tabs" },
         { { "T" }, "tuner" },
         { { "Cmd Z" }, "undo" },
         { { "Shift Cmd Z" }, "redo" },

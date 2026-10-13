@@ -26,16 +26,17 @@ using ToggleControl = ui::IgnoresRightClick<juce::ToggleButton>;
 ///   the top bar      across the top (52): the brand, A/B and undo, the preset and its scene, the CPU and meters,
 ///                    and the buttons that open the tuner, Match tone, and Settings
 ///   the stage        the left 980 under it (350): the playing amp lit from below, or the cab, or an EQ's graph
-///   the board        under the stage (280): every pedal in chain order around the amp's and the cab's markers
+///   the board        under the stage (280): three tabs (Pre FX, Amp & Cab, Post FX), each with its blocks' LEDs on
+///                    the strip, and the open tab's pedals or markers in chain order under it
 ///   the inspector    the right 300, from the top bar to the footer: the selected block's every control
 ///   the footer       across the bottom (78): the eight scenes and the tuner's reading
 /// The tuner, Match tone, and Settings open over the stage, the board, and the inspector, and close back to them.
 /// Messages (the sample rate, MIDI learn, a preset's problems) show in the amp's info row on the stage, and
 /// elsewhere in a 12 px line at the bottom left of the stage or the overlay (UH5).
 ///
-/// Keys (ASSUMPTIONS RD): the left and right arrows step the presets, 1 to 8 recall the scenes, T opens and closes
-/// the tuner, Escape closes an overlay, Cmd-Z and Shift-Cmd-Z undo and redo; Match tone's own keys (Space, 1 to 3)
-/// while it's open.
+/// Keys (ASSUMPTIONS RD11, RD5-4): the left and right arrows step the presets, 1 to 8 recall the scenes, [ and ] step
+/// the board's tabs, T opens and closes the tuner, Escape closes an overlay, Cmd-Z and Shift-Cmd-Z undo and redo;
+/// Match tone's own keys (Space, 1 to 3) while it's open.
 class AmpSimEditor final : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:

@@ -14,6 +14,7 @@ namespace
 {
 const juce::Identifier uiStageKey { "uiStage" };       // the stage mode last shown (app state)
 const juce::Identifier uiSelectedKey { "uiSelected" }; // the block last selected (app state: its pageName)
+const juce::Identifier uiBoardTabKey { "uiBoardTab" }; // the board's tab last open (app state: ui::boardTabName)
 const juce::Identifier presetSourceKey = AmpSimProcessor::presetSourceKey; // "factory" or "user": the top bar's tag
 
 /// The main screen's parts on the canvas.
@@ -220,6 +221,7 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p) : AudioProcessorEditor (&p), amp
     stage->onModeChosen = [this] (ui::StageMode m) { setStageMode (m); };
     board = std::make_unique<ui::Board> (p);
     board->onSelect = [this] (B id) { selectBlock (id); };
+    board->onTabChange = [this] (ui::BoardTab t) { ampSim.parameters.state.setProperty (uiBoardTabKey, ui::boardTabName (t), nullptr); };
     inspector = std::make_unique<ui::Inspector>();
     overlayFrame = std::make_unique<ui::OverlayFrame>();
     overlayFrame->onClose = [this] { closeOverlay(); };
@@ -269,7 +271,11 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p) : AudioProcessorEditor (&p), amp
     setResizable (true, false);
     setResizeLimits (minimumWidth, minimumHeight, 8192, 8192);
     setSize (width, height);
+    // The board's tab last open (Pre FX the first time), read before the selection (which opens its own tab) and set
+    // after it: a remembered tab wins over the one the selection would open.
+    const auto firstTab = ui::boardTabNamed (state.getProperty (uiBoardTabKey).toString());
     select (firstBlock, false);
+    board->setTab (firstTab == ui::BoardTab::count ? ui::BoardTab::pre : firstTab);
 
     refreshState();
     startTimerHz (meterFps);
@@ -1072,6 +1078,13 @@ bool AmpSimEditor::keyPressed (const juce::KeyPress& key)
     if (typed == 't' || typed == 'T')
     {
         overlay == ui::Overlay::tuner ? closeOverlay() : openOverlay (ui::Overlay::tuner);
+        return true;
+    }
+
+    // [ and ]: the board's previous and next tab (wrapping round).
+    if (typed == '[' || typed == ']')
+    {
+        board->stepTab (typed == '[' ? -1 : 1);
         return true;
     }
 
