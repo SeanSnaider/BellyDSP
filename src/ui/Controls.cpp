@@ -1164,7 +1164,7 @@ void ChoiceBar::focusLost (FocusChangeType)
 
 // ---- PadSwitch -----------------------------------------------------------------------------------
 
-PadSwitch::PadSwitch (const juce::String& text, juce::String detailText) : Switch (text), detail (std::move (detailText)) {}
+PadSwitch::PadSwitch (const juce::String& name, juce::String detailText) : Switch (name), detail (std::move (detailText)) {}
 
 void PadSwitch::paintButton (juce::Graphics& g, bool highlighted, bool down)
 {
@@ -1188,21 +1188,21 @@ void PadSwitch::paintButton (juce::Graphics& g, bool highlighted, bool down)
     g.setColour ((on ? accent : line2.brighter (0.1f)).withMultipliedAlpha (alpha));
     g.fillEllipse (led);
 
-    auto text = box.withTrimmedLeft (32.0f).withTrimmedRight (8.0f);
+    auto area = box.withTrimmedLeft (32.0f).withTrimmedRight (8.0f);
     if (detail.isNotEmpty())
     {
         g.setFont (geist (Weight::medium, 13.0f));
         g.setColour ((on ? ink : inkDim).withMultipliedAlpha (alpha));
-        g.drawFittedText (getButtonText(), text.withTrimmedBottom (text.getHeight() * 0.5f - 1.0f).toNearestInt(), juce::Justification::bottomLeft, 1, 0.85f);
+        g.drawFittedText (getButtonText(), area.withTrimmedBottom (area.getHeight() * 0.5f - 1.0f).toNearestInt(), juce::Justification::bottomLeft, 1, 0.85f);
         g.setFont (geist (Weight::regular, 11.0f));
         g.setColour (inkFaint.withMultipliedAlpha (alpha));
-        g.drawFittedText (detail, text.withTrimmedTop (text.getHeight() * 0.5f + 1.0f).toNearestInt(), juce::Justification::topLeft, 1, 0.85f);
+        g.drawFittedText (detail, area.withTrimmedTop (area.getHeight() * 0.5f + 1.0f).toNearestInt(), juce::Justification::topLeft, 1, 0.85f);
     }
     else
     {
         g.setFont (geist (Weight::medium, 13.0f));
         g.setColour ((on ? ink : inkDim).withMultipliedAlpha (alpha));
-        g.drawFittedText (getButtonText(), text.toNearestInt(), juce::Justification::centredLeft, 1, 0.85f);
+        g.drawFittedText (getButtonText(), area.toNearestInt(), juce::Justification::centredLeft, 1, 0.85f);
     }
     if (keyboardFocus)
         drawFocusRing (g, box.reduced (3.0f));

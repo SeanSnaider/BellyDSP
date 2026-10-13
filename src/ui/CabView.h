@@ -19,18 +19,20 @@ namespace ui
 ///                 A click loads it into close mic 1, assigns it to the playing amp slot, and turns Follow
 ///                 off. Then "Follow amp choice", and the dashed drop zone (drop a .wav or a pack folder;
 ///                 its orange Browse opens the file chooser).
-///   Speaker       the line-drawn speaker with mic A (close mic 1, orange) and mic B (close mic 2, ink). A
-///                 marker's distance from the centre over the speaker's radius is the mic's position across
-///                 the cone (pos_x: 0 to 0.95 of the radius maps to 0 to 1); its angle is only for looks and
-///                 isn't saved. Under it, each mic's zone. A mic with a plain IR can't move (only packs have
-///                 positions): its marker is dimmed.
+///   Speaker       the stage's centre (phase 2, ASSUMPTIONS RD34): a rendered 12-inch speaker in its baffle with
+///                 mic A (close mic 1, orange) and mic B (close mic 2, ink) on it as large mics, smaller the farther
+///                 they are from the grille. A mic's distance from the centre over the speaker's radius is its
+///                 position across the cone (pos_x: 0 to 0.95 of the radius maps to 0 to 1); its angle is only for
+///                 looks and isn't saved. Each mic's zone is a chip on the baffle's top corners, and a pack's capture
+///                 positions are dots along the mic's way. A mic with a plain IR can't move (only packs have
+///                 positions): it's dimmed.
 ///   Match curve   the match curve (dsp/MatchCurve.h; ASSUMPTIONS MC8): its heading, Amount, and switch on one
 ///                 line, over a read-only view of the curve as it plays (the target at the current amount); then
 ///                 the room mic (level, pre-delay, mute, its file) and auto-align.
 ///
-/// In the inspector (getPanel(), shown while the cab is selected): the cab's switch, then per close mic its file (a
-/// click loads another), Distance (pos_y) and Level knobs, Flip phase, Mute, and its pan, delay, and the file's
-/// channel; then the cuts with their switches and slopes.
+/// In the inspector (getPanel(), shown while the cab is selected): the header with the cab's front in small and its
+/// switch, then per close mic (Mute on its heading) its file (a click loads another), Distance (pos_y) and Level knobs,
+/// its pan, delay, and the file's channel, and Flip phase; then the cuts with their switches and slopes.
 class CabView final : public ControlGroup, public juce::FileDragAndDropTarget
 {
 public:

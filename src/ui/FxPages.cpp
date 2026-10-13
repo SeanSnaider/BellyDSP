@@ -143,25 +143,25 @@ void HarmonizerPage::describe (InspectorLayout& l)
     captionRows[1] = {};
     for (int v = 0; v < ampsim::Harmonizer::maxVoices; ++v)
     {
-        juce::Rectangle<int> line1, line2;
-        l.area (&line1, voiceLineHeight);
+        juce::Rectangle<int> top, bottom;
+        l.area (&top, voiceLineHeight);
         l.gap (voiceLineGap - InspectorLayout::rowGap);
-        l.area (&line2, voiceLineHeight);
+        l.area (&bottom, voiceLineHeight);
         if (v == 0)
-            captionRows[1] = line2.withHeight (0);
+            captionRows[1] = bottom.withHeight (0);
         if (! l.isPlacing())
             continue;
         auto& r = rows[(size_t) v];
-        voiceRows[(size_t) v] = line1.getUnion (line2);
-        r.on->setBounds (juce::Rectangle<int> (r.on->getPreferredWidth(), Switch::preferredHeight).withPosition (line1.getX() - Switch::margin, line1.getCentreY() - Switch::preferredHeight / 2));
+        voiceRows[(size_t) v] = top.getUnion (bottom);
+        r.on->setBounds (juce::Rectangle<int> (r.on->getPreferredWidth(), Switch::preferredHeight).withPosition (top.getX() - Switch::margin, top.getCentreY() - Switch::preferredHeight / 2));
         const auto cell = [] (juce::Rectangle<int> line, std::pair<int, int> c) { return juce::Rectangle<int> (line.getX() + c.first, line.getY(), c.second, line.getHeight()); };
-        r.mode->setBounds (cell (line1, harmonyLine1[0]));
-        r.fields[0]->setBounds (cell (line1, harmonyLine1[1]));
-        r.fields[1]->setBounds (cell (line1, harmonyLine1[2]));
-        r.fields[2]->setBounds (cell (line1, harmonyLine1[3]));
-        r.fields[3]->setBounds (cell (line2, harmonyLine2[0]));
-        r.fields[4]->setBounds (cell (line2, harmonyLine2[1]));
-        r.fields[5]->setBounds (cell (line2, harmonyLine2[2]));
+        r.mode->setBounds (cell (top, harmonyLine1[0]));
+        r.fields[0]->setBounds (cell (top, harmonyLine1[1]));
+        r.fields[1]->setBounds (cell (top, harmonyLine1[2]));
+        r.fields[2]->setBounds (cell (top, harmonyLine1[3]));
+        r.fields[3]->setBounds (cell (bottom, harmonyLine2[0]));
+        r.fields[4]->setBounds (cell (bottom, harmonyLine2[1]));
+        r.fields[5]->setBounds (cell (bottom, harmonyLine2[2]));
     }
 
     l.section ("Behaviour");
@@ -845,13 +845,13 @@ juce::String DelayPage::getSyncedTimeText() const
 void DelayPage::paintContent (juce::Graphics& g)
 {
     // Synced, the note takes the time knob's place; its length at the tempo sits where the knob's value would.
-    if (const auto text = getSyncedTimeText(); text.isNotEmpty())
+    if (const auto ms = getSyncedTimeText(); ms.isNotEmpty())
     {
         const auto cell = time->getBounds();
         const auto y = cell.getY() + Knob::margin + juce::roundToInt (Knob::hitSize (Knob::Size::large)) + 6 + 17;
         g.setFont (tabular (geist (Weight::medium, 14.0f)));
         g.setColour (ink);
-        g.drawText (text, juce::Rectangle<int> (cell.getX(), y, cell.getWidth(), 18), juce::Justification::centred, false);
+        g.drawText (ms, juce::Rectangle<int> (cell.getX(), y, cell.getWidth(), 18), juce::Justification::centred, false);
     }
 }
 

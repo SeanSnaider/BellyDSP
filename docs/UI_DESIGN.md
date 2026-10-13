@@ -13,14 +13,42 @@ One screen on the 1280 x 760 canvas, scaled uniformly to the window and letterbo
 | Part | Where | What |
 |---|---|---|
 | Top bar | across the top, 52 | The brand (its menu: version, licence, updates, source, Match tone); A and B; undo and redo; the previous arrow, the preset's name over its tag and current scene ("Factory  Scene 2: Lead"), the next arrow, and Save; the CPU; the In and Out meters; Tuner (with the note it hears), Match tone, and Settings, the open one underlined in orange |
-| Stage | left 980, 350 high | A dark room lit from below. Its segmented control (top right) picks Amp, Cab, or EQ, crossfading 0.18 s. Amp: the shelf of mini heads (pick the amp), the playing head at about 0.86 of its designed size with its knobs in its own skin, and the info row (the capture's voice, its file, the rate or a message). Cab: the library list, Follow, the drop zone; the speaker with mics A and B; the match curve, the room mic, auto-align. EQ: the post or pre EQ's graph over its live spectrum, with draggable handles |
-| Board | under the stage, 280 high | Every pedal (`ui::isPedal`) drawn with `drawPedal` in chain order, at about two thirds of its size, on two rows. Top: PRE and its section switch, the pre section in its saved order, the amp's marker (its mini head and name, its switch), Gate B, the cab's marker. Bottom: POST and its section switch, the post section in its saved order. A click on a footswitch switches the block (one undo step); elsewhere it selects the pedal (drawn raised and ringed). Drag a pedal along its row to reorder its section. A right-click is MIDI learn for its switch. LEDs show each block's own switch, live, and bloom for a moment when one comes on; a section that's off dims its row |
-| Inspector | right 300, top bar to footer | The selected block's every control in one scrolling column: a header (its name, where it sits, its switch), then sections under small headings, knobs three to a row, choices on rows of their own with their names, switches flowing, fields under their names. The amp (the default): Gain and Master, the five tone knobs, Gate A's switch with Threshold and Release and its open light, the input and output levels, the output spectrum. The cab: its switch, close mics A and B, the cuts. Every pedal: its page reflowed for the column, and a generic control for any parameter under its prefix the page doesn't cover |
+| Stage | left 980, 350 high | A dark room lit from below. Its segmented control (top right) picks Amp, Cab, or EQ, crossfading 0.18 s. Amp: the shelf of mini heads (pick the amp), the playing head at about 0.86 of its designed size with its knobs in its own skin, and the info row (the capture's voice, its file, the rate or a message). Cab: the library list, Follow, the drop zone; the speaker in its baffle with mics A and B on it, large (RD34); the match curve, the room mic, auto-align. EQ: the post or pre EQ's graph over its live spectrum, with draggable handles |
+| Board | under the stage, 280 high | Every pedal (`ui::isPedal`) drawn with `drawPedal` in chain order, at about two thirds of its size, on two rows. Top: PRE and its section switch, the pre section in its saved order, the amp's marker (a steel plate with the playing amp's head in small, its name, its switch as a jewel), Gate B, the cab's marker (the cab's front: tolex and grille). Bottom: POST and its section switch, the post section in its saved order. A click on a footswitch switches the block (one undo step); elsewhere it selects the pedal (drawn raised and ringed). Drag a pedal along its row to reorder its section. A right-click is MIDI learn for its switch. LEDs show each block's own switch, live, and bloom for a moment when one comes on; a section that's off dims its row |
+| Inspector | right 300, top bar to footer | The selected block's every control in one scrolling column, designed per block (phase 2, below): the header with the block's gear in small, its meter, its mode as a selector, its main controls as large knobs, then the rest in sections. A generic control still covers any parameter under a pedal's prefix its page doesn't |
 | Footer | across the bottom, 78 | The eight scenes (number and name; the current one lit orange, the light gliding to a new scene in 0.16 s; empty ones a faint outline), Store, and the tuner's reading (the note, the cents, Flat / Sharp / In tune) |
 
 Overlays (the tuner, Match tone, Settings) open over the stage, the board, and the inspector, leaving the top bar and the footer, and close back to the main screen as it was. The tuner has a header with Close; Match tone and Settings bring their own. Settings holds the Input page and the Output page (levels, the limiter, A/B with Copy, the tempo with Tap, the CPU meter and CPU saver, the footswitch's controllers and the MIDI mappings) under a segmented control.
 
 Keys: Left and Right step the presets, 1 to 8 recall the stored scenes, T opens and closes the tuner, Escape closes an overlay, Cmd-Z and Shift-Cmd-Z undo and redo; while Match tone is open, its own keys (Space, 1 to 3) come first. A knob or a segmented control takes Up and Down when it has the focus, and Left and Right only when the keyboard gave it the focus (Tab), so the arrows keep stepping presets after a click on a knob. Tooltips name the keys.
+
+## Every block's controls and the cab (phase 2, built)
+
+Each block's inspector is designed, not reflowed (ASSUMPTIONS RD23 to RD36). One grammar for all of them, top to bottom:
+
+1. **The header:** the block's gear in small on a plinth (its pedal with its LED live; the amp's head in its material; the cab's front), its name in 17 px semibold, where it sits in 12 px faint, its switch at the top right, a hairline.
+2. **What it's doing**, when the block has a meter: the gates' (state, level against the thresholds, reduction; drag it to set the threshold), the compressors' (the curve, the reduction now and its last three seconds), the harmonizer's (the note it hears and each voice's).
+3. **Its mode** as a selector across the column (`ChoiceBar`: segments, the chosen one lighter with its name in orange).
+4. **Its main controls** as large knobs (80 px, the value always shown under the caption), two to a row.
+5. **The rest** in sections under small tracked capitals with a hairline (a section's switch at its heading's right), knobs three to a row, selectors and fields on rows of their own, tables for voices and bands.
+
+| Block | First | Large | Then |
+|---|---|---|---|
+| Gate A, Gate B | the meter; Learn (A) or the link pad (B) | Threshold, Release | release mode (Adaptive, Fixed); Response: attack, hold, range; Detector (its high-pass on the heading): the DI or its own input, hysteresis, the high-pass frequency |
+| Compressors | Studio or Pedal; the meter | Threshold, Ratio | Response (auto release): attack, release, knee; Output (auto makeup): makeup, mix; Detector (high-pass): Peak or RMS, frequency |
+| Boost | Clean, Tight, Screamer; what the mode does | Level, Tilt | Tight mode: tight, mid push (dimmed unless the mode uses them) |
+| Overdrive | its four circuits, two by two; what the circuit is | Drive, Level | Shape (Tight on the heading): tone, mix, tight; Oversampling: 4x or 8x |
+| EQs | Graphic or Parametric | | the nine faders side by side, or the five bands as a table (number, type, frequency, gain, Q); the cuts, a row each (switch, frequency, slope) |
+| Harmonizer | what it hears | | the key (twelve buttons), the scale and its custom notes; the voices, two lines each; out of key, the lowest note, glide, level |
+| Multivoicer | engine, mix mode | Mix, Spread | the shapes and starting points; Ensemble (wet high-pass): voices, its frequency; the eight voices, a row each |
+| Bloom | the order chips (each with its effect's LED) | Mix | the three effects in order, each its switch on its heading, its choices as selectors, its knobs |
+| Chorus | Classic, Dimension, Tri | Rate (or its note), Depth | sync; Blend: mix, width, shape; Low end (protect): below; Character: analog, noise |
+| Delay | Digital, Analog, Tape | Time (or its note and its ms) beside Tap, the tempo, Sync; Feedback, Mix | Stereo: the layout, the right time or offset, ducking; the repeats' cuts; modulation |
+| Reverb | Room, Hall, Plate | Mix, Decay | Freeze (a pad); Space (sync pre-delay): size, pre-delay, early/late, diffusion, width; damping; cuts; motion; shimmer and its interval (dimmed on Plate) |
+| Amp | | Gain, Master | Tone: the five; Gate A (its switch on the heading): threshold, release, the open light; input and output; the output spectrum |
+| Cab | | | Mic A and Mic B (Mute on each heading): the file, distance, level, pan, delay, channel, phase; the cuts |
+
+Selecting an EQ pedal puts the stage on its graph, and the next other pedal puts it back (RD23). The cab's stage is built around the speaker: the library at the left, the match curve, room mic, and auto-align at the right, and in the middle the speaker in its baffle with the close mics on it, large, dragged to move when they hold a pack (RD34). The board's amp and cab markers are gear: a steel plate with the amp's head in small or the cab's front, the name, and the switch as a pilot jewel (RD35).
 
 ## Tokens
 
@@ -52,15 +80,17 @@ Type: Geist 300 to 600 and Fraunces SemiBold Italic, bundled. Motion: `stageFade
 | The board | `src/ui/Board.*` (the pedal art: `src/ui/PedalArt.*`) |
 | The amp on the stage and in the inspector, the head art, the spectrum | `src/ui/AmpView.*`, `src/ui/AmpHead.*` |
 | The cab on the stage and in the inspector | `src/ui/CabView.*` |
-| The pedals' inspectors and their column layout (`InspectorLayout`), the EQ's stage view | `src/ui/Pages.*`, `src/ui/FxPages.cpp`, `src/ui/EqPage.cpp` |
+| The pedals' inspectors and their column layout (`InspectorLayout`, `BlockPage::paintHeader`), the EQ's stage view | `src/ui/Pages.*`, `src/ui/FxPages.cpp`, `src/ui/EqPage.cpp` |
+| The selector (`ChoiceBar`), the pad switch, the large knob | `src/ui/Controls.*` |
+| The meters (gate, compressor), the Tap pad, the harmonizer's display, the cab's front, the inspector's headings | `src/ui/InspectorParts.*` |
 | Scenes and the tuner's reading in the footer | `src/ui/ScenesBar.*` |
 | Settings, the Input and Output pages | `src/ui/MainPages.*` |
 | The tuner, Match tone | `src/ui/TunerPage.*`, `src/ui/ToneMatchPage.*` |
 | The window, selection, overlays, keys, menus, messages | `src/PluginEditor.*` |
 
-Proof: `ampsim_tests --proof-dir build/proof --only "Main screen"` writes `build/proof/redesign/` (the main screen with the amp, a pre and a post pedal, the harmonizer, the Cab and EQ stage modes, each overlay, a small window, a letterboxed one, the board alone).
+Proof: `ampsim_tests --proof-dir build/proof --only "Main screen"` writes `build/proof/redesign/` (the main screen with the amp, a pre and a post pedal, the harmonizer, the Cab and EQ stage modes, each overlay, a small window, a letterboxed one, the board alone), and with "Main screen inspectors": `inspector_<block>.png` for every block, `stage_cab_pack.png`, `board_markers.png`, `board_markers_cab_off.png`, and the meters (`gate_meter_open.png`, `gate_meter_closed.png`, `gate_meter_linked.png`, `compressor_meter.png`, `harmonizer_hearing.png`).
 
 ## What's next
 
-- **Phase 2, every block's controls and the cab:** each block's inspector designed rather than reflowed (the voice tables of the harmonizer and the multivoicer, the gate's and the compressors' meters, the EQ's bands), the cab's stage view redesigned around the speaker, and a finish review of the main screen against the contract (the contract's FINISH line: the review, its verdict, DESIGN.md and its sidecar, every shipping raster's provenance).
+- **Phase 2's finish:** built (above); still owed is the finish review of the main screen against the contract (the contract's FINISH line: the review, its verdict, DESIGN.md and its sidecar, every shipping raster's provenance), and Sean's listening and playing check RD.2 (PROGRESS).
 - **Phase 3, the rest of the app:** the tuner, Match tone, and Settings redesigned in the new world (they are reused and restyled in phase 1), the About window, the dialogs and menus, and the website re-skinned to follow the app (its images come from these snapshots; `tools/site/make_site_assets.py`'s crops still point at the old layout).
