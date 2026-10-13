@@ -70,6 +70,17 @@ juce::File& proofDir()
     return dir;
 }
 
+bool redesignCopy (const juce::File& shot)
+{
+    auto name = shot.getFileNameWithoutExtension();
+    if (name.length() > 3 && juce::CharacterFunctions::isDigit (name[0]) && juce::CharacterFunctions::isDigit (name[1]) && name[2] == '_')
+        name = name.substring (3);
+    const auto copy = proofDir().getChildFile ("redesign").getChildFile ("overlay_tone_match_" + name + ".png");
+    copy.getParentDirectory().createDirectory();
+    copy.deleteFile();
+    return shot.copyFileTo (copy);
+}
+
 juce::File tempDir()
 {
     auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ampsim_tests");

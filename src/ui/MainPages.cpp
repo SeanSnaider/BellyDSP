@@ -357,7 +357,7 @@ bool AudioDevicePage::isRateOk() const
 
 juce::String AudioDevicePage::getRateText() const
 {
-    const auto rate = ampSim.getSampleRate();
+    const auto rate = ampSim.getDeviceSampleRate();
     if (rate <= 0.0)
         return "No audio is running yet.";
     if (isRateOk())
@@ -395,7 +395,7 @@ void AudioDevicePage::paint (juce::Graphics& g)
         g.drawText ("only", big.removeFromTop (16), juce::Justification::centredLeft, false);
 
         in.removeFromLeft (space::l);
-        const auto ok = isRateOk() && ampSim.getSampleRate() > 0.0;
+        const auto ok = isRateOk() && ampSim.getDeviceSampleRate() > 0.0;
         auto status = in.removeFromTop (24);
         g.setColour (ok ? accent : inkDim);
         g.fillEllipse (juce::Rectangle<float> (8.0f, 8.0f).withCentre ({ (float) status.getX() + 4.0f, (float) status.getCentreY() }));
@@ -424,7 +424,7 @@ void AudioDevicePage::paint (juce::Graphics& g)
     }
     else
     {
-        paintRows (g, deviceRows, { { "Rate", ampSim.getSampleRate() > 0.0 ? khz (ampSim.getSampleRate()) : juce::String ("-") } });
+        paintRows (g, deviceRows, { { "Rate", ampSim.getDeviceSampleRate() > 0.0 ? khz (ampSim.getDeviceSampleRate()) : juce::String ("-") } });
         paintParagraphs (g, deviceRows.withTrimmedTop (40),
                          { "No audio device of its own here: the device, its buffer, and its latencies show in the standalone app." }, inkFaint, 12.0f);
     }
@@ -507,11 +507,12 @@ void AboutPage::paint (juce::Graphics& g)
                { { "BellyDSP", "Free software: GNU AGPL v3 or later, no warranty" },
                  { "Amp captures", "The built-in ones are Sean's, CC BY 4.0" },
                  { "Cab IRs", "The built-in ones are CC0" },
-                 { "Libraries", "JUCE (AGPLv3), NeuralAmpModelerCore (MIT), Eigen (MPL 2.0), demucs.cpp (MIT)" },
+                 { "Audio and interface", "JUCE (AGPLv3)" },
+                 { "Inference", "NeuralAmpModelerCore and demucs.cpp (MIT), Eigen (MPL 2.0)" },
                  { "Fonts", "Geist and Fraunces, SIL Open Font License" } });
 
     paintParagraphs (g, updatesText, { platform::updater::describe() + "." }, inkDim, 13.0f);
-    paintParagraphs (g, sourceText, { "Every download is built from a tagged commit on the public repository, so this exact version's source is there:",
+    paintParagraphs (g, sourceText, { "Every download is built from a tagged commit on the public repository:",
                                       platform::sourceUrlForThisVersion() },
                      inkDim, 13.0f);
 }

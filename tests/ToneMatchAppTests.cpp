@@ -152,6 +152,7 @@ public:
                 ed.refresh();
                 const auto file = shots.getChildFile (name + ".png");
                 expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), file));
+                expect (redesignCopy (file));
                 return file.getFileName();
             };
             juce::StringArray pngs;
@@ -357,6 +358,7 @@ public:
             ed.refresh();
             const auto shot = shots.getChildFile ("31_result_pedal.png");
             expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), shot));
+            expect (redesignCopy (shot));
 
             page.apply();
             waitForLoads (p);
@@ -515,6 +517,7 @@ public:
             const auto file = shots.getChildFile ("06_separation_error.png");
             ed.refresh();
             expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), file));
+            expect (redesignCopy (file));
             logMessage ("  -> the page says \"" + page.getStatusText() + "\"; snapshot tone_match/" + file.getFileName());
         }
     }

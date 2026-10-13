@@ -42,6 +42,9 @@ juce::File exampleModel (const juce::String& fileName);
 juce::File exampleInputFile(); // NAM core's 2 s example DI, 48 kHz mono
 juce::File namRenderTool();    // NAM core's own render tool, built from its source
 juce::File& proofDir();        // where proof artifacts go (set from the command line)
+/// Copies a tone match snapshot ("tone_match/04_result.png") into the redesign's proof as
+/// redesign/overlay_tone_match_result.png (its number dropped), so every state of the overlay sits with the rest.
+bool redesignCopy (const juce::File& toneMatchShot);
 juce::File tempDir();
 
 juce::AudioBuffer<float> readWav (const juce::File& file, double* sampleRateOut = nullptr);
