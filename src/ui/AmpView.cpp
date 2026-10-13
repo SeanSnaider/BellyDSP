@@ -977,8 +977,8 @@ void AmpView::paint (juce::Graphics& g)
     {
         const juce::Graphics::ScopedSaveState saved (g);
         g.addTransform (juce::AffineTransform::scale (1.0f, ry / rx, c.x, c.y));
-        juce::ColourGradient pool (stageLight.brighter (0.55f).withAlpha (0.85f), c, stageLight.withAlpha (0.0f), c.translated (rx, 0.0f), true);
-        pool.addColour (0.35, stageLight.brighter (0.3f).withAlpha (0.6f));
+        juce::ColourGradient pool (stageLight.brighter (0.9f), c, stageLight.withAlpha (0.0f), c.translated (rx, 0.0f), true);
+        pool.addColour (0.35, stageLight.brighter (0.45f).withAlpha (0.7f));
         pool.addColour (0.7, stageLight.withAlpha (0.22f));
         g.setGradientFill (pool);
         g.fillEllipse (juce::Rectangle<float> (2.0f * rx, 2.0f * rx).withCentre (c));
