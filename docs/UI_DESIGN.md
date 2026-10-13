@@ -20,7 +20,7 @@ One screen on the 1280 x 760 canvas, scaled uniformly to the window and letterbo
 
 Overlays (the tuner, Match tone, Settings) open over the stage, the board, and the inspector, leaving the top bar and the footer, and close back to the main screen as it was (phase 3, below).
 
-Keys: Left and Right step the presets, 1 to 8 recall the stored scenes, [ and ] step the board's tabs (wrapping round; RD5-4), T opens and closes the tuner, Escape closes an overlay, Cmd-Z and Shift-Cmd-Z undo and redo; while Match tone is open, its own keys (Space, 1 to 3) come first. A knob or a segmented control takes Up and Down when it has the focus, and Left and Right only when the keyboard gave it the focus (Tab), so the arrows keep stepping presets after a click on a knob. Tooltips name the keys.
+Keys: Left and Right step the presets, 1 to 8 recall the stored scenes, [ and ] step the board's tabs (wrapping round; RD5-4), T opens and closes the tuner, Escape closes an overlay, Cmd-Z and Shift-Cmd-Z undo and redo; while Match tone is open, its own keys (Space, and 1 to 3, or 1 to 4 with the raw song) come first. A knob or a segmented control takes Up and Down when it has the focus, and Left and Right only when the keyboard gave it the focus (Tab), so the arrows keep stepping presets after a click on a knob. Tooltips name the keys.
 
 ## Every block's controls and the cab (phase 2, built)
 
@@ -96,6 +96,8 @@ Every colour, type style, size, and radius is in `src/ui/Theme.h`; components ho
 
 Type: Geist 300 to 600 and Fraunces SemiBold Italic, bundled. Motion: `stageFadeSeconds` 0.18, `sceneGlideSeconds` 0.16, `ledGlowSeconds` 0.35, all on 60 Hz timers on the message thread.
 
+The app icon is the "B." mark in the same tokens: an `ink` B with an `accent` dot on `bg`, drawn by `tools/content/make_icon.py` into `resources/icon/BellyDSP_icon_1024.png` (the dot was emerald until Sean had it redrawn on 2026-10-13). JUCE makes the .icns and .ico from it when CMake configures, so a new icon needs `cmake -B build` before the build picks it up.
+
 ## Implementation map
 
 | Part | Code |
@@ -122,4 +124,4 @@ Proof: `ampsim_tests --proof-dir build/proof --only "Main screen"` writes `build
 ## What's next
 
 - **Phase 2's finish:** built (above); still owed is the finish review of the main screen against the contract (the contract's FINISH line: the review, its verdict, DESIGN.md and its sidecar, every shipping raster's provenance), and Sean's listening and playing check RD.2 (PROGRESS).
-- **Phase 3, the rest of the app:** the tuner, Match tone, Settings, the menus, and the dialogs are built (above). Left: the About window's own look (it keeps the OS's title bar and a plain scrolling text), The website follows the app since 2026-10-13 (its images come from these snapshots and the Editor parts tests' `build/proof/site/` heads; ASSUMPTIONS WEB20 to WEB23).
+- **Phase 3, the rest of the app:** the tuner, Match tone, Settings, the menus, and the dialogs are built (above). Left: the About window's own look (it keeps the OS's title bar and a plain scrolling text). The website follows the app since 2026-10-13 (its images come from these snapshots and the Editor parts tests' `build/proof/site/` heads; ASSUMPTIONS WEB20 to WEB23).

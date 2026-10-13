@@ -8,19 +8,28 @@ Current target: a standalone macOS app that plays live through a Focusrite Scarl
 
 Everything in the plan is built (see `docs/PROGRESS.md` for the measurements behind each item, and `docs/ASSUMPTIONS.md` for the choices waiting on Sean's review):
 
-- **Amps.** Three always-running NAM slots (any `.nam` capture), switched seamlessly from the panel or a MIDI footswitch (program change 1/2/3). Each is loudness-normalized, calibrated to the capture's recorded input level, and has trims plus five tone bands. Each slot comes with a built-in capture, so there's something to play at once: Glass (clean), Ember (crunch), and Monolith (high gain), stand-ins trained from the project's own gray-box amp until real captures replace them.
+- **Amps.** Eight built-in amps (Glass, Ember, Monolith, Lantern, Basalt, Comet, Forge, Quartz), each with its own head and knobs, plus your own `.nam` capture as a ninth, picked from the stage's shelf of minis or a MIDI footswitch (program change 1 to 9). Only the selected amp runs: a switch warms the incoming amp up unheard, then crossfades, so it never clicks and lands about 0.1 s later. Each amp's Gain blends five captures across the knob. The built-in captures are trained from the project's own amp models, not captures of real amps.
 - **Cab.** Two close mics and a stereo room mic, each an IR, with level, pan, polarity, delay, and mute; auto phase alignment; low and high cuts. A close mic loaded with a cab pack moves on a position pad, morphing between captures.
 - **Gates.** Gate A before the amp and Gate B after it, linked by default (one decision applied at both points), detecting from the clean DI, with adaptive release, hysteresis, hold, and Learn.
 - **Drive.** A boost (Clean, Tight, Screamer) and an overdrive (Mid Drive, Distortion, Transparent, Fuzz), modelled from the schematics and validated against circuit simulations, oversampled 4x or 8x with no added latency.
 - **Pre FX** (reorderable): Gate A, compressor (Studio and Pedal), boost, overdrive, EQ (accurate 9-band graphic or 5-band parametric, plus cuts).
 - **Post FX** (reorderable): EQ, compressor, a key-aware 4-voice harmonizer, an 8-voice multivoicer (Poly or Mono), Bloom (bitcrush, phaser with Classic, Modern, and Vibe, flanger with through-zero), chorus (Classic, Dimension, Tri), delay (digital, analog, tape; stereo, ping-pong, dual; ducking), and reverb (Room, Hall, Plate; freeze; shimmer). Delay and reverb tails spill over when bypassed.
-- **Tuner.** A needle on a +-50 cent scale, in tune within 3 cents, the six strings of four tunings, A4 from 430 to 450 Hz, muting while engaged.
+- **Tuner.** An overlay built to be read from a step back: the note at 200 px, a 41-segment scale over +-50 cents, in tune within 3 cents, the six strings of four tunings as chips, A4 from 430 to 450 Hz, and an output mute. The footer shows the note and a small cents meter while it's open.
 - **Tempo.** A global tempo, tapped from the panel or a footswitch; the delay, chorus, phaser, flanger, and reverb pre-delay can sync to it.
 - **Presets and scenes.** JSON presets with library-relative files found again by content hash when moved, eight scenes per preset switched from a footswitch, undo/redo, A/B, and five factory style presets (Modern Prog, Math Rock, Tech Death, Metal, Midwest Emo) on the built-in captures and cabs.
 - **MIDI.** Right-click any control to MIDI-learn a footswitch (toggle or momentary) or an expression pedal; mappings are saved with presets.
 - **Real time.** Zero added latency (only the opt-in through-zero flanger reports 5 ms), no allocation, freeing, or locking on the audio thread (tested on every feature), and the whole rig with every block on at about 18% of a 128-sample buffer's time.
 
-The GUI follows the UI handoff in `docs/ui/amp-ui-handoff/` (`docs/UI_DESIGN.md` lists where it differs): a fixed 1280 x 760 canvas that scales with the window; a top bar with the preset (browser, previous and next), Save, the tuner, and the meters; the signal chain along the bottom (Input, Pre FX, Amp, EQ, Cab, Post FX, Output: click a block for its page, its dot to bypass it); the amp page with three heads (Glass, Ember, Monolith), the output spectrum, and a shared Input / Gate / Output strip; the cab page with the cab library, a speaker with two draggable mics, and the mic panel; the tuner page; and the effects as tabs (drag to reorder). Undo and redo are Cmd-Z and Shift-Cmd-Z; A/B, scenes, tempo, and the footswitch settings are on the Output page.
+The GUI (`docs/UI_DESIGN.md`, `DESIGN.md`) is one main screen on a fixed 1280 x 760 canvas that scales with the window, every pixel drawn in code:
+
+- **Top bar:** the brand's menu, A/B, undo and redo, the preset and its scene between the previous and next arrows, Save, the CPU, the In and Out meters, and Tuner, Match tone, and Settings.
+- **Stage:** the amp on a dark stage lit from below, with the shelf of eight mini heads to pick it; or the cab (the library, the speaker with its mics, the room mic); or the EQ's graph over its spectrum.
+- **Board:** the pedals as rendered gear under the stage, in three tabs: Pre FX, Amp & Cab (the amp, Gate B, and the cab), and Post FX. Each tab shows an LED per block, so a closed tab still shows what's on. Click a footswitch to switch a block, click a pedal to select it, drag a pedal along its row to reorder it, and switch a whole section off with its switch. `[` and `]` step the tabs.
+- **Inspector:** a 300 px column at the right with the selected block's every control.
+- **Scenes:** the eight scenes along the bottom, with Store and the tuner's reading.
+- **Overlays:** the tuner, Match tone (six numbered steps), and Settings (Input, Output and MIDI, Audio device, About).
+
+Keys: Left and Right step presets, 1 to 8 recall scenes, T opens the tuner, Escape closes an overlay, Cmd-Z and Shift-Cmd-Z undo and redo.
 
 ## Building
 
@@ -47,9 +56,9 @@ Releases are published on the public repo, https://github.com/SeanSnaider/BellyD
 | `src/BlockParameters.*`, `src/Presets.*` | Parameter glue for each effect block, and the preset format |
 | `src/PluginEditor.*` | The editor: lays out the GUI and runs presets, scenes, MIDI learn menus, and undo |
 | `src/platform/` | What the shipped app knows about itself: its version, its bundled files, and the auto-updater |
-| `src/ui/` | The GUI: tokens and fonts, LookAndFeel, controls, meters, the analyzer, the signal chain, the amp, cab, and tuner pages, and every effect's page |
+| `src/ui/` | The GUI: tokens and fonts, LookAndFeel, controls, meters, the top bar, the stage, the board and its pedal art, the amp heads, the cab, every block's inspector, the scenes, and the overlays (tuner, Match tone, Settings) |
 | `presets/factory/` | The factory presets, embedded in the app |
-| `docs/ui/amp-ui-handoff/` | The GUI's design: the handoff spec, its reference HTML, and screenshots (`docs/UI_DESIGN.md` lists where the build differs) |
+| `docs/ui/amp-ui-handoff/` | The original GUI handoff, retired as a source of truth by the redesign (`docs/UI_DESIGN.md`) |
 | `resources/fonts/` | Geist and Fraunces (SIL OFL, licences alongside), embedded in the app |
 | `tools/render/` | `ampsim_render`: runs a WAV through the chain offline, with CPU timing |
 | `tools/device_probe/` | `ampsim_device_probe`: opens the interface and reports timing and input levels |
@@ -82,7 +91,7 @@ No `.nam` models are bundled. Download amp-only captures (no cab baked in) from 
 
 ## Cab IRs
 
-21 public-domain (CC0) IRs from Jester Dyne Productions are bundled (`content/`, listed under "Built in" on the cab page). Load your own `.wav` files too (free and paid packs are widely available); keep them in `irs/`, which is gitignored.
+21 public-domain (CC0) IRs from Jester Dyne Productions are bundled (`content/`, listed under "Built in" in the cab's library on the stage). Load your own `.wav` files too (free and paid packs are widely available); keep them in `irs/`, which is gitignored.
 
 ## License
 
