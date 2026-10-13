@@ -1241,7 +1241,7 @@ void AmpSimEditor::showMidiMappings()
 
     menu.addSeparator();
     const auto value = [this] (const char* id) { return juce::String (juce::roundToInt (ampSim.parameters.getRawParameterValue (id)->load())); };
-    menu.addSectionHeader ("Built in: program change 1 to 3 picks the amp, CC " + value ("midi_tap_cc") + " taps the tempo, CC "
+    menu.addSectionHeader ("Built in: program change 1 to 9 picks the amp, CC " + value ("midi_tap_cc") + " taps the tempo, CC "
                            + value ("midi_freeze_cc") + " freezes the reverb, CC " + value ("midi_scene_cc") + " picks a scene");
     ui::showMenu (menu, &getOutputPage().getMidiButton(), &lookAndFeel);
 }

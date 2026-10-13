@@ -208,7 +208,7 @@ OutputPage::OutputPage (AmpSimProcessor& p) : SettingsSection (p)
         field->setShowsBar (false);
     }
     midi = &addButton ("MIDI mappings...", [this] { if (onMidiMappings) onMidiMappings(); });
-    note = &addLabel ("Program change 1 to 3 picks the amp. Right-click any control to map a footswitch or a pedal to it, "
+    note = &addLabel ("Program change 1 to 9 picks the amp (the shelf's eight, then your own capture). Right-click any control to map a footswitch or a pedal to it, "
                       "or to see what's mapped to it. The keys below work on the main screen.",
                       Text::label, inkFaint);
     note->setJustificationType (juce::Justification::topLeft);
