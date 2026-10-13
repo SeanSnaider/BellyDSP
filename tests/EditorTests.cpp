@@ -386,19 +386,32 @@ public:
                     expect (! samePixels (minis[a], minis[b], minis[a].getBounds()));
 
             // The contact sheet: each head at 2x as the Amp page dresses it (its jewel and seven knobs in its skin), its
-            // mini at 6x and its name under it, three to a row.
+            // mini at 6x and its name under it, three to a row. Each built-in amp's dressed head is also saved alone, on a
+            // transparent ground with its shadow, for the website's amp bands (site/head_<material>.png, which
+            // tools/site/make_site_assets.py turns into site/assets/img/head-<amp>-*.webp).
             {
                 constexpr int cols = 3, cellW = 2144, headH = 716, footH = 150, gap = 40;
                 const auto rows = (ui::numMaterials + cols - 1) / cols;
                 juce::Image sheet (juce::Image::RGB, cols * cellW + (cols + 1) * gap, rows * (headH + footH) + (rows + 1) * gap, true);
                 juce::Graphics g (sheet);
                 g.fillAll (ui::theme::bg);
+                const auto siteDir = proofDir().getChildFile ("site");
+                expect (siteDir.createDirectory().wasOk());
                 for (int m = 0; m < ui::numMaterials; ++m)
                 {
                     const auto material = (Material) m;
                     DressedHead dressed (p, material, {});
                     const auto x = gap + (m % cols) * (cellW + gap), y = gap + (m / cols) * (headH + footH + gap);
-                    g.drawImageAt (dressed.createComponentSnapshot (dressed.getLocalBounds(), true, 2.0f), x, y);
+                    const auto art = dressed.createComponentSnapshot (dressed.getLocalBounds(), true, 2.0f);
+                    if (material != Material::custom)
+                    {
+                        // Transparent around the body (its corners and the margin hold only the shadow), solid inside it.
+                        const juce::Image::BitmapData data (art, juce::Image::BitmapData::readOnly);
+                        expect (art.hasAlphaChannel() && data.getPixelColour (0, 0).getAlpha() == 0
+                                && data.getPixelColour (art.getWidth() / 2, art.getHeight() / 2).getAlpha() == 255, lower (material));
+                        expect (savePng (art, siteDir.getChildFile ("head_" + lower (material) + ".png")));
+                    }
+                    g.drawImageAt (art, x, y);
                     g.drawImageAt (minis[(size_t) m], x + 112, y + headH + 4);
                     g.setColour (ui::theme::ink);
                     g.setFont (ui::theme::geist (ui::theme::Weight::medium, 44.0f));
@@ -460,7 +473,7 @@ public:
                 logMessage ("  -> " + line);
             logMessage ("  -> the closest pair of looks: " + closestPair + ", " + juce::String (closest, 1)
                         + " apart (the largest of the body, panel, and grille mean colour distances)");
-            logMessage ("  -> build/proof/amp_head_<material>.png for all nine, amp_heads_all.png, amp_head_custom_named.png, amp_head_custom_long_name.png, "
+            logMessage ("  -> build/proof/amp_head_<material>.png for all nine, amp_heads_all.png, site/head_<material>.png for the eight built-ins, amp_head_custom_named.png, amp_head_custom_long_name.png, "
                         + pages.joinIntoString (", "));
         }
 

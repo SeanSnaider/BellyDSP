@@ -1,4 +1,4 @@
 {
-  "prompt": "Sourced, not generated: the BellyDSP app's own basalt-800 amp head, cut out of the test suite's Amp page snapshot (build/proof/amp_shelf/editor_amp_*.png) with the head render's alpha (build/proof/amp_head_*.png) by tools/site/make_site_assets.py",
-  "createdAt": "2026-10-13T07:10:20.765Z"
+  "prompt": "Sourced, not generated: the BellyDSP app's own basalt amp head as the stage dresses it (the procedural head art, the lit jewel lamp and its seven knobs), rendered alone on a transparent ground at 2x by the Editor parts tests (build/proof/site/head_basalt.png) and resized to 800 px by tools/site/make_site_assets.py",
+  "createdAt": "2026-10-13T18:40:02.922Z"
 }
