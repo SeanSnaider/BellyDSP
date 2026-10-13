@@ -147,11 +147,19 @@ void SpectrumView::paint (juce::Graphics& g)
     const auto plot = plotArea();
     const auto xOf = [&plot] (double f) { return plot.getX() + logPosition (f) * plot.getWidth(); };
 
+    // Silence draws no curve, so the plot says so (the finish review, R2). The grid stops short of that line,
+    // rather than running through its words, whatever the panel behind it is.
+    const auto emptyFont = geist (Weight::regular, 12.0f);
+    const auto emptyBox = plot.withSizeKeepingCentre (juce::GlyphArrangement::getStringWidth (emptyFont, emptyText) + 16.0f, 18.0f);
+
     // Gridlines at 100 Hz, 1 kHz, 10 kHz, and the dashed 0 dB line through the middle.
-    g.setColour (line1);
-    for (const auto f : { 100.0, 1000.0, 10000.0 })
-        g.fillRect (juce::Rectangle<float> (std::round (xOf (f)), plot.getY(), 1.0f, plot.getHeight()));
     {
+        const juce::Graphics::ScopedSaveState clipState (g);
+        if (! hasCurve())
+            g.excludeClipRegion (emptyBox.getSmallestIntegerContainer());
+        g.setColour (line1);
+        for (const auto f : { 100.0, 1000.0, 10000.0 })
+            g.fillRect (juce::Rectangle<float> (std::round (xOf (f)), plot.getY(), 1.0f, plot.getHeight()));
         juce::Path zero;
         zero.startNewSubPath (plot.getX(), plot.getCentreY());
         zero.lineTo (plot.getRight(), plot.getCentreY());
@@ -195,12 +203,11 @@ void SpectrumView::paint (juce::Graphics& g)
         g.drawText ("Output spectrum", juce::Rectangle<float> (0.0f, 10.0f, 200.0f, 16.0f), juce::Justification::centredLeft, false);
     }
 
-    // Silence draws no curve: say so, rather than leaving an empty grid (the finish review, R2).
-    if (! hasCurve())
+    if (! hasCurve())   // in the gap the grid left for it
     {
-        g.setFont (geist (Weight::regular, 12.0f));
+        g.setFont (emptyFont);
         g.setColour (inkFaint);
-        g.drawText (emptyText, plot, juce::Justification::centred, false);
+        g.drawText (emptyText, emptyBox, juce::Justification::centred, false);
     }
 }
 
