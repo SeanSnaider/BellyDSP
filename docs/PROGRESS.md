@@ -106,7 +106,7 @@ Built on branch `website` (from `bellydsp`), 2026-10-04: the site in `site/` (Ov
 
 Add a dated line here when something meaningful lands or a decision changes.
 
-2026-10-13: The redesign's finish review: the reviewer's seven material fixes (docs/UI_DESIGN.md "The finish review's fixes"; ASSUMPTIONS RD4-1 to RD4-11; the full suite: FULLSUITE).
+2026-10-13: The redesign's finish review: the reviewer's seven material fixes (docs/UI_DESIGN.md "The finish review's fixes"; ASSUMPTIONS RD4-1 to RD4-11; the full suite: 8740 checks in 477 tests pass, nothing skipped, real-time safety 0 allocations, 0 frees, 0 blocking locks).
 - On and off: a pedal that's off measures 0.55 of its brightness on (away from its LED), with its saturation lower, for all fourteen; a section that's off dims the same (0.55 for the chorus, LED still lit); the off lens reads #2A2A2A on every pedal; the lit lens covers 226 to 237 px at 2x (over 1.8 times the first art's) with a halo; PRE and POST are labelled toggles.
 - The preset's name has 16 px of capitals on screen at 23 px semibold; the scene is 15 px ink. "High gain · Monolith" under the amp and "Modern 4x12 · Dynamic, bright 60 W, var. 3" under the cab; Tech Death's 766-character notes are the preset box's tooltip and nowhere on the stage.
 - The heads: tolex, woven cloth, gear knobs with 0 orange pixels where an arc would be on all nine skins (1118 on the inspector's knob at the same value), a jewel lamp, one accent, a pool of light under the head. The render-count and head tests pass unchanged (nine renders, one more per badge).
