@@ -266,7 +266,8 @@ constexpr int voiceRowHeight = 24, voiceRowGap = 4;
 MultivoicerPage::MultivoicerPage (AmpSimProcessor& p)
     : BlockPage (p, BlockId::multivoicer, "Multivoicer", "Up to eight shifted, delayed, panned copies")
 {
-    engine = &addChoice ("mv_engine", { "Poly, chords", "Mono, single notes" });
+    engine = &addChoice ("mv_engine", { "Poly", "Mono" });
+    engine->setOptionTooltips ({ "Poly: shifts chords as well as single notes", "Mono: tuned for single notes, tighter tracking" });
     mixMode = &addChoice ("mv_mix_mode", { "Blend", "Add" });
     mixMode->setOptionTooltips ({ "Blend: Mix trades the dry for the voices (equal power)", "Add: the dry stays whole and Mix sets the voices' level on top" });
     highPass = &addSwitch ("mv_hp", "Wet high-pass");
@@ -383,7 +384,7 @@ void MultivoicerPage::describe (InspectorLayout& l)
 
 void MultivoicerPage::paintContent (juce::Graphics& g)
 {
-    paintCaptions (g, captionRow, voiceColumns, { "", "Interval", "Cents", "Delay ms", "Pan", "Level dB", "Drift" });
+    paintCaptions (g, captionRow, voiceColumns, { "", "Interval", "Cents", "Delay", "Pan", "Level", "Drift" });
     for (int v = 0; v < ampsim::Multivoicer::maxVoices; ++v)
     {
         const auto row = voiceRows[(size_t) v];
@@ -826,6 +827,32 @@ void DelayPage::pageHidden()
 void DelayPage::timerCallback()
 {
     tap->setTempo (ampSim.getTempo());
+    if (const auto shown = getSyncedTimeText(); shown != shownSyncedTime)
+    {
+        shownSyncedTime = shown;
+        repaint (time->getBounds());
+    }
+}
+
+juce::String DelayPage::getSyncedTimeText() const
+{
+    if (! isOn (state, "delay_sync"))
+        return {};
+    const auto& n = ampsim::tempo::notes[(size_t) juce::jlimit (0, (int) ampsim::tempo::notes.size() - 1, indexOf (state, "delay_note"))];
+    return juce::String (juce::roundToInt (ampsim::tempo::milliseconds (n.division, n.feel, ampSim.getTempo()))) + " ms";
+}
+
+void DelayPage::paintContent (juce::Graphics& g)
+{
+    // Synced, the note takes the time knob's place; its length at the tempo sits where the knob's value would.
+    if (const auto text = getSyncedTimeText(); text.isNotEmpty())
+    {
+        const auto cell = time->getBounds();
+        const auto y = cell.getY() + Knob::margin + juce::roundToInt (Knob::hitSize (Knob::Size::large)) + 6 + 17;
+        g.setFont (tabular (geist (Weight::medium, 14.0f)));
+        g.setColour (ink);
+        g.drawText (text, juce::Rectangle<int> (cell.getX(), y, cell.getWidth(), 18), juce::Justification::centred, false);
+    }
 }
 
 void DelayPage::refresh()

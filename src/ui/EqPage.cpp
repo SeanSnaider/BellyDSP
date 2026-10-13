@@ -444,7 +444,7 @@ void EqGraph::timerCallback()
 namespace
 {
 // The parametric table's columns for a 259 px column: the band's number, type, frequency, gain, Q.
-const std::vector<std::pair<int, int>> bandColumns { { 0, 18 }, { 21, 70 }, { 94, 62 }, { 159, 52 }, { 214, 45 } };
+const std::vector<std::pair<int, int>> bandColumns { { 0, 18 }, { 21, 80 }, { 105, 56 }, { 165, 48 }, { 217, 42 } };
 constexpr int bandRowHeight = 26, bandRowGap = 4;
 
 juce::String shortHertz (float f)
@@ -480,7 +480,7 @@ EqPage::EqPage (AmpSimProcessor& p, bool isPost)
     for (int b = 0; b < ampsim::Equalizer::numParametricBands; ++b)
     {
         auto& band = bands[(size_t) b];
-        band.type = &addCombo (EP::bandId (prefix, b, "type"), { "Peak", "Low shelf", "High shelf", "Notch" });
+        band.type = &addCombo (EP::bandId (prefix, b, "type"), { "Peak", "Lo shelf", "Hi shelf", "Notch" });
         band.frequency = &addField (EP::bandId (prefix, b, "freq"), " Hz");
         band.frequency->setFormatter (shortHertz);
         band.gain = &addField (EP::bandId (prefix, b, "gain"), " dB");
@@ -497,7 +497,7 @@ EqPage::EqPage (AmpSimProcessor& p, bool isPost)
     highCutFrequency = &addField (prefix + "_highcut_freq", " Hz");
     for (auto* f : { lowCutFrequency, highCutFrequency })
     {
-        f->setFormatter ([] (float hz) { return shortHertz (hz) + " Hz"; });
+        f->setFormatter ([] (float hz) { return hz >= 1000.0f ? juce::String (hz / 1000.0f, 1) + " kHz" : juce::String (juce::roundToInt (hz)) + " Hz"; });
         f->setShowsBar (false);
     }
     lowCutSlope = &addChoice (prefix + "_lowcut_slope", { "12", "24", "48" });

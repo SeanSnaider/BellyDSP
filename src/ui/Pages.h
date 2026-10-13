@@ -640,9 +640,12 @@ public:
     void pageShown() override;
     void pageHidden() override;
     TapPad& getTapPad() noexcept { return *tap; }
+    /// The synced time in milliseconds as shown under the note (empty when the time isn't synced).
+    juce::String getSyncedTimeText() const;
 
 private:
     void describe (InspectorLayout&) override;
+    void paintContent (juce::Graphics&) override;
     void timerCallback() override;
 
     ChoiceBar *mode = nullptr, *stereo = nullptr;
@@ -652,7 +655,7 @@ private:
          *modDepth = nullptr, *modRate = nullptr, *duck = nullptr;
     ValueField* tempo = nullptr;
     TapPad* tap = nullptr;
-    juce::Rectangle<int> tempoCaption;
+    juce::String shownSyncedTime;
     int shownState = -1;
 };
 

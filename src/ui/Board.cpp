@@ -283,8 +283,8 @@ public:
             if (id == BlockId::amp)
             {
                 const auto w = face.getWidth();
-                const auto head = juce::Rectangle<float> (w, w * 0.66f).withPosition (face.getX(), face.getY() + 4.0f);
-                drawMiniAmp (g, head, ampName);
+                const auto head = juce::Rectangle<float> (w, w * 0.78f).withPosition (face.getX(), face.getY() + 4.0f);
+                drawSmallHead (g, head, ampName);
                 face.removeFromTop (head.getHeight() + 10.0f);
             }
             else

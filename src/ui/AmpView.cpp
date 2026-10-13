@@ -701,7 +701,7 @@ void AmpPanel::paint (juce::Graphics& g)
                                 const juce::Graphics::ScopedSaveState saved (gg);
                                 if (! on)
                                     gg.beginTransparencyLayer (offAlpha);
-                                drawMiniAmp (gg, juce::Rectangle<float> (box.getWidth() - 2.0f, (box.getWidth() - 2.0f) * 0.66f).withCentre (box.getCentre()),
+                                drawSmallHead (gg, box.reduced (2.0f),
                                              AmpSimProcessor::ampName (amp));
                                 if (! on)
                                     gg.endTransparencyLayer();

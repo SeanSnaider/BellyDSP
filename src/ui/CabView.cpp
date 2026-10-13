@@ -634,7 +634,7 @@ public:
         view.cabOn->onStateChange = [this] { repaint (0, 0, getWidth(), BlockPage::headerHeight (subtitle, getWidth())); };
     }
 
-    static inline const juce::String subtitle { "Between Gate B and the post section. Drag the mics on the speaker; the library and the room mic are on the stage" };
+    static inline const juce::String subtitle { "After Gate B. Drag the mics on the speaker; the library and the room mic are on the stage" };
 
     void layout (InspectorLayout& l)
     {
@@ -1080,7 +1080,7 @@ void CabView::paint (juce::Graphics& g)
     // The headings, as the inspector's (small capitals and a hairline).
     drawInspectorHeading (g, leftColumn.withHeight (16), "Cabinet");
     drawInspectorHeading (g, roomHeading, "Room mic");
-    drawInspectorHeading (g, matchHeading.withWidth (84), "Match curve");
+    drawInspectorHeading (g, matchHeading.withRight (matchAmountLabel->getX() - 10), "Match curve");
 }
 
 void CabView::paintOverChildren (juce::Graphics& g)
