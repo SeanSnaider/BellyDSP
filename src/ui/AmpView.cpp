@@ -189,8 +189,19 @@ void SpectrumView::paint (juce::Graphics& g)
     g.setColour (inkFaint);
     for (const auto& [f, label] : { std::pair<double, const char*> { 100.0, "100 Hz" }, { 1000.0, "1 kHz" }, { 10000.0, "10 kHz" } })
         g.drawText (label, juce::Rectangle<float> (xOf (f) - 40.0f, bounds.getBottom() - 14.0f, 80.0f, 14.0f), juce::Justification::centred, false);
-    g.setFont (geist (Weight::regular, 12.0f));
-    g.drawText ("Output spectrum", juce::Rectangle<float> (0.0f, 10.0f, 200.0f, 16.0f), juce::Justification::centredLeft, false);
+    if (showsTitle)
+    {
+        g.setFont (geist (Weight::regular, 12.0f));
+        g.drawText ("Output spectrum", juce::Rectangle<float> (0.0f, 10.0f, 200.0f, 16.0f), juce::Justification::centredLeft, false);
+    }
+
+    // Silence draws no curve: say so, rather than leaving an empty grid (the finish review, R2).
+    if (! hasCurve())
+    {
+        g.setFont (geist (Weight::regular, 12.0f));
+        g.setColour (inkFaint);
+        g.drawText (emptyText, plot, juce::Justification::centred, false);
+    }
 }
 
 // ---- The info row --------------------------------------------------------------------------------
@@ -578,6 +589,7 @@ void AmpView::dressKnob (Knob& knob, int k)
 
 AmpPanel::AmpPanel (AmpSimProcessor& p, AmpView& v) : ControlGroup (p), view (v), spectrum (p)
 {
+    spectrum.setShowsTitle (false); // the inspector's "Output spectrum" heading names it
     ampOn = &adopt (std::make_unique<Switch> ("On"));
     ampOn->onStateChange = [this] { repaint (0, 0, getWidth(), BlockPage::headerHeight (view.ampDescription (shownAmp), getWidth())); }; // the header's head dims when off
     // The amp's switch is its bypass, inverted: on while the amp plays (the board's amp marker has the same dot).

@@ -35,6 +35,13 @@ public:
     float relativeLevelAt (double frequency) const;
     bool hasCurve() const noexcept { return reference > -200.0f; }
 
+    /// Whether the plot draws its own "Output spectrum" title (off where a heading above it already names it,
+    /// as in the amp's inspector).
+    void setShowsTitle (bool shouldShow) { showsTitle = shouldShow; repaint(); }
+
+    /// What the plot says while there's nothing to draw.
+    static constexpr const char* emptyText = "Play to see the spectrum";
+
     static constexpr float rangeDb = 30.0f; // the plot spans +-30 dB around the dashed line
 
     void paint (juce::Graphics&) override;
@@ -48,6 +55,7 @@ private:
     std::vector<float> columns; // the smoothed curve, per column of the plot (dB relative)
     float reference = -300.0f;
     bool active = false;
+    bool showsTitle = true;
 };
 
 /// The head's material for an amp (0 to 8): each built-in amp its own (materialForAmp by name), your capture Custom.

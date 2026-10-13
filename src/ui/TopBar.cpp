@@ -83,9 +83,12 @@ public:
         g.setColour (line1);
         g.drawRoundedRectangle (box, radiusControl, 1.0f);
 
-        // The name on a baseline 25 px down, the scene's 17 px under it: both lines inside the 48 px box.
+        // The two lines centred on the box by their visible extents (the name's cap height, the scene's caps and
+        // descenders): the name's baseline 23 px down and the scene's 16 px under it leave about 7 px above the
+        // name's caps and 6 px under the scene in the 48 px box (the finish review, R1: at 25 and 17 they touched
+        // the edges).
         const auto area = getLocalBounds().reduced (12, 0).toFloat();
-        const auto nameBaseline = area.getY() + 25.0f, sceneBaseline = nameBaseline + 17.0f;
+        const auto nameBaseline = area.getY() + 23.0f, sceneBaseline = nameBaseline + 16.0f;
         const juce::Font nf (nameFont());
         g.setFont (nf);
         g.setColour (ink);
