@@ -56,10 +56,10 @@ Material materialForAmp (int amp);
 class AmpView;
 
 /// The amp in the inspector (the default selection): its name and description over its seven knobs (Gain and
-/// Master, then the five tone knobs, in the chrome), the input and output levels, Gate A's switch, Threshold, and
-/// Release with its open light (the strip that was under the head), and the output spectrum. The knobs on the head
-/// and these are the same parameters, so turning either moves both.
-class AmpPanel final : public ControlGroup, private juce::Timer
+/// Master, then the five tone knobs, in the chrome), the input and output levels, and the output spectrum. Only the
+/// amp (RD4-9): Gate A is its own pedal. The knobs on the head and these are the same parameters, so turning either
+/// moves both.
+class AmpPanel final : public ControlGroup
 {
 public:
     AmpPanel (AmpSimProcessor& processor, AmpView& view);
@@ -67,10 +67,6 @@ public:
 
     Knob& getKnob (int amp, int index) { return *knobs[(size_t) amp][(size_t) index]; }
     SpectrumView& getSpectrum() noexcept { return spectrum; }
-    Switch& getGateSwitch() noexcept { return *gateOn; }
-    bool isGateLightOn() const noexcept { return gateOpen; }
-    /// The gate's first switch-on, as shown under the gate's knobs (empty: nothing shown).
-    juce::String getGatePromptText() const { return gatePrompt; }
 
     void refresh() override;
     void pageShown() override;
@@ -80,24 +76,16 @@ public:
     void resized() override;
 
 private:
-    class GateLight;
-    void timerCallback() override;
-    void updateGatePrompt();
     void layout (InspectorLayout&);
 
     AmpView& view;
     std::array<std::array<Knob*, 7>, AmpSimProcessor::numAmps> knobs {};
     SpectrumView spectrum;
-    Knob *input = nullptr, *threshold = nullptr, *release = nullptr, *output = nullptr;
-    Switch* gateOn = nullptr; // Gate A's own switch (gate_a_on), at its section's heading
-    Switch* ampOn = nullptr;  // the amp's switch (amp_bypass, inverted), in the header
-    std::unique_ptr<GateLight> gateLight;
+    Knob *input = nullptr, *output = nullptr;
+    Switch* ampOn = nullptr; // the amp's switch (amp_bypass, inverted), in the header
     std::vector<InspectorLayout::Text> texts;
-    juce::Rectangle<int> spectrumArea, promptArea;
+    juce::Rectangle<int> spectrumArea;
     int shownAmp = -1;
-    bool gateOpen = false;
-    juce::String gatePrompt; // the first switch-on's prompt or result
-    float gateLearnProgress = -1.0f; // 0 .. 1 while Learn measures; -1 otherwise
 };
 
 /// The stage's Amp mode (the default, and the 90% view): the shelf at the top left (Sean, 2026-10-07: "one amp,
@@ -159,14 +147,15 @@ public:
     /// The amp's inspector (owned here; the editor's inspector shows it), and what moved there from this page.
     AmpPanel& getPanel() noexcept { return *panel; }
     SpectrumView& getSpectrum() noexcept { return panel->getSpectrum(); }
-    bool isGateLightOn() const noexcept { return panel->isGateLightOn(); }
-    juce::String getGatePromptText() const { return panel->getGatePromptText(); }
-    Switch& getGateSwitch() noexcept { return panel->getGateSwitch(); }
 
-    /// What the info row shows, for tests.
+    /// What the info row shows, for tests: the capture's class ("High gain"), the capture's file as its tooltip names
+    /// it ("Monolith (built in, gain set)"), the rate or message, the one short line ("High gain \u00b7 Monolith",
+    /// RD4-5), and the row's tooltip.
     juce::String getVoiceText() const;
     juce::String getModelText() const;
     juce::String getRateText() const;
+    juce::String getInfoLine() const;
+    juce::String getInfoTooltip() const;
 
     /// The capture's tone type from its NAM metadata ("Clean", "Crunch", "High gain"), or a gain set's
     /// "tone_type", or empty. Never the gear's make or model (no product names in the UI).
@@ -212,6 +201,7 @@ private:
     std::array<std::array<Knob*, numKnobs>, AmpSimProcessor::numAmps> knobs {};
     int shownSlot = -1;
     float headScale = 1.0f;
+    float headBottom = 0.0f; // the head's body's bottom edge on the stage, for the pool of light under it
     std::map<juce::String, juce::String> toneTypes; // capture path -> its tone type (read once)
     struct SetInfo
     {

@@ -17,7 +17,8 @@ namespace ui
 /// The board under the stage (the app redesign's FIRST VIEWPORT): every pedal (ui::isPedal) drawn with drawPedal in
 /// chain order, on two rows like a real board. The top row is the pre section in its saved order, then the amp's
 /// marker, Gate B, and the cab's marker; the bottom row is the post section in its saved order. Each row starts with
-/// its section's name and switch (pre_fx_on, post_fx_on); a section that's off dims its row.
+/// its section's name and switch (pre_fx_on, post_fx_on) as a labelled toggle; a section that's off dims its row, the
+/// way a pedal that's off is dimmed (RD4-1).
 ///
 ///   a click on a pedal's footswitch   switches the block on or off, as one undo step (its LED follows)
 ///   a click anywhere else on it       selects it: the inspector shows its controls, and it's drawn raised
@@ -52,6 +53,8 @@ public:
     juce::Component* getPedal (BlockId id) const;
     juce::Rectangle<float> getFootswitchArea (BlockId id) const;
     bool isLit (BlockId id) const;
+    /// Whether a pedal draws dimmed: switched off, or its section off (RD4-1).
+    bool isDimmed (BlockId id) const;
     void clickPedal (BlockId id, bool onFootswitch);
     void dragPedal (BlockId id, float dx);
     juce::Component* getMarker (BlockId id) const; ///< BlockId::amp or BlockId::cab

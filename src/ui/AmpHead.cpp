@@ -980,24 +980,69 @@ void PilotJewel::setLit (bool shouldBeLit)
 
 void PilotJewel::paint (juce::Graphics& g)
 {
-    // 18 px: radial-gradient(circle at 35% 35%, #d7fbe9, emerald 45%, #0e5c40), a 12 px emerald glow at .55,
-    // and a 3 px ring of black .35. Dark (no capture): the same in greys, no glow.
-    const auto jewel = juce::Rectangle<float> (18.0f, 18.0f).withCentre (getLocalBounds().toFloat().getCentre());
-    juce::Path disc;
-    disc.addEllipse (jewel);
-    // (CSS draws the first shadow on top: the glow over the ring.)
-    g.setColour (juce::Colours::black.withAlpha (0.35f));
-    g.fillEllipse (jewel.expanded (3.0f));
-    if (lit)
-        juce::DropShadow (accent.withAlpha (0.55f), 12, {}).drawForPath (g, disc);
+    // A jewel pilot lamp (RD4-8): a knurled chrome bezel 30 px across, and in it a faceted glass dome 20 px across,
+    // cut into eight facets round a flat table, each facet lit by its angle to the light (from the top left). Lit
+    // (a capture is loaded): amber glass glowing in the accent, a hot table, and a halo on the panel. Dark: smoked
+    // ruby glass catching only the room's light.
+    const auto c = getLocalBounds().toFloat().getCentre();
+    const auto bezel = juce::Rectangle<float> (30.0f, 30.0f).withCentre (c);
+    const auto dome = juce::Rectangle<float> (20.0f, 20.0f).withCentre (c);
+    constexpr auto pi = juce::MathConstants<float>::pi;
 
-    const juce::Point<float> highlight { jewel.getX() + 0.35f * 18.0f, jewel.getY() + 0.35f * 18.0f };
-    const auto radius = highlight.getDistanceFrom (jewel.getBottomRight());
-    juce::ColourGradient gradient (lit ? juce::Colour (0xffd7fbe9) : juce::Colour (0xff4d5351), highlight,
-                                   lit ? juce::Colour (0xff0e5c40) : juce::Colour (0xff0b0c0c), highlight.translated (radius, 0.0f), true);
-    gradient.addColour (0.45, lit ? accent : juce::Colour (0xff1f2322));
-    g.setGradientFill (gradient);
-    g.fillEllipse (jewel);
+    if (lit)
+    {
+        juce::ColourGradient halo (accent.withAlpha (0.42f), c, accent.withAlpha (0.0f), c.translated (32.0f, 0.0f), true);
+        halo.addColour (0.35, accent.withAlpha (0.18f));
+        g.setGradientFill (halo);
+        g.fillEllipse (juce::Rectangle<float> (64.0f, 64.0f).withCentre (c));
+    }
+
+    // The bezel: its shadow on the panel, the chrome ring lit from the top left, its knurl, the dark seat inside.
+    g.setColour (juce::Colours::black.withAlpha (0.5f));
+    g.fillEllipse (bezel.translated (0.0f, 1.5f).expanded (1.0f));
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xfff2f4f6), bezel.getX() + 6.0f, bezel.getY() + 4.0f, juce::Colour (0xff3d4246), bezel.getRight() - 4.0f,
+                                             bezel.getBottom(), false));
+    g.fillEllipse (bezel);
+    for (int i = 0; i < 36; ++i)
+    {
+        const auto a = 2.0f * pi * (float) i / 36.0f;
+        const auto lift = 0.5f + 0.5f * std::cos (a + 0.75f * pi); // brighter towards the top left
+        g.setColour ((i % 2 == 0 ? juce::Colours::white : juce::Colours::black).withAlpha (i % 2 == 0 ? 0.25f * lift : 0.30f));
+        g.drawLine (juce::Line<float> (c.translated (13.6f * std::sin (a), -13.6f * std::cos (a)), c.translated (15.0f * std::sin (a), -15.0f * std::cos (a))), 1.0f);
+    }
+    g.setColour (juce::Colour (0xff0b0c0c));
+    g.fillEllipse (dome.expanded (1.5f));
+
+    // The dome's facets: eight wedges from the rim to an octagonal table half the dome's radius.
+    const auto glass = lit ? accent : juce::Colour (0xff4a1612);
+    const auto r = dome.getWidth() * 0.5f, table = r * 0.48f;
+    const auto corner = [&] (float radius, int k) { const auto a = 2.0f * pi * ((float) k + 0.5f) / 8.0f; return c.translated (radius * std::sin (a), -radius * std::cos (a)); };
+    for (int k = 0; k < 8; ++k)
+    {
+        juce::Path facet;
+        facet.startNewSubPath (corner (r, k));
+        facet.lineTo (corner (r, k + 1));
+        facet.lineTo (corner (table, k + 1));
+        facet.lineTo (corner (table, k));
+        facet.closeSubPath();
+        // The facet's normal points out at its middle angle; light from the top left (-0.6, -0.8).
+        const auto mid = 2.0f * pi * ((float) k + 1.0f) / 8.0f;
+        const auto facing = 0.5f + 0.5f * (-0.6f * std::sin (mid) + 0.8f * std::cos (mid));
+        g.setColour (lit ? glass.interpolatedWith (juce::Colours::white, 0.08f + 0.45f * facing).withMultipliedBrightness (0.8f + 0.25f * facing)
+                         : glass.withMultipliedBrightness (0.45f + 0.9f * facing));
+        g.fillPath (facet);
+        g.setColour (juce::Colours::black.withAlpha (lit ? 0.18f : 0.35f));
+        g.strokePath (facet, juce::PathStrokeType (0.5f));
+    }
+    juce::Path top;
+    for (int k = 0; k < 8; ++k)
+        k == 0 ? top.startNewSubPath (corner (table, k)) : top.lineTo (corner (table, k));
+    top.closeSubPath();
+    g.setColour (lit ? accent.interpolatedWith (juce::Colours::white, 0.7f) : glass.withMultipliedBrightness (1.2f));
+    g.fillPath (top);
+    // The glint: a small hard highlight on the top-left facet.
+    g.setColour (juce::Colours::white.withAlpha (lit ? 0.85f : 0.45f));
+    g.fillEllipse (juce::Rectangle<float> (3.4f, 2.4f).withCentre (c.translated (-4.6f, -5.0f)));
 }
 
 // ---- The mini heads ------------------------------------------------------------------------------

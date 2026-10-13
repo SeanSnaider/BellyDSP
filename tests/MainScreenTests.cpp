@@ -102,9 +102,17 @@ public:
             expect (bg == juce::Colour (0xff121212) && panelBg == juce::Colour (0xff1a1a1a) && raised == juce::Colour (0xff1f1f1f));
             expect (line1 == juce::Colour (0xff2c2c2c) && ink == juce::Colour (0xffe8e8e8) && inkDim == juce::Colour (0xff9a9a9a));
             expect (knobSkin (Skin::chrome).track == line2);
-            // The heads keep their own skins: Monolith's pointer is its emerald, Forge's its own orange, not the theme's.
-            expect (knobSkin (Skin::monolith).pointer == juce::Colour (0xff34d399));
-            expect (knobSkin (Skin::forge).pointer == juce::Colour (0xffff6a1f));
+            // One accent (RD4-8): no head's knob pointer is teal or emerald. Monolith's and Comet's are ink, Forge's the
+            // accent; every pointer is neutral (its saturation under 0.15) or the accent itself.
+            expect (knobSkin (Skin::monolith).pointer == ink && knobSkin (Skin::comet).pointer == ink);
+            expect (knobSkin (Skin::forge).pointer == accent);
+            for (int k = 0; k <= (int) Skin::custom; ++k)
+            {
+                const auto pointer = knobSkin ((Skin) k).pointer;
+                const auto hue = pointer.getHue() * 360.0f;
+                const auto tealOrGreen = pointer.getSaturation() > 0.2f && hue > 90.0f && hue < 200.0f;
+                expect (! tealOrGreen && (pointer == accent || pointer.getSaturation() < 0.5f || hue < 40.0f), "skin " + juce::String (k) + " #" + pointer.toDisplayString (false));
+            }
 
             // A latched clip is drawn red on the meter; nothing else is.
             ui::LevelMeter meter ("Out", 2);
@@ -167,11 +175,15 @@ public:
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
             auto& board = ed.getBoard();
 
-            // The amp's inspector: its seven knobs (the playing amp's), Gate A's switch and knobs, the levels.
+            // The amp's inspector holds only the amp (RD4-9): its seven knobs (the playing amp's), its switch, and the
+            // levels in and out of the chain round it. No Gate A: it's its own pedal, which still reaches it.
             const auto ampIds = taggedIn (ed.getInspector());
-            for (const auto* id : { "amp1_input_trim", "amp1_output_trim", "amp1_bass", "amp1_mid", "amp1_treble", "amp1_presence", "amp1_depth", "gate_a_on",
-                                    "gate_a_threshold", "input_gain", "output_gain", "amp_bypass" })
+            for (const auto* id : { "amp1_input_trim", "amp1_output_trim", "amp1_bass", "amp1_mid", "amp1_treble", "amp1_presence", "amp1_depth", "input_gain",
+                                    "output_gain", "amp_bypass" })
                 expect (ampIds.contains (id), id);
+            for (const auto& id : ampIds)
+                expect (id.startsWith ("amp") || id == "input_gain" || id == "output_gain", "not the amp's: " + id);
+            expectEquals (ampIds.size(), 7 * AmpSimProcessor::numAmps + 3, "the amps' seven knobs each (only the playing amp's shown), the switch, in and out");
 
             // A click on the delay pedal (above its footswitch): its page in the inspector, nothing switched.
             auto& delay = *board.getPedal (ui::BlockId::delay);
@@ -254,12 +266,67 @@ public:
             board.refresh();
             expect (! board.isLit (ui::BlockId::reverb));
 
-            // The post section's switch dims its row (each pedal keeps its own LED).
+            // A bypassed pedal is dimmed (RD4-1), and lights up whole when it's on: the overdrive on, the reverb off.
+            expect (! board.isDimmed (ui::BlockId::overdrive) && board.isDimmed (ui::BlockId::reverb));
+            const auto brightness = [&] (ui::BlockId id)
+            {
+                // The pedal's mean brightness (HSB), away from its LED and its halo: the enclosure itself.
+                auto& pedal = *board.getPedal (id);
+                const auto image = pedal.createComponentSnapshot (pedal.getLocalBounds(), true, 2.0f);
+                const auto fit = ui::pedalBounds (pedal.getLocalBounds().toFloat(), id);
+                const auto k = fit.getWidth() / ui::pedalSize (id).x;
+                const auto glow = ui::pedalLayout (id).ledGlow;
+                const auto halo = juce::Rectangle<float> (fit.getX() + glow.getX() * k, fit.getY() + glow.getY() * k, glow.getWidth() * k, glow.getHeight() * k) * 2.0f;
+                const auto body = ui::pedalLayout (id).body;
+                const auto inside = (juce::Rectangle<float> (fit.getX() + body.getX() * k, fit.getY() + body.getY() * k, body.getWidth() * k, body.getHeight() * k) * 2.0f).reduced (6.0f);
+                double sum = 0.0, saturation = 0.0;
+                int n = 0;
+                for (int y = (int) inside.getY(); y < (int) inside.getBottom(); ++y)
+                    for (int x = (int) inside.getX(); x < (int) inside.getRight(); ++x)
+                        if (! halo.contains ((float) x, (float) y))
+                        {
+                            const auto c = image.getPixelAt (x, y);
+                            sum += c.getBrightness();
+                            saturation += c.getSaturation();
+                            ++n;
+                        }
+                return std::pair<double, double> { sum / juce::jmax (1, n), saturation / juce::jmax (1, n) };
+            };
+            const auto odOn = brightness (ui::BlockId::overdrive);
+            setParam (p, "od_on", 0.0f);
+            board.refresh();
+            const auto odOff = brightness (ui::BlockId::overdrive);
+            expect (board.isDimmed (ui::BlockId::overdrive) && ! board.isLit (ui::BlockId::overdrive));
+            expectWithinAbsoluteError (odOff.first / odOn.first, (double) ui::dimBrightness, 0.06, "off at about 55% brightness");
+            expectLessThan (odOff.second, odOn.second * 0.7, "off at lower saturation");
+            setParam (p, "od_on", 1.0f);
+            board.refresh();
+
+            // The post section's switch dims its row the same way, and each pedal keeps its own LED: the chorus is on,
+            // so it's lit and dimmed; the boost, before the amp, isn't touched.
+            setParam (p, "chorus_on", 1.0f);
             setParam (p, "post_fx_on", 0.0f);
             board.refresh();
-            expect (board.getPedal (ui::BlockId::delay)->getAlpha() < 1.0f && juce::exactlyEqual (board.getPedal (ui::BlockId::boost)->getAlpha(), 1.0f));
+            expect (board.isDimmed (ui::BlockId::chorus) && board.isLit (ui::BlockId::chorus));
+            expect (board.isDimmed (ui::BlockId::delay) && ! board.isDimmed (ui::BlockId::overdrive));
+            expect (juce::exactlyEqual (board.getPedal (ui::BlockId::chorus)->getAlpha(), 1.0f), "dimmed by the art, not by fading over the tray");
+            const auto chorusInSectionOff = brightness (ui::BlockId::chorus);
             setParam (p, "post_fx_on", 1.0f);
             board.refresh();
+            const auto chorusOn = brightness (ui::BlockId::chorus);
+            expectWithinAbsoluteError (chorusInSectionOff.first / chorusOn.first, (double) ui::dimBrightness, 0.06, "a section that's off: the same dimming");
+            setParam (p, "chorus_on", 0.0f);
+            board.refresh();
+            logMessage ("  -> the overdrive's enclosure off: " + juce::String (odOff.first / odOn.first, 2) + " of its brightness on, saturation "
+                        + juce::String (odOff.second, 2) + " from " + juce::String (odOn.second, 2) + "; the chorus in a section that's off: "
+                        + juce::String (chorusInSectionOff.first / chorusOn.first, 2) + " of its brightness, its LED still lit");
+
+            // The sections' switches are labelled toggles (RD4-3): ON or OFF beside the pill, under the row's name.
+            for (auto section : { ui::Section::pre, ui::Section::post })
+            {
+                auto* toggle = board.getSectionSwitch (section);
+                expect (toggle != nullptr && toggle->isLabelled() && toggle->getWidth() >= ui::PowerSwitch::labelledWidth, "a labelled toggle");
+            }
 
             // A right-click on a pedal is MIDI learn for its switch (it's tagged with it), and never flips it.
             expectEquals (od.getProperties()[ui::parameterIdProperty].toString(), juce::String ("od_on"));

@@ -27,7 +27,9 @@ namespace
 constexpr float pedalHeight = 172.0f; // every pedal, the jacks included
 constexpr float jackRise = 7.0f;      // how far the jacks stand above the body
 constexpr float bodyRadius = 7.0f;
-constexpr float ledLens = 2.9f, ledBezel = 4.7f, ledGlowRadius = 15.0f;
+// The LED, read from a step back (RD4-2): 1.5 times the first art's (a 2.9 pt lens in a 4.7 pt bezel), with a halo
+// that reaches 24 pt when lit.
+constexpr float ledLens = 4.35f, ledBezel = 6.6f, ledGlowRadius = 24.0f;
 constexpr float nutRadius = 11.5f; // the footswitch's hex nut, centre to corner
 
 // The light comes from the top left (as on the heads' screws and gems): the unit vector towards it, in screen
@@ -864,7 +866,7 @@ void drawScrew (juce::Graphics& g, juce::Point<float> c)
     }
 }
 
-/// The LED's chrome bezel and its dark lens (the off state, in the accent's own tint); drawPedal lights it.
+/// The LED's chrome bezel and its dark lens (the off state: near-black, no tint); drawPedal draws the lens over it live.
 void drawLedBezel (juce::Graphics& g, juce::Point<float> c)
 {
     const auto disc = [&] (float radius) { return juce::Rectangle<float> (radius * 2.0f, radius * 2.0f).withCentre (c); };
@@ -874,12 +876,37 @@ void drawLedBezel (juce::Graphics& g, juce::Point<float> c)
     g.fillEllipse (disc (ledBezel));
     g.setColour (juce::Colour (0xff0a0b0c));
     g.fillEllipse (disc (ledLens + 0.55f));
-    juce::ColourGradient lens (accent.withMultipliedBrightness (0.42f).withMultipliedSaturation (0.7f), c.x - 0.8f, c.y - 0.9f, juce::Colour (0xff120c08), c.x + ledLens,
-                               c.y + ledLens, true);
-    g.setGradientFill (lens);
+    g.setColour (ledOffColour);
     g.fillEllipse (disc (ledLens));
-    g.setColour (juce::Colours::white.withAlpha (0.45f));
-    g.fillEllipse (juce::Rectangle<float> (1.3f, 0.9f).withCentre (c.translated (-0.9f, -1.1f)));
+}
+
+/// The off lens, drawn live over the art (so it stays #2a2a2a when the enclosure is dimmed): flat near-black with a
+/// small cold highlight at the top left, as an unlit LED's dome catches the room.
+void drawOffLens (juce::Graphics& g, juce::Point<float> c, float k)
+{
+    const auto r = ledLens * k;
+    g.setColour (juce::Colour (0xff0a0b0c));
+    g.fillEllipse (juce::Rectangle<float> (2.0f * r + 1.1f * k, 2.0f * r + 1.1f * k).withCentre (c));
+    g.setColour (ledOffColour);
+    g.fillEllipse (juce::Rectangle<float> (2.0f * r, 2.0f * r).withCentre (c));
+    g.setColour (juce::Colours::white.withAlpha (0.22f));
+    g.fillEllipse (juce::Rectangle<float> (1.6f * k, 1.1f * k).withCentre (c.translated (-1.4f * k, -1.6f * k)));
+}
+
+/// The art dimmed (RD4-1): every pixel's brightness and saturation scaled (HSB), its alpha kept.
+juce::Image dimmed (const juce::Image& art)
+{
+    auto out = art.createCopy();
+    juce::Image::BitmapData data (out, juce::Image::BitmapData::readWrite);
+    for (int y = 0; y < out.getHeight(); ++y)
+        for (int x = 0; x < out.getWidth(); ++x)
+        {
+            const auto c = data.getPixelColour (x, y);
+            if (c.getAlpha() == 0)
+                continue;
+            data.setPixelColour (x, y, juce::Colour::fromHSV (c.getHue(), c.getSaturation() * dimSaturation, c.getBrightness() * dimBrightness, c.getFloatAlpha()));
+        }
+    return out;
 }
 
 /// The stomp switch: a hex nut on the face and the domed chrome button in its bushing, or a rubber topper over it.
@@ -1413,7 +1440,7 @@ juce::Image renderArt (BlockId id, float scale, bool withName)
 struct Cached
 {
     int key = -1; // the scale in hundredths
-    juce::Image art, shadow;
+    juce::Image art, shadow, dim; // dim: the art dimmed (off, or its section off)
 };
 
 constexpr float shadowPad = 10.0f; // points of room round the body in the shadow image
@@ -1451,7 +1478,9 @@ const Cached& cachedArt (BlockId id, float scale)
     if (slots[0].key != key)
     {
         const auto s = (float) key / 100.0f;
-        slots[0] = { key, renderArt (id, s, true), renderShadow (id, s) };
+        auto art = renderArt (id, s, true);
+        auto dim = dimmed (art);
+        slots[0] = { key, std::move (art), renderShadow (id, s), std::move (dim) };
         ++renders;
     }
     return slots[0];
@@ -1481,7 +1510,7 @@ PedalLayout pedalLayout (BlockId id)
 {
     const auto d = design (id);
     const auto disc = [] (juce::Point<float> c, float r) { return juce::Rectangle<float> (r * 2.0f, r * 2.0f).withCentre (c); };
-    return { bodyOf (d), disc (d.led, ledBezel), disc (d.led, ledGlowRadius), disc (d.footswitch, nutRadius), nameFor (id, d).ink.getBounds() };
+    return { bodyOf (d), disc (d.led, ledBezel), disc (d.led, ledGlowRadius), disc (d.footswitch, nutRadius), nameFor (id, d).ink.getBounds(), disc (d.led, ledLens) };
 }
 
 int pedalRenderCount() { return renders; }
@@ -1539,27 +1568,37 @@ void drawPedal (juce::Graphics& g, juce::Rectangle<float> box, BlockId id, const
         const juce::Graphics::ScopedSaveState saved (g);
         g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
         g.setOpacity (1.0f);
-        g.drawImage (cached.art, fit);
+        g.drawImage (pedalDimmed (state) ? cached.dim : cached.art, fit);
     }
 
-    if (state.on)
+    const auto c = toScreen (layout.led).getCentre();
+    if (! state.on)
     {
-        // The LED lit: a soft glow on the face round it, then the lens itself, hot in the middle.
-        const auto c = toScreen (layout.led).getCentre();
-        const auto glowR = ledGlowRadius * k, lensR = ledLens * k;
-        juce::ColourGradient glow (accent.withAlpha (0.50f), c, accent.withAlpha (0.0f), c.translated (glowR, 0.0f), true);
-        glow.addColour (0.22, accent.withAlpha (0.34f));
-        glow.addColour (0.55, accent.withAlpha (0.08f));
-        g.setGradientFill (glow);
-        g.fillEllipse (juce::Rectangle<float> (glowR * 2.0f, glowR * 2.0f).withCentre (c));
-        juce::ColourGradient lens (accent.interpolatedWith (juce::Colours::white, 0.75f), c.translated (-0.25f * lensR, -0.3f * lensR), accent.darker (0.35f),
-                                   c.translated (lensR * 1.1f, 0.0f), true);
-        lens.addColour (0.45, accent.brighter (0.15f));
-        g.setGradientFill (lens);
-        g.fillEllipse (juce::Rectangle<float> (lensR * 2.0f, lensR * 2.0f).withCentre (c));
-        g.setColour (juce::Colours::white.withAlpha (0.75f));
-        g.fillEllipse (juce::Rectangle<float> (1.3f * k, 0.9f * k).withCentre (c.translated (-0.9f * k, -1.1f * k)));
+        drawOffLens (g, c, k);
+        return;
     }
+
+    // The LED lit: a halo on the face round it (wide and soft, so it reads from a step back), then the lens itself,
+    // hot in the middle. In a section that's off the pedal is still switched on, so its LED stays lit, at 60%.
+    const juce::Graphics::ScopedSaveState saved (g);
+    if (state.sectionOff)
+        g.beginTransparencyLayer (0.6f);
+    const auto glowR = ledGlowRadius * k, lensR = ledLens * k;
+    juce::ColourGradient glow (accent.withAlpha (0.62f), c, accent.withAlpha (0.0f), c.translated (glowR, 0.0f), true);
+    glow.addColour (0.18, accent.withAlpha (0.46f));
+    glow.addColour (0.42, accent.withAlpha (0.16f));
+    glow.addColour (0.70, accent.withAlpha (0.04f));
+    g.setGradientFill (glow);
+    g.fillEllipse (juce::Rectangle<float> (glowR * 2.0f, glowR * 2.0f).withCentre (c));
+    juce::ColourGradient lens (accent.interpolatedWith (juce::Colours::white, 0.8f), c.translated (-0.25f * lensR, -0.3f * lensR), accent.darker (0.3f),
+                               c.translated (lensR * 1.1f, 0.0f), true);
+    lens.addColour (0.42, accent.brighter (0.2f));
+    g.setGradientFill (lens);
+    g.fillEllipse (juce::Rectangle<float> (lensR * 2.0f, lensR * 2.0f).withCentre (c));
+    g.setColour (juce::Colours::white.withAlpha (0.75f));
+    g.fillEllipse (juce::Rectangle<float> (1.8f * k, 1.2f * k).withCentre (c.translated (-1.3f * k, -1.5f * k)));
+    if (state.sectionOff)
+        g.endTransparencyLayer();
 }
 
 } // namespace ui

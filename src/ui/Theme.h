@@ -93,16 +93,17 @@ inline KnobSkin knobSkin (Skin skin)
                                       juce::Colour (0xff2b2e2c), juce::Colour (0x2e000000) };
         case Skin::ember:    return { juce::Colour (0xff3a3633), juce::Colour (0xff0f0e0d), juce::Colour (0xff000000), juce::Colour (0xffefdfba),
                                       juce::Colour (0xffd8c49a), juce::Colour (0x29efdfba) };
-        // Monolith's pointer is its own emerald (the head's material), not the theme's accent.
-        case Skin::monolith: return { juce::Colour (0xff3c3f3e), juce::Colour (0xff141515), juce::Colour (0xff050505), juce::Colour (0xff34d399),
+        // One accent (RD4-8): no knob pointer is teal or emerald. Monolith's (emerald before) and Comet's (ice cyan)
+        // are ink; Forge's is the accent itself.
+        case Skin::monolith: return { juce::Colour (0xff3c3f3e), juce::Colour (0xff141515), juce::Colour (0xff050505), juce::Colour (0xffe8e8e8),
                                       juce::Colour (0xff9aa4a0), juce::Colour (0x17ffffff) };
         // The five more heads and the custom one (UH20 to UH25): a body that reads on its own panel, a pointer in
         // the look's accent, a label with at least 4.5:1 contrast against the panel's middle.
-        case Skin::forge:    return { juce::Colour (0xff45494d), juce::Colour (0xff0b0c0d), juce::Colour (0xff000000), juce::Colour (0xffff6a1f),
+        case Skin::forge:    return { juce::Colour (0xff45494d), juce::Colour (0xff0b0c0d), juce::Colour (0xff000000), juce::Colour (0xffff8a00),
                                       juce::Colour (0xff121417), juce::Colour (0x38000000) };
         case Skin::basalt:   return { juce::Colour (0xff53575b), juce::Colour (0xff17181a), juce::Colour (0xff050505), juce::Colour (0xffe4e7ea),
                                       juce::Colour (0xffaab0b5), juce::Colour (0x1affffff) };
-        case Skin::comet:    return { juce::Colour (0xff34437a), juce::Colour (0xff0a1027), juce::Colour (0xff02040f), juce::Colour (0xffb9f4ff),
+        case Skin::comet:    return { juce::Colour (0xff34437a), juce::Colour (0xff0a1027), juce::Colour (0xff02040f), juce::Colour (0xffe8e8e8),
                                       juce::Colour (0xffa3bce6), juce::Colour (0x248fd8ff) };
         case Skin::quartz:   return { juce::Colour (0xfffdfbff), juce::Colour (0xffb9aac9), juce::Colour (0xff7a6690), juce::Colour (0xff3a2a4c),
                                       juce::Colour (0xff261b31), juce::Colour (0x33261b31) };

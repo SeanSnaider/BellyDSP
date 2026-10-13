@@ -88,8 +88,9 @@ private:
     int renders = 0;
 };
 
-/// The pilot light (handoff 4.6): an 18 px jewel, lit emerald with a glow while the slot has a capture
-/// loaded, dark otherwise (UH4).
+/// The pilot light (RD4-8): a jewel lamp, a faceted glass dome in a knurled chrome bezel 30 px across, lit amber in the
+/// accent with a halo while the slot has a capture loaded, smoked ruby otherwise (UH4). Its component is 64 x 64 (the
+/// halo's reach).
 class PilotJewel final : public juce::Component, public juce::SettableTooltipClient
 {
 public:

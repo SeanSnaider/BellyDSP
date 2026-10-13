@@ -255,10 +255,14 @@ void InspectorLayout::knobs (const std::vector<Knob*>& list, int perRow)
     for (size_t i = 0; i < list.size(); i += (size_t) perRow)
     {
         const auto end = juce::jmin (list.size(), i + (size_t) perRow);
+        // Every knob in an inspector shows its value under its caption (RD4-7), so the row is that much taller.
         auto height = 0;
         for (auto k = i; k < end; ++k)
             if (list[k] != nullptr)
-                height = juce::jmax (height, Knob::preferredHeight (list[k]->getKnobSize()));
+            {
+                list[k]->setValueShown (true);
+                height = juce::jmax (height, list[k]->getPreferredHeight());
+            }
         if (height == 0)
             continue;
         begin();
@@ -266,7 +270,7 @@ void InspectorLayout::knobs (const std::vector<Knob*>& list, int perRow)
             if (auto* knob = list[k])
             {
                 const auto cell = juce::Rectangle<int> (bounds.getX() + (int) (k - i) * cellWidth, y, cellWidth, height);
-                set (knob, cell.withSizeKeepingCentre (Knob::preferredWidth (knob->getKnobSize()), Knob::preferredHeight (knob->getKnobSize())));
+                set (knob, cell.withSizeKeepingCentre (Knob::preferredWidth (knob->getKnobSize()), knob->getPreferredHeight()));
             }
         y += height;
     }

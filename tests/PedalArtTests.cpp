@@ -3,7 +3,7 @@
 
 // The pedal art (src/ui/PedalArt.*, the app redesign): every pedal renders at its declared size with a solid body,
 // the cache renders once per pedal and scale, the names read against their enclosures, the pedals are told apart by
-// colour, and the LED is the only thing the on state changes. Proof images go to <proof-dir>/pedals/.
+// colour, and off is dimmed whole with a near-black LED while on is lit with a larger LED and a halo (RD4-1, RD4-2). Proof images go to <proof-dir>/pedals/.
 
 #include "ui/AmpHead.h"
 #include "ui/PedalArt.h"
@@ -222,35 +222,72 @@ public:
             logMessage ("  -> closest pair: " + pair + " at " + juce::String (closest, 1) + " (0 to 441; the heads' limit is 24)");
         }
 
-        beginTest ("on and off differ in the LED region only; selected and hovered move the pedal");
+        beginTest ("off is dimmed whole (55% brightness, less saturation) with a near-black LED; on is lit with a larger LED and a halo; a section that's off dims too; selected and hovered move the pedal");
         {
             juce::StringArray measured;
+            // The first art's LED: a 2.9 pt lens in a 4.7 pt bezel, its glow 15 pt (before RD4-2).
+            constexpr float firstLens = 2.9f;
             for (const auto id : list)
             {
                 constexpr float scale = 2.0f, k = 1.0f;
                 const auto box = boxFor (id, k);
                 const auto off = drawn (id, box, scale, {}), on = drawn (id, box, scale, { true, false, false });
+                const auto sectionOff = drawn (id, box, scale, { true, false, false, true });
                 const auto fit = ui::pedalBounds (box, id);
-                const auto glow = ui::pedalLayout (id).ledGlow;
-                const auto region = (juce::Rectangle<float> (fit.getX() + glow.getX() * k, fit.getY() + glow.getY() * k, glow.getWidth() * k, glow.getHeight() * k) * scale)
-                                        .expanded (1.0f);
-                juce::Rectangle<int> changed;
-                int outside = 0, count = 0;
-                const juce::Image::BitmapData a (off, juce::Image::BitmapData::readOnly), b (on, juce::Image::BitmapData::readOnly);
-                for (int y = 0; y < off.getHeight(); ++y)
-                    for (int x = 0; x < off.getWidth(); ++x)
-                        if (a.getPixelColour (x, y) != b.getPixelColour (x, y))
+                const auto layout = ui::pedalLayout (id);
+                const auto toImage = [&] (juce::Rectangle<float> r)
+                {
+                    return juce::Rectangle<float> (fit.getX() + r.getX() * k, fit.getY() + r.getY() * k, r.getWidth() * k, r.getHeight() * k) * scale;
+                };
+                const auto glow = toImage (layout.ledGlow).expanded (1.0f);
+                const auto body = toImage (layout.body).reduced (4.0f);
+
+                // The enclosure off (away from the LED's halo): 55% of its brightness on, and less saturated.
+                const juce::Image::BitmapData a (off, juce::Image::BitmapData::readOnly), b (on, juce::Image::BitmapData::readOnly),
+                    so (sectionOff, juce::Image::BitmapData::readOnly);
+                double brightOn = 0.0, brightOff = 0.0, brightSection = 0.0, satOn = 0.0, satOff = 0.0;
+                int n = 0;
+                for (int y = (int) body.getY(); y < (int) body.getBottom(); ++y)
+                    for (int x = (int) body.getX(); x < (int) body.getRight(); ++x)
+                        if (! glow.contains ((float) x + 0.5f, (float) y + 0.5f))
                         {
-                            ++count;
-                            changed = changed.isEmpty() ? juce::Rectangle<int> (x, y, 1, 1) : changed.getUnion ({ x, y, 1, 1 });
-                            if (! region.contains ((float) x + 0.5f, (float) y + 0.5f))
-                                ++outside;
+                            brightOn += b.getPixelColour (x, y).getBrightness();
+                            brightOff += a.getPixelColour (x, y).getBrightness();
+                            brightSection += so.getPixelColour (x, y).getBrightness();
+                            satOn += b.getPixelColour (x, y).getSaturation();
+                            satOff += a.getPixelColour (x, y).getSaturation();
+                            ++n;
                         }
-                expectGreaterThan (count, 200, nameOf (id) + ": the LED lights");
-                expectEquals (outside, 0, nameOf (id) + ": pixels changed outside the LED's glow");
-                // The lit lens is the accent: its centre pixel is closer to theme::accent than the dark lens is.
-                const auto c = (juce::Point<float> (fit.getX() + glow.getCentreX() * k, fit.getY() + glow.getCentreY() * k) * scale).toInt();
-                expect (colourDistance (b.getPixelColour (c.x, c.y), ui::theme::accent) < colourDistance (a.getPixelColour (c.x, c.y), ui::theme::accent), nameOf (id));
+                const auto ratio = brightOff / brightOn;
+                expectWithinAbsoluteError (ratio, (double) ui::dimBrightness, 0.05, nameOf (id) + ": off at about 55% brightness");
+                expectWithinAbsoluteError (brightSection / brightOn, ratio, 0.01, nameOf (id) + ": a section that's off dims it the same way");
+                expect (satOff <= satOn * 0.6 + 1.0e-6 * n, nameOf (id) + ": off at lower saturation");
+
+                // The off lens: near-black #2a2a2a, no amber in it (its channels within 3 of each other).
+                const auto c = (toImage (layout.ledLens).getCentre()).toInt();
+                const auto lensOff = a.getPixelColour (c.x + 1, c.y + 1);
+                expect (colourDistance (lensOff, ui::ledOffColour) < 8.0, nameOf (id) + ": off lens #" + lensOff.toDisplayString (false));
+                expect (std::abs ((int) lensOff.getRed() - (int) lensOff.getBlue()) <= 3, nameOf (id) + ": no tint");
+
+                // The on lens: the accent, 1.5 times the first art's, and a halo round it: the face lit in the accent's
+                // direction (warmer than off by a clear margin) out past twice the lens's radius.
+                expect (colourDistance (b.getPixelColour (c.x, c.y), ui::theme::accent) < colourDistance (lensOff, ui::theme::accent), nameOf (id));
+                expectWithinAbsoluteError (layout.ledLens.getWidth() * 0.5f / firstLens, 1.5f, 0.05f, nameOf (id) + ": the lens 1.5x");
+                int litLens = 0;
+                const auto lensBox = toImage (layout.ledLens).expanded (2.0f).toNearestInt();
+                for (int y = lensBox.getY(); y < lensBox.getBottom(); ++y)
+                    for (int x = lensBox.getX(); x < lensBox.getRight(); ++x)
+                        litLens += colourDistance (b.getPixelColour (x, y), ui::theme::accent) < 110.0 ? 1 : 0;
+                const auto firstArea = juce::MathConstants<double>::pi * juce::square (firstLens * k * scale);
+                expectGreaterThan ((double) litLens, 1.8 * firstArea, nameOf (id) + ": a lit area over 1.8 times the first art's lens (1.5x across)");
+                const auto haloPoint = juce::Point<int> (c.x, juce::roundToInt ((float) c.y + 2.6f * layout.ledLens.getHeight() * 0.5f * k * scale));
+                // The art itself at that point (no LED state): the lit pedal there is the art with the halo over it.
+                const auto art = ui::renderPedal (id, scale);
+                const auto bare = art.getPixelAt (haloPoint.x - juce::roundToInt (fit.getX() * scale), haloPoint.y - juce::roundToInt (fit.getY() * scale));
+                const auto haloOn = b.getPixelColour (haloPoint.x, haloPoint.y);
+                expectGreaterThan (colourDistance (bare, ui::theme::accent) - colourDistance (haloOn, ui::theme::accent), 8.0,
+                                   nameOf (id) + ": the halo warms the face out past twice the lens's radius");
+
                 const auto selected = drawn (id, box, scale, { false, true, false }), hovered = drawn (id, box, scale, { false, false, true });
                 int movedSelected = 0, movedHovered = 0;
                 const juce::Image::BitmapData s (selected, juce::Image::BitmapData::readOnly), h (hovered, juce::Image::BitmapData::readOnly);
@@ -264,9 +301,9 @@ public:
                 expectGreaterThan (movedHovered, 0, nameOf (id) + ": hovered lifts");
                 // Everything stays inside the box.
                 expect (box.contains (fit.expanded (3.5f + 1.5f).translated (0.0f, -3.0f)), nameOf (id) + ": the ring stays in its box");
-                measured.add (nameOf (id) + " " + juce::String (count) + " px in " + juce::String (changed.getWidth()) + " x " + juce::String (changed.getHeight()));
+                measured.add (nameOf (id) + " " + juce::String (ratio, 2) + ", lens #" + lensOff.toDisplayString (false) + ", lit " + juce::String (litLens) + " px");
             }
-            logMessage ("  -> on vs off at 2x, the changed pixels (all inside the LED's glow): " + measured.joinIntoString (", "));
+            logMessage ("  -> off vs on (brightness ratio away from the LED, the off lens, the lit lens's pixels at 2x): " + measured.joinIntoString ("; "));
         }
 
         beginTest ("proof: each pedal off, on, and selected; the contact sheet with the amp heads");

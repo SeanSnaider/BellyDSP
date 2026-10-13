@@ -195,97 +195,88 @@ void SpectrumView::paint (juce::Graphics& g)
 
 // ---- The info row --------------------------------------------------------------------------------
 
-/// The capture's voice on the left (14 px ink-dim); "Model <file>" and the rate (or a message) on the
-/// right (13 px faint, the file in ink-dim). The file name is clickable, like the grille.
+/// One short line under the head (RD4-5): the capture's class and the amp's name ("High gain · Monolith", 14 px,
+/// the class in ink-dim and the name in ink), and the rate or a message at the right (13 px faint). The capture's
+/// file ("Monolith (built in, gain set)") is the line's tooltip, not a second run of text; the name is clickable,
+/// like the grille. A preset's notes never come here (they're the preset box's tooltip).
 class AmpView::InfoRow final : public juce::Component, public juce::SettableTooltipClient
 {
 public:
     explicit InfoRow (AmpView& v) : view (v) {}
 
-    void set (const juce::String& newVoice, const juce::String& newModel, const juce::String& newRate)
+    void set (const juce::String& newVoice, const juce::String& newName, const juce::String& newModel, const juce::String& newRate)
     {
-        if (newVoice != voice || newModel != model || newRate != rate)
+        if (newVoice != voice || newName != name || newModel != model || newRate != rate)
         {
             voice = newVoice;
+            name = newName;
             model = newModel;
             rate = newRate;
-            setTooltip (rate.contains (" ") ? rate : juce::String());
+            juce::String tip;
+            if (model.isNotEmpty())
+                tip = "Model: " + model + ". Click the name or the grille to load a capture of your own";
+            if (rate.contains (" "))
+                tip = rate + (tip.isEmpty() ? juce::String() : "\n" + tip);
+            setTooltip (tip);
             repaint();
         }
     }
 
-    juce::String voice, model, rate;
+    juce::String voice, name, model, rate;
 
-    /// Where everything goes, right to left: the rate or message at the right edge, "Model <file>" left of it,
-    /// the voice from the left edge. The voice is never covered: whatever's left between it and the model goes
-    /// to the message, which is cut short with "..." when it doesn't fit (its tooltip has all of it). If even a
-    /// short message doesn't fit beside the model, the model gives way to the message. Found 2026-10-06: a
-    /// factory preset's notes, drawn at full width from the right edge, ran over the voice and pushed the model
-    /// name off the left.
-    struct Layout
+    /// The line as read: the class and the name ("High gain · Monolith"), or the one that's there.
+    juce::String line() const
     {
-        float rateX = 0.0f, rateWidth = 0.0f;
-        juce::Rectangle<float> model; // empty when the model gives way
-    };
-
-    Layout layout() const
-    {
-        constexpr float gap = 18.0f, edge = 2.0f, minimumMessage = 120.0f;
-        const auto width = (float) getWidth();
-        const auto left = edge + textWidth (geist (Weight::regular, 14.0f), voice) + 24.0f; // the voice's end, plus room
-        const auto labelWidth = textWidth (small(), "Model ");
-        const auto modelWidth = model.isEmpty() ? 0.0f : textWidth (small(), model);
-        const auto modelBlock = model.isEmpty() ? 0.0f : labelWidth + modelWidth + gap;
-
-        Layout l;
-        auto rateSpace = width - edge - left - modelBlock;
-        auto showModel = ! model.isEmpty();
-        if (rateSpace < std::min (minimumMessage, textWidth (small(), rate)) && showModel)
-        {
-            showModel = false; // a message too long for the space beside the model: the model gives way
-            rateSpace = width - edge - left;
-        }
-        l.rateWidth = juce::jlimit (0.0f, std::max (0.0f, rateSpace), textWidth (small(), rate));
-        l.rateX = width - edge - l.rateWidth;
-        if (showModel)
-            l.model = { l.rateX - gap - modelWidth, 0.0f, modelWidth, (float) getHeight() };
-        return l;
+        return voice.isEmpty() ? name : name.isEmpty() ? voice : voice + separator + name;
     }
 
-    juce::Rectangle<float> modelArea() const { return layout().model; }
+    static inline const juce::String separator { juce::CharPointer_UTF8 (" \xc2\xb7 ") };
+
+    /// The name's box (the click target), and where the rate or message starts.
+    juce::Rectangle<float> nameArea() const
+    {
+        const auto x = 2.0f + (voice.isEmpty() ? 0.0f : textWidth (voiceFont(), voice + separator));
+        return { x, 0.0f, textWidth (nameFont(), name), (float) getHeight() };
+    }
+
+    float rateWidth() const
+    {
+        const auto room = (float) getWidth() - nameArea().getRight() - 32.0f;
+        return juce::jlimit (0.0f, juce::jmax (0.0f, room), textWidth (small(), rate));
+    }
 
     void paint (juce::Graphics& g) override
     {
-        // Baselines aligned (CSS align-items: baseline): the 14 px voice and the 13 px rest share one.
-        const auto h = (float) getHeight();
-        const auto baseline = h - 4.0f;
+        // Baselines aligned (CSS align-items: baseline): the 14 px line and the 13 px rate share one.
+        const auto baseline = (float) getHeight() - 4.0f;
         const auto draw = [&g, baseline] (const juce::String& words, const juce::FontOptions& f, float x, float w)
         {
             g.setFont (f);
             const juce::Font font (f);
-            // Ellipses: a message wider than the room it's given ends in "..." instead of running on.
             g.drawText (words, juce::Rectangle<float> (x, baseline - font.getAscent(), w + 2.0f, font.getAscent() + font.getDescent()),
                         juce::Justification::topLeft, true);
         };
-        const auto l = layout();
-        g.setColour (inkDim);
-        draw (voice, geist (Weight::regular, 14.0f), 2.0f, textWidth (geist (Weight::regular, 14.0f), voice));
-
-        g.setColour (inkFaint);
-        draw (rate, small(), l.rateX, l.rateWidth);
-        if (! l.model.isEmpty())
+        if (voice.isNotEmpty())
         {
-            g.setColour (hovered ? ink : inkDim);
-            draw (model, small(), l.model.getX(), l.model.getWidth());
-            const auto label = juce::String ("Model ");
+            g.setColour (inkDim);
+            draw (voice, voiceFont(), 2.0f, textWidth (voiceFont(), voice));
             g.setColour (inkFaint);
-            draw (label, small(), l.model.getX() - textWidth (small(), label), textWidth (small(), label));
+            draw (separator, voiceFont(), 2.0f + textWidth (voiceFont(), voice), textWidth (voiceFont(), separator));
         }
+        const auto n = nameArea();
+        g.setColour (hovered ? ink : ink.withAlpha (0.92f));
+        draw (name, nameFont(), n.getX(), n.getWidth());
+        if (hovered)
+            g.fillRect (juce::Rectangle<float> (n.getX(), baseline + 2.0f, n.getWidth(), 1.0f));
+
+        const auto w = rateWidth();
+        g.setColour (inkFaint);
+        draw (rate, small(), (float) getWidth() - 2.0f - w, w);
     }
 
     void mouseMove (const juce::MouseEvent& e) override
     {
-        const auto over = modelArea().contains (e.position);
+        const auto over = nameArea().contains (e.position) && model.isNotEmpty();
         if (over != hovered)
         {
             hovered = over;
@@ -302,7 +293,7 @@ public:
 
     void mouseUp (const juce::MouseEvent& e) override
     {
-        if (! modelArea().contains (e.position))
+        if (! nameArea().contains (e.position))
             return;
         if (e.mods.isPopupMenu())
         {
@@ -316,6 +307,8 @@ public:
     }
 
 private:
+    static juce::FontOptions voiceFont() { return geist (Weight::regular, 14.0f); }
+    static juce::FontOptions nameFont() { return geist (Weight::medium, 14.0f); }
     static juce::FontOptions small() { return geist (Weight::regular, 13.0f); }
     AmpView& view;
     bool hovered = false;
@@ -566,36 +559,6 @@ void AmpView::dressKnob (Knob& knob, int k)
 
 // ---- AmpPanel: the amp in the inspector ----------------------------------------------------------
 
-/// The gate's 6 px open light: orange while Gate A is on and lets the guitar through, dark while it's closing or
-/// switched off.
-class AmpPanel::GateLight final : public juce::Component, public juce::SettableTooltipClient
-{
-public:
-    GateLight() { setTooltip ("Gate A: lit while it's on and lets the guitar through (its gain above -6 dB)"); }
-    void set (bool on)
-    {
-        if (on != lit)
-        {
-            lit = on;
-            repaint();
-        }
-    }
-    void paint (juce::Graphics& g) override
-    {
-        const auto r = juce::Rectangle<float> (7.0f, 7.0f).withCentre (getLocalBounds().toFloat().getCentre());
-        if (lit)
-        {
-            g.setColour (accent.withAlpha (0.25f));
-            g.fillEllipse (r.expanded (3.0f));
-        }
-        g.setColour (lit ? accent : line2);
-        g.fillEllipse (r);
-    }
-
-private:
-    bool lit = false;
-};
-
 AmpPanel::AmpPanel (AmpSimProcessor& p, AmpView& v) : ControlGroup (p), view (v), spectrum (p)
 {
     ampOn = &adopt (std::make_unique<Switch> ("On"));
@@ -629,25 +592,16 @@ AmpPanel::AmpPanel (AmpSimProcessor& p, AmpView& v) : ControlGroup (p), view (v)
             knobs[(size_t) s][(size_t) k] = &knob;
         }
 
+    // The amp's inspector holds only the amp (RD4-9): its seven knobs, the levels in and out of the chain around it,
+    // and its output spectrum. Gate A, which used to sit here, is its own pedal with its own inspector.
     input = &addKnob ("input_gain", "Input", " dB");
     output = &addKnob ("output_gain", "Output", " dB");
-    threshold = &addKnob ("gate_a_threshold", "Threshold", " dB");
-    threshold->setFormatter ([] (float x) { return juce::String (juce::roundToInt (x)) + " dB"; });
-    release = &addKnob ("gate_a_release", "Release", " ms");
-    release->setFormatter ([] (float x) { return juce::String (juce::roundToInt (x)) + " ms"; });
-    // Gate A's switch (Sean's play test, 2026-10-04: "the noise gate doesn't work"): Threshold and Release here
-    // are Gate A's, which starts off like every effect, so its switch sits with them.
-    gateOn = &addSwitch ("gate_a_on", {});
-    gateOn->setTooltip ("Gate A on or off (Threshold and Release only act while it's on)");
-    gateLight = std::make_unique<GateLight>();
-    addAndMakeVisible (*gateLight);
     addAndMakeVisible (spectrum);
     refresh();
 }
 
 AmpPanel::~AmpPanel()
 {
-    stopTimer();
     spectrum.setActive (false);
 }
 
@@ -658,11 +612,6 @@ void AmpPanel::layout (InspectorLayout& l)
     l.hero ({ k[0], k[6] });
     l.section ("Tone");
     l.knobs ({ k[1], k[2], k[3], k[4], k[5] });
-    l.section ("Gate A, before the amp", gateOn);
-    l.knobs ({ threshold, release });
-    if (l.isPlacing())
-        gateLight->setBounds (release->getBounds().translated (release->getWidth() / 2 + 18, 0).withSizeKeepingCentre (20, 20).withY (release->getY() + 22));
-    l.area (&promptArea, gatePrompt.isNotEmpty() ? 34 : 0);
     l.section ("Input and output");
     l.knobs ({ input, output });
     l.section ("Output spectrum");
@@ -708,25 +657,6 @@ void AmpPanel::paint (juce::Graphics& g)
                             },
                             ampOn->getWidth());
     InspectorLayout::paintTexts (g, texts);
-
-    // The gate's first switch-on: the prompt in ink (the result after it in ink-dim), and while Learn measures,
-    // its progress as a thin orange bar under the words.
-    if (gatePrompt.isNotEmpty() && ! promptArea.isEmpty())
-    {
-        auto area = promptArea;
-        const auto measuring = gateLearnProgress >= 0.0f;
-        g.setFont (geist (Weight::regular, 12.0f));
-        g.setColour (measuring ? ink : inkDim);
-        g.drawFittedText (gatePrompt, area.removeFromTop (28), juce::Justification::topLeft, 2, 0.9f);
-        if (measuring)
-        {
-            const auto bar = area.withHeight (3).toFloat();
-            g.setColour (line2);
-            g.fillRoundedRectangle (bar, 1.5f);
-            g.setColour (accent);
-            g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * juce::jlimit (0.0f, 1.0f, gateLearnProgress)), 1.5f);
-        }
-    }
 }
 
 void AmpPanel::refresh()
@@ -741,43 +671,16 @@ void AmpPanel::refresh()
         resized();
     }
     ampOn->setToggleState (state.getRawParameterValue ("amp_bypass")->load() < 0.5f, juce::dontSendNotification);
-    updateGatePrompt();
 }
 
 void AmpPanel::pageShown()
 {
     spectrum.setActive (true);
-    startTimerHz (meterFps);
 }
 
 void AmpPanel::pageHidden()
 {
     spectrum.setActive (false);
-    stopTimer();
-}
-
-void AmpPanel::timerCallback()
-{
-    gateOpen = ampSim.isGateOpen() && state.getRawParameterValue ("gate_a_on")->load() >= 0.5f;
-    gateLight->set (gateOpen);
-    updateGatePrompt();
-}
-
-void AmpPanel::updateGatePrompt()
-{
-    // The gate's first switch-on (ASSUMPTIONS PT13): the prompt by the switch that started it, with the
-    // measurement's progress under it, then the threshold it set. (The info row says the same: UH5.)
-    const auto prompt = ampSim.getAutoLearnPrompt();
-    const auto progress = prompt == AmpSimProcessor::autoLearnPromptText ? (ampSim.isLearningGates() ? ampSim.getGateLearnProgress() : 0.0f) : -1.0f;
-    if (prompt != gatePrompt || std::abs (progress - gateLearnProgress) > 0.005f)
-    {
-        const auto relayout = prompt.isEmpty() != gatePrompt.isEmpty();
-        gatePrompt = prompt;
-        gateLearnProgress = progress;
-        if (relayout)
-            resized();
-        repaint (promptArea);
-    }
 }
 
 // ---- AmpView -------------------------------------------------------------------------------------
@@ -814,6 +717,7 @@ AmpView::AmpView (AmpSimProcessor& p) : ControlGroup (p)
         {
             auto& knob = addKnob (knobParameter (s, k), knobCaption (k), " dB", Knob::Size::normal);
             knob.setSkin (skinFor (materialForAmp (s)));
+            knob.setGearStyle (true); // gear on the head: a skirt, its pointer mark, a printed scale; no value arcs
             dressKnob (knob, k);
             knob.setVisible (false);
             assembly->addChildComponent (knob); // drawn on the head, at its scale
@@ -828,11 +732,11 @@ AmpView::AmpView (AmpSimProcessor& p) : ControlGroup (p)
 
     // The head's layout inside the assembly, at its designed size: the grille, the jewel, the knobs on the panel.
     grille->setBounds (AmpHead::grilleBox().toNearestInt());
-    // The panel: padding 0 22; the 96 px side column holds the jewel (centred, as the CSS does without the
-    // toggles: UH4), 20 px, then the knobs spread evenly (space-between) over the rest.
+    // The panel (RD4-8): the jewel lamp 40 px in from the panel's left, then the knobs from just past it to 22 px from
+    // its right, spread evenly (space-between): no dead faceplate before Gain.
     const auto panelBox = AmpHead::panelBox();
-    jewel.setBounds (juce::Rectangle<int> (30, 30).withCentre ({ juce::roundToInt (panelBox.getX() + 22.0f + 9.0f), juce::roundToInt (panelBox.getCentreY()) }));
-    const auto knobsLeft = panelBox.getX() + 22.0f + 96.0f + 20.0f, knobsWidth = panelBox.getRight() - 22.0f - knobsLeft;
+    jewel.setBounds (juce::Rectangle<int> (64, 64).withCentre ({ juce::roundToInt (panelBox.getX() + 40.0f), juce::roundToInt (panelBox.getCentreY() - 11.0f) })); // level with the knobs' centres
+    const auto knobsLeft = panelBox.getX() + 74.0f, knobsWidth = panelBox.getRight() - 22.0f - knobsLeft;
     const auto css = Knob::cssSize (Knob::Size::normal);
     for (auto& set : knobs)
         for (int k = 0; k < numKnobs; ++k)
@@ -867,7 +771,7 @@ void AmpView::showSlot (int slot)
 
 void AmpView::setStatus (const juce::String& message)
 {
-    info->set (info->voice, info->model, message.isEmpty() ? juce::String ("48 kHz") : message);
+    info->set (info->voice, info->name, info->model, message.isEmpty() ? juce::String ("48 kHz") : message);
 }
 
 juce::Component& AmpView::getGrille() noexcept
@@ -920,6 +824,8 @@ juce::String AmpView::ampDescription (int amp) const
 
 juce::String AmpView::getVoiceText() const { return info->voice; }
 juce::String AmpView::getModelText() const { return info->model; }
+juce::String AmpView::getInfoLine() const { return info->line(); }
+juce::String AmpView::getInfoTooltip() const { return info->getTooltip(); }
 juce::String AmpView::getRateText() const { return info->rate; }
 
 const AmpView::SetInfo& AmpView::setInfo (const juce::String& path)
@@ -988,11 +894,11 @@ void AmpView::refresh()
     jewel.setLit (loaded);
     jewel.setTooltip (loaded ? "A capture is loaded" : "No capture loaded");
 
-    juce::String voice, model;
+    juce::String voice, model, name = AmpSimProcessor::ampName (shownSlot);
     if (file == juce::File() || line == "Empty")
     {
         voice = "No capture loaded";
-        model = "none, click the grille to load one";
+        name = "click the grille to load one";
     }
     else
     {
@@ -1013,7 +919,10 @@ void AmpView::refresh()
             voice = toneTypes[path].isNotEmpty() ? toneTypes[path] : juce::String ("Capture loaded");
         }
     }
-    info->set (voice, model, info->rate.isEmpty() ? juce::String ("48 kHz") : info->rate);
+    // Your capture is named by the capture itself (its gain set's name or its file's), as its badge is.
+    if (shownSlot == AmpSimProcessor::yourCaptureAmp && file != juce::File())
+        name = setInfo (path).name.isNotEmpty() ? setInfo (path).name : file.getFileNameWithoutExtension();
+    info->set (voice, name, model, info->rate.isEmpty() ? juce::String ("48 kHz") : info->rate);
     updateGainSteps();
 
     // The shelf: the playing amp underlined, your capture's mini once one is loaded. The badge names the amp; your
@@ -1043,9 +952,41 @@ void AmpView::timerCallback()
     updateGainSteps(); // the lit steps follow the knob, whoever turns it
 }
 
-void AmpView::paint (juce::Graphics&)
+void AmpView::paint (juce::Graphics& g)
 {
-    // The stage paints the dark and its light; the head is its own art.
+    // The stage paints the dark and its light; the head is its own art. Under the head, on the floor, the pool of
+    // light from below that it stands in (RD4-8): a wide flat ellipse of the stage's warm light, brightest just under
+    // the head's front edge, with the head's own contact shadow (its feet and its bulk) laid in the middle of it.
+    const auto bodyWidth = (float) AmpHead::headWidth * headScale;
+    const auto floorY = headBottom + 10.0f * headScale; // where the feet stand
+    const juce::Point<float> c { (float) getWidth() * 0.5f, floorY };
+    const auto rx = bodyWidth * 0.66f, ry = 46.0f * headScale + 18.0f;
+    {
+        const juce::Graphics::ScopedSaveState saved (g);
+        g.addTransform (juce::AffineTransform::scale (1.0f, ry / rx, c.x, c.y));
+        juce::ColourGradient pool (stageLight.brighter (0.55f).withAlpha (0.85f), c, stageLight.withAlpha (0.0f), c.translated (rx, 0.0f), true);
+        pool.addColour (0.35, stageLight.brighter (0.3f).withAlpha (0.6f));
+        pool.addColour (0.7, stageLight.withAlpha (0.22f));
+        g.setGradientFill (pool);
+        g.fillEllipse (juce::Rectangle<float> (2.0f * rx, 2.0f * rx).withCentre (c));
+    }
+    {
+        // The accent's warmth, faint, in the pool's middle: the lamp on the floor is the stage's own light.
+        const juce::Graphics::ScopedSaveState saved (g);
+        const auto wx = bodyWidth * 0.36f, wy = 18.0f * headScale + 6.0f;
+        g.addTransform (juce::AffineTransform::scale (1.0f, wy / wx, c.x, c.y));
+        g.setGradientFill (juce::ColourGradient (accent.withAlpha (0.10f), c, accent.withAlpha (0.0f), c.translated (wx, 0.0f), true));
+        g.fillEllipse (juce::Rectangle<float> (2.0f * wx, 2.0f * wx).withCentre (c));
+    }
+    {
+        // The contact shadow: a soft dark band the head's width, just under its feet.
+        const juce::Graphics::ScopedSaveState saved (g);
+        const auto sx = bodyWidth * 0.52f, sy = 7.0f * headScale + 3.0f;
+        const juce::Point<float> s { c.x, floorY - 2.0f };
+        g.addTransform (juce::AffineTransform::scale (1.0f, sy / sx, s.x, s.y));
+        g.setGradientFill (juce::ColourGradient (juce::Colours::black.withAlpha (0.7f), s, juce::Colours::black.withAlpha (0.0f), s.translated (sx, 0.0f), true));
+        g.fillEllipse (juce::Rectangle<float> (2.0f * sx, 2.0f * sx).withCentre (s));
+    }
 }
 
 void AmpView::resized()
@@ -1062,6 +1003,7 @@ void AmpView::resized()
     headScale = juce::jmin (maxWidth / (float) AmpHead::headWidth, (bottom - top) / (float) AmpHead::headHeight);
     const auto bodyWidth = (float) AmpHead::headWidth * headScale;
     const auto bodyX = ((float) getWidth() - bodyWidth) * 0.5f, bodyY = top;
+    headBottom = bodyY + (float) AmpHead::headHeight * headScale;
     assembly->setTopLeftPosition (0, 0);
     assembly->setTransform (juce::AffineTransform::scale (headScale)
                                 .translated (bodyX - (float) AmpHead::margin.getLeft() * headScale, bodyY - (float) AmpHead::margin.getTop() * headScale));
