@@ -5,15 +5,16 @@
 # dependencies = ["pillow"]
 # ///
 """BellyDSP's app icon (the Dock on macOS, the taskbar on Windows): a white "B" in Geist SemiBold with the
-emerald brand dot as its period, on the app's near-black, in macOS's icon grid (an 824 px rounded square in a
+orange accent dot as its period, on the app's near-black, in macOS's icon grid (an 824 px rounded square in a
 1024 px canvas, corner radius 185, transparent around it). Sean picked this "B." among three options on
 2026-10-06. CMake hands resources/icon/BellyDSP_icon_1024.png to JUCE (ICON_BIG), which makes the .icns and
-.ico from it.
+.ico from it. The dot was emerald until the app's redesign made the accent orange; Sean had it redrawn on
+2026-10-13.
 
     uv run tools/content/make_icon.py        (writes resources/icon/BellyDSP_icon_1024.png)
 
-The colours are the UI tokens (docs/ui/amp-ui-handoff): bg #0b0c0c, line-2 #2a2f2d, ink #e6ebe9, accent
-#34d399. Drawn at 4x and downsampled, so the edges are smooth. Geist is OFL (resources/fonts/Geist/OFL.txt),
+The colours are the redesigned app's tokens (src/ui/Theme.h): bg #121212, line-1 #2c2c2c, ink #e8e8e8, accent
+#ff8a00. Drawn at 4x and downsampled, so the edges are smooth. Geist is OFL (resources/fonts/Geist/OFL.txt),
 which allows rendering it into an image like this.
 """
 
@@ -25,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "resources" / "icon" / "BellyDSP_icon_1024.png"
 
 SIZE, SUPERSAMPLE = 1024, 4
-BG, EDGE, INK, ACCENT = (11, 12, 12), (42, 47, 45), (230, 235, 233), (52, 211, 153)
+BG, EDGE, INK, ACCENT = (18, 18, 18), (44, 44, 44), (232, 232, 232), (255, 138, 0)
 
 
 def main() -> None:
