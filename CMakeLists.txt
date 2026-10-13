@@ -560,6 +560,7 @@ target_sources(ampsim_tests PRIVATE
     tests/RealtimeSafetyTests.cpp
     tests/HandoffEngineTests.cpp
     tests/EditorTests.cpp
+    tests/PedalArtTests.cpp
     tests/ReleaseTests.cpp
     tests/MigrationTests.cpp
     tests/CaptureTests.cpp

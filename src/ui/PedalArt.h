@@ -32,6 +32,33 @@ juce::Point<float> pedalSize (BlockId id);
 juce::Image renderPedal (BlockId id, float scale);
 
 /// The pedal in `box` (its aspect kept, centred), with its state, from a cache of renderPedal per id and scale.
+/// The enclosure is inset by pedalMargin (scaled with it) so the lift, the selected ring, and the shadow stay inside
+/// `box`; pedalBounds() is where the enclosure lands.
 void drawPedal (juce::Graphics& g, juce::Rectangle<float> box, BlockId id, const PedalState& state);
+
+// ---- Added with the real art ---------------------------------------------------------------------
+
+/// The room drawPedal leaves round the enclosure, in the enclosure's points.
+constexpr float pedalMargin = 8.0f;
+
+/// Where drawPedal draws the enclosure (at rest: hovered and selected pedals rise a little from there).
+juce::Rectangle<float> pedalBounds (juce::Rectangle<float> box, BlockId id);
+
+/// Where an enclosure's parts are, in its points at scale 1 (the art's top-left at 0, 0): the body (the art less the
+/// jacks standing above it), the LED's bezel and the reach of its glow when lit, the footswitch's nut, and the
+/// silkscreened name. Map one into pedalBounds() for hit-testing (x * bounds.getWidth() / pedalSize().x).
+struct PedalLayout
+{
+    juce::Rectangle<float> body, led, ledGlow, footswitch, name;
+};
+
+PedalLayout pedalLayout (BlockId id);
+
+/// The name's ink, and the art without the name (what the name is printed on): for its contrast.
+juce::Colour pedalNameInk (BlockId id);
+juce::Image renderPedalUnlettered (BlockId id, float scale);
+
+/// For tests: how many times drawPedal's cache has rendered an enclosure (once per pedal and scale, never per frame).
+int pedalRenderCount();
 
 } // namespace ui
