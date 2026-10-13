@@ -85,7 +85,7 @@ private:
 
 /// Settings' Audio device section: the 48 kHz requirement said plainly, what the device is running at now (its name,
 /// driver, rate, buffer, and latencies, in the standalone app), the setup a player needs, and the app's own audio
-/// settings (ASSUMPTIONS RD34).
+/// settings (ASSUMPTIONS RD3-7).
 class AudioDevicePage final : public SettingsSection
 {
 public:
@@ -126,7 +126,7 @@ private:
     juce::Rectangle<int> identity, licenceRows, updatesText, sourceText;
 };
 
-/// Settings, an overlay over the main screen (phase 3; ASSUMPTIONS RD31 to RD35): the header with Close, a column of
+/// Settings, an overlay over the main screen (phase 3; ASSUMPTIONS RD3-6 to RD3-9): the header with Close, a column of
 /// sections at the left (Input; Output and MIDI; Audio device; About), and the chosen section's panels at the right.
 class SettingsPage final : public ControlGroup
 {

@@ -10,7 +10,7 @@ namespace ui
 
 /// The tuner, an overlay opened from the top bar's Tuner, the footer's reading, or T (it engages the tuner;
 /// closing it disengages it). Built to be read from a step back with a guitar on (the redesign, phase 3;
-/// ASSUMPTIONS RD23 to RD28):
+/// ASSUMPTIONS RD3-1 to RD3-4):
 ///
 ///   the display   a lit panel: the note at 200 px (light; the accent within 3 cents) with its sharp and octave,
 ///                 a chevron either side (the left one lights when flat, "tune up"; the right one when sharp;

@@ -35,7 +35,7 @@ void drawText (juce::Graphics& g, const juce::String& s, juce::Rectangle<int> ar
     g.drawText (s, area, j, true);
 }
 
-constexpr int waveformHeight = 66; // 84 until the cleanup switch took a row (ASSUMPTIONS TM53); 66 in the six steps (RD37)
+constexpr int waveformHeight = 66; // 84 until the cleanup switch took a row (ASSUMPTIONS TM53); 66 in the six steps (RD3-18)
 
 const char* const honestNote =
     "A song only holds the rig's output, mixed with everything else, so the real amp can't be recovered. "
@@ -1611,7 +1611,7 @@ std::vector<std::pair<juce::Component*, int>> ToneMatchPage::getStepControls() c
 namespace
 {
 // The page in the 1200 x 598 the overlay frame gives it: the header, then the steps in two rows of three, read left
-// to right and top to bottom (ASSUMPTIONS RD36).
+// to right and top to bottom (ASSUMPTIONS RD3-10).
 constexpr int topRowY = overlay::headerHeight, topRowHeight = 296, bottomRowY = topRowY + topRowHeight + 10, stepGap = 12;
 constexpr int songWidth = 440, diWidth = 344, resultWidth = 588, compareWidth = 360;
 constexpr int pad = overlay::panelPadding;

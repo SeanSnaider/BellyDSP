@@ -12,7 +12,7 @@ namespace ui
 {
 
 /// The tone match overlay (docs/TONE_MATCH.md), opened from the top bar's Match tone or the brand menu's "Match
-/// tone...". Laid out as its real flow (the redesign, phase 3; ASSUMPTIONS RD36 to RD44): six numbered steps, read
+/// tone...". Laid out as its real flow (the redesign, phase 3; ASSUMPTIONS RD3-10 to RD3-19): six numbered steps, read
 /// left to right and top to bottom, each a panel with a badge that says where it stands (waiting, next, running,
 /// done) and its main action as the panel's primary button.
 ///

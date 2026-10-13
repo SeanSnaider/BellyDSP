@@ -31,7 +31,7 @@ struct Latency
 
 Latency reportedLatency();
 
-/// The open audio device as Settings shows it (ASSUMPTIONS RD34): its name and driver type, its rate and buffer, and
+/// The open audio device as Settings shows it (ASSUMPTIONS RD3-7): its name and driver type, its rate and buffer, and
 /// its latencies. Not known outside the standalone app (the tests, a plugin later).
 struct Info
 {

@@ -203,7 +203,7 @@ public:
 
             page.startMatch();
             expect (session.isMatching());
-            // The steps follow the flow (the six-step page, ASSUMPTIONS RD36): the match running, nothing to apply yet.
+            // The steps follow the flow (the six-step page, ASSUMPTIONS RD3-10): the match running, nothing to apply yet.
             expect (page.getStepState (3) == ui::overlay::Step::active && page.getStepState (6) == ui::overlay::Step::waiting);
             const auto t0 = juce::Time::getMillisecondCounterHiRes();
             while (session.getProgress() < 0.3 && juce::Time::getMillisecondCounterHiRes() - t0 < 60000.0)
