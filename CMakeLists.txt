@@ -244,6 +244,7 @@ set(AMPSIM_UI_SOURCES
     src/ui/TopBar.cpp
     src/ui/TunerPage.cpp
     src/ui/AmpHead.cpp
+    src/ui/PedalArt.cpp
     src/ui/AmpView.cpp
     src/ui/MainPages.cpp
     src/ui/Pages.cpp

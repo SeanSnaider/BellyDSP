@@ -1,0 +1,37 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Sean Snaider
+
+#pragma once
+
+#include "Blocks.h"
+
+namespace ui
+{
+
+/// The pedals on the main screen's board (the app redesign, .impeccable/surfaces/src-plugineditor-cpp.md): every
+/// block of the pre and post sections, and Gate B, drawn as a pedal enclosure of its own, in code like the amp heads
+/// (AmpHead.h). The board shows them in chain order; the inspector shows the selected one's controls.
+///
+/// The art is procedural and cached at the scale it's shown at (renderPedal), so drawing one each frame only blits
+/// an image. A pedal's state is drawn on top of its cached art: the LED (lit in theme::accent when on), and the
+/// selected and hovered rings.
+struct PedalState
+{
+    bool on = false;
+    bool selected = false;
+    bool hovered = false;
+};
+
+/// Whether a block is drawn as a pedal on the board (the pre and post blocks, and Gate B).
+bool isPedal (BlockId id);
+
+/// The enclosure's size in points at scale 1: every pedal is the same height; widths vary by enclosure.
+juce::Point<float> pedalSize (BlockId id);
+
+/// The enclosure art without its state (no LED glow, no rings), at a scale (pixels per point), uncached.
+juce::Image renderPedal (BlockId id, float scale);
+
+/// The pedal in `box` (its aspect kept, centred), with its state, from a cache of renderPedal per id and scale.
+void drawPedal (juce::Graphics& g, juce::Rectangle<float> box, BlockId id, const PedalState& state);
+
+} // namespace ui
