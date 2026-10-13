@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-13T18:16:38+00:00",
+  "generatedAt": "2026-10-13T20:38:57+00:00",
   "title": "Design System: BellyDSP",
   "extensions": {
     "colorMeta": {
@@ -1013,12 +1013,12 @@
       "css": ".ds-band{position:relative;isolation:isolate;overflow:hidden;padding:72px 32px;font-family: Geist, system-ui, sans-serif;} .ds-band::before{content:'';position:absolute;inset:0;z-index:-1;} .ds-ember{color:#f1e2d6;background:radial-gradient(ellipse 80% 70% at 70% 60%,#5a2326,#3f1719 75%);} .ds-ember::before{background:repeating-linear-gradient(0deg,rgba(0,0,0,.16) 0 1px,transparent 1px 3px),repeating-linear-gradient(90deg,rgba(0,0,0,.12) 0 1px,transparent 1px 3px);} .ds-name{font-family:Fraunces,Georgia,serif;font-style:italic;font-weight:600;font-size:72px;line-height:.95;margin:0 0 18px;color:#d9b878;text-shadow:0 2px 0 rgba(0,0,0,.5);} .ds-voice{font-size:22px;line-height:1.4;margin:0 0 14px;} .ds-note{color:#d1b3a4;max-width:30em;margin:0 0 18px;} .ds-pc{display:inline-flex;align-items:center;gap:10px;font-size:13px;color:#d1b3a4;margin:0;} .ds-pc::before{content:'';width:18px;height:1px;background:currentColor;opacity:.6;}"
     },
     {
-      "name": "Website: Chain Row",
+      "name": "Website: Board",
       "kind": "chip",
-      "refersTo": "site-chain-cell",
-      "description": "The signal chain as cells; active blocks carry the orange dot, endpoints are dashed.",
-      "html": "<ol class=\"ds-chain\"><li class=\"ds-io\">Input</li><li class=\"ds-on\">Pre FX</li><li class=\"ds-on\">Amp</li><li>EQ</li><li class=\"ds-io\">Output</li></ol>",
-      "css": ".ds-chain{display:flex;flex-wrap:wrap;gap:8px;list-style:none;margin:0;padding:0;font-family: Geist, system-ui, sans-serif;font-size:14px;color:#e8e8e8;} .ds-chain li{display:inline-flex;align-items:center;gap:8px;border:1px solid #3a3a3a;border-radius:6px;padding:8px 14px;} .ds-chain li.ds-on{border-color:rgba(255,138,0,.6);} .ds-chain li.ds-on::after{content:'';width:6px;height:6px;border-radius:50%;background:#ff8a00;} .ds-chain .ds-io{border-style:dashed;color:#9a9a9a;}"
+      "refersTo": "site-board-tab",
+      "description": "The board as the app's three tabs shown at once: each tab as the strip draws it (a raised capsule with its name and an orange LED per block in it), then its blocks as cells with their lit LEDs; the amp and the cab are raised markers, and the cable's ends are named in dim ink.",
+      "html": "<div class=\"ds-board\"><div class=\"ds-row\"><span class=\"ds-tabnm\">Pre FX<i></i><i></i><i></i><i></i><i></i></span><ol class=\"ds-chain\"><li>Gate A</li><li>Compressor</li><li>Boost</li><li>Overdrive</li><li>EQ</li><li class=\"ds-end\">to Amp &amp; Cab</li></ol></div><div class=\"ds-row\"><span class=\"ds-tabnm\">Amp &amp; Cab<i></i><i></i><i></i></span><ol class=\"ds-chain\"><li class=\"ds-end\">from Pre FX</li><li class=\"ds-gear\">Amp</li><li>Gate B</li><li class=\"ds-gear\">Cab</li><li class=\"ds-end\">to Post FX</li></ol></div></div>",
+      "css": ".ds-board{display:grid;padding:6px 16px;background:#161616;border:1px solid #2c2c2c;border-radius:10px;font-family: Geist, system-ui, sans-serif;color:#e8e8e8;} .ds-row{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:12px 0;} .ds-row+.ds-row{border-top:1px solid #2c2c2c;} .ds-tabnm{display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 13px;border:1px solid #2c2c2c;border-radius:15px;background:#1f1f1f;font-size:13px;font-weight:500;} .ds-tabnm i{width:7px;height:7px;border-radius:50%;background:#ff8a00;box-shadow:0 0 6px rgba(255,138,0,.5);} .ds-tabnm i:first-of-type{margin-left:5px;} .ds-chain{display:flex;flex-wrap:wrap;gap:8px;list-style:none;margin:0;padding:0;font-size:14px;} .ds-chain li{display:inline-flex;align-items:center;gap:9px;border:1px solid #3a3a3a;border-radius:6px;padding:7px 13px 7px 11px;background:#1a1a1a;} .ds-chain li:not(.ds-end)::before{content:'';width:7px;height:7px;border-radius:50%;background:#ff8a00;box-shadow:0 0 8px rgba(255,138,0,.55);} .ds-chain .ds-gear{background:#1f1f1f;border-color:#4a4a4a;font-weight:500;} .ds-chain .ds-end{border:0;background:none;padding:7px 4px;font-size:13px;color:#9a9a9a;}"
     },
     {
       "name": "Website: Facts List",

@@ -157,32 +157,44 @@
     <div class="calm-in">
       <div class="calm-head">
         <h2 id="h-rig">Everything around the amp.</h2>
-        <p class="lead">The board, in the app's order: the pre pedals, the amp and the cab, then the post pedals, each with its own footswitch and LED. Click a pedal to see all its controls, drag it along its row to reorder it, and switch a whole row off at once.</p>
+        <p class="lead">The board under the stage is three tabs in signal order: Pre FX, Amp &amp; Cab (the amp, Gate B and the cab), and Post FX. Every pedal has its own footswitch and LED, and every tab carries a row of LEDs, one per block in it, so a closed tab still shows what's on. Click a pedal to see all its controls, drag a Pre FX or Post FX pedal along its row to reorder it, and switch a whole section off at once. <kbd>[</kbd> and <kbd>]</kbd> step through the tabs, and selecting a block anywhere opens its tab.</p>
       </div>
-      <div class="board" aria-label="The board, in signal order">
-        <ol class="chainrow">
-          <li class="row">Pre</li><li class="on">Gate A</li><li class="on">Compressor</li><li class="on">Boost</li><li class="on">Overdrive</li><li class="on">EQ</li><li class="on gear">Amp</li><li class="on">Gate B</li><li class="on gear">Cab</li>
-        </ol>
-        <ol class="chainrow">
-          <li class="row">Post</li><li class="on">EQ</li><li class="on">Compressor</li><li class="on">Harmonizer</li><li class="on">Multivoicer</li><li class="on">Bloom</li><li class="on">Chorus</li><li class="on">Delay</li><li class="on">Reverb</li>
-        </ol>
+      <div class="board" role="group" aria-label="The board's three tabs, in signal order">
+        <div class="tab">
+          <p class="tab-nm">Pre FX<span class="leds" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span></p>
+          <ol class="chainrow" aria-label="Pre FX">
+            <li class="on">Gate A</li><li class="on">Compressor</li><li class="on">Boost</li><li class="on">Overdrive</li><li class="on">EQ</li><li class="end">to Amp &amp; Cab</li>
+          </ol>
+        </div>
+        <div class="tab">
+          <p class="tab-nm">Amp &amp; Cab<span class="leds" aria-hidden="true"><i></i><i></i><i></i></span></p>
+          <ol class="chainrow" aria-label="Amp and Cab">
+            <li class="end">from Pre FX</li><li class="on gear">Amp</li><li class="on">Gate B</li><li class="on gear">Cab</li><li class="end">to Post FX</li>
+          </ol>
+        </div>
+        <div class="tab">
+          <p class="tab-nm">Post FX<span class="leds" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></p>
+          <ol class="chainrow" aria-label="Post FX">
+            <li class="on">EQ</li><li class="on">Compressor</li><li class="on">Harmonizer</li><li class="on">Multivoicer</li><li class="on">Bloom</li><li class="on">Chorus</li><li class="on">Delay</li><li class="on">Reverb</li>
+          </ol>
+        </div>
       </div>
       <div class="rig">
         <dl class="rig-list">
-          <dt>Pre</dt>
-          <dd>Two noise gates that listen to the clean guitar, with a Learn button: Gate A before the amp and Gate B after it, which can follow Gate A. A compressor in a studio and a pedal style, boost and overdrive pedals modelled from their circuits, and a 9-band graphic or 5-band parametric EQ.</dd>
-          <dt>Amp</dt>
+          <dt>Pre FX</dt>
+          <dd>Gate A, a noise gate that listens to the clean guitar, with a Learn button. A compressor in a studio and a pedal style, boost and overdrive pedals modelled from their circuits, and a <span class="nowrap">9-band</span> graphic or <span class="nowrap">5-band</span> parametric EQ.</dd>
+          <dt>Amp &amp; Cab</dt>
           <dd>The eight built-in amps, picked from the shelf of minis on the stage, or your own amp-only <code>.nam</code> capture as a ninth. The built-ins are NAM captures trained from BellyDSP's own amp models, not captures of real amps.</dd>
-          <dt>Cab</dt>
-          <dd>Two close mics and a stereo room mic, each an impulse response, with 21 public-domain IRs built in or your own. Load a cab pack and drag a close mic across the speaker to move it.</dd>
-          <dt>Post</dt>
+          <dd>Gate B after the amp, which listens to the clean guitar too and can follow Gate A.</dd>
+          <dd>The cab: two close mics and a stereo room mic, each an impulse response, with 21 public-domain IRs built in or your own. Load a cab pack and drag a close mic across the speaker to move it.</dd>
+          <dt>Post FX</dt>
           <dd>EQ and compressor, a harmonizer that plays in key, a multivoicer, Bloom (bitcrusher, phaser and flanger in one), chorus, delay and reverb. Delay and reverb tails ring on when you switch them off.</dd>
           <dt>Around it</dt>
           <dd>Presets with eight scenes each along the bottom of the window, undo and redo, A/B compare, a tuner, tap tempo, and MIDI learn on any control. Settings holds the input level and the output, with a limiter so nothing clips.</dd>
         </dl>
         <figure>
-          <div class="shot"><img src="assets/img/main-1280.webp" srcset="assets/img/main-1280.webp 1280w, assets/img/main-1920.webp 1920w" sizes="(min-width: 1300px) 715px, (min-width: 960px) 58vw, 92vw" width="1280" height="760" loading="lazy" decoding="async" alt="The BellyDSP main screen: the preset and scene in the top bar, the Monolith head lit on the stage with the shelf of eight minis above it, the board of pedals in two rows with the amp and cab among them, the amp's knobs in the inspector at the right, and the eight scenes along the bottom."></div>
-          <figcaption>The main screen: the amp on its stage with the shelf of eight amps, the board under it, the selected block's controls at the right, and the scenes along the bottom.</figcaption>
+          <div class="shot"><img src="assets/img/main-1280.webp" srcset="assets/img/main-1280.webp 1280w, assets/img/main-1920.webp 1920w" sizes="(min-width: 1300px) 715px, (min-width: 960px) 58vw, 92vw" width="1280" height="760" loading="lazy" decoding="async" alt="The BellyDSP main screen: the preset and scene in the top bar, the Monolith head lit on the stage with the shelf of eight minis above it, the board under it with its Pre FX tab open, five pedals, and the LEDs of all three tabs, the amp's knobs in the inspector at the right, and the eight scenes along the bottom."></div>
+          <figcaption>The main screen: the amp on its stage with the shelf of eight amps, the board's Pre FX tab under it, the selected block's controls at the right, and the scenes along the bottom.</figcaption>
         </figure>
       </div>
       <div class="rig-shots">
