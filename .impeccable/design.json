@@ -279,135 +279,119 @@
       "site-ground": {
         "role": "neutral",
         "displayName": "Amp-Room Black",
-        "purpose": "Website (pending re-skin to the app's world): The page, the chrome, calm bands, stat tiles.",
-        "canonical": "#0b0c0c",
+        "purpose": "Website: The page, the chrome, calm bands, stat tiles. The app's `bg`.",
+        "canonical": "#121212",
         "tonalRamp": [
-          "#0a0b0b",
-          "#242525",
-          "#414242",
-          "#606161",
-          "#818383",
-          "#a4a5a5",
-          "#c8c9c9",
-          "#edefef"
+          "#262626",
+          "#434343",
+          "#616161",
+          "#7e7e7e",
+          "#9b9b9b",
+          "#b8b8b8",
+          "#d5d5d5",
+          "#f2f2f2"
         ]
       },
       "site-surface": {
         "role": "neutral",
         "displayName": "Panel Black",
-        "purpose": "Website (pending re-skin to the app's world): Behind screenshots, code, pre blocks and tooltips.",
-        "canonical": "#111313",
+        "purpose": "Website: Behind screenshots, code, pre blocks and tooltips. The app's `panel-bg`.",
+        "canonical": "#1a1a1a",
         "tonalRamp": [
-          "#0a0c0c",
-          "#232525",
-          "#404242",
-          "#5f6262",
-          "#808383",
-          "#a3a6a6",
-          "#c7caca",
-          "#ecefef"
+          "#262626",
+          "#434343",
+          "#616161",
+          "#7e7e7e",
+          "#9b9b9b",
+          "#b8b8b8",
+          "#d5d5d5",
+          "#f2f2f2"
         ]
       },
       "site-hairline": {
         "role": "neutral",
         "displayName": "Hairline",
-        "purpose": "Website (pending re-skin to the app's world): Every 1px divider.",
-        "canonical": "#1e2221",
+        "purpose": "Website: Every 1px divider. The app's `line1`.",
+        "canonical": "#2c2c2c",
         "tonalRamp": [
-          "#090c0b",
-          "#222625",
-          "#3f4342",
-          "#5e6261",
-          "#7f8482",
-          "#a1a6a5",
-          "#c5cac9",
-          "#eaf0ee"
+          "#262626",
+          "#434343",
+          "#616161",
+          "#7e7e7e",
+          "#9b9b9b",
+          "#b8b8b8",
+          "#d5d5d5",
+          "#f2f2f2"
         ]
       },
       "site-hairline-strong": {
         "role": "neutral",
         "displayName": "Strong Hairline",
-        "purpose": "Website (pending re-skin to the app's world): Borders of framed or interactive things.",
-        "canonical": "#2a2f2d",
+        "purpose": "Website: Borders of framed or interactive things. The app's `line2`.",
+        "canonical": "#3a3a3a",
         "tonalRamp": [
-          "#080c0b",
-          "#212624",
-          "#3e4341",
-          "#5d6360",
-          "#7e8481",
-          "#a0a7a4",
-          "#c4cbc8",
-          "#eaf0ee"
+          "#262626",
+          "#434343",
+          "#616161",
+          "#7e7e7e",
+          "#9b9b9b",
+          "#b8b8b8",
+          "#d5d5d5",
+          "#f2f2f2"
         ]
       },
       "site-ink": {
         "role": "neutral",
         "displayName": "Bone Ink",
-        "purpose": "Website (pending re-skin to the app's world): Headings, strong text, the solid button on dark.",
-        "canonical": "#e6ebe9",
+        "purpose": "Website: Headings, strong text, the solid button on dark. The app's `ink`.",
+        "canonical": "#e8e8e8",
         "tonalRamp": [
-          "#090c0b",
-          "#222625",
-          "#3f4341",
-          "#5e6261",
-          "#7f8382",
-          "#a2a6a4",
-          "#c5cac8",
-          "#ebf0ee"
+          "#262626",
+          "#434343",
+          "#616161",
+          "#7e7e7e",
+          "#9b9b9b",
+          "#b8b8b8",
+          "#d5d5d5",
+          "#f2f2f2"
         ]
       },
       "site-ink-dim": {
         "role": "neutral",
         "displayName": "Dim Ink",
-        "purpose": "Website (pending re-skin to the app's world): Body copy, leads, nav at rest, captions (6.4:1).",
-        "canonical": "#8a938f",
+        "purpose": "Website: Body copy, leads, nav at rest, captions (6.9:1). The app's `ink-dim`.",
+        "canonical": "#9a9a9a",
         "tonalRamp": [
-          "#070d0a",
-          "#202724",
-          "#3c4441",
-          "#5b6360",
-          "#7c8581",
-          "#9ea8a3",
-          "#c2ccc7",
-          "#e7f1ed"
+          "#262626",
+          "#434343",
+          "#616161",
+          "#7e7e7e",
+          "#9b9b9b",
+          "#b8b8b8",
+          "#d5d5d5",
+          "#f2f2f2"
         ]
       },
       "site-ink-faint": {
         "role": "neutral",
         "displayName": "Faint Ink",
-        "purpose": "Website (pending re-skin to the app's world): Hairline-level marks only, never content (2.7:1).",
-        "canonical": "#525a57",
+        "purpose": "Website: Tags and marks only, never body copy (3.5:1). The app's `ink-faint`.",
+        "canonical": "#6b6b6b",
         "tonalRamp": [
-          "#070d0b",
-          "#202724",
-          "#3c4441",
-          "#5b6360",
-          "#7c8581",
-          "#9ea7a4",
-          "#c2ccc8",
-          "#e8f1ed"
-        ]
-      },
-      "site-emerald": {
-        "role": "primary",
-        "displayName": "Signal Emerald",
-        "purpose": "Website (pending re-skin to the app's world): On, active, correct: shelf light, current nav, active chain dots, focus, selection.",
-        "canonical": "#34d399",
-        "tonalRamp": [
-          "#010f08",
-          "#032d1d",
-          "#104e37",
-          "#127351",
-          "#1a996d",
-          "#0ec289",
-          "#51e8ad",
-          "#c7fde2"
+          "#262626",
+          "#434343",
+          "#616161",
+          "#7e7e7e",
+          "#9b9b9b",
+          "#b8b8b8",
+          "#d5d5d5",
+          "#f2f2f2"
         ]
       },
       "site-glass-field": {
         "role": "material",
         "displayName": "Glass Cream-Silver",
-        "purpose": "Website (pending re-skin to the app's world): Glass band field.",
+        "purpose": "Website: Glass band field.",
         "canonical": "#cdcac0",
         "tonalRamp": [
           "#0d0b05",
@@ -423,7 +407,7 @@
       "site-glass-ink": {
         "role": "material",
         "displayName": "Glass Ink",
-        "purpose": "Website (pending re-skin to the app's world): Text and solid button on Glass.",
+        "purpose": "Website: Text and solid button on Glass.",
         "canonical": "#17191a",
         "tonalRamp": [
           "#0a0b0c",
@@ -439,7 +423,7 @@
       "site-ember-field": {
         "role": "material",
         "displayName": "Ember Oxblood",
-        "purpose": "Website (pending re-skin to the app's world): Ember band field.",
+        "purpose": "Website: Ember band field.",
         "canonical": "#3f1719",
         "tonalRamp": [
           "#1d0103",
@@ -455,7 +439,7 @@
       "site-ember-gold": {
         "role": "material",
         "displayName": "Ember Badge Gold",
-        "purpose": "Website (pending re-skin to the app's world): Ember's script name.",
+        "purpose": "Website: Ember's script name.",
         "canonical": "#d9b878",
         "tonalRamp": [
           "#110a01",
@@ -471,7 +455,7 @@
       "site-monolith-field": {
         "role": "material",
         "displayName": "Monolith Black",
-        "purpose": "Website (pending re-skin to the app's world): Monolith band field (also the 404).",
+        "purpose": "Website: Monolith band field (also the 404).",
         "canonical": "#121313",
         "tonalRamp": [
           "#0a0b0b",
@@ -487,7 +471,7 @@
       "site-lantern-field": {
         "role": "material",
         "displayName": "Lantern Tweed",
-        "purpose": "Website (pending re-skin to the app's world): Lantern band field (also the download page).",
+        "purpose": "Website: Lantern band field (also the download page).",
         "canonical": "#c8a467",
         "tonalRamp": [
           "#110a01",
@@ -503,7 +487,7 @@
       "site-lantern-ink": {
         "role": "material",
         "displayName": "Lantern Ink",
-        "purpose": "Website (pending re-skin to the app's world): Text and solid button on Lantern.",
+        "purpose": "Website: Text and solid button on Lantern.",
         "canonical": "#26190d",
         "tonalRamp": [
           "#140801",
@@ -519,7 +503,7 @@
       "site-basalt-field": {
         "role": "material",
         "displayName": "Basalt Stone",
-        "purpose": "Website (pending re-skin to the app's world): Basalt band field (also the stats page).",
+        "purpose": "Website: Basalt band field (also the stats page).",
         "canonical": "#2c2f31",
         "tonalRamp": [
           "#090c0d",
@@ -535,7 +519,7 @@
       "site-comet-field": {
         "role": "material",
         "displayName": "Comet Navy",
-        "purpose": "Website (pending re-skin to the app's world): Comet band field.",
+        "purpose": "Website: Comet band field.",
         "canonical": "#141e44",
         "tonalRamp": [
           "#030529",
@@ -551,7 +535,7 @@
       "site-comet-ice": {
         "role": "material",
         "displayName": "Comet Ice",
-        "purpose": "Website (pending re-skin to the app's world): Comet's streaks and glow.",
+        "purpose": "Website: Comet's streaks and glow.",
         "canonical": "#9ff3ff",
         "tonalRamp": [
           "#010e10",
@@ -567,7 +551,7 @@
       "site-forge-field": {
         "role": "material",
         "displayName": "Forge Black",
-        "purpose": "Website (pending re-skin to the app's world): Forge band field.",
+        "purpose": "Website: Forge band field.",
         "canonical": "#101112",
         "tonalRamp": [
           "#0a0b0c",
@@ -583,7 +567,7 @@
       "site-forge-orange": {
         "role": "material",
         "displayName": "Forge Orange",
-        "purpose": "Website (pending re-skin to the app's world): Forge's bottom rule, mini line, program-change rule.",
+        "purpose": "Website: Forge's bottom rule, mini line, program-change rule.",
         "canonical": "#ff6a1f",
         "tonalRamp": [
           "#190501",
@@ -599,7 +583,7 @@
       "site-quartz-field": {
         "role": "material",
         "displayName": "Quartz Lilac",
-        "purpose": "Website (pending re-skin to the app's world): Quartz band field.",
+        "purpose": "Website: Quartz band field.",
         "canonical": "#dccde3",
         "tonalRamp": [
           "#100715",
@@ -615,7 +599,7 @@
       "site-quartz-violet": {
         "role": "material",
         "displayName": "Quartz Violet",
-        "purpose": "Website (pending re-skin to the app's world): Quartz's name.",
+        "purpose": "Website: Quartz's name.",
         "canonical": "#533f6c",
         "tonalRamp": [
           "#120222",
@@ -807,7 +791,7 @@
       {
         "name": "site-shelf-light",
         "value": "transform 520ms, width 520ms on the shared ease",
-        "purpose": "Website: The emerald shelf light gliding to the current amp's mini; the current amp is the band crossing a line 30% down the space below the chrome."
+        "purpose": "Website: The orange shelf light gliding to the current amp's mini; the current amp is the band crossing a line 30% down the space below the chrome."
       },
       {
         "name": "site-head-arrival",
@@ -852,12 +836,12 @@
       }
     ],
     "website": {
-      "status": "pending re-skin to the app's orange world",
+      "status": "re-skinned to the app's world on 2026-10-13",
       "northStar": "The Amp Shelf, Unrolled",
       "rules": [
         {
-          "name": "The Emerald Means On Rule",
-          "body": "Emerald marks the current, the active, the focused, or the correct, and nothing else. It never fills a surface, a button, or a heading. The only emerald inside an amp material is a detail the app's own head already has (Monolith's emerald bar), and that belongs to the head.",
+          "name": "The Orange Means On Rule",
+          "body": "The app's accent marks the current, the active, the lit, and the focused, and nothing else: the shelf light, the current nav, the board's LEDs, focus, selection, the stats series. It never fills a surface, a button, or a heading. Orange inside an amp material is the head's own (Monolith's bar, Forge's rules), and belongs to it.",
           "section": "colors"
         },
         {
@@ -894,10 +878,10 @@
         "Do keep one solid button per group, for the download that fits this computer.",
         "Do put every motion behind `prefers-reduced-motion: no-preference`, and use the shared ease (`cubic-bezier(0.16, 1, 0.3, 1)`).",
         "Do show measured numbers in ink at 500 inside dim copy, in tabular figures where they're compared.",
-        "Do revise this document when the app's redesigned world lands. The site follows the app."
+        "Do follow the app: take the ground, panels, hairlines, inks and accent from src/ui/Theme.h, and the heads and screenshots from the test suite's proof."
       ],
       "donts": [
-        "Don't use emerald for decoration, fills, headings, or buttons. It means on, active, or correct.",
+        "Don't use the orange for decoration, fills, headings, or buttons. It means on, active, or current.",
         "Don't use an amp material outside its band, its inner-page band, or its mini.",
         "Don't put a label or a number above a heading.",
         "Don't use mockups, stock, or illustrations. Only the app's real snapshots and heads.",
@@ -986,7 +970,7 @@
       "refersTo": "site-button-solid",
       "description": "The one download for this computer; one per group.",
       "html": "<a class=\"ds-btn ds-btn-solid\" href=\"#\">Download for macOS</a>",
-      "css": ".ds-btn{display:inline-flex;flex-direction:column;justify-content:center;gap:2px;min-height:52px;padding:10px 22px;border-radius:10px;font-family: Geist, system-ui, sans-serif;font-size:16px;font-weight:500;text-decoration:none;border:1px solid transparent;transition:background 160ms cubic-bezier(0.16,1,0.3,1),border-color 160ms cubic-bezier(0.16,1,0.3,1),transform 160ms cubic-bezier(0.16,1,0.3,1);} .ds-btn:active{transform:translateY(1px);} .ds-btn:focus-visible{outline:2px solid #34d399;outline-offset:3px;} .ds-btn-solid{background:#e6ebe9;color:#0b0c0c;} .ds-btn-solid:hover{background:#ffffff;}"
+      "css": ".ds-btn{display:inline-flex;flex-direction:column;justify-content:center;gap:2px;min-height:52px;padding:10px 22px;border-radius:6px;font-family: Geist, system-ui, sans-serif;font-size:16px;font-weight:500;text-decoration:none;border:1px solid transparent;transition:background 160ms cubic-bezier(0.16,1,0.3,1),border-color 160ms cubic-bezier(0.16,1,0.3,1),transform 160ms cubic-bezier(0.16,1,0.3,1);} .ds-btn:active{transform:translateY(1px);} .ds-btn:focus-visible{outline:2px solid #ff8a00;outline-offset:3px;} .ds-btn-solid{background:#e8e8e8;color:#121212;} .ds-btn-solid:hover{background:#ffffff;}"
     },
     {
       "name": "Website: Ghost Button",
@@ -994,23 +978,23 @@
       "refersTo": "site-button-ghost",
       "description": "Every other action: the other OS, the source, first-launch steps. Can carry a meta line.",
       "html": "<a class=\"ds-btn ds-btn-ghost\" href=\"#\"><span>Download for Windows</span><span class=\"ds-meta\">0.2.0, 41 MB</span></a>",
-      "css": ".ds-btn{display:inline-flex;flex-direction:column;justify-content:center;gap:2px;min-height:52px;padding:10px 22px;border-radius:10px;font-family: Geist, system-ui, sans-serif;font-size:16px;font-weight:500;text-decoration:none;border:1px solid transparent;transition:border-color 160ms cubic-bezier(0.16,1,0.3,1),transform 160ms cubic-bezier(0.16,1,0.3,1);} .ds-btn:active{transform:translateY(1px);} .ds-btn:focus-visible{outline:2px solid #34d399;outline-offset:3px;} .ds-btn-ghost{border-color:#2a2f2d;color:#e6ebe9;background:#0b0c0c;} .ds-btn-ghost:hover{border-color:#8a938f;} .ds-meta{font-size:12px;font-weight:400;opacity:.72;}"
+      "css": ".ds-btn{display:inline-flex;flex-direction:column;justify-content:center;gap:2px;min-height:52px;padding:10px 22px;border-radius:6px;font-family: Geist, system-ui, sans-serif;font-size:16px;font-weight:500;text-decoration:none;border:1px solid transparent;transition:border-color 160ms cubic-bezier(0.16,1,0.3,1),transform 160ms cubic-bezier(0.16,1,0.3,1);} .ds-btn:active{transform:translateY(1px);} .ds-btn:focus-visible{outline:2px solid #ff8a00;outline-offset:3px;} .ds-btn-ghost{border-color:#3a3a3a;color:#e8e8e8;background:#121212;} .ds-btn-ghost:hover{border-color:#9a9a9a;} .ds-meta{font-size:12px;font-weight:400;opacity:.72;}"
     },
     {
       "name": "Website: Top Bar",
       "kind": "nav",
       "refersTo": "site-top-bar",
-      "description": "The app's top bar: the mark, the nav with an emerald underline on the current page, the Download button.",
+      "description": "The app's top bar: the mark, the nav with an orange underline on the current page, the Download button.",
       "html": "<header class=\"ds-bar\"><a class=\"ds-brand\" href=\"#\">BellyDSP</a><nav class=\"ds-nav\"><a href=\"#\" aria-current=\"page\">Overview</a><a href=\"#\">Download</a><a href=\"#\">Stats</a><a href=\"#\">Source</a></nav><a class=\"ds-bar-dl\" href=\"#\">Download for macOS</a></header>",
-      "css": ".ds-bar{height:56px;display:flex;align-items:center;gap:28px;padding:0 32px;background:#0b0c0c;border-bottom:1px solid #1e2221;font-family: Geist, system-ui, sans-serif;color:#e6ebe9;} .ds-brand{display:inline-flex;align-items:center;gap:10px;font-weight:600;font-size:15px;text-decoration:none;color:#e6ebe9;} .ds-brand::before{content:'';width:7px;height:7px;border-radius:50%;background:#34d399;} .ds-nav{display:flex;gap:24px;margin-left:auto;font-size:14px;} .ds-nav a{color:#8a938f;text-decoration:none;padding:18px 0 16px;border-bottom:2px solid transparent;} .ds-nav a:hover{color:#e6ebe9;} .ds-nav a[aria-current=page]{color:#e6ebe9;border-bottom-color:#34d399;} .ds-nav a:focus-visible,.ds-bar-dl:focus-visible{outline:2px solid #34d399;outline-offset:3px;} .ds-bar-dl{font-size:14px;font-weight:500;text-decoration:none;background:#e6ebe9;color:#0b0c0c;padding:8px 16px;border-radius:8px;transition:background 160ms cubic-bezier(0.16,1,0.3,1);} .ds-bar-dl:hover{background:#fff;}"
+      "css": ".ds-bar{height:56px;display:flex;align-items:center;gap:28px;padding:0 32px;background:#121212;border-bottom:1px solid #2c2c2c;font-family: Geist, system-ui, sans-serif;color:#e8e8e8;} .ds-brand{display:inline-flex;align-items:center;gap:10px;font-weight:600;font-size:15px;text-decoration:none;color:#e8e8e8;} .ds-brand::before{content:'';width:7px;height:7px;border-radius:50%;background:#ff8a00;} .ds-nav{display:flex;gap:24px;margin-left:auto;font-size:14px;} .ds-nav a{color:#9a9a9a;text-decoration:none;padding:18px 0 16px;border-bottom:2px solid transparent;} .ds-nav a:hover{color:#e8e8e8;} .ds-nav a[aria-current=page]{color:#e8e8e8;border-bottom-color:#ff8a00;} .ds-nav a:focus-visible,.ds-bar-dl:focus-visible{outline:2px solid #ff8a00;outline-offset:3px;} .ds-bar-dl{font-size:14px;font-weight:500;text-decoration:none;background:#e8e8e8;color:#121212;padding:8px 16px;border-radius:6px;transition:background 160ms cubic-bezier(0.16,1,0.3,1);} .ds-bar-dl:hover{background:#fff;}"
     },
     {
       "name": "Website: Amp Shelf",
       "kind": "nav",
       "refersTo": "site-shelf",
-      "description": "The eight minis with their names; the emerald shelf light sits under the current amp.",
+      "description": "The eight minis with their names; the orange shelf light sits under the current amp.",
       "html": "<nav class=\"ds-shelf\"><a href=\"#\" aria-current=\"true\"><span class=\"ds-mini ds-m-glass\"></span>Glass</a><a href=\"#\"><span class=\"ds-mini ds-m-ember\"></span>Ember</a><a href=\"#\"><span class=\"ds-mini ds-m-monolith\"></span>Monolith</a><a href=\"#\"><span class=\"ds-mini ds-m-forge\"></span>Forge</a></nav>",
-      "css": ".ds-shelf{height:84px;display:flex;gap:32px;padding:0 32px;background:#0b0c0c;border-bottom:1px solid #1e2221;font-family: Geist, system-ui, sans-serif;} .ds-shelf a{display:flex;align-items:center;gap:12px;color:#8a938f;text-decoration:none;font-size:14px;position:relative;transition:color 160ms cubic-bezier(0.16,1,0.3,1);} .ds-shelf a:hover,.ds-shelf a[aria-current=true]{color:#e6ebe9;} .ds-shelf a:focus-visible{outline:2px solid #34d399;outline-offset:3px;} .ds-shelf a[aria-current=true]::after{content:'';position:absolute;left:0;bottom:-1px;width:48px;height:2px;border-radius:1px;background:#34d399;} .ds-mini{width:48px;height:32px;border-radius:4px;position:relative;box-shadow:0 0 0 1px rgba(255,255,255,.08);overflow:hidden;} .ds-mini::before{content:'';position:absolute;left:10%;right:10%;top:13%;height:22%;border-radius:1px;} .ds-m-glass{background:#d9d6cd;} .ds-m-glass::before{background:#b9bcba;} .ds-m-ember{background:#4b1d1f;} .ds-m-ember::before{background:#1c1514;box-shadow:0 0 0 1px #a88a52;} .ds-m-monolith{background:#161717;} .ds-m-monolith::before{background:#0c0d0d;border-bottom:1px solid #34d399;} .ds-m-forge{background:#111213;} .ds-m-forge::before{background:#8d9399;} .ds-m-forge::after{content:'';position:absolute;left:10%;right:10%;top:42%;height:1px;background:#ff6a1f;}"
+      "css": ".ds-shelf{height:84px;display:flex;gap:32px;padding:0 32px;background:#121212;border-bottom:1px solid #2c2c2c;font-family: Geist, system-ui, sans-serif;} .ds-shelf a{display:flex;align-items:center;gap:12px;color:#9a9a9a;text-decoration:none;font-size:14px;position:relative;transition:color 160ms cubic-bezier(0.16,1,0.3,1);} .ds-shelf a:hover,.ds-shelf a[aria-current=true]{color:#e8e8e8;} .ds-shelf a:focus-visible{outline:2px solid #ff8a00;outline-offset:3px;} .ds-shelf a[aria-current=true]::after{content:'';position:absolute;left:0;bottom:-1px;width:48px;height:2px;border-radius:1px;background:#ff8a00;} .ds-mini{width:48px;height:32px;border-radius:4px;position:relative;box-shadow:0 0 0 1px rgba(255,255,255,.08);overflow:hidden;} .ds-mini::before{content:'';position:absolute;left:10%;right:10%;top:13%;height:22%;border-radius:1px;} .ds-m-glass{background:#d9d6cd;} .ds-m-glass::before{background:#b9bcba;} .ds-m-ember{background:#4b1d1f;} .ds-m-ember::before{background:#1c1514;box-shadow:0 0 0 1px #a88a52;} .ds-m-monolith{background:#161717;} .ds-m-monolith::before{background:#0c0d0d;border-bottom:1px solid #ff8a00;} .ds-m-forge{background:#111213;} .ds-m-forge::before{background:#8d9399;} .ds-m-forge::after{content:'';position:absolute;left:10%;right:10%;top:42%;height:1px;background:#ff6a1f;}"
     },
     {
       "name": "Website: Amp Band (Ember)",
@@ -1024,9 +1008,9 @@
       "name": "Website: Chain Row",
       "kind": "chip",
       "refersTo": "site-chain-cell",
-      "description": "The signal chain as cells; active blocks carry the emerald dot, endpoints are dashed.",
+      "description": "The signal chain as cells; active blocks carry the orange dot, endpoints are dashed.",
       "html": "<ol class=\"ds-chain\"><li class=\"ds-io\">Input</li><li class=\"ds-on\">Pre FX</li><li class=\"ds-on\">Amp</li><li>EQ</li><li class=\"ds-io\">Output</li></ol>",
-      "css": ".ds-chain{display:flex;flex-wrap:wrap;gap:8px;list-style:none;margin:0;padding:0;font-family: Geist, system-ui, sans-serif;font-size:14px;color:#e6ebe9;} .ds-chain li{display:inline-flex;align-items:center;gap:8px;border:1px solid #2a2f2d;border-radius:9px;padding:8px 14px;} .ds-chain li.ds-on{border-color:rgba(52,211,153,.6);} .ds-chain li.ds-on::after{content:'';width:6px;height:6px;border-radius:50%;background:#34d399;} .ds-chain .ds-io{border-style:dashed;color:#8a938f;}"
+      "css": ".ds-chain{display:flex;flex-wrap:wrap;gap:8px;list-style:none;margin:0;padding:0;font-family: Geist, system-ui, sans-serif;font-size:14px;color:#e8e8e8;} .ds-chain li{display:inline-flex;align-items:center;gap:8px;border:1px solid #3a3a3a;border-radius:6px;padding:8px 14px;} .ds-chain li.ds-on{border-color:rgba(255,138,0,.6);} .ds-chain li.ds-on::after{content:'';width:6px;height:6px;border-radius:50%;background:#ff8a00;} .ds-chain .ds-io{border-style:dashed;color:#9a9a9a;}"
     },
     {
       "name": "Website: Facts List",
@@ -1034,7 +1018,7 @@
       "refersTo": "site-facts",
       "description": "Engineering evidence: term, then dim copy with the measured number in ink.",
       "html": "<dl class=\"ds-facts\"><dt>The audio thread</dt><dd>Allocations, frees and locks in 14 seconds of every feature: <strong>0, 0, 0</strong>.</dd><dt>CPU</dt><dd>About <strong>6%</strong> of a 128-sample buffer.</dd></dl>",
-      "css": ".ds-facts{display:grid;grid-template-columns:240px 1fr;margin:0;font-family: Geist, system-ui, sans-serif;color:#e6ebe9;font-size:16px;line-height:1.6;} .ds-facts dt{font-weight:600;padding:18px 0;border-top:1px solid #1e2221;} .ds-facts dd{margin:0;padding:18px 0;border-top:1px solid #1e2221;color:#8a938f;} .ds-facts strong{color:#e6ebe9;font-weight:500;font-variant-numeric:tabular-nums;}"
+      "css": ".ds-facts{display:grid;grid-template-columns:240px 1fr;margin:0;font-family: Geist, system-ui, sans-serif;color:#e8e8e8;font-size:16px;line-height:1.6;} .ds-facts dt{font-weight:600;padding:18px 0;border-top:1px solid #2c2c2c;} .ds-facts dd{margin:0;padding:18px 0;border-top:1px solid #2c2c2c;color:#9a9a9a;} .ds-facts strong{color:#e8e8e8;font-weight:500;font-variant-numeric:tabular-nums;}"
     },
     {
       "name": "Website: Screenshot Frame",
@@ -1042,7 +1026,7 @@
       "refersTo": "site-shot",
       "description": "A real app snapshot in a strong-hairline frame; the lone featured one casts the screenshot shadow, grouped ones don't.",
       "html": "<figure class=\"ds-fig\"><div class=\"ds-shot\"><div class=\"ds-ph\">App snapshot</div></div><figcaption>The Amp page, with the shelf along the top.</figcaption></figure>",
-      "css": ".ds-fig{margin:0;font-family: Geist, system-ui, sans-serif;} .ds-shot{border:1px solid #2a2f2d;border-radius:12px;overflow:hidden;background:#111313;box-shadow:0 24px 48px rgba(0,0,0,.45);} .ds-ph{aspect-ratio:1280/760;display:grid;place-items:center;color:#525a57;font-size:13px;} .ds-fig figcaption{font-size:14px;color:#8a938f;margin-top:14px;max-width:34em;}"
+      "css": ".ds-fig{margin:0;font-family: Geist, system-ui, sans-serif;} .ds-shot{border:1px solid #3a3a3a;border-radius:12px;overflow:hidden;background:#1a1a1a;box-shadow:0 24px 48px rgba(0,0,0,.45);} .ds-ph{aspect-ratio:1280/760;display:grid;place-items:center;color:#6b6b6b;font-size:13px;} .ds-fig figcaption{font-size:14px;color:#9a9a9a;margin-top:14px;max-width:34em;}"
     },
     {
       "name": "Website: Stat Tiles",
@@ -1050,7 +1034,7 @@
       "refersTo": "site-stat-tile",
       "description": "Numbers in a 1px-gap hairline grid, tabular values.",
       "html": "<div class=\"ds-tiles\"><div class=\"ds-tile\"><div class=\"ds-l\">Downloads, all versions</div><div class=\"ds-v\">1,284</div><div class=\"ds-s\">macOS and Windows installers</div></div><div class=\"ds-tile\"><div class=\"ds-l\">macOS</div><div class=\"ds-v\">902</div><div class=\"ds-s\">.dmg downloads</div></div></div>",
-      "css": ".ds-tiles{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:#1e2221;border:1px solid #1e2221;border-radius:10px;overflow:hidden;font-family: Geist, system-ui, sans-serif;} .ds-tile{background:#0b0c0c;padding:20px 22px;color:#e6ebe9;} .ds-l{font-size:13px;color:#8a938f;} .ds-v{font-size:38px;font-weight:500;letter-spacing:-.02em;margin:4px 0;font-variant-numeric:tabular-nums;} .ds-s{font-size:12px;color:#8a938f;}"
+      "css": ".ds-tiles{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:#2c2c2c;border:1px solid #2c2c2c;border-radius:10px;overflow:hidden;font-family: Geist, system-ui, sans-serif;} .ds-tile{background:#121212;padding:20px 22px;color:#e8e8e8;} .ds-l{font-size:13px;color:#9a9a9a;} .ds-v{font-size:38px;font-weight:500;letter-spacing:-.02em;margin:4px 0;font-variant-numeric:tabular-nums;} .ds-s{font-size:12px;color:#9a9a9a;}"
     }
   ],
   "narrative": {

@@ -4,7 +4,7 @@
 // The overview's two enhancements. Without this script the page is complete: the shelf's links jump to each
 // amp's band, and every download link goes to the download page.
 //   1. The shelf follows the band you're in: the amp whose band crosses the reading line (a little below the
-//      shelf) is marked current, and the emerald light glides under it.
+//      shelf) is marked current, and the orange light glides under it.
 //   2. The big download buttons go straight to the installer for this computer (from data/releases.json), and the
 //      second hero button offers the other system. The top bar's button keeps going to the download page, where
 //      the first-launch steps are (the app isn't signed with a paid certificate, so both systems ask once).

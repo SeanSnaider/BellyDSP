@@ -185,7 +185,8 @@ class Checker(unittest.TestCase):
             shutil.copytree(REPO_ROOT / "site", copy, ignore=shutil.ignore_patterns("data"))
             index = copy / "index.html"
             text = index.read_text()
-            text = re.sub(r'alt="The tuner page[^"]*"', 'alt=""', text, count=1)
+            # Empty the first image's alt text, whatever it says (the copy changes; the check mustn't).
+            text = re.sub(r'(<img\b[^>]*?\balt=)"[^"]*"', r'\1""', text, count=1)
             text = text.replace('href="download/"', 'href="downloads/"', 1)
             text = text.replace("</main>", '<img src="https://example.com/x.png" alt="x" width="1" height="1">'
                                 "<a href=\"https://example.com/\">x</a> a \u2014 dash</main>", 1)

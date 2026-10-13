@@ -12,11 +12,11 @@ The short version: plain HTML and CSS in `site/`, published to GitHub Pages from
 | `site/download/index.html` | Download: the buttons, requirements, first launch, choosing the input, updates, the changelog, privacy |
 | `site/stats/index.html` | Stats: downloads per OS and release, the daily copies-in-use estimate, and how it's counted |
 | `site/404.html` | What GitHub Pages shows for a missing page |
-| `site/assets/css/site.css` | The whole look: the app's tokens (UI_HANDOFF.md section 3), Geist, hairlines, one emerald accent |
+| `site/assets/css/site.css` | The whole look: the app's tokens (`src/ui/Theme.h`, DESIGN.md), Geist, hairlines, one orange accent for what's on, one radius scale |
 | `site/assets/js/` | `site.js` (shared: loads `data/releases.json`, fills the version line), `download.js` (OS detection, buttons, changelog), `stats.js` (tiles, two SVG charts, tables). Small, no libraries |
-| `site/assets/img/` | Screenshots as WebP, two widths each for `srcset` (made by `tools/site/make_site_assets.py`) |
+| `site/assets/img/` | Screenshots and the eight heads as WebP, two widths each for `srcset` (made by `tools/site/make_site_assets.py`), each with its provenance sidecar (`.webp.json`) |
 | `site/assets/fonts/` | Geist Regular, Medium, SemiBold as WOFF2, with its licence (SIL OFL 1.1) |
-| `site/CNAME`, `site/favicon.svg` | The domain (see "Domain" for why it's informational), the tab icon |
+| `site/CNAME`, `site/favicon-32.png`, `favicon-192.png`, `apple-touch-icon.png` | The domain (see "Domain" for why it's informational), the tab icons (the app icon, resized) |
 | `site/data/` | Generated at deploy time, not committed (`.gitignore`): `releases.json`, `stats.json` |
 | `tools/site/build_site_data.py` | Writes `site/data/` from the API (or a fixture) and the stats history |
 | `tools/site/stats_snapshot.py` | Appends today's counts to the stats history (run daily by the stats workflow) |
@@ -24,7 +24,7 @@ The short version: plain HTML and CSS in `site/`, published to GitHub Pages from
 | `tools/site/check_site.py` | Checks the site: links, images, alt text, no outside requests, no em dashes, page weight |
 | `tools/site/test_site.py` | Tests for all of the above |
 | `tools/site/fixtures/` | A fake but self-consistent API response and 33 days of snapshots, for previews and tests |
-| `tools/site/make_site_assets.py` | Rebuilds the screenshots and fonts from `build/proof` and `resources/fonts` |
+| `tools/site/make_site_assets.py` | Rebuilds the screenshots, heads, tab icons and fonts from `build/proof`, `resources/icon` and `resources/fonts` |
 | `.github/workflows/pages.yml` | Builds `site/data/`, checks the site, and deploys it to Pages |
 | `.github/workflows/stats.yml` | Saves every release file's download count once a day on the `stats` branch |
 
@@ -135,7 +135,7 @@ Everything comes from one public number: GitHub's `download_count` on each relea
 ## Updating the site
 
 - **Copy**: edit the HTML in `site/` directly. Keep to what the app does; never say how it sounds. No other companies' product or amp names, no band names, no em dashes (`check_site.py` catches dashes).
-- **Screenshots**: run the tests with proof (`build/ampsim_tests_artefacts/Release/ampsim_tests --proof-dir build/proof`), then `uv run tools/site/make_site_assets.py`, which turns the editor snapshots it lists into WebP at two widths. Look at each image for anything that shouldn't be public (a preset or file name, a brand) before committing. To add one, add it to `SHOTS` in the script and a `<figure>` in `index.html` (with `width`, `height`, and real alt text).
+- **Screenshots**: run the test groups that write them with proof: `ampsim_tests --proof-dir build/proof --only` each of "Editor parts" (the heads, `build/proof/site/head_<material>.png`), "Main screen" (the main screen and the cab stage; the name also runs "Main screen inspectors", the harmonizer's inspector), "Overlays" (the tuner), "Tone match play along" and "Tone match compare" (Match tone's steps). Then `uv run tools/site/make_site_assets.py`, which crops the snapshots it lists in `build/proof/redesign/` to their subjects and writes WebP at two widths. Look at each image for anything that shouldn't be public (a preset or file name, a brand) before committing, and give each new raster its provenance (`impeccable embed-prompt <file> --prompt "<where it came from>"`; `embed-prompt --scan site` should report 0 missing). To add one, add it to `SHOTS` in the script and a `<figure>` in `index.html` (with `width`, `height`, and real alt text).
 - **Demos**: two `TODO(Sean)` HTML comments in `site/index.html` mark where a video and audio clips go. Self-host them in `site/assets/media/` (MP4 for video, Opus in `.webm` or AAC in `.m4a` for audio), use `preload="none"`, and say what's playing. No YouTube or SoundCloud embeds: they'd load third-party scripts and cookies, which the site promises not to. Keep the files small (a few MB each); `check_site.py` reports the page weight.
 - **Release notes**: the changelog shows `release-notes/<version>.md` for each version that has a published release, so writing the notes for a release (RELEASING.md) is all it takes. Its first `#` heading is dropped (the page shows the version), the rest is the same Markdown subset as the update dialogs.
 - **Fonts**: the site serves Geist from `site/assets/fonts/` (converted from `resources/fonts/Geist` by `make_site_assets.py`, licence alongside). Nothing comes from Google Fonts or any CDN.

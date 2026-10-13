@@ -19,14 +19,13 @@ colors:
   letterbox: "#0a0a0a"
   scrim: "#0a0a0ac8"
   led-off: "#2a2a2a"
-  site-ground: "#0b0c0c"
-  site-surface: "#111313"
-  site-hairline: "#1e2221"
-  site-hairline-strong: "#2a2f2d"
-  site-ink: "#e6ebe9"
-  site-ink-dim: "#8a938f"
-  site-ink-faint: "#525a57"
-  site-emerald: "#34d399"
+  site-ground: "#121212"
+  site-surface: "#1a1a1a"
+  site-hairline: "#2c2c2c"
+  site-hairline-strong: "#3a3a3a"
+  site-ink: "#e8e8e8"
+  site-ink-dim: "#9a9a9a"
+  site-ink-faint: "#6b6b6b"
   site-glass-field: "#cdcac0"
   site-glass-ink: "#17191a"
   site-ember-field: "#3f1719"
@@ -177,11 +176,6 @@ rounded:
   card: "10px"
   window: "12px"
   head: "14px"
-  site-mini: "3px"
-  site-code: "5px"
-  site-sm: "8px"
-  site-md: "10px"
-  site-lg: "12px"
 spacing:
   xs: "4px"
   s: "8px"
@@ -307,7 +301,7 @@ components:
     backgroundColor: "{colors.site-ink}"
     textColor: "{colors.site-ground}"
     typography: "{typography.site-body}"
-    rounded: "{rounded.site-md}"
+    rounded: "{rounded.control}"
     padding: "10px 22px"
     height: "52px"
   site-button-solid-hover:
@@ -316,14 +310,14 @@ components:
   site-button-ghost:
     backgroundColor: "transparent"
     textColor: "{colors.site-ink}"
-    rounded: "{rounded.site-md}"
+    rounded: "{rounded.control}"
     padding: "10px 22px"
     height: "52px"
   site-bar-download:
     backgroundColor: "{colors.site-ink}"
     textColor: "{colors.site-ground}"
     typography: "{typography.site-label}"
-    rounded: "{rounded.site-sm}"
+    rounded: "{rounded.control}"
     padding: "8px 16px"
   site-top-bar:
     backgroundColor: "{colors.site-ground}"
@@ -335,15 +329,19 @@ components:
     textColor: "{colors.site-ink-dim}"
     typography: "{typography.site-label}"
     height: "{spacing.site-shelf}"
+  site-board:
+    backgroundColor: "{colors.board-tray}"
+    rounded: "{rounded.card}"
+    padding: "14px 16px"
   site-chain-cell:
-    backgroundColor: "transparent"
+    backgroundColor: "{colors.site-surface}"
     textColor: "{colors.site-ink}"
     typography: "{typography.site-label}"
-    rounded: "9px"
-    padding: "8px 14px"
+    rounded: "{rounded.control}"
+    padding: "7px 13px 7px 11px"
   site-shot:
     backgroundColor: "{colors.site-surface}"
-    rounded: "{rounded.site-lg}"
+    rounded: "{rounded.window}"
   site-stat-tile:
     backgroundColor: "{colors.site-ground}"
     textColor: "{colors.site-ink}"
@@ -352,7 +350,7 @@ components:
 
 # Design System: BellyDSP
 
-This file records two surfaces. **The desktop app** is the primary system: the redesign shipped on 2026-10-13 (direction contract `.impeccable/surfaces/src-plugineditor-cpp.md`, tokens in `src/ui/Theme.h`, snapshots in `.impeccable/review/app/`). **The website** (bellydsp.com) has its own section at the end, under Components. It follows the app's world and still carries the app's old look; its tokens are the ones prefixed `site-`.
+This file records two surfaces. **The desktop app** is the primary system: the redesign shipped on 2026-10-13 (direction contract `.impeccable/surfaces/src-plugineditor-cpp.md`, tokens in `src/ui/Theme.h`, snapshots in `.impeccable/review/app/`). **The website** (bellydsp.com) has its own section at the end. It follows the app's world: its neutrals (prefixed `site-`) are the app's own values, its accent is the app's `accent`, and only its band materials are its own.
 
 ## Overview
 
@@ -548,14 +546,14 @@ All motion runs on 60 Hz message-thread timers and can be finished at once for s
 
 ## The website (follows the app)
 
-**Status: pending a re-skin to the app's orange world.** PRODUCT.md binds "the site looks like the app". The site at bellydsp.com was drawn in the app's previous look and hasn't been re-skinned yet: its accent is still emerald (`site-emerald`), its materials and imagery show the old eight heads and the old layout's snapshots (`tools/site/make_site_assets.py` still crops the old coordinates), and its tokens are the `site-` ones in the frontmatter. What follows records the site as it currently ships. The re-skin isn't designed yet. When it lands, this section gets rewritten from the built site.
+**Status: re-skinned to the app's world on 2026-10-13** (ASSUMPTIONS WEB20 to WEB23; review captures in `.impeccable/review/site2/`). PRODUCT.md binds "the site looks like the app". The structure is the one it shipped with (the direction contract `.impeccable/surfaces/site-index-html.md`, "Material bands"); the world is the app's.
 
-**North star as shipped: "The Amp Shelf, Unrolled."** A near-black ground, 1px hairlines, Geist throughout, and emerald only for what's current, active, or correct. The eight amp heads are laid out as page-scale material bands (silver Glass, oxblood Ember, black Monolith, tweed Lantern, stone Basalt, navy Comet, steel-and-black Forge, lilac Quartz), built from CSS gradients, each with the app's own rendered head as its object. Calm dark bands sit between them. The only imagery is real app snapshots and heads.
+**North star: "The Amp Shelf, Unrolled," in the lit studio.** The app's near-black ground (`bg`, as `site-ground`), its panels and hairlines, Geist throughout, and the app's orange only for what's on, current, or active. The eight amp heads are laid out as page-scale material bands (silver Glass, oxblood Ember, black Monolith, tweed Lantern, stone Basalt, navy Comet, steel-and-black Forge, lilac Quartz), built from CSS gradients, each with the app's own rendered head as its object: the head as the stage dresses it, with its seven skirted knobs and its jewel lamp lit. Calm dark bands sit between them. The only imagery is real app snapshots and heads from the test suite.
 
-- **Colors:** `site-ground`, `site-surface`, `site-hairline`, and `site-hairline-strong` for structure; `site-ink`, `site-ink-dim` (6.4:1), and `site-ink-faint` (hairline marks only) for text; `site-emerald` for the shelf light, the current nav underline, active chain dots, the mark's dot, focus, and selection. The eight `site-*-field` materials appear only as their amp's band, inner-page band, or shelf mini.
+- **Colors:** `site-ground` (`bg`), `site-surface` (`panel-bg`), `raised`, `site-hairline` (`line1`), and `site-hairline-strong` (`line2`) for structure, `board-tray` under the board row; `site-ink`, `site-ink-dim` (6.9:1), and `site-ink-faint` (marks only) for text; `accent` for the shelf light, the current nav underline, the board's LEDs, the brand dot, focus, selection, the stats chart's series and dots, and the download page's OS dot (ringed in the band's ink on tweed). The eight `site-*-field` materials appear only as their amp's band, inner-page band, or shelf mini.
 - **Typography:** Geist at 300 to 600. Fraunces SemiBold Italic for the Ember and Lantern names. Display scale (`site-display`) belongs to the amp names, with `site-page-title`, `site-headline`, `site-statement`, `site-title`, `site-voice`, `site-lead`, `site-body`, and `site-label` below it. Compared numbers are tabular.
-- **Layout:** a max width of 1240 with gutters of 16, 32 from 720 px, and 56 from 1280 px. A sticky 56 px bar over a 64 (84 from 960) px shelf. Amp bands use `4fr / 8fr` from 960 px, zigzagging with `flip`. Docs use `300px / 1fr` with sticky h2s. Below 960 the shelf scrolls sideways, and below 720 the bar keeps the mark, Source, and Download.
-- **Depth:** flat. Only heads (`drop-shadow(0 30px 34px rgba(0,0,0,0.32))`) and a lone featured screenshot (`0 24px 48px rgba(0,0,0,0.45)`) cast shadows.
-- **Shapes:** buttons and framed boxes at 10px, screenshots at 12, the bar button and pre blocks at 8, code at 5, minis at 3. Status marks are circles. Dashed borders only for the chain's input and output.
-- **Components:** the top bar with the emerald-dot mark and the solid Download; the shelf of CSS minis with its emerald light (520 ms on `cubic-bezier(0.16, 1, 0.3, 1)`); amp bands with the head rising in on scroll where `animation-timeline: view()` is supported and motion isn't reduced; calm bands; inner-page material bands (Download on Lantern, Stats on Basalt, 404 on Monolith); solid and ghost 52 px buttons (one solid per group); chain row, rig shots, facts list, stat tiles, and the footer.
-- **Rules as shipped:** emerald means on, and materials stay on their amps. Objects cast shadows and the page doesn't. No label above a heading. No third typeface. The Download button stays in the bar at every width.
+- **Layout:** a max width of 1240 with gutters of 16, 32 from 720 px, and 56 from 1280 px. A sticky 56 px bar over a 64 (84 from 960) px shelf. Amp bands use `4fr / 8fr` from 960 px, zigzagging with `flip`. Docs use `300px / 1fr` with sticky h2s. Side-by-side screenshots take grid tracks in the ratio of their crops' widths (Match tone's song and DI 878 : 686, the tuner and the harmonizer's inspector 2400 : 582) so they show at one scale and one height. The rig's main screen stays in view (sticky) beside its list from 960 px. Below 960 the shelf scrolls sideways, and below 720 the bar keeps the mark, Source, and Download; on phones the Match tone result and the cab scroll sideways at a legible width.
+- **Depth:** flat. Only heads (`drop-shadow(0 30px 34px rgba(0,0,0,0.32))`) and the lone featured screenshot (`0 24px 48px rgba(0,0,0,0.45)`) cast shadows.
+- **Shapes:** the app's scale: 3 (`mini`) for the minis and inline code, 6 (`control`) for buttons, the bar button, board cells and focus rings, 8 (`menu`) for pre blocks and tooltips, 10 (`card`) for tiles, charts, notices and the board, 12 (`window`) for framed screenshots. Status marks and LEDs are circles.
+- **Components:** the top bar with the app's brand (the orange dot and "BellyDSP") and the solid Download; the shelf of CSS minis, the current one at full brightness with its orange light (520 ms on `cubic-bezier(0.16, 1, 0.3, 1)`) and the others at 62% as on the app's stage; amp bands with the head rising in on scroll where `animation-timeline: view()` is supported and motion isn't reduced; calm bands; inner-page material bands (Download on Lantern, Stats on Basalt, 404 on Monolith); solid (ink) and ghost 52 px buttons, one solid per group; the board row (PRE and POST, each pedal a cell with its lit LED, the amp and cab as raised markers); framed shots for the stage, the inspector and the main screen, and bare shots for overlay panels cut at their own borders; the facts list, stat tiles, and the footer. The tab icons are the app icon ("B.", `resources/icon/`), resized.
+- **Rules:** orange means on, and never fills a call to action (the solid button is ink, like the app's primary button). Materials stay on their amps. Objects cast shadows and the page doesn't. No label above a heading. No third typeface. The Download button stays in the bar at every width.

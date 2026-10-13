@@ -122,4 +122,4 @@ Proof: `ampsim_tests --proof-dir build/proof --only "Main screen"` writes `build
 ## What's next
 
 - **Phase 2's finish:** built (above); still owed is the finish review of the main screen against the contract (the contract's FINISH line: the review, its verdict, DESIGN.md and its sidecar, every shipping raster's provenance), and Sean's listening and playing check RD.2 (PROGRESS).
-- **Phase 3, the rest of the app:** the tuner, Match tone, Settings, the menus, and the dialogs are built (above). Left: the About window's own look (it keeps the OS's title bar and a plain scrolling text), and the website re-skinned to follow the app (its images come from these snapshots; `tools/site/make_site_assets.py`'s crops still point at the old layout, the tone match ones included).
+- **Phase 3, the rest of the app:** the tuner, Match tone, Settings, the menus, and the dialogs are built (above). Left: the About window's own look (it keeps the OS's title bar and a plain scrolling text), The website follows the app since 2026-10-13 (its images come from these snapshots and the Editor parts tests' `build/proof/site/` heads; ASSUMPTIONS WEB20 to WEB23).
