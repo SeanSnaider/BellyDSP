@@ -88,7 +88,7 @@ public:
             p.prepareToPlay (fs, blockSize);
             std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
-            ed.showPage (ui::PageId::toneMatch);
+            ed.openOverlay (ui::Overlay::toneMatch);
             auto& page = ed.getToneMatchPage();
             auto& session = page.getSession();
             session.setLatencySource ([] {

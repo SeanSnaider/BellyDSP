@@ -316,7 +316,7 @@ public:
             p.prepareToPlay (fs, blockSize);
             std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
-            ed.showPage (ui::PageId::amp);
+            ed.selectBlock (ui::BlockId::amp);
             auto& amp = ed.getAmpView();
             ed.refresh();
 
@@ -335,7 +335,7 @@ public:
             // The layout: "Amp", then the minis 12 px apart in a row at the top left; no tabs; your capture's not shown yet.
             const auto first = amp.getMiniBounds (0), second = amp.getMiniBounds (1), last = amp.getMiniBounds (7);
             expectEquals (second.getX() - first.getRight(), 12);
-            expect (first.getX() > 0 && first.getX() < 60 && first.getY() >= 0 && last.getBottom() <= 33, first.toString());
+            expect (first.getX() > 0 && first.getX() < 80 && first.getY() >= 0 && last.getBottom() <= 60, first.toString()); // on the stage's top line
             expect (! amp.isOnShelf (AmpSimProcessor::yourCaptureAmp));
             expectEquals (amp.getShelfText(), juce::String ("Glass"));
 

@@ -75,7 +75,7 @@ public:
             p.prepareToPlay (fs, blockSize);
             std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
-            ed.showPage (ui::PageId::amp);
+            ed.selectBlock (ui::BlockId::amp);
             ed.refresh();
             auto& amp = ed.getAmpView();
             auto& gateSwitch = amp.getGateSwitch();
@@ -109,7 +109,8 @@ public:
             setParam (p, "output_gain", 24.0f);
             std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
-            ed.showPage (ui::PageId::output);
+            ed.openOverlay (ui::Overlay::settings);
+            ed.getSettingsPage().showOutput (true);
             play (p, guitarDI ((int) (0.5 * fs)));
             ed.getTopBar().updateMeters (p.takePeaks(), 1.0 / 30.0); // what the meter timer does
             auto& out = ed.getTopBar().getOutputMeter();

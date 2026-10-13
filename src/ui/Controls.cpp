@@ -217,7 +217,10 @@ void ParameterControl::nudge (float steps)
 
 bool ParameterControl::keyPressed (const juce::KeyPress& key)
 {
-    if (int direction = 0; isArrow (key, direction) && isEnabled() && ! isEditingText())
+    // Up and down nudge a focused control; left and right only when the keyboard gave it the focus (Tab), so after
+    // a click on a knob the left and right arrows still step the presets (ASSUMPTIONS RD).
+    const auto sideways = key.getKeyCode() == juce::KeyPress::leftKey || key.getKeyCode() == juce::KeyPress::rightKey;
+    if (int direction = 0; isArrow (key, direction) && (! sideways || keyboardFocus) && isEnabled() && ! isEditingText())
     {
         nudge ((float) direction);
         return true;
@@ -822,8 +825,34 @@ void Segmented::setSelected (int index, juce::NotificationType notification)
         onChange (selected);
 }
 
+namespace
+{
+juce::FontOptions pillFont() { return geist (Weight::medium, 13.0f); }
+constexpr float pillPad = 16.0f, pillInset = 3.0f;
+} // namespace
+
+void Segmented::setPillStyle (bool pill)
+{
+    pillStyle = pill;
+    repaint();
+}
+
+juce::String Segmented::getTooltip()
+{
+    if (hovered >= 0 && hovered < optionTips.size())
+        return optionTips[hovered];
+    return SettableTooltipClient::getTooltip();
+}
+
 int Segmented::getPreferredWidth() const
 {
+    if (pillStyle)
+    {
+        float w = 2.0f * pillInset;
+        for (int i = 0; i < options.size(); ++i)
+            w += textWidth (pillFont(), options[i]) + 2.0f * pillPad;
+        return (int) std::ceil (w);
+    }
     float w = 0.0f;
     for (int i = 0; i < options.size(); ++i)
         w += textWidth (geist (Weight::regular, 12.0f), options[i]) + (i > 0 ? 16.0f : 0.0f);
@@ -832,6 +861,18 @@ int Segmented::getPreferredWidth() const
 
 juce::Rectangle<float> Segmented::optionArea (int index) const
 {
+    if (pillStyle)
+    {
+        auto x = pillInset;
+        for (int i = 0; i < options.size(); ++i)
+        {
+            const auto w = textWidth (pillFont(), options[i]) + 2.0f * pillPad;
+            if (i == index)
+                return { x, pillInset, w, (float) getHeight() - 2.0f * pillInset };
+            x += w;
+        }
+        return {};
+    }
     const auto f = geist (Weight::regular, 12.0f);
     float x = 0.0f;
     for (int i = 0; i < options.size(); ++i)
@@ -847,13 +888,43 @@ juce::Rectangle<float> Segmented::optionArea (int index) const
 int Segmented::optionAt (juce::Point<float> p) const
 {
     for (int i = 0; i < options.size(); ++i)
-        if (optionArea (i).expanded (8.0f, 0.0f).contains (p))
+        if (optionArea (i).expanded (pillStyle ? 0.0f : 8.0f, pillStyle ? pillInset : 0.0f).contains (p))
             return i;
     return -1;
 }
 
 void Segmented::paint (juce::Graphics& g)
 {
+    if (pillStyle)
+    {
+        // The capsule, the chosen segment raised in it, the names centred.
+        const auto box = getLocalBounds().toFloat().reduced (0.5f);
+        const auto radius = box.getHeight() * 0.5f;
+        g.setColour (raised);
+        g.fillRoundedRectangle (box, radius);
+        g.setColour (line1);
+        g.drawRoundedRectangle (box, radius, 1.0f);
+        g.setFont (pillFont());
+        for (int i = 0; i < options.size(); ++i)
+        {
+            const auto r = optionArea (i);
+            if (i == selected)
+            {
+                g.setColour (line1.brighter (0.15f));
+                g.fillRoundedRectangle (r, r.getHeight() * 0.5f);
+            }
+            else if (i == hovered)
+            {
+                g.setColour (line1.withAlpha (0.5f));
+                g.fillRoundedRectangle (r, r.getHeight() * 0.5f);
+            }
+            g.setColour (i == selected ? accent : (i == hovered ? ink : inkDim));
+            g.drawText (options[i], r, juce::Justification::centred, false);
+        }
+        if (keyboardFocus)
+            drawFocusRing (g, box);
+        return;
+    }
     g.setFont (geist (Weight::regular, 12.0f));
     for (int i = 0; i < options.size(); ++i)
     {
@@ -895,7 +966,8 @@ void Segmented::mouseUp (const juce::MouseEvent& e)
 
 bool Segmented::keyPressed (const juce::KeyPress& key)
 {
-    if (int direction = 0; isArrow (key, direction))
+    // Only with the keyboard's focus (Tab): after a click, the arrows stay the main screen's (presets).
+    if (int direction = 0; keyboardFocus && isArrow (key, direction))
     {
         setSelected (selected + direction, juce::sendNotificationSync);
         return true;

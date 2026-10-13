@@ -8,20 +8,6 @@ namespace ui
 
 using namespace theme;
 
-namespace
-{
-/// The tab's name for a block: the gate tab holds both gates.
-juce::String tabName (BlockId id)
-{
-    return id == BlockId::gateA ? juce::String ("Gate") : juce::String (info (id).name);
-}
-
-ampsim::Chain::Section chainSection (Section section)
-{
-    return section == Section::pre ? ampsim::Chain::Section::pre : ampsim::Chain::Section::post;
-}
-} // namespace
-
 void paintPageHeader (juce::Graphics& g, juce::Rectangle<int> area, const juce::String& title, const juce::String& subtitle)
 {
     const auto titleFont = font (Text::title);
@@ -33,203 +19,6 @@ void paintPageHeader (juce::Graphics& g, juce::Rectangle<int> area, const juce::
     g.setFont (font (Text::label));
     g.setColour (inkFaint);
     g.drawText (subtitle, area, juce::Justification::centredLeft, true);
-}
-
-// ---- SectionPage -------------------------------------------------------------------------------------
-
-SectionPage::SectionPage (AmpSimProcessor& p, Section s, std::function<BlockPage& (BlockId)> lookUp)
-    : ControlGroup (p), section (s), pageOf (std::move (lookUp)), tabs (p), selected (s == Section::pre ? BlockId::gateA : BlockId::postEq)
-{
-    addAndMakeVisible (tabs);
-    tabs.onSelect = [this] (int id) { select ((BlockId) id); };
-    tabs.onReorder = [this] (const std::vector<int>& order)
-    {
-        juce::StringArray names;
-        for (auto id : order)
-            names.add (info ((BlockId) id).orderName);
-        ampSim.setSectionOrder (chainSection (section), names);
-        updateTabs();
-    };
-
-    if (section == Section::pre)
-    {
-        gateChoice = std::make_unique<Segmented> (juce::StringArray { "Gate A, before the amp", "Gate B, after the amp" });
-        gateChoice->onChange = [this] (int i) { showGateB (i == 1); };
-        addChildComponent (*gateChoice);
-    }
-    updateTabs();
-    tabs.setSelected ((int) selected);
-}
-
-SectionPage::~SectionPage() = default;
-
-void SectionPage::updateTabs()
-{
-    std::vector<TabRow::Item> items;
-    for (const auto& name : ampSim.getSectionOrder (chainSection (section)))
-        if (const auto id = blockFor (section, name); id != BlockId::count)
-            items.push_back ({ (int) id, tabName (id), {}, info (id).onParameter, false });
-    tabs.setItems (items);
-}
-
-BlockId SectionPage::pageBlock() const
-{
-    return selected == BlockId::gateA && gateB ? BlockId::gateB : selected;
-}
-
-void SectionPage::select (BlockId id)
-{
-    if (id == BlockId::gateB)
-    {
-        gateB = true;
-        id = BlockId::gateA;
-    }
-    else if (id == BlockId::gateA)
-    {
-        gateB = false;
-    }
-    selected = id;
-    tabs.setSelected ((int) selected);
-    if (gateChoice != nullptr)
-        gateChoice->setSelected (gateB ? 1 : 0);
-    showSelected();
-    resized();
-}
-
-void SectionPage::showGateB (bool b)
-{
-    gateB = b;
-    if (gateChoice != nullptr)
-        gateChoice->setSelected (b ? 1 : 0);
-    showSelected();
-}
-
-void SectionPage::showSelected()
-{
-    auto& page = pageOf (pageBlock());
-    if (shown != &page || page.getParentComponent() != this)
-    {
-        if (shown != nullptr && shown != &page && shown->getParentComponent() == this)
-        {
-            shown->setVisible (false);
-            if (showing)
-                shown->pageHidden();
-        }
-        shown = &page;
-        addAndMakeVisible (page);
-        if (showing)
-        {
-            page.pageShown();
-            page.refresh();
-        }
-    }
-    if (gateChoice != nullptr)
-        gateChoice->setVisible (selected == BlockId::gateA);
-    resized();
-}
-
-void SectionPage::refresh()
-{
-    updateTabs();
-    if (shown != nullptr && shown->getParentComponent() == this)
-        shown->refresh();
-}
-
-void SectionPage::pageShown()
-{
-    showing = true;
-    shown = nullptr; // so showSelected() reclaims the page (the EQ page may have borrowed it) and starts it
-    showSelected();
-}
-
-void SectionPage::pageHidden()
-{
-    if (shown != nullptr && shown->getParentComponent() == this)
-        shown->pageHidden();
-    showing = false;
-}
-
-void SectionPage::resized()
-{
-    auto area = getLocalBounds();
-    auto row = area.removeFromTop (TabRow::height);
-    tabs.setBounds (row);
-    if (gateChoice != nullptr)
-    {
-        const auto w = gateChoice->getPreferredWidth();
-        gateChoice->setBounds (row.removeFromRight (w).withSizeKeepingCentre (w, Segmented::preferredHeight).withY (row.getY() + 2));
-    }
-    area.removeFromTop (space::l);
-    if (shown != nullptr && shown->getParentComponent() == this)
-        shown->setBounds (area);
-}
-
-// ---- EqView ------------------------------------------------------------------------------------------
-
-EqView::EqView (AmpSimProcessor& p, BlockPage& post, BlockPage& preEqPage) : ControlGroup (p), postEq (post), preEq (preEqPage), tabs (p)
-{
-    addAndMakeVisible (tabs);
-    tabs.setItems ({ { 0, "Post EQ", "after the cab", "eq_post_on", false }, { 1, "Pre EQ", "before the amp", "eq_pre_on", false } });
-    tabs.setSelected (0);
-    tabs.onSelect = [this] (int id) { showPre (id == 1); };
-}
-
-void EqView::showPre (bool shouldShowPre)
-{
-    if (pre != shouldShowPre)
-    {
-        if (showing && current().getParentComponent() == this)
-        {
-            current().setVisible (false);
-            current().pageHidden();
-        }
-        pre = shouldShowPre;
-    }
-    tabs.setSelected (pre ? 1 : 0);
-    showSelected();
-}
-
-void EqView::showSelected()
-{
-    auto& page = current();
-    if (auto& other = pre ? postEq : preEq; other.getParentComponent() == this)
-        other.setVisible (false);
-    addAndMakeVisible (page);
-    if (showing)
-    {
-        page.pageShown();
-        page.refresh();
-    }
-    resized();
-}
-
-void EqView::refresh()
-{
-    if (current().getParentComponent() == this)
-        current().refresh();
-}
-
-void EqView::pageShown()
-{
-    showing = true;
-    showSelected();
-}
-
-void EqView::pageHidden()
-{
-    if (current().getParentComponent() == this)
-        current().pageHidden();
-    showing = false;
-}
-
-void EqView::resized()
-{
-    auto area = getLocalBounds();
-    tabs.setBounds (area.removeFromTop (TabRow::height));
-    area.removeFromTop (space::l);
-    for (auto* page : { &postEq, &preEq })
-        if (page->getParentComponent() == this)
-            page->setBounds (area);
 }
 
 // ---- InputPage ---------------------------------------------------------------------------------------
@@ -323,11 +112,10 @@ OutputPage::OutputPage (AmpSimProcessor& p) : ControlGroup (p)
     }
     midi = &addButton ("MIDI mappings...", [this] { if (onMidiMappings) onMidiMappings(); });
     note = &addLabel ("Program change 1 to 3 picks the amp. Right-click any control to map a footswitch or a pedal to it. "
-                      "Cmd-Z undoes, Shift-Cmd-Z redoes.",
+                      "Cmd-Z undoes, Shift-Cmd-Z redoes; the arrows step presets, 1 to 8 pick scenes, T opens the tuner.",
                       Text::label, inkFaint);
     note->setJustificationType (juce::Justification::topLeft);
 
-    addAndMakeVisible (scenes);
     addAndMakeVisible (cpu);
     for (auto* b : std::initializer_list<juce::Component*> { abA, abB, &abCopy, tap, midi })
         b->setHasFocusOutline (true);
@@ -340,12 +128,11 @@ void OutputPage::refresh()
     const auto onB = ampSim.isOnB();
     abA->setToggleState (! onB, juce::dontSendNotification);
     abB->setToggleState (onB, juce::dontSendNotification);
-    scenes.refresh (ampSim.getScenes());
 }
 
 void OutputPage::paint (juce::Graphics& g)
 {
-    paintPageHeader (g, getLocalBounds().withHeight (28), "Output", "The level out, compare, tempo, scenes, and the footswitch");
+    paintPageHeader (g, getLocalBounds().withHeight (28), "Output", "The level out, compare, tempo, the audio thread, and the footswitch");
     paintHeadings (g);
 }
 
@@ -393,12 +180,7 @@ void OutputPage::resized()
     }
     area.removeFromTop (gap);
 
-    // Row two: the scenes.
-    auto scenesCard = card (area.removeFromTop (cardHeight (48)), "Scenes");
-    scenes.setBounds (scenesCard);
-    area.removeFromTop (gap);
-
-    // Row three: the footswitch's controllers.
+    // Row two: the footswitch's controllers.
     auto foot = card (area.removeFromTop (cardHeight (3 * controlHeight + 2 * space::s)), "Footswitch");
     auto left = foot.removeFromLeft (juce::jmin (foot.getWidth() / 2, 460));
     for (auto [label, field] : { std::pair<juce::Label*, ValueField*> { tapLabel, tapCc }, { freezeLabel, freezeCc }, { sceneLabel, sceneCc } })
@@ -412,6 +194,62 @@ void OutputPage::resized()
     midi->setBounds (foot.removeFromTop (controlHeight).withWidth (150));
     foot.removeFromTop (space::s);
     note->setBounds (foot);
+}
+
+// ---- SettingsPage ------------------------------------------------------------------------------------
+
+SettingsPage::SettingsPage (AmpSimProcessor& p) : ControlGroup (p), input (p), output (p)
+{
+    tabs.setPillStyle (true);
+    tabs.onChange = [this] (int i) { showOutput (i == 1); };
+    close.onClick = [this] { if (onClose) onClose(); };
+    close.setTooltip ("Back to the main screen (Esc)");
+    close.setHasFocusOutline (true);
+    addAndMakeVisible (tabs);
+    addAndMakeVisible (close);
+    addAndMakeVisible (input);
+    addChildComponent (output);
+}
+
+SettingsPage::~SettingsPage() = default;
+
+void SettingsPage::showOutput (bool shouldShowOutput)
+{
+    showingOutput = shouldShowOutput;
+    tabs.setSelected (showingOutput ? 1 : 0);
+    input.setVisible (! showingOutput);
+    output.setVisible (showingOutput);
+    refresh();
+}
+
+void SettingsPage::refresh()
+{
+    (showingOutput ? static_cast<ControlGroup&> (output) : static_cast<ControlGroup&> (input)).refresh();
+}
+
+void SettingsPage::pageShown()
+{
+    refresh();
+}
+
+void SettingsPage::paint (juce::Graphics& g)
+{
+    g.setFont (geist (Weight::semibold, 18.0f));
+    g.setColour (ink);
+    g.drawText ("Settings", juce::Rectangle<int> (0, 0, 200, 30), juce::Justification::centredLeft, false);
+    g.setColour (line1);
+    g.fillRect (0, 46, getWidth(), 1);
+}
+
+void SettingsPage::resized()
+{
+    // The title, the pages' control centred on the same line, Close at the right; the page under a hairline.
+    const auto w = tabs.getPreferredWidth();
+    tabs.setBounds ((getWidth() - w) / 2, 0, w, Segmented::pillHeight);
+    close.setBounds (getWidth() - 80, 1, 80, controlHeight);
+    const auto page = getLocalBounds().withTrimmedTop (46 + space::xl);
+    input.setBounds (page);
+    output.setBounds (page);
 }
 
 } // namespace ui

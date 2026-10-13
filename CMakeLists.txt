@@ -238,8 +238,8 @@ set(AMPSIM_UI_SOURCES
     src/ui/Meters.cpp
     src/ui/Analyzer.cpp
     src/ui/Blocks.cpp
-    src/ui/ChainNav.cpp
-    src/ui/SectionTabs.cpp
+    src/ui/Board.cpp
+    src/ui/MainScreen.cpp
     src/ui/ScenesBar.cpp
     src/ui/TopBar.cpp
     src/ui/TunerPage.cpp
@@ -561,6 +561,7 @@ target_sources(ampsim_tests PRIVATE
     tests/HandoffEngineTests.cpp
     tests/EditorTests.cpp
     tests/PedalArtTests.cpp
+    tests/MainScreenTests.cpp
     tests/ReleaseTests.cpp
     tests/MigrationTests.cpp
     tests/CaptureTests.cpp

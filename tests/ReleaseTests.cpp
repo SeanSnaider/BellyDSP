@@ -89,7 +89,7 @@ public:
             // The brand reads "BellyDSP" (the handoff's placeholder was "rig") and fits its 136 px column.
             auto& brand = ed.getTopBar().getBrandButton();
             expectEquals (brand.getName(), juce::String ("BellyDSP"));
-            expect (brand.isVisible() && brand.getX() == 24 && brand.getRight() <= 24 + 136, brand.getBounds().toString());
+            expect (brand.isVisible() && brand.getX() == 18 && brand.getRight() <= 18 + 136, brand.getBounds().toString());
             juce::String shown;
             for (const auto& e : entries)
                 shown << (shown.isEmpty() ? "" : " | ") << e.text << (e.enabled ? "" : " (disabled)");
@@ -97,10 +97,10 @@ public:
                         + brand.getBounds().toString() + ", " + juce::String (brand.getWidth()) + " of the 136 px column) opens: " + shown);
             logMessage ("  -> source code for this version: " + platform::sourceUrlForThisVersion());
 
-            // The amp page with the new brand, at 2x, and the brand's corner on its own.
+            // The main screen with the brand, at 2x, and the brand's corner on its own.
             const auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f);
             const auto shot = proofDir().getChildFile ("editor_brand_bellydsp.png");
-            const auto corner = image.getClippedImage ({ 0, 0, 2 * (24 + 136 + 40), 2 * 56 });
+            const auto corner = image.getClippedImage ({ 0, 0, 2 * (18 + 136 + 40), 2 * ui::theme::topBarHeight });
             const auto cornerShot = proofDir().getChildFile ("editor_brand_bellydsp_corner.png");
             for (const auto& [img, file] : { std::pair { image, shot }, std::pair { corner, cornerShot } })
             {

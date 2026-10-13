@@ -11,14 +11,16 @@ using namespace ui::theme;
 
 namespace
 {
-const juce::Identifier uiPageKey { "uiPage" };            // the page last shown (app state)
+const juce::Identifier uiStageKey { "uiStage" };       // the stage mode last shown (app state)
+const juce::Identifier uiSelectedKey { "uiSelected" }; // the block last selected (app state: its pageName)
 const juce::Identifier presetSourceKey = AmpSimProcessor::presetSourceKey; // "factory" or "user": the top bar's tag
 
-/// The main area inside the canvas (handoff 2: between the top bar and the chain, padded 18 / 40 / 16).
-juce::Rectangle<int> mainArea()
-{
-    return { mainPadSide, topBarHeight + mainPadTop, canvasWidth - 2 * mainPadSide, canvasHeight - topBarHeight - chainHeight - mainPadTop - mainPadBottom };
-}
+/// The main screen's parts on the canvas.
+juce::Rectangle<int> stageArea() { return { 0, topBarHeight, stageWidth, stageHeight }; }
+juce::Rectangle<int> boardArea() { return { 0, topBarHeight + stageHeight, stageWidth, boardHeight }; }
+juce::Rectangle<int> inspectorArea() { return { stageWidth, topBarHeight, inspectorWidth, canvasHeight - topBarHeight - footerHeight }; }
+juce::Rectangle<int> footerArea() { return { 0, canvasHeight - footerHeight, canvasWidth, footerHeight }; }
+juce::Rectangle<int> overlayArea() { return { 0, topBarHeight, canvasWidth, canvasHeight - topBarHeight - footerHeight }; }
 
 /// A rate as the warning says it: "44.1 kHz", "96 kHz".
 juce::String rateText (double hz)
@@ -51,9 +53,38 @@ std::vector<PresetEntry> presetList()
     }
     return list;
 }
+
+/// Each pedal's parameter prefix: its page covers every parameter under it (BlockPage::coverParameters).
+juce::String prefixFor (ui::BlockId id)
+{
+    using B = ui::BlockId;
+    switch (id)
+    {
+        case B::gateA:          return "gate_a_";
+        case B::gateB:          return "gate_b_";
+        case B::preCompressor:  return "comp_pre_";
+        case B::postCompressor: return "comp_post_";
+        case B::boost:          return "boost_";
+        case B::overdrive:      return "od_";
+        case B::preEq:          return "eq_pre_";
+        case B::postEq:         return "eq_post_";
+        case B::harmonizer:     return "harm_";
+        case B::multivoicer:    return "mv_";
+        case B::bloom:          return "bloom_";
+        case B::chorus:         return "chorus_";
+        case B::delay:          return "delay_";
+        case B::reverb:         return "reverb_";
+        case B::input:
+        case B::amp:
+        case B::cab:
+        case B::output:
+        case B::count:          break;
+    }
+    return {};
+}
 } // namespace
 
-/// The 1280 x 760 canvas: the window's background with its 12 px corners and 1 px line border (handoff 2).
+/// The 1280 x 760 canvas: the window's ground with its 12 px corners and 1 px hairline border.
 class AmpSimEditor::Canvas final : public juce::Component
 {
 public:
@@ -61,6 +92,16 @@ public:
     {
         g.setColour (bg);
         g.fillRoundedRectangle (getLocalBounds().toFloat(), radiusWindow);
+
+        // The footer's panel, under the scenes and the tuner's reading, with a hairline along its top.
+        juce::Path window;
+        window.addRoundedRectangle (getLocalBounds().toFloat(), radiusWindow);
+        const juce::Graphics::ScopedSaveState saved (g);
+        g.reduceClipRegion (window);
+        g.setColour (panelBg);
+        g.fillRect (footerArea());
+        g.setColour (line1);
+        g.fillRect (footerArea().withHeight (1));
     }
 
     void paintOverChildren (juce::Graphics& g) override
@@ -70,17 +111,20 @@ public:
     }
 };
 
-/// The message line at the bottom-left of the main area: 12 px ink-dim, one line, the whole text in its
+/// The message line at the bottom left of the stage or an overlay: 12 px ink-dim, one line, the whole text in its
 /// tooltip.
 class AmpSimEditor::StatusLine final : public juce::Component, public juce::SettableTooltipClient
 {
 public:
+    StatusLine() { setInterceptsMouseClicks (true, false); }
+
     void set (const juce::String& newMessage)
     {
         if (newMessage != message)
         {
             message = newMessage;
             setTooltip (message);
+            setVisible (message.isNotEmpty());
             repaint();
         }
     }
@@ -104,7 +148,8 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p) : AudioProcessorEditor (&p), amp
     tooltips = std::make_unique<juce::TooltipWindow> (canvas.get(), 600);
     statusLine = std::make_unique<StatusLine>();
 
-    // The effect blocks' editors, all made now so switching is instant.
+    // Every pedal's controls, all made now so selecting one is instant; each covers every parameter under its
+    // block's prefix (a parameter added later without a control gets a generic one).
     using B = ui::BlockId;
     const auto add = [this] (std::unique_ptr<ui::BlockPage> page, B id)
     {
@@ -125,14 +170,10 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p) : AudioProcessorEditor (&p), amp
     add (std::make_unique<ui::ChorusPage> (p), B::chorus);
     add (std::make_unique<ui::DelayPage> (p), B::delay);
     add (std::make_unique<ui::ReverbPage> (p), B::reverb);
+    for (auto& page : blockPages)
+        page->coverParameters (prefixFor (page->getBlockId()), { "harm_custom_mask" /* its twelve note buttons */ });
 
-    // The main pages.
-    const auto pageOf = [this] (B id) -> ui::BlockPage& { return *blockPageFor[(size_t) id]; };
-    prePage = std::make_unique<ui::SectionPage> (p, ui::Section::pre, pageOf);
-    postPage = std::make_unique<ui::SectionPage> (p, ui::Section::post, pageOf);
-    eqView = std::make_unique<ui::EqView> (p, *blockPageFor[(size_t) B::postEq], *blockPageFor[(size_t) B::preEq]);
-    inputPage = std::make_unique<ui::InputPage> (p);
-    outputPage = std::make_unique<ui::OutputPage> (p);
+    // The stage's views, the overlays' pages.
     ampView = std::make_unique<ui::AmpView> (p);
     ampView->onLoadCapture = [this] (int slot) { loadCapture (slot); };
     ampView->onCaptureMenu = [this] (int slot, juce::Component& near) { showCaptureMenu (slot, near); };
@@ -146,52 +187,67 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p) : AudioProcessorEditor (&p), amp
             chooseFile ("Choose an impulse response", "*.wav;*.aif;*.aiff;*.flac", AmpSimProcessor::cabPathKey (0), picked);
     };
     cabView->onMicMenu = [this] (int mic, juce::Component& near) { showMicMenu (mic, near); };
+    eqStage = std::make_unique<ui::EqStage> (p);
+    eqStage->onChoose = [this] (bool pre) { select (pre ? B::preEq : B::postEq, true); };
 
+    settingsPage = std::make_unique<ui::SettingsPage> (p);
+    settingsPage->onClose = [this] { closeOverlay(); };
+    auto& output = settingsPage->getOutputPage();
+    output.onAbSelect = [this] (bool b) { abSelect (b); };
+    output.onAbCopy = [this] { ampSim.abCopyToOther(); };
+    output.onTap = [this] { ampSim.tapTempo(); };
+    output.onMidiMappings = [this] { showMidiMappings(); };
     tunerPage = std::make_unique<ui::TunerPage> (p);
     toneMatchPage = std::make_unique<ui::ToneMatchPage> (p);
-    toneMatchPage->onClose = [this] { showPage (pageBeforeToneMatch); };
+    toneMatchPage->onClose = [this] { closeOverlay(); };
 
-    using P = ui::PageId;
-    pageComponents[(size_t) P::input] = inputPage.get();
-    pageComponents[(size_t) P::preFx] = prePage.get();
-    pageComponents[(size_t) P::amp] = ampView.get();
-    pageComponents[(size_t) P::eq] = eqView.get();
-    pageComponents[(size_t) P::cab] = cabView.get();
-    pageComponents[(size_t) P::postFx] = postPage.get();
-    pageComponents[(size_t) P::output] = outputPage.get();
-    pageComponents[(size_t) P::tuner] = tunerPage.get();
-    pageComponents[(size_t) P::toneMatch] = toneMatchPage.get();
-    for (auto* page : pageComponents)
-        canvas->addChildComponent (page);
+    // The main screen.
+    stage = std::make_unique<ui::Stage> (*ampView, *cabView, *eqStage);
+    stage->onModeChosen = [this] (ui::StageMode m) { setStageMode (m); };
+    board = std::make_unique<ui::Board> (p);
+    board->onSelect = [this] (B id) { selectBlock (id); };
+    inspector = std::make_unique<ui::Inspector>();
+    overlayFrame = std::make_unique<ui::OverlayFrame>();
+    overlayFrame->onClose = [this] { closeOverlay(); };
 
+    canvas->addAndMakeVisible (*stage);
+    canvas->addAndMakeVisible (*board);
+    canvas->addAndMakeVisible (*inspector);
+    canvas->addAndMakeVisible (scenesBar);
+    canvas->addAndMakeVisible (tunerReadout);
+    canvas->addChildComponent (*overlayFrame);
     canvas->addAndMakeVisible (topBar);
-    canvas->addAndMakeVisible (chainNav);
-    canvas->addAndMakeVisible (*statusLine);
+    canvas->addChildComponent (*statusLine);
 
-    chainNav.onNavigate = [this] (P page) { showPage (page); };
     topBar.onPresetMenu = [this] { showPresetMenu(); };
     topBar.onSave = [this] { savePreset(); };
     topBar.onPrevious = [this] { stepPreset (-1); };
     topBar.onNext = [this] { stepPreset (1); };
-    topBar.onTuner = [this] { showPage (shownPage == P::tuner ? pageBeforeTuner : P::tuner); };
+    topBar.onTuner = [this] { overlay == ui::Overlay::tuner ? closeOverlay() : openOverlay (ui::Overlay::tuner); };
+    topBar.onMatchTone = [this] { overlay == ui::Overlay::toneMatch ? closeOverlay() : openOverlay (ui::Overlay::toneMatch); };
+    topBar.onSettings = [this] { overlay == ui::Overlay::settings ? closeOverlay() : openOverlay (ui::Overlay::settings); };
     topBar.onBrand = [this] { ui::showMenu (brandMenu(), &topBar.getBrandButton(), &lookAndFeel); };
-    outputPage->onAbSelect = [this] (bool b) { abSelect (b); };
-    outputPage->onAbCopy = [this] { ampSim.abCopyToOther(); };
-    outputPage->onTap = [this] { ampSim.tapTempo(); };
-    outputPage->onMidiMappings = [this] { showMidiMappings(); };
-    outputPage->getScenesBar().onClick = [this] (int i) { clickScene (i); };
+    topBar.onAbSelect = [this] (bool b) { abSelect (b); };
+    topBar.onUndo = [this] { undo(); };
+    topBar.onRedo = [this] { redo(); };
+    scenesBar.onClick = [this] (int i) { clickScene (i); };
+    tunerReadout.onClick = [this] { overlay == ui::Overlay::tuner ? closeOverlay() : openOverlay (ui::Overlay::tuner); };
+    ui::tagged (tunerReadout, "tuner_on");
 
     addMouseListener (this, true); // right-clicks anywhere, for MIDI learn; every press starts an undo step
     setWantsKeyboardFocus (true);
 
-    // The app's view state: the page last shown, and the window's size (UH11; the old UI scale key is
-    // left alone and no longer used).
+    // The app's view state: the stage mode and the block last selected, and the window's size (UH11; the older
+    // page key is left alone and no longer used).
     const auto& state = ampSim.parameters.state;
-    auto first = P::amp;
-    for (int i = 0; i < ui::numPages; ++i)
-        if ((P) i != P::tuner && (P) i != P::toneMatch && state.getProperty (uiPageKey).toString() == ui::pageName ((P) i))
-            first = (P) i;
-    showPage (first);
+    auto firstMode = ui::StageMode::amp;
+    for (int m = 0; m < ui::numStageModes; ++m)
+        if (state.getProperty (uiStageKey).toString() == ui::stageModeName ((ui::StageMode) m))
+            firstMode = (ui::StageMode) m;
+    stage->setMode (firstMode, false);
+    auto firstBlock = ui::blockNamed (state.getProperty (uiSelectedKey).toString());
+    if (firstBlock == B::count || firstBlock == B::input || firstBlock == B::output)
+        firstBlock = firstMode == ui::StageMode::cab ? B::cab : (firstMode == ui::StageMode::eq ? B::postEq : B::amp);
 
     // (Read before setting the limits: the limits resize the editor, which would write its size.)
     const auto width = juce::jmax (minimumWidth, (int) state.getProperty (AmpSimProcessor::uiWidthKey, canvasWidth));
@@ -199,6 +255,7 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p) : AudioProcessorEditor (&p), amp
     setResizable (true, false);
     setResizeLimits (minimumWidth, minimumHeight, 8192, 8192);
     setSize (width, height);
+    select (firstBlock, false);
 
     refreshState();
     startTimerHz (meterFps);
@@ -217,8 +274,11 @@ AmpSimEditor::~AmpSimEditor()
 {
     stopTimer();
     platform::samplerate::stop();
-    if (auto* hooks = hooksFor (shownPage))
-        hooks->pageHidden();
+    if (auto* page = overlayPage (overlay))
+        page->pageHidden();
+    inspector->show (nullptr);
+    stage->finishFade();
+    stage->getView (stage->getMode()).pageHidden();
     ampSim.setAnalyzerTap (AmpSimProcessor::AnalyzerTap::off); // nobody reads the ring any more
     if (renameWindow != nullptr)
     {
@@ -261,81 +321,177 @@ void AmpSimEditor::resized()
 void AmpSimEditor::layoutCanvas()
 {
     topBar.setBounds (0, 0, canvasWidth, topBarHeight);
-    chainNav.setBounds (0, canvasHeight - chainHeight, canvasWidth, chainHeight);
-    for (auto* page : pageComponents)
-        page->setBounds (mainArea());
-    statusLine->setBounds (mainArea().getX(), mainArea().getBottom(), mainArea().getWidth(), mainPadBottom);
+    stage->setBounds (stageArea());
+    board->setBounds (boardArea());
+    inspector->setBounds (inspectorArea());
+    overlayFrame->setBounds (overlayArea());
+
+    // The footer: the scenes from the left, the tuner's reading at the right.
+    auto footer = footerArea().reduced (18, 0);
+    tunerReadout.setBounds (footer.removeFromRight (220).withSizeKeepingCentre (220, 40));
+    footer.removeFromRight (24);
+    scenesBar.setBounds (footer.withSizeKeepingCentre (footer.getWidth(), 44));
+
+    // The message line: over an overlay's foot while one is open, else at the foot of the stage (the amp's info row
+    // carries it while the stage shows the amp).
+    if (overlay != ui::Overlay::none)
+        statusLine->setBounds (overlayArea().getX() + ui::OverlayFrame::padSide, overlayArea().getBottom() - 16, overlayArea().getWidth() - 2 * ui::OverlayFrame::padSide, 14);
+    else
+        statusLine->setBounds (stageArea().getX() + 24, stageArea().getBottom() - 30, stageArea().getWidth() - 48, 16);
+    statusLine->toFront (false);
 }
 
-// ---- Pages ------------------------------------------------------------------------------------------
+// ---- The main screen: selection, the stage, the overlays -------------------------------------------
 
-ui::ControlGroup* AmpSimEditor::hooksFor (ui::PageId page)
+ui::ControlGroup* AmpSimEditor::inspectorContentFor (ui::BlockId id)
 {
-    if (page == ui::PageId::count)
+    if (id == ui::BlockId::amp)
+        return &ampView->getPanel();
+    if (id == ui::BlockId::cab)
+        return &cabView->getPanel();
+    if (id == ui::BlockId::count || id == ui::BlockId::input || id == ui::BlockId::output)
         return nullptr;
-    return dynamic_cast<ui::ControlGroup*> (pageComponents[(size_t) page]);
-}
-
-void AmpSimEditor::showPage (ui::PageId page)
-{
-    if (page == ui::PageId::count || page == shownPage)
-        return;
-
-    // Leaving the tuner disengages it; opening it engages it (the tuner never runs behind another page).
-    auto* tunerOn = ampSim.parameters.getParameter ("tuner_on");
-    if (shownPage == ui::PageId::tuner && page != ui::PageId::tuner && tunerOn->getValue() >= 0.5f)
-        tunerOn->setValueNotifyingHost (0.0f);
-    if (page == ui::PageId::tuner)
-    {
-        if (shownPage != ui::PageId::count)
-            pageBeforeTuner = shownPage;
-        if (tunerOn->getValue() < 0.5f)
-            tunerOn->setValueNotifyingHost (1.0f);
-    }
-
-    if (page == ui::PageId::toneMatch && shownPage != ui::PageId::count)
-        pageBeforeToneMatch = shownPage == ui::PageId::tuner ? pageBeforeTuner : shownPage;
-
-    if (shownPage != ui::PageId::count)
-    {
-        pageComponents[(size_t) shownPage]->setVisible (false);
-        if (auto* hooks = hooksFor (shownPage))
-            hooks->pageHidden();
-    }
-    shownPage = page;
-    pageComponents[(size_t) page]->setVisible (true);
-    if (auto* hooks = hooksFor (page))
-    {
-        hooks->pageShown();
-        hooks->refresh();
-    }
-    chainNav.setActive (page);
-    if (page != ui::PageId::tuner && page != ui::PageId::toneMatch)
-        ampSim.parameters.state.setProperty (uiPageKey, ui::pageName (page), nullptr);
-    refreshState();
+    return blockPageFor[(size_t) id];
 }
 
 void AmpSimEditor::selectBlock (ui::BlockId id)
 {
+    select (id, false);
+}
+
+void AmpSimEditor::select (ui::BlockId id, bool fromStage)
+{
     if (id == ui::BlockId::count)
         return;
+
+    // The input and the output are Settings' pages.
+    if (id == ui::BlockId::input || id == ui::BlockId::output)
+    {
+        openOverlay (ui::Overlay::settings);
+        settingsPage->showOutput (id == ui::BlockId::output);
+        return;
+    }
+
+    // A block on the main screen: back to it from an overlay (the board and the inspector are under it).
+    if (overlay != ui::Overlay::none)
+        closeOverlay();
+
     selectedBlock = id;
-    const auto page = ui::pageFor (id);
-    if (page == ui::PageId::preFx || page == ui::PageId::postFx)
-        getSectionPage (page == ui::PageId::preFx ? ui::Section::pre : ui::Section::post).select (id);
-    showPage (page);
+    inspector->show (inspectorContentFor (id));
+    board->setSelected (id);
+    ampSim.parameters.state.setProperty (uiSelectedKey, ui::info (id).pageName, nullptr);
+
+    // The stage follows the amp and the cab; an EQ pedal puts the stage's EQ view on its graph.
+    if (id == ui::BlockId::preEq || id == ui::BlockId::postEq)
+        eqStage->showPre (id == ui::BlockId::preEq);
+    if (! fromStage && (id == ui::BlockId::amp || id == ui::BlockId::cab))
+        setStageMode (id == ui::BlockId::amp ? ui::StageMode::amp : ui::StageMode::cab);
+}
+
+void AmpSimEditor::setStageMode (ui::StageMode mode, bool animate)
+{
+    if (mode == ui::StageMode::count)
+        return;
+    stage->setMode (mode, animate);
+    ampSim.parameters.state.setProperty (uiStageKey, ui::stageModeName (mode), nullptr);
+    const auto wanted = mode == ui::StageMode::amp ? ui::BlockId::amp
+                        : mode == ui::StageMode::cab ? ui::BlockId::cab
+                                                     : (eqStage->isShowingPre() ? ui::BlockId::preEq : ui::BlockId::postEq);
+    if (selectedBlock != wanted)
+        select (wanted, true);
+    layoutCanvas();
+    refreshState();
+}
+
+ui::ControlGroup* AmpSimEditor::overlayPage (ui::Overlay o)
+{
+    switch (o)
+    {
+        case ui::Overlay::tuner:     return tunerPage.get();
+        case ui::Overlay::toneMatch: return toneMatchPage.get();
+        case ui::Overlay::settings:  return settingsPage.get();
+        case ui::Overlay::none:      break;
+    }
+    return nullptr;
+}
+
+void AmpSimEditor::openOverlay (ui::Overlay o)
+{
+    if (o == ui::Overlay::none)
+    {
+        closeOverlay();
+        return;
+    }
+    if (o == overlay)
+        return;
+
+    // Leaving the tuner disengages it; opening it engages it (the tuner never runs behind the main screen).
+    auto* tunerOn = ampSim.parameters.getParameter ("tuner_on");
+    if (overlay == ui::Overlay::tuner && tunerOn->getValue() >= 0.5f)
+        tunerOn->setValueNotifyingHost (0.0f);
+    if (o == ui::Overlay::tuner && tunerOn->getValue() < 0.5f)
+        tunerOn->setValueNotifyingHost (1.0f);
+
+    if (auto* old = overlayPage (overlay))
+    {
+        old->setVisible (false);
+        old->pageHidden();
+    }
+    overlay = o;
+    auto* page = overlayPage (o);
+    overlayFrame->hold (page, o == ui::Overlay::tuner ? juce::String ("Tuner") : juce::String());
+    overlayFrame->setVisible (true);
+    overlayFrame->toFront (false);
+    topBar.toFront (false);
+    page->setVisible (true);
+    page->pageShown();
+    page->refresh();
+    topBar.setOverlay (o);
+    layoutCanvas();
+    refreshState();
+}
+
+void AmpSimEditor::closeOverlay()
+{
+    if (overlay == ui::Overlay::none)
+        return;
+    auto* tunerOn = ampSim.parameters.getParameter ("tuner_on");
+    if (overlay == ui::Overlay::tuner && tunerOn->getValue() >= 0.5f)
+        tunerOn->setValueNotifyingHost (0.0f);
+    if (auto* page = overlayPage (overlay))
+    {
+        page->setVisible (false);
+        page->pageHidden();
+    }
+    overlay = ui::Overlay::none;
+    overlayFrame->setVisible (false);
+    topBar.setOverlay (overlay);
+    layoutCanvas();
+    refreshState();
+    if (isShowing())
+        grabKeyboardFocus(); // the keys work again from the main screen
+}
+
+void AmpSimEditor::finishAnimations()
+{
+    stage->finishFade();
+    scenesBar.finishGlide();
 }
 
 // ---- The timer --------------------------------------------------------------------------------------
 
 void AmpSimEditor::timerCallback()
 {
-    // The meters every frame (30 a second); everything else ten times a second.
+    // The meters, the LEDs, and the tuner's reading every frame (30 a second); everything else ten times a second.
     const auto now = juce::Time::getMillisecondCounterHiRes();
     const auto seconds = lastMeterMs > 0.0 ? juce::jlimit (0.0, 0.5, (now - lastMeterMs) / 1000.0) : 1.0 / meterFps;
     lastMeterMs = now;
     topBar.updateMeters (ampSim.takePeaks(), seconds);
-    outputPage->getCpuMeter().setLoad (ampSim.getCpuLoad());
+    const auto cpu = ampSim.getCpuLoad();
+    topBar.setCpuLoad (cpu);
+    getOutputPage().getCpuMeter().setLoad (cpu);
+    board->refresh();
+    tunerReadout.set (ampSim.isTunerEngaged() && ampSim.parameters.getRawParameterValue ("tuner_on")->load() >= 0.5f, ampSim.getTunerReading());
 
     if (++ticks % 3 == 0)
         refreshState();
@@ -344,22 +500,26 @@ void AmpSimEditor::timerCallback()
 void AmpSimEditor::refreshState()
 {
     topBar.refresh();
-    if (auto* hooks = hooksFor (shownPage))
-        hooks->refresh();
+    inspector->refresh();
+    stage->getView (stage->getMode()).refresh();
+    if (auto* page = overlayPage (overlay))
+        page->refresh();
+    board->refresh();
+    scenesBar.refresh (ampSim.getScenes());
 
-    // The tuner follows its switch both ways: a footswitch that engages it opens its page, and one that
-    // disengages it (or the page's own close button) goes back to the page before.
+    // The tuner follows its switch both ways: a footswitch that engages it opens its overlay, and one that
+    // disengages it closes the overlay.
     const auto tuning = ampSim.parameters.getRawParameterValue ("tuner_on")->load() >= 0.5f;
-    if (tuning && shownPage != ui::PageId::tuner)
-        showPage (ui::PageId::tuner);
-    else if (! tuning && shownPage == ui::PageId::tuner)
-        showPage (pageBeforeTuner);
+    if (tuning && overlay != ui::Overlay::tuner)
+        openOverlay (ui::Overlay::tuner);
+    else if (! tuning && overlay == ui::Overlay::tuner)
+        closeOverlay();
 
     // The tuner button's note: the one it hears, only while it's engaged.
     juce::String note ("-");
     if (const auto reading = ampSim.getTunerReading(); tuning && ampSim.isTunerEngaged() && reading.hasReading)
         note = juce::MidiMessage::getMidiNoteName (reading.midiNote, true, false, 4);
-    topBar.setTuner (shownPage == ui::PageId::tuner, note);
+    topBar.setTuner (overlay == ui::Overlay::tuner, note);
 
     // The message: the sample rate first, then the gate's first switch-on learning the noise floor, then
     // MIDI learn waiting for a controller, then a preset that couldn't load or loaded with gaps (or a
@@ -377,10 +537,11 @@ void AmpSimEditor::refreshState()
     if (message.isEmpty())
         message = presetMessage.isNotEmpty() ? presetMessage : ampSim.getPresetWarnings().joinIntoString ("; ");
     statusText = message;
-    // On the Amp page the gate's first switch-on shows in the strip, beside the switch that started it
-    // (AmpView::updateGatePrompt), so the info row keeps its rate.
+    // While the stage shows the amp, its info row carries the message (the gate's first switch-on shows in the
+    // amp's inspector, beside the switch that started it, so the info row keeps its rate).
     ampView->setStatus (message == ampSim.getAutoLearnPrompt() ? juce::String() : message);
-    statusLine->set (shownPage == ui::PageId::amp ? juce::String() : message);
+    const auto inInfoRow = overlay == ui::Overlay::none && stage->getMode() == ui::StageMode::amp;
+    statusLine->set (inInfoRow ? juce::String() : message);
 }
 
 // ---- Files and presets ------------------------------------------------------------------------------
@@ -559,7 +720,7 @@ juce::PopupMenu AmpSimEditor::brandMenu()
     menu.addItem (juce::String (platform::productName) + " " + platform::appVersion(), false, false, nullptr);
     menu.addItem ("Free software under the GNU AGPL v3 or later", false, false, nullptr);
     menu.addSeparator();
-    menu.addItem ("Match tone...", [safe] { if (safe != nullptr) safe->showPage (ui::PageId::toneMatch); });
+    menu.addItem ("Match tone...", [safe] { if (safe != nullptr) safe->openOverlay (ui::Overlay::toneMatch); });
     menu.addSeparator();
     menu.addItem ("Check for updates...", platform::updater::isRunning(), false, [] { platform::updater::checkNow(); });
     menu.addItem ("Source code for this version", [] { juce::URL (platform::sourceUrlForThisVersion()).launchInDefaultBrowser(); });
@@ -733,19 +894,18 @@ void AmpSimEditor::abSelect (bool b)
 void AmpSimEditor::clickScene (int index)
 {
     // Click to recall a scene, or to store the current sound in an empty one; Store, then a scene, overwrites.
-    auto& scenesBar = getScenesBar();
+    auto& bar = getScenesBar();
     auto& scenes = ampSim.getScenes();
-    if (scenesBar.isStoreArmed() || ! scenes.get (index).stored)
+    if (bar.isStoreArmed() || ! scenes.get (index).stored)
     {
         ampSim.storeScene (index);
-        scenesBar.setStoreArmed (false);
+        bar.setStoreArmed (false);
     }
     else
     {
         ampSim.recallScene (index);
     }
     refreshState();
-    outputPage->refresh();
 }
 
 void AmpSimEditor::sceneMenu (int index)
@@ -762,7 +922,6 @@ juce::PopupMenu AmpSimEditor::sceneMenuFor (int index)
     const auto changed = [] (AmpSimEditor& e)
     {
         e.refreshState();
-        e.outputPage->refresh();
     };
     menu.addItem ("Store the current sound here", [safe, index, changed]
     {
@@ -805,9 +964,22 @@ juce::PopupMenu AmpSimEditor::sceneMenuFor (int index)
 
 // ---- Undo, keys, and right-clicks -------------------------------------------------------------------
 
+void AmpSimEditor::undo()
+{
+    ampSim.parameters.copyState();
+    ampSim.undoManager.undo();
+    refreshState();
+}
+
+void AmpSimEditor::redo()
+{
+    ampSim.undoManager.redo();
+    refreshState();
+}
+
 bool AmpSimEditor::keyPressed (const juce::KeyPress& key)
 {
-    // Undo and redo have no buttons in the handoff's frame: Cmd-Z and Shift-Cmd-Z (UH6).
+    // Undo and redo: Cmd-Z and Shift-Cmd-Z (UH6), and the top bar's buttons.
     if (key == juce::KeyPress ('z', juce::ModifierKeys::commandModifier, 0))
     {
         ampSim.parameters.copyState();
@@ -821,9 +993,53 @@ bool AmpSimEditor::keyPressed (const juce::KeyPress& key)
         refreshState();
         return redone;
     }
-    // The tone match page's comparison keys (Space, 1, 2, 3) from wherever the focus is.
-    if (shownPage == ui::PageId::toneMatch)
-        return toneMatchPage->keyPressed (key);
+
+    // Escape closes an overlay.
+    if (key == juce::KeyPress::escapeKey)
+    {
+        if (overlay == ui::Overlay::none)
+            return false;
+        closeOverlay();
+        return true;
+    }
+
+    // The tone match page's comparison keys (Space, 1, 2, 3) come first while it's open.
+    if (overlay == ui::Overlay::toneMatch && toneMatchPage->keyPressed (key))
+        return true;
+
+    // The rest are plain keys (with no modifier but Shift on the letter).
+    const auto mods = key.getModifiers().withoutMouseButtons();
+    if (mods.isCommandDown() || mods.isCtrlDown() || mods.isAltDown())
+        return false;
+
+    // The character typed (or, without one, the key's code).
+    const auto typed = key.getTextCharacter() != 0 ? key.getTextCharacter() : (juce::juce_wchar) key.getKeyCode();
+
+    // T: the tuner, open or closed.
+    if (typed == 't' || typed == 'T')
+    {
+        overlay == ui::Overlay::tuner ? closeOverlay() : openOverlay (ui::Overlay::tuner);
+        return true;
+    }
+
+    // The left and right arrows: the previous and next preset (a knob with the keyboard's focus keeps them).
+    if (key.getKeyCode() == juce::KeyPress::leftKey || key.getKeyCode() == juce::KeyPress::rightKey)
+    {
+        stepPreset (key.getKeyCode() == juce::KeyPress::leftKey ? -1 : 1);
+        return true;
+    }
+
+    // 1 to 8: recall a scene (an empty one is left alone: storing is a click, or Store).
+    if (typed >= '1' && typed <= '8')
+    {
+        const auto index = (int) (typed - '1');
+        if (ampSim.getScenes().get (index).stored)
+        {
+            ampSim.recallScene (index);
+            refreshState();
+        }
+        return true;
+    }
     return false;
 }
 
@@ -961,5 +1177,5 @@ void AmpSimEditor::showMidiMappings()
     const auto value = [this] (const char* id) { return juce::String (juce::roundToInt (ampSim.parameters.getRawParameterValue (id)->load())); };
     menu.addSectionHeader ("Built in: program change 1 to 3 picks the amp, CC " + value ("midi_tap_cc") + " taps the tempo, CC "
                            + value ("midi_freeze_cc") + " freezes the reverb, CC " + value ("midi_scene_cc") + " picks a scene");
-    ui::showMenu (menu, &outputPage->getMidiButton(), &lookAndFeel);
+    ui::showMenu (menu, &getOutputPage().getMidiButton(), &lookAndFeel);
 }

@@ -360,8 +360,12 @@ private:
 };
 
 /// A segmented choice (the reference's .seg, the tuner's tunings): text options 16 px apart in 12 px
-/// ink-faint, the chosen one in ink with a 1 px emerald underline 4 px below. Hover lightens an option to
-/// ink-dim. A click, or the arrow keys when focused, chooses.
+/// ink-faint, the chosen one in ink with a 1 px orange underline 4 px below. Hover lightens an option to
+/// ink-dim. A click, or the arrow keys when it has the keyboard's focus (Tab), chooses.
+///
+/// The pill style (setPillStyle) is the standard segmented control (the stage's Amp / Cab / EQ, Settings' pages):
+/// the options side by side in a raised, hairline-bordered capsule, 13 px medium, the chosen one on a lighter
+/// segment in orange.
 class Segmented final : public juce::Component, public juce::SettableTooltipClient
 {
 public:
@@ -374,6 +378,13 @@ public:
     int getNumOptions() const noexcept { return options.size(); }
     int getPreferredWidth() const;
     static constexpr int preferredHeight = 21;
+    static constexpr int pillHeight = 30;
+
+    void setPillStyle (bool pill);
+    bool isPillStyle() const noexcept { return pillStyle; }
+    /// The tooltip of one option (the pill's keys).
+    void setOptionTooltips (const juce::StringArray& tips) { optionTips = tips; }
+    juce::String getTooltip() override;
 
     /// For tests: an option's area.
     juce::Rectangle<float> optionArea (int index) const;
@@ -388,9 +399,9 @@ public:
 
 private:
     int optionAt (juce::Point<float> p) const;
-    juce::StringArray options;
+    juce::StringArray options, optionTips;
     int selected = 0, hovered = -1;
-    bool keyboardFocus = false;
+    bool keyboardFocus = false, pillStyle = false;
 };
 
 /// A section title inside a page: a 12 px heading in ink-faint and a hairline, over a group of controls.

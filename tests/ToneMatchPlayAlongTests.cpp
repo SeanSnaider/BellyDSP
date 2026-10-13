@@ -484,7 +484,7 @@ public:
             p.prepareToPlay (fs, blockSize);
             std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
-            ed.showPage (ui::PageId::toneMatch);
+            ed.openOverlay (ui::Overlay::toneMatch);
             auto& page = ed.getToneMatchPage();
             auto& session = page.getSession();
             session.setLatencySource ([] {
@@ -570,7 +570,7 @@ public:
             setParam (p, "output_limit_on", 0.0f);
             std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
-            ed.showPage (ui::PageId::toneMatch);
+            ed.openOverlay (ui::Overlay::toneMatch);
             auto& page = ed.getToneMatchPage();
             auto& session = page.getSession();
             // A stand-in separator (the real one is ToneMatchSeparationTests'): the "stem" is the section at half level.

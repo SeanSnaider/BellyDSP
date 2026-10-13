@@ -944,7 +944,10 @@ public:
             auto* ampSimEditor = dynamic_cast<AmpSimEditor*> (editor.get());
             expect (ampSimEditor != nullptr);
 
-            // Every control attached to a parameter carries its ID, on every page (they all exist; one shows).
+            // Every control attached to a parameter carries its ID, and every parameter is reachable through what the
+            // main screen shows: the inspector with each block selected (only the selected block's controls are in
+            // it), the stage in each of its modes, the board, the top bar, the footer, and each overlay. (A control
+            // a mode swaps out, such as a synced rate's note, counts: it's there when its mode is.)
             juce::StringArray tagged;
             std::function<void (juce::Component&)> walk = [&] (juce::Component& c)
             {
@@ -953,11 +956,37 @@ public:
                 for (auto* child : c.getChildren())
                     walk (*child);
             };
+            juce::StringArray throughInspector;
             for (int b = 0; b < ui::numBlocks; ++b)
             {
-                ampSimEditor->selectBlock ((ui::BlockId) b);
-                walk (*editor);
+                const auto id = (ui::BlockId) b;
+                if (id == ui::BlockId::input || id == ui::BlockId::output)
+                    continue;
+                ampSimEditor->selectBlock (id);
+                expect (ampSimEditor->getInspector().getContent() == ampSimEditor->inspectorContentFor (id));
+                const auto before = tagged.size();
+                walk (ampSimEditor->getInspector());
+                throughInspector.add (juce::String (ui::info (id).pageName) + " " + juce::String (tagged.size() - before));
             }
+            for (int m = 0; m < ui::numStageModes; ++m)
+            {
+                ampSimEditor->setStageMode ((ui::StageMode) m, false);
+                walk (ampSimEditor->getStage().getView ((ui::StageMode) m));
+            }
+            walk (ampSimEditor->getBoard());
+            walk (ampSimEditor->getTopBar());
+            walk (ampSimEditor->getTunerReadout());
+            walk (ampSimEditor->getScenesBar());
+            for (const auto output : { false, true })
+            {
+                ampSimEditor->openOverlay (ui::Overlay::settings);
+                ampSimEditor->getSettingsPage().showOutput (output);
+                walk (ampSimEditor->getOverlayFrame());
+            }
+            ampSimEditor->openOverlay (ui::Overlay::tuner);
+            walk (ampSimEditor->getOverlayFrame());
+            ampSimEditor->closeOverlay();
+            logMessage ("  -> parameters first reached through the inspector, per block: " + throughInspector.joinIntoString (", "));
             for (const auto* id : { "delay_on", "reverb_mix", "gate_a_threshold", "gate_link", "eq_pre_g3", "cab_bypass", "comp_post_mode",
                                     "tuner_on", "amp_model", "bloom_phaser_mode", "harm_v1_steps", "mv_v8_drift", "tempo_bpm", "input_level_dbu" })
                 expect (tagged.contains (id), id);
@@ -1823,7 +1852,8 @@ public:
             setParam (p, "mv_voices", 5.0f);
             processAll (p, guitarDI ((int) fs / 2));
 
-            // Every page and every effect tab, on the 1280 x 760 canvas drawn at 2x (as on a Retina screen).
+            // The main screen with every block selected (its controls in the inspector), Settings on each page, and the
+            // stage's EQ view, on the 1280 x 760 canvas drawn at 2x (as on a Retina screen).
             juce::StringArray pageFiles;
             const auto snap = [&] (const juce::String& name)
             {
@@ -1838,13 +1868,16 @@ public:
                 if (id == ui::BlockId::output || id == ui::BlockId::cab)
                     continue;
                 ampSimEditor->selectBlock (id);
+                ampSimEditor->finishAnimations();
                 snap (ui::info (id).pageName);
             }
-            ampSimEditor->showPage (ui::PageId::output);
+            ampSimEditor->selectBlock (ui::BlockId::output);
             snap ("output");
-            ampSimEditor->showPage (ui::PageId::eq);
+            ampSimEditor->closeOverlay();
+            ampSimEditor->setStageMode (ui::StageMode::eq, false);
             snap ("eq");
-            logMessage ("  -> pages: " + pageFiles.joinIntoString (", "));
+            ampSimEditor->setStageMode (ui::StageMode::amp, false);
+            logMessage ("  -> the main screen with each block selected, and Settings: " + pageFiles.joinIntoString (", "));
 
             // A window of another shape: the canvas scales to fit and the rest is letterboxed.
             editor->setSize (1500, 760);
@@ -1855,31 +1888,34 @@ public:
             editor->setSize (1280, 760);
             logMessage ("  -> " + wideFile.getFullPathName());
 
-            // The signal chain alone: Pre FX bypassed (its icon dim, its name struck through), the delay's page showing.
+            // The board alone: the pre section switched off (its row dimmed, the pedals keeping their own LEDs), the
+            // delay selected (raised).
             setParam (p, "pre_fx_on", 0.0f);
             ampSimEditor->selectBlock (ui::BlockId::delay);
             ampSimEditor->refresh();
-            auto& nav = ampSimEditor->getChainNav();
-            expect (nav.isBypassedShown (ui::PageId::preFx) && ! nav.isBypassedShown (ui::PageId::amp));
-            expect (nav.getActive() == ui::PageId::postFx);
-            const auto stripFile = proofDir().getChildFile ("editor_chain.png");
-            expect (savePng (nav.createComponentSnapshot (nav.getLocalBounds(), true, 2.0f), stripFile));
+            auto& board = ampSimEditor->getBoard();
+            expect (! board.getSectionSwitch (ui::Section::pre)->isOn() && board.getSectionSwitch (ui::Section::post)->isOn());
+            expect (board.getPedal (ui::BlockId::boost)->getAlpha() < 1.0f && juce::exactlyEqual (board.getPedal (ui::BlockId::delay)->getAlpha(), 1.0f));
+            expect (board.getSelected() == ui::BlockId::delay && board.isLit (ui::BlockId::boost));
+            const auto boardFile = proofDir().getChildFile ("editor_board.png");
+            expect (savePng (board.createComponentSnapshot (board.getLocalBounds(), true, 2.0f), boardFile));
             setParam (p, "pre_fx_on", 1.0f);
-            logMessage ("  -> " + stripFile.getFullPathName());
+            logMessage ("  -> " + boardFile.getFullPathName());
 
-            // The post EQ with the analyzer showing the guitar through the chain: the page reads the ring 30
-            // times a second, as its timer would, while audio runs; then a band's handle is hovered.
+            // The post EQ with the analyzer showing the guitar through the chain: the stage's EQ view reads the ring
+            // 30 times a second, as its timer would, while audio runs; then a band's handle is hovered.
             ampSimEditor->selectBlock (ui::BlockId::postEq);
-            auto& eqPage = dynamic_cast<ui::EqPage&> (ampSimEditor->getPage (ui::BlockId::postEq));
+            ampSimEditor->setStageMode (ui::StageMode::eq, false);
+            auto& eqGraph = ampSimEditor->getEqStage().getGraph (false);
             const auto music = guitarDI ((int) fs);
             for (size_t start = 0; start + 1536 <= music.size(); start += 1536) // 12 buffers: 32 ms, about a frame
             {
                 processAll (p, std::vector<float> (music.begin() + (long) start, music.begin() + (long) start + 1536));
-                eqPage.getGraph().updateAnalyzer();
+                eqGraph.updateAnalyzer();
             }
-            expect (eqPage.getGraph().getAnalyzer().getSamplesTaken() > 40000);
+            expect (eqGraph.getAnalyzer().getSamplesTaken() > 40000);
             {
-                auto& graph = eqPage.getGraph();
+                auto& graph = eqGraph;
                 const auto handle = graph.handlePosition (2);
                 const auto now = juce::Time::getCurrentTime();
                 graph.mouseMove (juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), handle, {}, juce::MouseInputSource::defaultPressure, 0.0f,
@@ -1893,7 +1929,7 @@ public:
             setParam (p, "tuner_on", 1.0f);
             ampSimEditor->refresh();
             auto& tunerPage = ampSimEditor->getTunerPage();
-            expect (tunerPage.isVisible() && ampSimEditor->getShownPage() == ui::PageId::tuner);
+            expect (tunerPage.isVisible() && ampSimEditor->getOverlay() == ui::Overlay::tuner);
             ampsim::TunerReading e2;
             e2.hasReading = e2.live = true;
             e2.midiNote = 40;
@@ -2075,51 +2111,51 @@ public:
                         + juce::String (toDb (0.25), 2) + "); the pre tap's 440 Hz reads " + juce::String (preFound, 2) + " Hz");
         }
 
-        beginTest ("effect tabs: dragging a tab calls the processor's reorder, the same as the old chain strip did, and the chain applies the new order");
+        beginTest ("the board: dragging a pedal along its row calls the processor's reorder (the old tabs' call), and the chain applies the new order");
         {
             using Slot = ampsim::Chain::Slot;
             AmpSimProcessor p;
             p.prepareToPlay (fs, blockSize);
             std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
+            auto& board = ed.getBoard();
 
-            // A drag in small steps, as a mouse makes it: positions in the tab row, events in the tab's space.
-            const auto drag = [] (ui::TabRow& row, ui::BlockId id, juce::Point<float> to)
+            // A drag in small steps, as a mouse makes it: positions in the board, events in the pedal's space.
+            const auto drag = [&board] (ui::BlockId id, juce::Point<float> to)
             {
-                auto& tab = *row.getTab ((int) id);
-                const auto down = tab.getLocalBounds().getCentre().toFloat();
-                const auto from = tab.getBounds().getCentre().toFloat();
+                auto& pedal = *board.getPedal (id);
+                const auto down = pedal.getLocalBounds().getCentre().toFloat();
+                const auto from = pedal.getBounds().getCentre().toFloat();
                 const auto now = juce::Time::getCurrentTime();
-                const auto event = [&tab, down, now] (juce::Point<float> local, bool dragged)
+                const auto event = [&pedal, down, now] (juce::Point<float> local, bool dragged)
                 {
                     return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), local, juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier),
-                                             juce::MouseInputSource::defaultPressure, 0.0f, 0.0f, 0.0f, 0.0f, &tab, &tab, now, down, now, 1, dragged);
+                                             juce::MouseInputSource::defaultPressure, 0.0f, 0.0f, 0.0f, 0.0f, &pedal, &pedal, now, down, now, 1, dragged);
                 };
-                tab.mouseDown (event (down, false));
+                pedal.mouseDown (event (down, false));
                 for (int step = 1; step <= 20; ++step)
                 {
-                    const auto inRow = from + (to - from) * ((float) step / 20.0f);
-                    tab.mouseDrag (event (inRow - tab.getPosition().toFloat(), true));
+                    const auto inBoard = from + (to - from) * ((float) step / 20.0f);
+                    pedal.mouseDrag (event (inBoard - pedal.getPosition().toFloat(), true));
                 }
-                tab.mouseUp (event (to - tab.getPosition().toFloat(), true));
+                pedal.mouseUp (event (to - pedal.getPosition().toFloat(), true));
             };
+            const auto centreOf = [&board] (ui::BlockId id) { return board.getPedal (id)->getBounds().getCentre().toFloat(); };
 
             // The boost onto the compressor's place: gate, comp, boost becomes gate, boost, comp.
-            ed.showPage (ui::PageId::preFx);
-            auto& pre = ed.getSectionPage (ui::Section::pre).getTabs();
-            drag (pre, ui::BlockId::boost, pre.getTab ((int) ui::BlockId::preCompressor)->getBounds().getCentre().toFloat());
+            const auto preBefore = board.getShownOrder (ui::Section::pre);
+            drag (ui::BlockId::boost, centreOf (ui::BlockId::preCompressor));
             const auto requested = p.getSectionOrder (ampsim::Chain::Section::pre);
             expect (requested == juce::StringArray { "gate", "boost", "comp", "overdrive", "eq" }, requested.joinIntoString (", "));
-            const auto shownPre = pre.getShownOrder();
-            expect (shownPre == std::vector<int> { (int) ui::BlockId::gateA, (int) ui::BlockId::boost, (int) ui::BlockId::preCompressor, (int) ui::BlockId::overdrive,
-                                                   (int) ui::BlockId::preEq });
+            expect (board.getShownOrder (ui::Section::pre)
+                    == std::vector<ui::BlockId> { ui::BlockId::gateA, ui::BlockId::boost, ui::BlockId::preCompressor, ui::BlockId::overdrive, ui::BlockId::preEq });
+            expect (board.getPedal (ui::BlockId::boost)->getX() < board.getPedal (ui::BlockId::preCompressor)->getX(), "drawn in the new order");
 
             // The reverb to the front of the post section.
-            ed.showPage (ui::PageId::postFx);
-            auto& postTabs = ed.getSectionPage (ui::Section::post).getTabs();
-            drag (postTabs, ui::BlockId::reverb, postTabs.getTab ((int) ui::BlockId::postEq)->getBounds().getCentre().toFloat() - juce::Point<float> (20.0f, 0.0f));
+            drag (ui::BlockId::reverb, centreOf (ui::BlockId::postEq) - juce::Point<float> (20.0f, 0.0f));
             const auto post = p.getSectionOrder (ampsim::Chain::Section::post);
             expect (post[0] == "reverb" && post[1] == "eq", post.joinIntoString (", "));
+            expect (board.getShownOrder (ui::Section::post).front() == ui::BlockId::reverb);
 
             // The chain applies them with its dip (10 ms down, the swap, 10 ms up): 50 ms of audio.
             const auto before = p.getChain().getAppliedOrder (ampsim::Chain::Section::pre);
@@ -2129,12 +2165,25 @@ public:
             expect (after == std::vector<Slot> { Slot::gateA, Slot::boost, Slot::preCompressor, Slot::overdrive, Slot::preEq });
             expect (p.getChain().getAppliedOrder (ampsim::Chain::Section::post)[0] == Slot::reverb);
 
-            // A drag that ends where it began changes nothing; a short wiggle isn't a drag at all.
+            // A drag that ends where it began changes nothing; Gate B (fixed after the amp) doesn't move; a pre
+            // pedal can't be dragged into the post row's order (each row is its own section).
             const auto unchanged = p.getSectionOrder (ampsim::Chain::Section::pre);
-            drag (pre, ui::BlockId::preEq, pre.getTab ((int) ui::BlockId::preEq)->getBounds().getCentre().toFloat());
+            drag (ui::BlockId::preEq, centreOf (ui::BlockId::preEq));
             expect (p.getSectionOrder (ampsim::Chain::Section::pre) == unchanged);
-            logMessage ("  -> dragged the boost tab onto the compressor's: requested \"" + requested.joinIntoString (", ") + "\", applied by the chain 50 ms later; "
-                        "dragged the reverb's tab to the front of the post section: \"" + post.joinIntoString (", ") + "\"; a drag back to its own place changed nothing");
+            const auto gateBx = board.getPedal (ui::BlockId::gateB)->getX();
+            drag (ui::BlockId::gateB, centreOf (ui::BlockId::gateA));
+            expectEquals (board.getPedal (ui::BlockId::gateB)->getX(), gateBx);
+            expect (p.getSectionOrder (ampsim::Chain::Section::pre) == unchanged);
+
+            // What undo does after the drags, for the record (the sections' orders aren't parameters; the old tabs were the same).
+            p.parameters.copyState();
+            const auto undone = p.undoManager.undo();
+            ed.refresh();
+            const auto postAfterUndo = p.getSectionOrder (ampsim::Chain::Section::post);
+            logMessage ("  -> dragged the boost pedal onto the compressor's: requested \"" + requested.joinIntoString (", ") + "\" (was "
+                        + juce::String ((int) preBefore.size()) + " pedals in the default order), applied by the chain 50 ms later; dragged the reverb to the "
+                        "front of the post row: \"" + post.joinIntoString (", ") + "\"; a drag back to its own place and a drag of Gate B changed nothing; "
+                        "undo after the drags: " + (undone ? "\"" + postAfterUndo.joinIntoString (", ") + "\"" : juce::String ("nothing to undo")));
         }
 
         beginTest ("window: the 1280 x 760 canvas scales uniformly to the window, letterboxed; the window's size survives saving the state and stays out of presets");
@@ -2257,7 +2306,7 @@ public:
                         + labelWhileDragging + "\" mid-drag; \"2.5k\" set the high cut to " + juce::String (getParam (p, "delay_highcut"), 0) + " Hz; \"1/4\" picked the note");
         }
 
-        beginTest ("editor wiring: scene tiles store and recall, Store overwrites, A/B from the top bar, a card click opens its page, and a drag is one undo step");
+        beginTest ("editor wiring: scenes store and recall, Store overwrites, A/B from the top bar, a click on a pedal selects it, a marker's dot switches without selecting, and a drag is one undo step");
         {
             AmpSimProcessor p;
             std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
@@ -2301,26 +2350,25 @@ public:
             expectWithinAbsoluteError (onA, 30.0f, 0.01f);
             expectWithinAbsoluteError (getParam (p, "reverb_mix"), 60.0f, 0.01f);
 
-            // A click on the Post FX block opens its page (its block outlined at once), and a click on the reverb's
-            // tab shows the reverb.
-            auto& node = *ed.getChainNav().getNode (ui::PageId::postFx);
-            const auto middle = juce::Point<float> (20.0f, node.getLocalBounds().getCentre().toFloat().y);
-            node.mouseDown (event (node, middle, middle, false));
-            node.mouseUp (event (node, middle, middle, false));
-            expect (ed.getShownPage() == ui::PageId::postFx && ed.getPageComponent (ui::PageId::postFx).isVisible());
-            expect (! ed.getPageComponent (ui::PageId::amp).isVisible());
-            expect (ed.getChainNav().getActive() == ui::PageId::postFx);
-            auto& tab = *ed.getSectionPage (ui::Section::post).getTabs().getTab ((int) ui::BlockId::reverb);
-            const auto tabMiddle = tab.getLocalBounds().getCentre().toFloat().withX (10.0f);
-            tab.mouseDown (event (tab, tabMiddle, tabMiddle, false));
-            tab.mouseUp (event (tab, tabMiddle, tabMiddle, false));
-            expect (ed.getSectionPage (ui::Section::post).getSelected() == ui::BlockId::reverb && ed.getPage (ui::BlockId::reverb).isVisible());
+            // A click on the reverb's pedal (above its footswitch) selects it: the inspector shows the reverb at once.
+            auto& pedal = *ed.getBoard().getPedal (ui::BlockId::reverb);
+            const auto upper = juce::Point<float> (pedal.getLocalBounds().getCentre().toFloat().x, (float) pedal.getHeight() * 0.3f);
+            pedal.mouseDown (event (pedal, upper, upper, false));
+            pedal.mouseUp (event (pedal, upper, upper, false));
+            expect (ed.getSelectedBlock() == ui::BlockId::reverb && ed.getInspector().getContent() == &ed.getPage (ui::BlockId::reverb));
+            expectEquals (getParam (p, "reverb_on"), 1.0f, "a click above the footswitch only selects"); // (the scene above left it on)
 
-            // The bypass dot toggles without navigating.
-            auto& dot = *ed.getChainNav().getDot (ui::PageId::amp);
+            // The amp marker's dot toggles the amp without changing the selection.
+            auto& marker = *ed.getBoard().getMarker (ui::BlockId::amp);
+            ui::PowerSwitch* dotPointer = nullptr;
+            for (auto* child : marker.getChildren())
+                if (auto* s = dynamic_cast<ui::PowerSwitch*> (child))
+                    dotPointer = s;
+            expect (dotPointer != nullptr);
+            auto& dot = *dotPointer;
             dot.mouseDown (event (dot, { 8.0f, 8.0f }, { 8.0f, 8.0f }, false));
             expectEquals (getParam (p, "amp_bypass"), 1.0f);
-            expect (ed.getShownPage() == ui::PageId::postFx);
+            expect (ed.getSelectedBlock() == ui::BlockId::reverb);
             dot.mouseDown (event (dot, { 8.0f, 8.0f }, { 8.0f, 8.0f }, false));
             expectEquals (getParam (p, "amp_bypass"), 0.0f);
 
@@ -2356,7 +2404,7 @@ public:
             expectWithinAbsoluteError (undoneOnce, afterFirst, 0.01f);
             expectWithinAbsoluteError (undoneTwice, 25.0f, 0.01f);
             logMessage ("  -> scene tile 3: stored when empty, recalled delay on, overwritten after Store (which disarmed); A/B kept "
-                        "30% and 60% reverb mix apart; a click on the Post FX block opened its page and its reverb tab showed the reverb; the Amp block's "
+                        "30% and 60% reverb mix apart; a click on the reverb pedal selected it (its controls in the inspector); the amp marker's "
                         "dot bypassed the amp and back without leaving the page; two 40-point drags of the delay mix (25 -> "
                         + juce::String (afterFirst, 1) + " -> " + juce::String (afterSecond, 1) + "%) undid one at a time (" + juce::String (undoneOnce, 1)
                         + ", then " + juce::String (undoneTwice, 1) + "%)");

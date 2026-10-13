@@ -35,14 +35,6 @@ const std::array<AmpKnobSpec, AmpView::numKnobs> ampKnobs { {
     { "Master", "output_trim", 24.0f },
 } };
 
-// The page's vertical stack (handoff 4.5), in the page's coordinates (the main area, 1200 x 598): the
-// tabs (33), 16, the stage (290), 16, the info row (17), 16, the spectrum (to 16 above the strip), the
-// strip (87: a 1 px line, 12 px, a 74 px small knob).
-constexpr int tabsHeight = TabRow::height;
-constexpr int stageTop = tabsHeight + 16, stageHeight = 290;
-constexpr int infoTop = stageTop + stageHeight + 16, infoHeight = 17;
-constexpr int curveTop = infoTop + infoHeight + 16;
-constexpr int stripHeight = 1 + 12 + 74;
 } // namespace
 
 // ---- SpectrumView --------------------------------------------------------------------------------
@@ -332,8 +324,8 @@ private:
 // ---- The amp shelf -------------------------------------------------------------------------------
 
 /// The shelf (AmpView::getShelf): "Amp" in 12 px faint on the 20 px content line, then the minis, then the playing
-/// amp's name (15 px medium ink, as a tab's) or the hovered one's name and description (ink-dim). The playing mini
-/// has a 2 px emerald underline 6 px under it, in the tabs' place.
+/// amp's name (15 px medium ink) or the hovered one's name and description (ink-dim). The playing mini has a 2 px
+/// orange underline 6 px under it.
 class AmpView::Shelf final : public juce::Component, public juce::SettableTooltipClient
 {
 public:
@@ -471,32 +463,8 @@ private:
     AmpView& view;
 };
 
-/// The strip's 6 px gate light: emerald while Gate A is on and lets the guitar through, dark while it's
-/// closing or switched off.
-class AmpView::GateLight final : public juce::Component, public juce::SettableTooltipClient
-{
-public:
-    GateLight() { setTooltip ("Gate A: lit while it's on and lets the guitar through (its gain above -6 dB)"); }
-    void set (bool on)
-    {
-        if (on != lit)
-        {
-            lit = on;
-            repaint();
-        }
-    }
-    void paint (juce::Graphics& g) override
-    {
-        g.setColour (lit ? accent : line2);
-        g.fillEllipse (juce::Rectangle<float> (6.0f, 6.0f).withCentre (getLocalBounds().toFloat().getCentre()));
-    }
-
-private:
-    bool lit = false;
-};
-
 /// The Gain knob's step dots (ASSUMPTIONS AG9): with a gain set, a 3 px dot 5 px outside the knob's arc at each
-/// step's position, the one it plays (on a step) or the two it blends (between steps) in emerald, the others in
+/// step's position, the one it plays (on a step) or the two it blends (between steps) in orange, the others in
 /// the panel's label colour at 45%. Drawn over the knob, never taking its clicks.
 class AmpView::GainSteps final : public juce::Component
 {
@@ -561,6 +529,260 @@ private:
     juce::Colour colour;
 };
 
+/// The head and everything on it, at the head's designed size (AmpHead's component box), scaled to the stage by a
+/// transform: the art, the jewel, the grille's click area, the seven knobs of each amp, and the Gain step dots.
+class AmpView::HeadAssembly final : public juce::Component
+{
+public:
+    HeadAssembly()
+    {
+        setInterceptsMouseClicks (false, true);
+        setSize (AmpHead::headWidth + AmpHead::margin.getLeftAndRight(), AmpHead::headHeight + AmpHead::margin.getTopAndBottom());
+    }
+};
+
+// ---- The knobs ---------------------------------------------------------------------------------------
+
+juce::String AmpView::knobCaption (int index)
+{
+    return ampKnobs[(size_t) juce::jlimit (0, numKnobs - 1, index)].caption;
+}
+
+juce::String AmpView::knobParameter (int amp, int index)
+{
+    return AmpSimProcessor::ampParamId (amp, ampKnobs[(size_t) juce::jlimit (0, numKnobs - 1, index)].parameter);
+}
+
+void AmpView::dressKnob (Knob& knob, int k)
+{
+    const auto& spec = ampKnobs[(size_t) juce::jlimit (0, numKnobs - 1, k)];
+    const auto range = spec.rangeDb;
+    knob.setFormatter ([range] (float db) { return juce::String ((db + range) / (2.0f * range) * 10.0f, 1); });
+    knob.setTooltip (juce::String (spec.caption) + (k == 0 ? ": with a gain set, moves across its captures, blending the two nearest; with a "
+                                                             "single capture, its input trim, -24 to +24 dB. Either way the level stays put"
+                                                    : k == numKnobs - 1 ? ": the capture's output trim, 0 to 10 over -24 to +24 dB (5.0 is unity)"
+                                                                        : ": 0 to 10 over -12 to +12 dB (5.0 is flat)"));
+}
+
+// ---- AmpPanel: the amp in the inspector ----------------------------------------------------------
+
+/// The gate's 6 px open light: orange while Gate A is on and lets the guitar through, dark while it's closing or
+/// switched off.
+class AmpPanel::GateLight final : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    GateLight() { setTooltip ("Gate A: lit while it's on and lets the guitar through (its gain above -6 dB)"); }
+    void set (bool on)
+    {
+        if (on != lit)
+        {
+            lit = on;
+            repaint();
+        }
+    }
+    void paint (juce::Graphics& g) override
+    {
+        const auto r = juce::Rectangle<float> (7.0f, 7.0f).withCentre (getLocalBounds().toFloat().getCentre());
+        if (lit)
+        {
+            g.setColour (accent.withAlpha (0.25f));
+            g.fillEllipse (r.expanded (3.0f));
+        }
+        g.setColour (lit ? accent : line2);
+        g.fillEllipse (r);
+    }
+
+private:
+    bool lit = false;
+};
+
+AmpPanel::AmpPanel (AmpSimProcessor& p, AmpView& v) : ControlGroup (p), view (v), spectrum (p)
+{
+    ampOn = &adopt (std::make_unique<Switch> ("On"));
+    // The amp's switch is its bypass, inverted: on while the amp plays (the board's amp marker has the same dot).
+    ampOn->setClickingTogglesState (true);
+    tagged (*ampOn, "amp_bypass");
+    ampOn->setTooltip ("The amp on or off (off passes the DI straight to the cab)");
+    ampOn->onClick = [this]
+    {
+        if (auto* bypass = state.getParameter ("amp_bypass"))
+        {
+            const auto wanted = ampOn->getToggleState() ? 0.0f : 1.0f;
+            if (! juce::exactlyEqual (bypass->getValue(), wanted))
+            {
+                beginUndoStep (state);
+                bypass->beginChangeGesture();
+                bypass->setValueNotifyingHost (wanted);
+                bypass->endChangeGesture();
+            }
+        }
+    };
+
+    // Each amp's seven knobs in the chrome, shown only while the amp plays.
+    for (int s = 0; s < AmpSimProcessor::numAmps; ++s)
+        for (int k = 0; k < AmpView::numKnobs; ++k)
+        {
+            auto& knob = addKnob (AmpView::knobParameter (s, k), AmpView::knobCaption (k), " dB", Knob::Size::normal);
+            AmpView::dressKnob (knob, k);
+            knob.setVisible (false);
+            knobs[(size_t) s][(size_t) k] = &knob;
+        }
+
+    input = &addKnob ("input_gain", "Input", " dB");
+    output = &addKnob ("output_gain", "Output", " dB");
+    threshold = &addKnob ("gate_a_threshold", "Threshold", " dB");
+    threshold->setFormatter ([] (float x) { return juce::String (juce::roundToInt (x)) + " dB"; });
+    release = &addKnob ("gate_a_release", "Release", " ms");
+    release->setFormatter ([] (float x) { return juce::String (juce::roundToInt (x)) + " ms"; });
+    // Gate A's switch (Sean's play test, 2026-10-04: "the noise gate doesn't work"): Threshold and Release here
+    // are Gate A's, which starts off like every effect, so its switch sits with them.
+    gateOn = &addSwitch ("gate_a_on", {});
+    gateOn->setTooltip ("Gate A on or off (Threshold and Release only act while it's on)");
+    gateLight = std::make_unique<GateLight>();
+    addAndMakeVisible (*gateLight);
+    addAndMakeVisible (spectrum);
+    refresh();
+}
+
+AmpPanel::~AmpPanel()
+{
+    stopTimer();
+    spectrum.setActive (false);
+}
+
+void AmpPanel::layout (InspectorLayout& l)
+{
+    const auto amp = juce::jlimit (0, AmpSimProcessor::numAmps - 1, shownAmp);
+    const auto& k = knobs[(size_t) amp];
+    l.section ("Gain and master");
+    l.knobs ({ k[0], k[6] });
+    l.section ("Tone");
+    l.knobs ({ k[1], k[2], k[3], k[4], k[5] });
+    l.section ("Gate A, before the amp", gateOn);
+    l.knobs ({ threshold, release });
+    if (l.isPlacing())
+        gateLight->setBounds (release->getBounds().translated (release->getWidth() / 2 + 18, 0).withSizeKeepingCentre (20, 20).withY (release->getY() + 22));
+    l.area (&promptArea, gatePrompt.isNotEmpty() ? 34 : 0);
+    l.section ("Input and output");
+    l.knobs ({ input, output });
+    l.section ("Output spectrum");
+    l.area (&spectrumArea, 132);
+    if (l.isPlacing())
+        spectrum.setBounds (spectrumArea.withTrimmedTop (-10));
+}
+
+int AmpPanel::preferredHeight (int width)
+{
+    InspectorLayout l ({ BlockPage::padding, BlockPage::headerHeight (view.ampDescription (shownAmp), width) + BlockPage::padding,
+                         width - 2 * BlockPage::padding, 0 },
+                       false);
+    layout (l);
+    return l.getBottom() + BlockPage::padding + 8;
+}
+
+void AmpPanel::resized()
+{
+    const auto width = getWidth() - 2 * BlockPage::padding;
+    const auto w = ampOn->getPreferredWidth();
+    ampOn->setBounds (getWidth() - BlockPage::padding - w + Switch::margin, BlockPage::padding + (22 - Switch::preferredHeight) / 2, w, Switch::preferredHeight);
+    InspectorLayout l ({ BlockPage::padding, BlockPage::headerHeight (view.ampDescription (shownAmp), getWidth()) + BlockPage::padding, width, 0 }, true);
+    layout (l);
+    texts = l.getTexts();
+    repaint();
+}
+
+void AmpPanel::paint (juce::Graphics& g)
+{
+    // The header, as a pedal's: the playing amp's name, its description, a hairline.
+    const auto width = getWidth() - 2 * BlockPage::padding;
+    const auto description = view.ampDescription (shownAmp);
+    g.setFont (geist (Weight::semibold, 16.0f));
+    g.setColour (ink);
+    g.drawText (AmpSimProcessor::ampName (juce::jmax (0, shownAmp)), juce::Rectangle<int> (BlockPage::padding, BlockPage::padding, width - ampOn->getWidth() - 8, 22),
+                juce::Justification::centredLeft, true);
+    const auto height = BlockPage::headerHeight (description, getWidth());
+    if (description.isNotEmpty())
+    {
+        g.setFont (font (Text::label));
+        g.setColour (inkFaint);
+        const juce::Rectangle<int> lines (BlockPage::padding, BlockPage::padding + 26, width, height - BlockPage::padding - 26 - 14);
+        g.drawFittedText (description, lines, juce::Justification::topLeft, juce::jmax (1, lines.getHeight() / 16), 1.0f);
+    }
+    g.setColour (line1);
+    g.fillRect (BlockPage::padding, height - 1, width, 1);
+    InspectorLayout::paintTexts (g, texts);
+
+    // The gate's first switch-on: the prompt in ink (the result after it in ink-dim), and while Learn measures,
+    // its progress as a thin orange bar under the words.
+    if (gatePrompt.isNotEmpty() && ! promptArea.isEmpty())
+    {
+        auto area = promptArea;
+        const auto measuring = gateLearnProgress >= 0.0f;
+        g.setFont (geist (Weight::regular, 12.0f));
+        g.setColour (measuring ? ink : inkDim);
+        g.drawFittedText (gatePrompt, area.removeFromTop (28), juce::Justification::topLeft, 2, 0.9f);
+        if (measuring)
+        {
+            const auto bar = area.withHeight (3).toFloat();
+            g.setColour (line2);
+            g.fillRoundedRectangle (bar, 1.5f);
+            g.setColour (accent);
+            g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * juce::jlimit (0.0f, 1.0f, gateLearnProgress)), 1.5f);
+        }
+    }
+}
+
+void AmpPanel::refresh()
+{
+    const auto amp = ampSim.getSelectedAmp();
+    if (amp != shownAmp)
+    {
+        shownAmp = amp;
+        for (int s = 0; s < AmpSimProcessor::numAmps; ++s)
+            for (auto* knob : knobs[(size_t) s])
+                knob->setVisible (s == amp);
+        resized();
+    }
+    ampOn->setToggleState (state.getRawParameterValue ("amp_bypass")->load() < 0.5f, juce::dontSendNotification);
+    updateGatePrompt();
+}
+
+void AmpPanel::pageShown()
+{
+    spectrum.setActive (true);
+    startTimerHz (meterFps);
+}
+
+void AmpPanel::pageHidden()
+{
+    spectrum.setActive (false);
+    stopTimer();
+}
+
+void AmpPanel::timerCallback()
+{
+    gateOpen = ampSim.isGateOpen() && state.getRawParameterValue ("gate_a_on")->load() >= 0.5f;
+    gateLight->set (gateOpen);
+    updateGatePrompt();
+}
+
+void AmpPanel::updateGatePrompt()
+{
+    // The gate's first switch-on (ASSUMPTIONS PT13): the prompt by the switch that started it, with the
+    // measurement's progress under it, then the threshold it set. (The info row says the same: UH5.)
+    const auto prompt = ampSim.getAutoLearnPrompt();
+    const auto progress = prompt == AmpSimProcessor::autoLearnPromptText ? (ampSim.isLearningGates() ? ampSim.getGateLearnProgress() : 0.0f) : -1.0f;
+    if (prompt != gatePrompt || std::abs (progress - gateLearnProgress) > 0.005f)
+    {
+        const auto relayout = prompt.isEmpty() != gatePrompt.isEmpty();
+        gatePrompt = prompt;
+        gateLearnProgress = progress;
+        if (relayout)
+            resized();
+        repaint (promptArea);
+    }
+}
+
 // ---- AmpView -------------------------------------------------------------------------------------
 
 Material materialForAmp (int amp)
@@ -569,7 +791,7 @@ Material materialForAmp (int amp)
     return amp >= 0 && amp < AmpSimProcessor::numBuiltInAmps ? materialForAmp (presets::builtInAmpName (amp)) : Material::custom;
 }
 
-AmpView::AmpView (AmpSimProcessor& p) : ControlGroup (p), spectrum (p)
+AmpView::AmpView (AmpSimProcessor& p) : ControlGroup (p)
 {
     shelf = std::make_unique<Shelf> (*this);
     addAndMakeVisible (*shelf);
@@ -581,51 +803,47 @@ AmpView::AmpView (AmpSimProcessor& p) : ControlGroup (p), spectrum (p)
             if (amp.file == presets::builtInCapture (a))
                 descriptions[(size_t) a] = amp.description;
 
-    addAndMakeVisible (head);
-    addAndMakeVisible (jewel);
+    assembly = std::make_unique<HeadAssembly>();
+    addAndMakeVisible (*assembly);
+    assembly->addAndMakeVisible (head);
+    head.setBounds (assembly->getLocalBounds());
+    assembly->addAndMakeVisible (jewel);
     grille = std::make_unique<Grille> (*this);
-    addAndMakeVisible (*grille);
+    assembly->addAndMakeVisible (*grille);
 
     // Each amp's seven knobs, in its material's skin, shown only while the amp plays.
     for (int s = 0; s < AmpSimProcessor::numAmps; ++s)
         for (int k = 0; k < numKnobs; ++k)
         {
-            const auto& spec = ampKnobs[(size_t) k];
-            auto& knob = addKnob (AmpSimProcessor::ampParamId (s, spec.parameter), spec.caption, " dB", Knob::Size::normal);
+            auto& knob = addKnob (knobParameter (s, k), knobCaption (k), " dB", Knob::Size::normal);
             knob.setSkin (skinFor (materialForAmp (s)));
-            const auto range = spec.rangeDb;
-            knob.setFormatter ([range] (float db) { return juce::String ((db + range) / (2.0f * range) * 10.0f, 1); });
-            knob.setTooltip (juce::String (spec.caption) + (k == 0 ? ": with a gain set, moves across its captures, blending the two nearest; with a "
-                                                                     "single capture, its input trim, -24 to +24 dB. Either way the level stays put"
-                                                            : k == numKnobs - 1 ? ": the capture's output trim, 0 to 10 over -24 to +24 dB (5.0 is unity)"
-                                                                                : ": 0 to 10 over -12 to +12 dB (5.0 is flat)"));
+            dressKnob (knob, k);
             knob.setVisible (false);
+            assembly->addChildComponent (knob); // drawn on the head, at its scale
             knobs[(size_t) s][(size_t) k] = &knob;
         }
 
     gainStepDots = std::make_unique<GainSteps>();
-    addAndMakeVisible (*gainStepDots);
+    assembly->addAndMakeVisible (*gainStepDots);
 
     info = std::make_unique<InfoRow> (*this);
     addAndMakeVisible (*info);
-    addAndMakeVisible (spectrum);
 
-    // The shared strip (handoff 4.5, without the Doubler: ASSUMPTIONS UH7).
-    input = &addKnob ("input_gain", "Input", " dB", Knob::Size::compact);
-    threshold = &addKnob ("gate_a_threshold", "Threshold", " dB", Knob::Size::compact);
-    threshold->setFormatter ([] (float v) { return juce::String (juce::roundToInt (v)) + " dB"; });
-    release = &addKnob ("gate_a_release", "Release", " ms", Knob::Size::compact);
-    release->setFormatter ([] (float v) { return juce::String (juce::roundToInt (v)) + " ms"; });
-    // The Gate group's switch (Sean's play test, 2026-10-04: "the noise gate doesn't work"): the strip's
-    // Threshold and Release are Gate A's, which starts off like every effect, and the strip had no way to
-    // switch it on, so turning them did nothing. The handoff's toggle (4.2), without a label, under the
-    // group's name; the same parameter as Gate A's dot on the Pre FX page.
-    gateOn = &addSwitch ("gate_a_on", {});
-    gateOn->setTooltip ("Gate A on or off (Threshold and Release only act while it's on)");
-    output = &addKnob ("output_gain", "Output", " dB", Knob::Size::compact);
-    gateLight = std::make_unique<GateLight>();
-    addAndMakeVisible (*gateLight);
+    // The head's layout inside the assembly, at its designed size: the grille, the jewel, the knobs on the panel.
+    grille->setBounds (AmpHead::grilleBox().toNearestInt());
+    // The panel: padding 0 22; the 96 px side column holds the jewel (centred, as the CSS does without the
+    // toggles: UH4), 20 px, then the knobs spread evenly (space-between) over the rest.
+    const auto panelBox = AmpHead::panelBox();
+    jewel.setBounds (juce::Rectangle<int> (30, 30).withCentre ({ juce::roundToInt (panelBox.getX() + 22.0f + 9.0f), juce::roundToInt (panelBox.getCentreY()) }));
+    const auto knobsLeft = panelBox.getX() + 22.0f + 96.0f + 20.0f, knobsWidth = panelBox.getRight() - 22.0f - knobsLeft;
+    const auto css = Knob::cssSize (Knob::Size::normal);
+    for (auto& set : knobs)
+        for (int k = 0; k < numKnobs; ++k)
+            set[(size_t) k]->setCssPosition (juce::roundToInt (knobsLeft + (knobsWidth - (float) css.x) * (float) k / (float) (numKnobs - 1)),
+                                             juce::roundToInt (panelBox.getCentreY() - (float) css.y * 0.5f));
+    gainStepDots->setBounds (knobs[0][0]->getBounds().expanded (GainSteps::pad));
 
+    panel = std::make_unique<AmpPanel> (p, *this);
     showSlot (0);
     refresh();
 }
@@ -633,7 +851,6 @@ AmpView::AmpView (AmpSimProcessor& p) : ControlGroup (p), spectrum (p)
 AmpView::~AmpView()
 {
     stopTimer();
-    spectrum.setActive (false);
 }
 
 void AmpView::showSlot (int slot)
@@ -664,6 +881,11 @@ juce::Component& AmpView::getGrille() noexcept
 juce::Component& AmpView::getShelf() noexcept
 {
     return *shelf;
+}
+
+juce::Component& AmpView::getHeadAssembly() noexcept
+{
+    return *assembly;
 }
 
 bool AmpView::yourCaptureLoaded() const
@@ -757,7 +979,6 @@ juce::String AmpView::toneTypeOf (const juce::File& namFile)
 void AmpView::refresh()
 {
     showSlot (ampSim.getSelectedAmp());
-    updateGatePrompt();
 
     // The capture: lit while one is loaded; its voice from the metadata, its file.
     const auto status = ampSim.getStatus();
@@ -812,140 +1033,41 @@ void AmpView::refresh()
 
 void AmpView::pageShown()
 {
-    spectrum.setActive (true);
     startTimerHz (meterFps);
 }
 
 void AmpView::pageHidden()
 {
-    spectrum.setActive (false);
     stopTimer();
 }
 
 void AmpView::timerCallback()
 {
-    gateOpen = ampSim.isGateOpen() && state.getRawParameterValue ("gate_a_on")->load() >= 0.5f;
-    gateLight->set (gateOpen);
     updateGainSteps(); // the lit steps follow the knob, whoever turns it
-    updateGatePrompt();
 }
 
-void AmpView::updateGatePrompt()
+void AmpView::paint (juce::Graphics&)
 {
-    // The gate's first switch-on (ASSUMPTIONS PT13): the prompt next to the switch that started it, with the
-    // measurement's progress under it, then the threshold it set. (The info row says the same: UH5.)
-    const auto prompt = ampSim.getAutoLearnPrompt();
-    const auto progress = prompt == AmpSimProcessor::autoLearnPromptText ? (ampSim.isLearningGates() ? ampSim.getGateLearnProgress() : 0.0f) : -1.0f;
-    if (prompt != gatePrompt || std::abs (progress - gateLearnProgress) > 0.005f)
-    {
-        gatePrompt = prompt;
-        gateLearnProgress = progress;
-        repaint (promptArea);
-    }
-}
-
-void AmpView::paint (juce::Graphics& g)
-{
-    // The stage's glow: radial-gradient(ellipse 60% 70% at 50% 100%, emerald .05, transparent 70%).
-    {
-        const auto stage = stageArea.toFloat();
-        const juce::Graphics::ScopedSaveState saved (g);
-        g.reduceClipRegion (stageArea);
-        const auto rx = stage.getWidth() * 0.6f, ry = stage.getHeight() * 0.7f;
-        const juce::Point<float> centre { stage.getCentreX(), stage.getBottom() };
-        g.addTransform (juce::AffineTransform::scale (1.0f, ry / rx, centre.x, centre.y));
-        juce::ColourGradient glow (accent.withAlpha (0.05f), centre, accent.withAlpha (0.0f), centre.translated (rx, 0.0f), true);
-        glow.clearColours();
-        glow.addColour (0.0, accent.withAlpha (0.05f));
-        glow.addColour (0.7, accent.withAlpha (0.0f));
-        glow.addColour (1.0, accent.withAlpha (0.0f));
-        g.setGradientFill (glow);
-        g.fillRect (juce::Rectangle<float> (centre.x - rx, centre.y - rx, 2.0f * rx, 2.0f * rx));
-    }
-
-    // The strip: its line, the group names, the dividers.
-    g.setColour (line1);
-    g.fillRect (stripArea.withHeight (1));
-    const auto knobsTop = stripArea.getY() + 13;
-    for (size_t i = 0; i < 2; ++i) // the last group has none
-        g.fillRect (dividers[i], knobsTop, 1, 74);
-    g.setFont (geist (Weight::regular, 12.0f));
-    g.setColour (inkFaint);
-    for (const auto& [x, name] : { std::pair<int, const char*> { 0, "Input" }, { dividers[1] + 27, "Output" } })
-        g.drawText (name, juce::Rectangle<int> (x, knobsTop, 52, 74), juce::Justification::centredLeft, false);
-    // The Gate group's name sits above its switch, the pair centred on the knobs' row.
-    g.drawText ("Gate", juce::Rectangle<int> (dividers[0] + 27, knobsTop + 37 - 22, 52, 16), juce::Justification::centredLeft, false);
-
-    // The gate's first switch-on: the prompt in ink (the result after it in ink-dim), and while Learn
-    // measures, its progress as a thin emerald bar under the words.
-    if (gatePrompt.isNotEmpty())
-    {
-        auto area = promptArea;
-        const auto measuring = gateLearnProgress >= 0.0f;
-        g.setFont (geist (Weight::regular, 13.0f));
-        g.setColour (measuring ? ink : inkDim);
-        g.drawText (gatePrompt, area.removeFromTop (18), juce::Justification::centredLeft, true);
-        if (measuring)
-        {
-            const auto bar = area.withTrimmedTop (6).withHeight (3).withWidth (juce::jmin (area.getWidth(), 300)).toFloat();
-            g.setColour (line2);
-            g.fillRoundedRectangle (bar, 1.5f);
-            g.setColour (accent);
-            g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * juce::jlimit (0.0f, 1.0f, gateLearnProgress)), 1.5f);
-        }
-    }
+    // The stage paints the dark and its light; the head is its own art.
 }
 
 void AmpView::resized()
 {
-    shelf->setBounds (0, 0, getWidth(), tabsHeight - 1); // where the tabs were: the 20 px line, the underline under it
-    stageArea = { 0, stageTop, getWidth(), stageHeight };
+    // The shelf on the stage's top line (the stage's Amp / Cab / EQ control is at its right end).
+    shelf->setBounds (24, 22, juce::jmin (640, getWidth() - 300), 30);
 
-    // The head, centred at the bottom of the stage.
-    const auto headX = (getWidth() - AmpHead::headWidth) / 2, headY = stageArea.getBottom() - AmpHead::headHeight;
-    head.setBounds (headX - AmpHead::margin.getLeft(), headY - AmpHead::margin.getTop(), AmpHead::headWidth + AmpHead::margin.getLeftAndRight(),
-                    AmpHead::headHeight + AmpHead::margin.getTopAndBottom());
-    const auto inHead = [&] (juce::Rectangle<float> r) { return r.translated ((float) head.getX(), (float) head.getY()).toNearestInt(); };
-    grille->setBounds (inHead (AmpHead::grilleBox()));
-
-    // The panel: padding 0 22; the 96 px side column holds the jewel (centred, as the CSS does without
-    // the toggles: UH4), 20 px, then the knobs spread evenly (space-between) over the rest.
-    const auto panel = AmpHead::panelBox().translated ((float) head.getX(), (float) head.getY());
-    jewel.setBounds (juce::Rectangle<int> (30, 30).withCentre ({ juce::roundToInt (panel.getX() + 22.0f + 9.0f), juce::roundToInt (panel.getCentreY()) }));
-    const auto knobsLeft = panel.getX() + 22.0f + 96.0f + 20.0f, knobsWidth = panel.getRight() - 22.0f - knobsLeft;
-    const auto css = Knob::cssSize (Knob::Size::normal);
-    for (auto& set : knobs)
-        for (int k = 0; k < numKnobs; ++k)
-            set[(size_t) k]->setCssPosition (juce::roundToInt (knobsLeft + (knobsWidth - (float) css.x) * (float) k / (float) (numKnobs - 1)),
-                                             juce::roundToInt (panel.getCentreY() - (float) css.y * 0.5f));
-
-    gainStepDots->setBounds (knobs[0][0]->getBounds().expanded (GainSteps::pad));
-
-    info->setBounds (0, infoTop, getWidth(), infoHeight);
-    stripArea = { 0, getHeight() - stripHeight, getWidth(), stripHeight };
-    curveArea = { 0, curveTop, getWidth(), stripArea.getY() - 16 - curveTop };
-    spectrum.setBounds (curveArea);
-
-    // The strip's groups (CSS .grp: gap 2, padding-right 26, a 1 px border, margin-right 26): a 52 px name,
-    // the small knobs, the gate's light 10 px after its knobs.
-    const auto knobsTop = stripArea.getY() + 13;
-    auto x = 52 + 2;
-    input->setCssPosition (x, knobsTop);
-    x += 68 + 26;
-    dividers[0] = x;
-    gateOn->setBounds (dividers[0] + 27 - Switch::margin, knobsTop + 37 - 4, 28 + 2 * Switch::margin, Switch::preferredHeight);
-    x += 1 + 26 + 52 + 2;
-    threshold->setCssPosition (x, knobsTop);
-    x += 68 + 2;
-    release->setCssPosition (x, knobsTop);
-    x += 68 + 2 + 10;
-    gateLight->setBounds (juce::Rectangle<int> (14, 14).withCentre ({ x + 3, knobsTop + 37 }));
-    x += 6 + 26;
-    dividers[1] = x;
-    x += 1 + 26 + 52 + 2;
-    output->setCssPosition (x, knobsTop);
-    dividers[2] = x + 68 + 26; // (the last group has no divider)
-    promptArea = juce::Rectangle<int> (dividers[2] + 26, knobsTop + 37 - 16, getWidth() - dividers[2] - 26, 32);
+    // The head, as large as the stage allows with room for its handle and feet, centred over the floor; the info
+    // row along the bottom.
+    const auto infoHeight = 17, bottomPad = 14;
+    info->setBounds (24, getHeight() - bottomPad - infoHeight, getWidth() - 48, infoHeight);
+    const auto top = 72.0f, bottom = (float) info->getY() - 22.0f; // room for the handle above and the feet below
+    const auto maxWidth = (float) getWidth() - 136.0f;
+    headScale = juce::jmin (maxWidth / (float) AmpHead::headWidth, (bottom - top) / (float) AmpHead::headHeight);
+    const auto bodyWidth = (float) AmpHead::headWidth * headScale;
+    const auto bodyX = ((float) getWidth() - bodyWidth) * 0.5f, bodyY = top;
+    assembly->setTopLeftPosition (0, 0);
+    assembly->setTransform (juce::AffineTransform::scale (headScale)
+                                .translated (bodyX - (float) AmpHead::margin.getLeft() * headScale, bodyY - (float) AmpHead::margin.getTop() * headScale));
 }
 
 } // namespace ui

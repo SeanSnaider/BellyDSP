@@ -478,7 +478,7 @@ public:
             p.prepareToPlay (fs, blockSize);
             std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
-            ed.showPage (ui::PageId::amp);
+            ed.selectBlock (ui::BlockId::amp);
             ed.refresh();
             const auto quiet = pickupNoise ((int) (0.3 * fs), -70.0, 3);
             const auto nothingStarted = [&] (const juce::String& what) {
@@ -559,7 +559,6 @@ public:
             play (p, pickupNoise ((int) (1.0 * fs), -70.0, 5));
             ed.refresh();
             expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), proofDir().getChildFile ("gate_auto_learn_measuring_amp.png")));
-            ed.showPage (ui::PageId::preFx);
             ed.selectBlock (ui::BlockId::gateA);
             ed.refresh();
             expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), proofDir().getChildFile ("gate_auto_learn_gate_page.png")));
@@ -572,7 +571,7 @@ public:
             expectGreaterThan (learned, -55.0f);
             expectLessThan (learned, -40.0f);
             expect (resultLine.startsWith ("Noise floor learned"), resultLine);
-            ed.showPage (ui::PageId::amp);
+            ed.selectBlock (ui::BlockId::amp);
             ed.refresh();
             expect (savePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), proofDir().getChildFile ("gate_auto_learn_result_amp.png")));
 
@@ -580,7 +579,6 @@ public:
             click (gateSwitch);
             click (gateSwitch);
             expect (p.parameters.getRawParameterValue ("gate_a_on")->load() >= 0.5f);
-            ed.showPage (ui::PageId::preFx);
             ed.selectBlock (ui::BlockId::gateA);
             setParam (p, "gate_a_on", 0.0f);
             ed.refresh();
