@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Cable sketch</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1440px;height:900px;overflow:hidden;background:#0b0c0c;color:#e6ebe9;font-family:Geist,system-ui,sans-serif}
+.bar{height:56px;border-bottom:1px solid #1e2221;display:flex;align-items:center;padding:0 72px;gap:28px;font-size:14px}
+.brand{font-weight:600;font-size:15px;display:flex;align-items:center;gap:10px}
+.brand i{width:7px;height:7px;border-radius:50%;background:#34d399;display:block}
+.bar nav{margin-left:auto;display:flex;gap:24px;color:#8a938f}
+.bar .dl{border:1px solid #2a2f2d;border-radius:8px;padding:7px 14px}
+svg.wire{position:absolute;left:0;top:56px;width:1440px;height:844px}
+.jack{position:absolute;left:104px;top:96px;display:flex;align-items:center;gap:12px;font-size:13px;color:#8a938f;letter-spacing:.06em}
+.jack i{width:34px;height:34px;border-radius:50%;border:1px solid #2a2f2d;background:radial-gradient(circle,#1a1d1c 40%,#0b0c0c 42%);display:block}
+.copy{position:absolute;left:160px;top:150px;width:470px}
+.eyebrow{font-size:13px;color:#8a938f;margin-bottom:20px}
+h1{font-size:76px;font-weight:600;letter-spacing:-.035em;line-height:1}
+.hook{margin-top:22px;font-size:19px;line-height:1.55;color:#b9c1be}
+.acts{margin-top:30px;display:flex;gap:12px}
+.btn{height:50px;border-radius:10px;display:flex;align-items:center;padding:0 20px;font-size:16px;font-weight:500}
+.btn.p{background:#e6ebe9;color:#0b0c0c}
+.btn.s{border:1px solid #2a2f2d}
+.meta{margin-top:12px;font-size:13px;color:#525a57}
+.stop{position:absolute;left:690px;top:120px;width:690px;height:520px;border:1px solid #1e2221;border-radius:14px;background:radial-gradient(ellipse 60% 70% at 50% 100%,rgba(52,211,153,.05),transparent 70%),#0e1010}
+.stoplabel{position:absolute;left:24px;top:-11px;background:#0b0c0c;padding:0 10px;font-size:12px;letter-spacing:.14em;color:#34d399}
+.shelf{position:absolute;left:32px;top:30px;display:flex;gap:14px;align-items:center}
+.mini{width:40px;height:26px;border-radius:4px;box-shadow:0 0 0 1px rgba(255,255,255,.08);position:relative}
+.mini::before{content:"";position:absolute;left:4px;right:4px;top:4px;height:6px;border-radius:1px;background:rgba(0,0,0,.35)}
+.mini.on::after{content:"";position:absolute;left:0;right:0;bottom:-9px;height:2px;background:#34d399}
+.shelf b{margin-left:14px;font-weight:500;font-size:15px}
+.head{position:absolute;left:45px;top:110px;width:600px;height:204px;border-radius:12px;background:linear-gradient(#7d6a49,#5c4a33);box-shadow:0 18px 40px rgba(0,0,0,.6);padding:12px;border:6px solid #c8a467}
+.panel{height:70px;border-radius:6px;background:linear-gradient(#4a3a2a,#36291d);display:flex;align-items:center;justify-content:space-around;padding:0 24px 0 64px;position:relative}
+.panel::before{content:"";position:absolute;left:20px;top:27px;width:16px;height:16px;border-radius:50%;background:#34d399;box-shadow:0 0 10px #34d399}
+.k{width:30px;height:30px;border-radius:50%;background:radial-gradient(circle at 38% 30%,#fff7e6,#d8c39a 80%);box-shadow:0 0 0 2px #34d399 inset}
+.grille{margin-top:10px;height:96px;border-radius:5px;background:linear-gradient(90deg,#5a1f22,#7a2a2b 50%,#5a1f22);display:flex;align-items:center;justify-content:center;font-family:Georgia,serif;font-style:italic;font-weight:600;font-size:44px;color:#f3e6c8}
+.voice{position:absolute;left:45px;top:340px;font-size:15px;color:#8a938f;width:600px;line-height:1.6}
+.voice b{color:#e6ebe9;font-weight:500}
+.spec{position:absolute;left:45px;bottom:40px;right:45px;height:80px;border-top:1px solid #1e2221}
+.spec svg{width:100%;height:100%}
+.chain{position:absolute;left:690px;top:676px;display:flex;gap:10px}
+.chip{height:40px;border:1px solid #1e2221;border-radius:9px;display:flex;align-items:center;padding:0 14px;font-size:14px;color:#8a938f;gap:8px}
+.chip.on{border-color:#34d399;color:#e6ebe9}
+.chip i{width:6px;height:6px;border-radius:50%;background:#34d399;display:block}
+.next{position:absolute;left:160px;top:770px;font-size:13px;letter-spacing:.14em;color:#525a57}
+.next b{display:block;margin-top:8px;font-size:30px;letter-spacing:-.01em;color:#8a938f;font-weight:500}
+</style></head><body>
+<div class="bar"><div class="brand"><i></i>BellyDSP</div><nav><span style="color:#e6ebe9">Overview</span><span>Download</span><span>Stats</span><span>Source</span></nav><span class="dl">Download 0.2.0</span></div>
+<svg class="wire" viewBox="0 0 1440 844"><path d="M121 58 L121 600 Q121 640 160 640 L660 640 Q690 640 690 600 L690 330" fill="none" stroke="#34d399" stroke-width="2" opacity=".85"/><path d="M121 600 L121 844" fill="none" stroke="#1e2221" stroke-width="2"/></svg>
+<div class="jack"><i></i>INPUT · your guitar</div>
+<div class="copy">
+  <div class="eyebrow">Free and open source · macOS and Windows</div>
+  <h1>Plug in.<br>Pick an amp.<br>Play.</h1>
+  <p class="hook">BellyDSP is a guitar amp sim and multi-effects app: eight neural amps, a movable-mic cab, a full pedalboard, and Match tone, which dials in the guitar from a song.</p>
+  <div class="acts"><div class="btn p">Download for macOS</div><div class="btn s">Windows</div></div>
+  <div class="meta">Version 0.2.0 · 18.9 MB · zero added latency</div>
+</div>
+<div class="stop"><div class="stoplabel">AMP · 3 OF 7</div>
+  <div class="shelf">
+    <div class="mini" style="background:#d9d6cd"></div><div class="mini" style="background:#4b1d1f"></div><div class="mini" style="background:#161717"></div><div class="mini on" style="background:#c8a467"></div><div class="mini" style="background:#35383b"></div><div class="mini" style="background:#17234d"></div><div class="mini" style="background:#111213"></div><div class="mini" style="background:#e4d7ea"></div><b>Lantern</b>
+  </div>
+  <div class="head"><div class="panel"><div class="k"></div><div class="k"></div><div class="k"></div><div class="k"></div><div class="k"></div><div class="k"></div><div class="k"></div></div><div class="grille">Lantern</div></div>
+  <p class="voice"><b>Lantern,</b> power-amp breakup, edge to crunch. Pick softer and it cleans up. Click any amp on the shelf to swap the head.</p>
+  <div class="spec"><svg viewBox="0 0 600 80" preserveAspectRatio="none"><path d="M0 55 C70 52 100 32 150 36 S230 24 280 30 S360 22 400 30 S480 26 530 40 S585 62 600 68" fill="none" stroke="#34d399" stroke-width="1.5"/></svg></div>
+</div>
+<div class="chain"><span class="chip">Input</span><span class="chip">Pre FX</span><span class="chip on"><i></i>Amp</span><span class="chip">EQ</span><span class="chip">Cab</span><span class="chip">Post FX</span><span class="chip">Output</span></div>
+<div class="next">NEXT STOP<b>Pre FX: gates, drives, compressor</b></div>
+</body></html>

@@ -1,0 +1,46 @@
+{
+  "title": "Choose the overview's structure",
+  "question": "The app's look stays (dark, hairlines, Geist, emerald for on). These are three ways to build bellydsp.com inside it. Lock one, steer, or re-roll.",
+  "options": [
+    {
+      "id": "sleeve",
+      "label": "The record sleeve",
+      "kicker": "THE ROLL",
+      "lineage": "a 12-inch LP: front cover, back cover track list, inner-sleeve liner notes",
+      "thesis": "BellyDSP released like a record: the cover is the rig you play, the back is the track list, the inner sleeve is the liner notes.",
+      "palette": ["#0b0c0c", "#111313", "#34d399", "#e6ebe9", "#c8a467"],
+      "materials": ["the app's amp heads as cover art", "hairline sleeve rules", "track-list numbering"],
+      "viewport": "A square cover on the left holds the live head with its shelf of eight minis; the right is the sleeve's sticker: the name, a one-line hook, and both downloads.",
+      "risk": "The record metaphor can tip into costume if the track list stops being plain, scannable feature copy.",
+      "raised": [
+        { "from": "Saul Bass title sequence", "raise": "The track list sets one idea per row in hard asymmetry, numbered like tracks, never a grid of equal cards." },
+        { "from": "drum machine step row", "raise": "The cover's shelf never wraps at any width; it scales, and the playing amp is always lit." }
+      ],
+      "html": ".impeccable/mocks/decision/sleeve.html"
+    },
+    {
+      "id": "bands",
+      "label": "Material bands",
+      "lineage": "the app's eight head materials, unrolled into the page",
+      "thesis": "The page is the shelf unrolled: each amp owns a full-width band in its own material, and you scroll from Glass to Quartz.",
+      "palette": ["#0b0c0c", "#d9d6cd", "#4b1d1f", "#c8a467", "#17234d", "#34d399"],
+      "materials": ["tolex, weave and stone as page-scale fields", "each amp's badge lettering", "the shelf as a sticky index"],
+      "viewport": "The shelf of eight minis spans the top as the page's index; below, Glass's silver band fills the screen with its head, its one-line voice, and the download pinned in the bar.",
+      "risk": "Eight material fields are loud; the features and the engineer path must get calm bands of their own or the page becomes a catalog.",
+      "html": ".impeccable/mocks/decision/bands.html"
+    },
+    {
+      "id": "cable",
+      "label": "The cable",
+      "lineage": "the app's signal chain, drawn as one patch cable",
+      "thesis": "One signal line runs down the page from Input to Output, and every block is a stop on it, the amp first and largest.",
+      "palette": ["#0b0c0c", "#111313", "#1e2221", "#34d399", "#e6ebe9"],
+      "materials": ["a single emerald signal line", "the chain's block chips as stations", "the live head at the Amp stop"],
+      "viewport": "The cable enters at Input top left and runs into the Amp stop, where the live head and its shelf sit at full size; the download waits in the bar and at Output.",
+      "risk": "A long vertical line can feel like a timeline template; each stop needs its own scale and density to keep the scroll paced.",
+      "html": ".impeccable/mocks/decision/cable.html"
+    }
+  ],
+  "reroll": true,
+  "steer": true
+}
