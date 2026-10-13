@@ -1080,7 +1080,7 @@ void CabView::paint (juce::Graphics& g)
     // The headings, as the inspector's (small capitals and a hairline).
     drawInspectorHeading (g, leftColumn.withHeight (16), "Cabinet");
     drawInspectorHeading (g, roomHeading, "Room mic");
-    drawInspectorHeading (g, matchHeading.withRight (matchAmountLabel->getX() - 10), "Match curve");
+    drawInspectorHeading (g, matchHeading.withRight (matchAmountLabel->getX() - 4), "Match curve");
 }
 
 void CabView::paintOverChildren (juce::Graphics& g)
@@ -1166,8 +1166,8 @@ void CabView::resized()
         matchOn->setBounds (row.getRight() - matchOn->getPreferredWidth() + Switch::margin, row.getCentreY() - Switch::preferredHeight / 2,
                             matchOn->getPreferredWidth(), Switch::preferredHeight);
         auto left = row.withRight (matchOn->getX() - 8);
-        matchAmount->setBounds (left.removeFromRight (56));
-        left.removeFromRight (4);
+        matchAmount->setBounds (left.removeFromRight (50));
+        left.removeFromRight (2);
         matchAmountLabel->setBounds (left.removeFromRight (juce::roundToInt (textWidth (font (Text::caption), "Amount")) + 4));
     }
 
