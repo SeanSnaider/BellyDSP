@@ -599,6 +599,7 @@ private:
 AmpPanel::AmpPanel (AmpSimProcessor& p, AmpView& v) : ControlGroup (p), view (v), spectrum (p)
 {
     ampOn = &adopt (std::make_unique<Switch> ("On"));
+    ampOn->onStateChange = [this] { repaint (0, 0, getWidth(), BlockPage::headerHeight (view.ampDescription (shownAmp), getWidth())); }; // the header's head dims when off
     // The amp's switch is its bypass, inverted: on while the amp plays (the board's amp marker has the same dot).
     ampOn->setClickingTogglesState (true);
     tagged (*ampOn, "amp_bypass");
@@ -654,8 +655,7 @@ void AmpPanel::layout (InspectorLayout& l)
 {
     const auto amp = juce::jlimit (0, AmpSimProcessor::numAmps - 1, shownAmp);
     const auto& k = knobs[(size_t) amp];
-    l.section ("Gain and master");
-    l.knobs ({ k[0], k[6] });
+    l.hero ({ k[0], k[6] });
     l.section ("Tone");
     l.knobs ({ k[1], k[2], k[3], k[4], k[5] });
     l.section ("Gate A, before the amp", gateOn);
@@ -683,8 +683,7 @@ int AmpPanel::preferredHeight (int width)
 void AmpPanel::resized()
 {
     const auto width = getWidth() - 2 * BlockPage::padding;
-    const auto w = ampOn->getPreferredWidth();
-    ampOn->setBounds (getWidth() - BlockPage::padding - w + Switch::margin, BlockPage::padding + (22 - Switch::preferredHeight) / 2, w, Switch::preferredHeight);
+    ampOn->setBounds (BlockPage::headerSwitchBounds (getWidth(), ampOn->getPreferredWidth()));
     InspectorLayout l ({ BlockPage::padding, BlockPage::headerHeight (view.ampDescription (shownAmp), getWidth()) + BlockPage::padding, width, 0 }, true);
     layout (l);
     texts = l.getTexts();
@@ -693,23 +692,21 @@ void AmpPanel::resized()
 
 void AmpPanel::paint (juce::Graphics& g)
 {
-    // The header, as a pedal's: the playing amp's name, its description, a hairline.
-    const auto width = getWidth() - 2 * BlockPage::padding;
-    const auto description = view.ampDescription (shownAmp);
-    g.setFont (geist (Weight::semibold, 16.0f));
-    g.setColour (ink);
-    g.drawText (AmpSimProcessor::ampName (juce::jmax (0, shownAmp)), juce::Rectangle<int> (BlockPage::padding, BlockPage::padding, width - ampOn->getWidth() - 8, 22),
-                juce::Justification::centredLeft, true);
-    const auto height = BlockPage::headerHeight (description, getWidth());
-    if (description.isNotEmpty())
-    {
-        g.setFont (font (Text::label));
-        g.setColour (inkFaint);
-        const juce::Rectangle<int> lines (BlockPage::padding, BlockPage::padding + 26, width, height - BlockPage::padding - 26 - 14);
-        g.drawFittedText (description, lines, juce::Justification::topLeft, juce::jmax (1, lines.getHeight() / 16), 1.0f);
-    }
-    g.setColour (line1);
-    g.fillRect (BlockPage::padding, height - 1, width, 1);
+    // The header, as a pedal's: the playing amp's head in small (its own material), its name, its description.
+    const auto amp = juce::jmax (0, shownAmp);
+    const auto on = ampOn->getToggleState();
+    BlockPage::paintHeader (g, getWidth(), AmpSimProcessor::ampName (amp), view.ampDescription (shownAmp),
+                            [amp, on] (juce::Graphics& gg, juce::Rectangle<float> box)
+                            {
+                                const juce::Graphics::ScopedSaveState saved (gg);
+                                if (! on)
+                                    gg.beginTransparencyLayer (offAlpha);
+                                drawSmallHead (gg, box.reduced (2.0f),
+                                             AmpSimProcessor::ampName (amp));
+                                if (! on)
+                                    gg.endTransparencyLayer();
+                            },
+                            ampOn->getWidth());
     InspectorLayout::paintTexts (g, texts);
 
     // The gate's first switch-on: the prompt in ink (the result after it in ink-dim), and while Learn measures,

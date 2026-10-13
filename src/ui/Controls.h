@@ -193,8 +193,9 @@ class Knob final : public ParameterControl
 public:
     enum class Size
     {
-        normal, // 64
-        compact // 52 (the handoff's "sm")
+        normal,  // 64
+        compact, // 52 (the handoff's "sm")
+        large    // 80, with its value always shown under its caption: an inspector's main controls (phase 2)
     };
 
     Knob (juce::AudioProcessorValueTreeState& state, const juce::String& parameterId, juce::String caption, juce::String suffix = " dB",
@@ -216,7 +217,12 @@ public:
     void paint (juce::Graphics&) override;
 
     /// The CSS box (76 x 86 or 68 x 74) and the component's bounds for a box at a position.
-    static juce::Point<int> cssSize (Size size) { return size == Size::normal ? juce::Point<int> { 76, 86 } : juce::Point<int> { 68, 74 }; }
+    static juce::Point<int> cssSize (Size size)
+    {
+        return size == Size::normal ? juce::Point<int> { 76, 86 } : size == Size::large ? juce::Point<int> { 104, 120 } : juce::Point<int> { 68, 74 };
+    }
+    /// The hit area's side: 64, 52, or 80.
+    static float hitSize (Size size) { return size == Size::normal ? 64.0f : size == Size::large ? 80.0f : 52.0f; }
     static constexpr int margin = 4;
     static int preferredWidth (Size size) { return cssSize (size).x + 2 * margin; }
     static int preferredHeight (Size size) { return cssSize (size).y + 2 * margin; }
@@ -273,6 +279,7 @@ class Switch : public IgnoresRightClick<juce::ToggleButton>
 {
 public:
     explicit Switch (const juce::String& text = {});
+    juce::Colour getTextColour() const noexcept { return textColour; }
 
     /// The label's colour (the amp panels use their own); default ink-dim.
     void setTextColour (juce::Colour c)
@@ -297,11 +304,13 @@ public:
     void focusGained (FocusChangeType) override;
     void focusLost (FocusChangeType) override;
 
+protected:
+    bool keyboardFocus = false;
+
 private:
     void clicked() override;
 
     juce::Colour textColour = theme::inkDim;
-    bool keyboardFocus = false;
     bool userGesture = false; // set by a mouse-up or key on the switch, consumed by the click it causes
 };
 
@@ -402,6 +411,76 @@ private:
     juce::StringArray options, optionTips;
     int selected = 0, hovered = -1;
     bool keyboardFocus = false, pillStyle = false;
+};
+
+/// A choice parameter as a row of buttons (phase 2's inspectors: a block's mode, a slope, a key): the options in
+/// equal segments filling its width, in rows of `columns`, inside a raised, hairline-bordered box (radius 6). The
+/// chosen one is a lighter segment with its name in orange; hover lightens a name to ink. A click chooses (one
+/// gesture, its own undo step); the arrow keys step it when the keyboard gave it the focus (Tab). It's tagged with
+/// its parameter, so a right-click is MIDI learn, and it never moves on a right-click. The labels default to the
+/// parameter's own choices; a page may give shorter ones (same order).
+class ChoiceBar final : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    ChoiceBar (juce::AudioProcessorValueTreeState& state, const juce::String& parameterId, juce::StringArray labels = {});
+
+    int getSelected() const noexcept { return selected; }
+    int getNumOptions() const noexcept { return labels.size(); }
+    const juce::StringArray& getLabels() const noexcept { return labels; }
+
+    /// Chooses an option as a click does: one complete gesture in its own undo step.
+    void choose (int index);
+
+    /// Options per row (default: all on one).
+    void setColumns (int perRow);
+    int getRows() const noexcept;
+    static constexpr int rowHeight = 28;
+    int getPreferredHeight() const noexcept { return getRows() * rowHeight; }
+
+    /// One option's tooltip each (shown while it's hovered).
+    void setOptionTooltips (const juce::StringArray& tips) { optionTips = tips; }
+    juce::String getTooltip() override;
+
+    /// For tests: an option's area.
+    juce::Rectangle<float> optionArea (int index) const;
+
+    void paint (juce::Graphics&) override;
+    void mouseMove (const juce::MouseEvent&) override;
+    void mouseExit (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+    bool keyPressed (const juce::KeyPress&) override;
+    void focusGained (FocusChangeType) override;
+    void focusLost (FocusChangeType) override;
+
+private:
+    int optionAt (juce::Point<float> p) const;
+
+    juce::AudioProcessorValueTreeState& state;
+    juce::RangedAudioParameter& parameter;
+    juce::StringArray labels, optionTips;
+    juce::ParameterAttachment attachment;
+    int selected = 0, hovered = -1, columns = 0;
+    bool keyboardFocus = false;
+};
+
+/// A switch drawn as a pad (phase 2: the reverb's Freeze, Gate B's link, a pedal's big latching switch): a raised
+/// box, radius 6, an LED at its left (orange with a glow when on), its name in 13 px medium. Otherwise a Switch:
+/// attached the same way, flipped by a click, Space, or Enter.
+class PadSwitch final : public Switch
+{
+public:
+    explicit PadSwitch (const juce::String& text, juce::String detail = {});
+    /// A second line in ink-faint under the name ("holds the tail"), or none.
+    void setDetail (const juce::String& d)
+    {
+        detail = d;
+        repaint();
+    }
+    static constexpr int preferredPadHeight = 40;
+    void paintButton (juce::Graphics&, bool highlighted, bool down) override;
+
+private:
+    juce::String detail;
 };
 
 /// A section title inside a page: a 12 px heading in ink-faint and a hairline, over a group of controls.

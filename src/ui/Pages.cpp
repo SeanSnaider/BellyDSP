@@ -2,6 +2,8 @@
 // Copyright (C) 2026 Sean Snaider
 
 #include "Pages.h"
+#include "InspectorParts.h"
+#include "PedalArt.h"
 
 namespace ui
 {
@@ -47,6 +49,19 @@ ValueField& ControlGroup::addField (const juce::String& parameterId, const juce:
 Fader& ControlGroup::addFader (const juce::String& parameterId, const juce::String& caption, const juce::String& suffix)
 {
     return adopt (std::make_unique<Fader> (state, parameterId, caption, suffix));
+}
+
+ChoiceBar& ControlGroup::addChoice (const juce::String& parameterId, const juce::StringArray& labels)
+{
+    return adopt (std::make_unique<ChoiceBar> (state, parameterId, labels));
+}
+
+PadSwitch& ControlGroup::addPad (const juce::String& parameterId, const juce::String& label, const juce::String& detail)
+{
+    auto& control = adopt (std::make_unique<PadSwitch> (label, detail));
+    buttonAttachments.add (new juce::AudioProcessorValueTreeState::ButtonAttachment (state, parameterId, tagged (control, parameterId)));
+    control.onUserToggle = [this, parameterId] (bool on) { ampSim.switchedByUser (parameterId, on); };
+    return control;
 }
 
 juce::TextButton& ControlGroup::addButton (const juce::String& label, std::function<void()> onClick)
@@ -197,13 +212,49 @@ void InspectorLayout::section (const juce::String& title, juce::Component* right
     afterHeading = true;
 }
 
-void InspectorLayout::knobs (const std::vector<Knob*>& list)
+void InspectorLayout::hero (const std::vector<Knob*>& list, juce::Component* beside, int besideHeight)
 {
-    // Three to a row, each in its third of the column: the columns line up from one section to the next.
-    const auto cellWidth = bounds.getWidth() / 3;
-    for (size_t i = 0; i < list.size(); i += 3)
+    // Two to a row, each centred in its half; the rows are as tall as a large knob.
+    const auto cellWidth = bounds.getWidth() / 2;
+    const auto height = Knob::preferredHeight (Knob::Size::large);
+    for (size_t i = 0; i < list.size(); i += 2)
     {
-        const auto end = juce::jmin (list.size(), i + 3);
+        begin();
+        for (size_t k = i; k < juce::jmin (list.size(), i + 2); ++k)
+        {
+            const auto cell = juce::Rectangle<int> (bounds.getX() + (int) (k - i) * cellWidth, y, cellWidth, height);
+            if (auto* knob = list[k])
+            {
+                knob->setKnobSize (Knob::Size::large);
+                set (knob, cell.withSizeKeepingCentre (Knob::preferredWidth (Knob::Size::large), height));
+            }
+            else if (beside != nullptr)
+            {
+                set (beside, cell.withSizeKeepingCentre (cell.getWidth() - 8, juce::jmin (height, besideHeight > 0 ? besideHeight : height)));
+            }
+        }
+        y += height;
+    }
+}
+
+void InspectorLayout::choice (ChoiceBar* bar, const juce::String& caption)
+{
+    if (bar == nullptr)
+        return;
+    if (caption.isNotEmpty())
+        labelled (caption, bar, bar->getPreferredHeight());
+    else
+        row (bar, bar->getPreferredHeight());
+}
+
+void InspectorLayout::knobs (const std::vector<Knob*>& list, int perRow)
+{
+    // Three to a row (or perRow), each in its share of the column: the columns line up from one section to the next.
+    perRow = juce::jmax (1, perRow);
+    const auto cellWidth = bounds.getWidth() / perRow;
+    for (size_t i = 0; i < list.size(); i += (size_t) perRow)
+    {
+        const auto end = juce::jmin (list.size(), i + (size_t) perRow);
         auto height = 0;
         for (auto k = i; k < end; ++k)
             if (list[k] != nullptr)
@@ -318,10 +369,10 @@ void InspectorLayout::inCell (juce::Component* control, Knob* knob, int height)
         return;
     // In the knob's hit area, with the knob's caption where the knob has its own (while it shows instead of the knob).
     const auto cell = knob->getBounds();
-    const auto css = Knob::cssSize (knob->getKnobSize());
-    control->setBounds (cell.withHeight (2 * Knob::margin + css.x).withSizeKeepingCentre (knob->getWidth() + 4, height));
+    const auto hit = juce::roundToInt (Knob::hitSize (knob->getKnobSize()));
+    control->setBounds (cell.withHeight (2 * Knob::margin + hit).withSizeKeepingCentre (juce::jmin (knob->getWidth() + 4, bounds.getWidth() / 2 - 8), height));
     if (control->isVisible())
-        texts.push_back ({ juce::Rectangle<int> (cell.getX(), cell.getBottom() - Knob::margin - captionHeight, cell.getWidth(), captionHeight), knob->getCaption(),
+        texts.push_back ({ juce::Rectangle<int> (cell.getX(), cell.getY() + Knob::margin + hit + 6, cell.getWidth(), captionHeight), knob->getCaption(),
                            Text::Kind::cellCaption });
 }
 
@@ -340,7 +391,7 @@ void InspectorLayout::paintTexts (juce::Graphics& g, const std::vector<Text>& li
         switch (t.kind)
         {
             case Text::Kind::heading:
-                drawGroupHeading (g, t.area, t.words);
+                drawInspectorHeading (g, t.area, t.words);
                 break;
             case Text::Kind::caption:
                 g.setFont (font (theme::Text::label));
@@ -377,6 +428,7 @@ BlockPage::BlockPage (AmpSimProcessor& processor, BlockId blockId, juce::String 
     {
         onSwitch = &addSwitch (i.onParameter, i.switchInverted ? "Bypass" : "On");
         onSwitch->setTooltip ("Switch " + title + " on or off (or click the footswitch of its pedal on the board)");
+        onSwitch->onStateChange = [this] { repaint (0, 0, getWidth(), headerHeight (subtitle, getWidth())); }; // the thumbnail's LED
     }
 }
 
@@ -384,10 +436,50 @@ BlockPage::~BlockPage() = default;
 
 int BlockPage::headerHeight (const juce::String& sub, int width)
 {
-    // The title line (22), then the line about the block in up to three lines, then 14 down to the hairline.
-    const auto inner = juce::jmax (1, width - 2 * padding);
+    // The thumbnail's height, or the title line (28) and the line about the block in up to three lines if that's
+    // taller; then 14 down to the hairline.
+    const auto inner = juce::jmax (1, width - textLeft - padding);
     const auto lines = sub.isEmpty() ? 0 : juce::jlimit (1, 3, (int) std::ceil (textWidth (font (Text::label), sub) / (float) inner));
-    return padding + 22 + (lines > 0 ? 4 + 16 * lines : 0) + 14;
+    return padding + juce::jmax (thumbHeight, 28 + 16 * lines) + 14;
+}
+
+juce::Rectangle<int> BlockPage::headerSwitchBounds (int width, int switchWidth)
+{
+    return { width - padding - switchWidth + Switch::margin, padding + 3 + (22 - Switch::preferredHeight) / 2, switchWidth, Switch::preferredHeight };
+}
+
+void BlockPage::paintHeader (juce::Graphics& g, int width, const juce::String& title, const juce::String& subtitle,
+                             const std::function<void (juce::Graphics&, juce::Rectangle<float>)>& thumbnail, int switchWidth)
+{
+    // The gear in small, on a faint plinth so a light enclosure and a dark one both sit on the panel.
+    const auto plinth = juce::Rectangle<float> ((float) padding, (float) padding, (float) thumbWidth, (float) thumbHeight);
+    g.setColour (bg.withAlpha (0.7f));
+    g.fillRoundedRectangle (plinth, 6.0f);
+    if (thumbnail)
+        thumbnail (g, plinth.reduced (2.0f));
+
+    const auto textWidthLeft = width - textLeft - padding;
+    g.setFont (geist (Weight::semibold, 17.0f));
+    g.setColour (ink);
+    g.drawText (title, juce::Rectangle<int> (textLeft, padding + 3, textWidthLeft - (switchWidth > 0 ? switchWidth + 4 : 0), 22), juce::Justification::centredLeft,
+                true);
+    const auto height = headerHeight (subtitle, width);
+    if (subtitle.isNotEmpty())
+    {
+        g.setFont (font (Text::label));
+        g.setColour (inkFaint);
+        const juce::Rectangle<int> lines (textLeft, padding + 28, textWidthLeft, height - padding - 28 - 14);
+        g.drawFittedText (subtitle, lines, juce::Justification::topLeft, juce::jmax (1, lines.getHeight() / 16), 1.0f);
+    }
+    g.setColour (line1);
+    g.fillRect (padding, height - 1, width - 2 * padding, 1);
+}
+
+void BlockPage::dimAll (std::initializer_list<juce::Component*> list, float alpha)
+{
+    for (auto* c : list)
+        if (c != nullptr)
+            c->setAlpha (alpha);
 }
 
 int BlockPage::preferredHeight (int width)
@@ -462,23 +554,10 @@ int BlockPage::coverParameters (const juce::String& prefix, const juce::StringAr
 
 void BlockPage::paint (juce::Graphics& g)
 {
-    // The header: the block's name (16 px semibold), where it sits (12 px faint, wrapping), a hairline under it.
-    const auto width = getWidth() - 2 * padding;
-    g.setFont (geist (Weight::semibold, 16.0f));
-    g.setColour (ink);
-    g.drawText (title, juce::Rectangle<int> (padding, padding, width - (onSwitch != nullptr ? onSwitch->getWidth() + 8 : 0), 22),
-                juce::Justification::centredLeft, true);
-    const auto height = headerHeight (subtitle, getWidth());
-    if (subtitle.isNotEmpty())
-    {
-        g.setFont (font (Text::label));
-        g.setColour (inkFaint);
-        const juce::Rectangle<int> lines (padding, padding + 22 + 4, width, height - padding - 22 - 4 - 14);
-        g.drawFittedText (subtitle, lines, juce::Justification::topLeft, juce::jmax (1, lines.getHeight() / 16), 1.0f);
-    }
-    g.setColour (line1);
-    g.fillRect (padding, height - 1, width, 1);
-
+    // The header: the pedal in small with its LED as on the board, its name, where it sits, its switch.
+    const auto on = onSwitch != nullptr && onSwitch->getToggleState();
+    paintHeader (g, getWidth(), title, subtitle, [this, on] (juce::Graphics& gg, juce::Rectangle<float> box) { drawPedal (gg, box, id, { on, false, false }); },
+                 onSwitch != nullptr ? onSwitch->getWidth() : 0);
     InspectorLayout::paintTexts (g, texts);
     paintContent (g);
 }
@@ -487,11 +566,7 @@ void BlockPage::resized()
 {
     clearHeadings();
     if (onSwitch != nullptr)
-    {
-        // The pill's right edge on the column's (the component has a 4 px focus margin all round).
-        const auto w = onSwitch->getPreferredWidth();
-        onSwitch->setBounds (getWidth() - padding - w + Switch::margin, padding + (22 - Switch::preferredHeight) / 2, w, Switch::preferredHeight);
-    }
+        onSwitch->setBounds (headerSwitchBounds (getWidth(), onSwitch->getPreferredWidth()));
     const auto top = headerHeight (subtitle, getWidth()) + padding;
     InspectorLayout layout ({ padding, top, getWidth() - 2 * padding, 0 }, true);
     describeAll (layout);
@@ -558,24 +633,32 @@ void dim (juce::Component* c, bool used)
 
 GatePage::GatePage (AmpSimProcessor& p, bool isGateB)
     : BlockPage (p, isGateB ? BlockId::gateB : BlockId::gateA, isGateB ? "Gate B" : "Gate A",
-                 isGateB ? "After the amp, before the cab" : "Before the amp"),
+                 isGateB ? "After the amp, before the cab" : "Before the amp; it listens to the clean DI"),
       gateB (isGateB)
 {
     const juce::String g = isGateB ? "gate_b" : "gate_a";
-    knobs = { &addKnob (g + "_threshold", "Threshold"), &addKnob (g + "_hysteresis", "Hysteresis"), &addKnob (g + "_hold", "Hold", " ms"),
-              &addKnob (g + "_attack", "Attack", " ms"), &addKnob (g + "_release", "Release", " ms"), &addKnob (g + "_range", "Range"),
-              &addKnob (g + "_sc_freq", "Frequency", " Hz") };
-    releaseMode = &addCombo (g + "_release_mode", { "Adaptive", "Classic" });
-    detector = &addCombo (g + "_detector", { "The clean DI", "Its own input" });
-    sidechain = &addSwitch (g + "_sc_hpf", "High-pass");
-    reduction = &adopt (std::make_unique<ReductionMeter> (40.0f));
-    releaseMode->setTooltip ("Adaptive: the release follows how the note dies away. Classic: the release knob, always.");
+    meterView = &adopt (std::make_unique<GateMeterView> (state, g + "_threshold"));
+    threshold = &addKnob (g + "_threshold", "Threshold", " dB", Knob::Size::large);
+    release = &addKnob (g + "_release", "Release", " ms", Knob::Size::large);
+    attack = &addKnob (g + "_attack", "Attack", " ms");
+    hold = &addKnob (g + "_hold", "Hold", " ms");
+    range = &addKnob (g + "_range", "Range");
+    hysteresis = &addKnob (g + "_hysteresis", "Hysteresis");
+    scFreq = &addKnob (g + "_sc_freq", "High-pass", " Hz");
+    range->setTooltip ("How far the gate turns the signal down when it closes (the bottom of the range mutes it)");
+    hysteresis->setTooltip ("How far below the threshold the level must fall before the gate closes (the shaded band on the meter)");
+
+    releaseMode = &addChoice (g + "_release_mode", { "Adaptive", "Fixed" });
+    releaseMode->setOptionTooltips ({ "Adaptive: the release follows how the note dies away", "Fixed: the Release knob, always, as a classic gate" });
+    detector = &addChoice (g + "_detector", { "The clean DI", "Its own input" });
     detector->setTooltip ("What the gate listens to: the clean guitar, or the signal arriving at the gate");
+    sidechain = &addSwitch (g + "_sc_hpf", "High-pass");
+    sidechain->setTooltip ("A high-pass on what the gate listens to, so low thumps and hum don't hold it open");
 
     if (gateB)
     {
-        link = &addSwitch ("gate_link", "Linked to Gate A");
-        link->setTooltip ("Linked, Gate B applies Gate A's decision after the amp");
+        link = &addPad ("gate_link", "Linked to Gate A", "Applies Gate A's decision after the amp");
+        link->setTooltip ("Linked, Gate B applies Gate A's decision after the amp (its own settings wait, dimmed)");
     }
     else
     {
@@ -584,99 +667,70 @@ GatePage::GatePage (AmpSimProcessor& p, bool isGateB)
     }
 }
 
+GatePage::~GatePage()
+{
+    stopTimer();
+}
+
 void GatePage::describe (InspectorLayout& l)
 {
-    l.labelled ("Release", releaseMode);
-    l.labelled ("Detector", detector);
+    // The meter first: what the gate is doing is what the player looks for; then the one button that sets it up.
+    l.row (meterView, GateMeterView::preferredHeight);
     if (link != nullptr)
-        l.switches ({ link });
+        l.row (link, PadSwitch::preferredPadHeight);
     else
-        l.buttons ({ learn });
+        l.row (learn, controlHeight + 4);
+    l.hero ({ threshold, release });
+    l.choice (releaseMode, "Release");
+    l.section ("Response");
+    l.knobs ({ attack, hold, range });
+    l.section ("Detector", sidechain);
+    l.choice (detector);
+    l.knobs ({ hysteresis, scFreq });
+}
 
-    l.section ("Threshold");
-    l.knobs ({ knobs[0], knobs[1], knobs[5] });
-    l.section ("Timing");
-    l.knobs ({ knobs[2], knobs[3], knobs[4] });
-    l.section ("Sidechain");
-    l.switches ({ sidechain });
-    l.knobs ({ knobs[6] });
-    l.section ("Detector");
-    l.area (&meterArea, 100, reduction, 40);
+void GatePage::pageShown()
+{
+    updateMeter();
+    startTimerHz (meterFps);
+}
+
+void GatePage::pageHidden()
+{
+    stopTimer();
+}
+
+void GatePage::updateMeter()
+{
+    GateMeterView::Reading r;
+    r.meter = ampSim.getGateMeter (gateB);
+    r.on = state.getRawParameterValue (gateB ? "gate_b_on" : "gate_a_on")->load() >= 0.5f;
+    r.linked = linked;
+    r.learning = learning;
+    r.progress = ampSim.getGateLearnProgress();
+    meterView->set (r);
 }
 
 void GatePage::refresh()
 {
-    const auto newMeter = ampSim.getGateMeter (gateB);
     const auto newLinked = gateB && state.getRawParameterValue ("gate_link")->load() >= 0.5f;
-    const auto newLearning = ampSim.isLearningGates() && (! gateB || ampSim.isGateBOnItsOwn());
-    const auto newProgress = ampSim.getGateLearnProgress();
+    learning = ampSim.isLearningGates() && (! gateB || ampSim.isGateBOnItsOwn());
 
-    if (newLinked != linked)
+    const auto sc = state.getRawParameterValue (gateB ? "gate_b_sc_hpf" : "gate_a_sc_hpf")->load() >= 0.5f ? 1 : 0;
+    if (newLinked != linked || sc != shownSidechain)
     {
-        // Linked, Gate B's own settings don't apply: dim them (they stay editable for when it's unlinked).
-        for (auto* c : std::initializer_list<juce::Component*> { releaseMode, detector, sidechain })
-            dim (c, ! newLinked);
-        for (auto* knob : knobs)
-            dim (knob, ! newLinked);
+        // Linked, Gate B's own settings don't apply: dim them (they stay editable for when it's unlinked). The
+        // sidechain's frequency only matters while its high-pass is on.
+        linked = newLinked;
+        shownSidechain = sc;
+        for (auto* c : std::initializer_list<juce::Component*> { threshold, release, attack, hold, range, hysteresis, releaseMode, detector, sidechain })
+            dim (c, ! linked);
+        scFreq->setAlpha (linked ? unusedAlpha : (sc == 1 ? 1.0f : unusedAlpha));
     }
-
-    const auto changed = std::abs (newMeter.detectorDb - meter.detectorDb) > 0.5f || newMeter.open != meter.open
-                         || std::abs (newMeter.openDb - meter.openDb) > 0.05f || std::abs (newMeter.reductionDb - meter.reductionDb) > 0.5f
-                         || newLinked != linked || newLearning != learning || std::abs (newProgress - learnProgress) > 0.01f;
-    meter = newMeter;
-    linked = newLinked;
-    learning = newLearning;
-    learnProgress = newProgress;
     if (learn != nullptr)
-        learn->setButtonText (learning ? "Learning..." : "Learn the noise floor");
-    reduction->setReduction (juce::jmin (meter.reductionDb, 40.0f));
-    if (changed)
-        repaint (meterArea);
-}
-
-void GatePage::paintContent (juce::Graphics& g)
-{
-    // What it's doing in words (up to three lines), then the detector's level on a -100 to 0 dBFS scale
-    // against the open (ink) and close (ink-faint) thresholds; the gap between them is the hysteresis.
-    auto area = meterArea;
-    const auto scale = area.removeFromBottom (14);
-    area.removeFromBottom (2);
-    const auto bar = area.removeFromBottom (12);
-    area.removeFromBottom (8);
-    const auto textArea = area;
-    const auto xFor = [&bar] (float db) { return (float) bar.getX() + (float) bar.getWidth() * juce::jlimit (0.0f, 1.0f, (db + 100.0f) / 100.0f); };
-
-    g.setColour (line2);
-    g.fillRoundedRectangle (bar.toFloat(), 3.0f);
-    if (! linked)
-    {
-        g.setColour (meter.open ? accent : inkDim);
-        g.fillRoundedRectangle (bar.toFloat().withRight (xFor (meter.detectorDb)), 3.0f);
-        g.setColour (text);
-        g.fillRect (juce::Rectangle<float> (xFor (meter.openDb) - 1.0f, (float) bar.getY() - 3.0f, 2.0f, (float) bar.getHeight() + 6.0f));
-        g.setColour (inkFaint);
-        g.fillRect (juce::Rectangle<float> (xFor (meter.closeDb) - 1.0f, (float) bar.getY() - 3.0f, 2.0f, (float) bar.getHeight() + 6.0f));
-    }
-
-    // The scale's ends, and its middle.
-    g.setFont (font (Text::caption));
-    g.setColour (textDim);
-    g.drawText ("-100", scale, juce::Justification::centredLeft, false);
-    g.drawText ("-50", scale, juce::Justification::centred, false);
-    g.drawText ("0 dBFS", scale, juce::Justification::centredRight, false);
-
-    const auto dB = [] (float value) { return juce::String (juce::roundToInt (value)); };
-    juce::String line;
-    if (learning)
-        line = "Learning the noise floor: keep the strings muted (" + juce::String (juce::roundToInt (learnProgress * 100.0f)) + "%)";
-    else if (linked)
-        line = juce::String ("Following Gate A: ") + (meter.reductionDb < 1.0f ? "open" : "closing, " + dB (meter.reductionDb) + " dB down");
-    else
-        line = (meter.open ? "Open" : "Closed") + juce::String (", level ") + dB (meter.detectorDb) + " dBFS, reduction "
-               + (meter.reductionDb >= 99.0f ? juce::String ("full") : dB (meter.reductionDb) + " dB") + ". The bright mark opens it, the dim one closes it.";
-    g.setColour (learning ? warn : text);
-    g.setFont (font (Text::label));
-    g.drawFittedText (line, textArea, juce::Justification::topLeft, juce::jmax (1, textArea.getHeight() / 16), 1.0f);
+        learn->setButtonText (learning ? "Learning, keep the strings muted (" + juce::String (juce::roundToInt (ampSim.getGateLearnProgress() * 100.0f)) + "%)"
+                                       : juce::String ("Learn the noise floor"));
+    updateMeter();
 }
 
 // ---- CompressorPage --------------------------------------------------------------------------------------
@@ -686,96 +740,71 @@ CompressorPage::CompressorPage (AmpSimProcessor& p, bool isPost)
       post (isPost),
       prefix (isPost ? "comp_post" : "comp_pre")
 {
-    mode = &addCombo (prefix + "_mode", { "Studio", "Pedal" });
-    detector = &addCombo (prefix + "_detector", { "Peak", "RMS" });
-    knobs = { &addKnob (prefix + "_threshold", "Threshold"), &addKnob (prefix + "_ratio", "Ratio", ":1"), &addKnob (prefix + "_knee", "Knee"),
-              &addKnob (prefix + "_attack", "Attack", " ms"), &addKnob (prefix + "_release", "Release", " ms"), &addKnob (prefix + "_makeup", "Makeup"),
-              &addKnob (prefix + "_mix", "Mix", " %"), &addKnob (prefix + "_sc_freq", "Frequency", " Hz") };
-    autoRelease = &addSwitch (prefix + "_auto_release", "Auto release");
-    autoMakeup = &addSwitch (prefix + "_auto_makeup", "Auto makeup");
+    mode = &addChoice (prefix + "_mode", { "Studio", "Pedal" });
+    mode->setOptionTooltips ({ "Studio: feed-forward and precise", "Pedal: feedback, like a stompbox" });
+    meterView = &adopt (std::make_unique<CompressorMeterView> (state, prefix));
+    threshold = &addKnob (prefix + "_threshold", "Threshold", " dB", Knob::Size::large);
+    ratio = &addKnob (prefix + "_ratio", "Ratio", ":1", Knob::Size::large);
+    attack = &addKnob (prefix + "_attack", "Attack", " ms");
+    release = &addKnob (prefix + "_release", "Release", " ms");
+    knee = &addKnob (prefix + "_knee", "Knee");
+    makeup = &addKnob (prefix + "_makeup", "Makeup");
+    mix = &addKnob (prefix + "_mix", "Mix", " %");
+    scFreq = &addKnob (prefix + "_sc_freq", "High-pass", " Hz");
+    detector = &addChoice (prefix + "_detector", { "Peak", "RMS" });
+    detector->setOptionTooltips ({ "Peak: follows every transient", "RMS: follows the average level, gentler" });
+    autoRelease = &addSwitch (prefix + "_auto_release", "Auto");
+    autoMakeup = &addSwitch (prefix + "_auto_makeup", "Auto");
     sidechain = &addSwitch (prefix + "_sc_hpf", "High-pass");
-    reduction = &adopt (std::make_unique<ReductionMeter> (24.0f));
-    mode->setTooltip ("Studio: feed-forward and precise. Pedal: feedback, like a stompbox.");
     autoRelease->setTooltip ("Auto release: fast after short peaks, slow after long compression");
     autoMakeup->setTooltip (juce::String ("Auto makeup: keeps the level steady whatever the threshold and ratio (it restores a ")
                             + (post ? "-12" : "-21") + " dBFS signal, where the " + (post ? "signal after the cab" : "guitar") + " typically sits)");
+    sidechain->setTooltip ("A high-pass on what the compressor listens to, so the low strings don't pump it");
+}
+
+CompressorPage::~CompressorPage()
+{
+    stopTimer();
 }
 
 void CompressorPage::describe (InspectorLayout& l)
 {
-    l.labelled ("Mode", mode);
-    l.labelled ("Detector", detector);
-    l.area (&curveArea, 168, reduction, 40);
-    l.section ("Threshold and ratio");
-    l.knobs ({ knobs[0], knobs[1], knobs[2] });
-    l.section ("Timing");
-    l.knobs ({ knobs[3], knobs[4] });
-    l.switches ({ autoRelease });
-    l.section ("Output");
-    l.knobs ({ knobs[5], knobs[6] });
-    l.switches ({ autoMakeup });
-    l.section ("Sidechain");
-    l.switches ({ sidechain });
-    l.knobs ({ knobs[7] });
+    l.choice (mode);
+    l.row (meterView, CompressorMeterView::preferredHeight);
+    l.hero ({ threshold, ratio });
+    l.section ("Response", autoRelease);
+    l.knobs ({ attack, release, knee });
+    l.section ("Output", autoMakeup);
+    l.knobs ({ makeup, mix });
+    l.section ("Detector", sidechain);
+    l.choice (detector);
+    l.knobs ({ scFreq });
+}
+
+void CompressorPage::pageShown()
+{
+    updateMeter();
+    startTimerHz (meterFps);
+}
+
+void CompressorPage::pageHidden()
+{
+    stopTimer();
+}
+
+void CompressorPage::updateMeter()
+{
+    meterView->push (ampSim.getCompressorReduction (post));
 }
 
 void CompressorPage::refresh()
 {
-    reduction->setReduction (ampSim.getCompressorReduction (post));
-
-    const auto threshold = state.getRawParameterValue (prefix + "_threshold")->load();
-    const auto ratio = state.getRawParameterValue (prefix + "_ratio")->load();
-    const auto knee = state.getRawParameterValue (prefix + "_knee")->load();
-    if (! juce::exactlyEqual (threshold, shownThreshold) || ! juce::exactlyEqual (ratio, shownRatio) || ! juce::exactlyEqual (knee, shownKnee))
+    meterView->refreshCurve();
+    if (const auto sc = state.getRawParameterValue (prefix + "_sc_hpf")->load() >= 0.5f ? 1 : 0; sc != shownSidechain)
     {
-        shownThreshold = threshold;
-        shownRatio = ratio;
-        shownKnee = knee;
-        repaint (curveArea);
+        shownSidechain = sc;
+        dim (scFreq, sc == 1);
     }
-}
-
-void CompressorPage::paintContent (juce::Graphics& g)
-{
-    // The static curve (Compressor::staticCurveDb, the block's own formula): output level against input
-    // level from -60 to 0 dB, with the 1:1 line for reference and the threshold marked.
-    const auto box = curveArea.toFloat();
-    g.setColour (background);
-    g.fillRoundedRectangle (box, radiusControl);
-    g.setColour (line1);
-    g.drawRoundedRectangle (box.reduced (0.5f), radiusControl, 1.0f);
-    const auto plot = box.reduced (10.0f);
-    const auto xOf = [&plot] (double db) { return plot.getX() + plot.getWidth() * (float) ((db + 60.0) / 60.0); };
-    const auto yOf = [&plot] (double db) { return plot.getBottom() - plot.getHeight() * (float) ((juce::jlimit (-60.0, 0.0, db) + 60.0) / 60.0); };
-
-    g.setColour (line1);
-    for (double db = -48.0; db < 0.0; db += 12.0)
-    {
-        g.drawVerticalLine (juce::roundToInt (xOf (db)), plot.getY(), plot.getBottom());
-        g.drawHorizontalLine (juce::roundToInt (yOf (db)), plot.getX(), plot.getRight());
-    }
-    g.setColour (textDim.withAlpha (0.4f));
-    g.drawLine (plot.getX(), plot.getBottom(), plot.getRight(), plot.getY(), 1.0f);
-
-    const auto threshold = (double) state.getRawParameterValue (prefix + "_threshold")->load();
-    const auto ratio = (double) state.getRawParameterValue (prefix + "_ratio")->load();
-    const auto knee = (double) state.getRawParameterValue (prefix + "_knee")->load();
-    juce::Path curve;
-    for (int i = 0; i <= 120; ++i)
-    {
-        const auto x = -60.0 + 0.5 * i;
-        const juce::Point<float> p { xOf (x), yOf (ampsim::Compressor::staticCurveDb (x, threshold, ratio, knee)) };
-        i == 0 ? curve.startNewSubPath (p) : curve.lineTo (p);
-    }
-    g.setColour (accent);
-    g.strokePath (curve, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-    g.setColour (warn);
-    g.fillEllipse (juce::Rectangle<float> (7.0f, 7.0f).withCentre ({ xOf (threshold), yOf (ampsim::Compressor::staticCurveDb (threshold, threshold, ratio, knee)) }));
-
-    g.setFont (font (Text::caption));
-    g.setColour (textDim);
-    g.drawText ("in", juce::Rectangle<float> (plot.getRight() - 30.0f, plot.getBottom() - 14.0f, 28.0f, 12.0f), juce::Justification::centredRight, false);
-    g.drawText ("out", juce::Rectangle<float> (plot.getX() + 2.0f, plot.getY(), 28.0f, 12.0f), juce::Justification::centredLeft, false);
 }
 
 // ---- BoostPage, OverdrivePage ------------------------------------------------------------------------
@@ -787,9 +816,9 @@ juce::String boostModeText (int mode)
 {
     switch (mode)
     {
-        case 0:  return "Clean: flat gain with a tilt, the lead boost. Uses Level and Tilt.";
-        case 1:  return "Tight: a high-pass and a mid push, no clipping, to tighten a high-gain amp. Uses Level, Tight, and Mid push.";
-        case 2:  return "Screamer: the Mid Drive circuit at minimal drive, the classic metal boost with slight compression. Uses Level.";
+        case 0:  return "Flat gain with a tilt: the lead boost. Uses Level and Tilt.";
+        case 1:  return "A high-pass and a mid push, no clipping, to tighten a high-gain amp. Uses Level, Tight, and Mid push.";
+        case 2:  return "The Mid Drive circuit at minimal drive: the classic metal boost, with slight compression. Uses Level.";
         default: break;
     }
     return {};
@@ -799,10 +828,10 @@ juce::String overdriveModeText (int mode)
 {
     switch (mode)
     {
-        case 0:  return "Mid Drive: diodes in the op-amp's feedback loop: soft clipping with a mid hump.";
-        case 1:  return "Distortion: hard-clipping diodes to ground, and the op-amp's slew limiting at high gain.";
-        case 2:  return "Transparent: the clean and clipped signals blended, so the low end stays.";
-        case 3:  return "Fuzz: four transistor clipping stages with a tone control between them.";
+        case 0:  return "Diodes in the op-amp's feedback loop: soft clipping with a mid hump.";
+        case 1:  return "Hard-clipping diodes to ground, and the op-amp's slew limiting at high gain.";
+        case 2:  return "The clean and clipped signals blended, so the low end stays.";
+        case 3:  return "Four transistor clipping stages with a tone control between them.";
         default: break;
     }
     return {};
@@ -819,9 +848,10 @@ juce::Label& wrapping (juce::Label& label)
 
 BoostPage::BoostPage (AmpSimProcessor& p) : BlockPage (p, BlockId::boost, "Boost", "Before the amp")
 {
-    mode = &addCombo ("boost_mode", { "Clean", "Tight", "Screamer" });
-    level = &addKnob ("boost_level", "Level");
-    tilt = &addKnob ("boost_tilt", "Tilt");
+    mode = &addChoice ("boost_mode", { "Clean", "Tight", "Screamer" });
+    mode->setOptionTooltips ({ boostModeText (0), boostModeText (1), boostModeText (2) });
+    level = &addKnob ("boost_level", "Level", " dB", Knob::Size::large);
+    tilt = &addKnob ("boost_tilt", "Tilt", " dB", Knob::Size::large);
     tightHz = &addKnob ("boost_tight_freq", "Tight", " Hz");
     mid = &addKnob ("boost_mid", "Mid push");
     about = &wrapping (addLabel ({}, Text::label, inkDim));
@@ -829,11 +859,10 @@ BoostPage::BoostPage (AmpSimProcessor& p) : BlockPage (p, BlockId::boost, "Boost
 
 void BoostPage::describe (InspectorLayout& l)
 {
-    l.labelled ("Mode", mode);
+    l.choice (mode);
     l.row (about, 48);
-    l.section ("Level and tilt");
-    l.knobs ({ level, tilt });
-    l.section ("Tight");
+    l.hero ({ level, tilt });
+    l.section ("Tight mode");
     l.knobs ({ tightHz, mid });
 }
 
@@ -852,14 +881,17 @@ void BoostPage::refresh()
 
 OverdrivePage::OverdrivePage (AmpSimProcessor& p) : BlockPage (p, BlockId::overdrive, "Overdrive", "Before the amp; circuits solved sample by sample")
 {
-    mode = &addCombo ("od_mode", params::OverdriveParameters::modeNames());
-    drive = &addKnob ("od_drive", "Drive", " %");
+    mode = &addChoice ("od_mode", params::OverdriveParameters::modeNames());
+    mode->setColumns (2);
+    mode->setOptionTooltips ({ overdriveModeText (0), overdriveModeText (1), overdriveModeText (2), overdriveModeText (3) });
+    drive = &addKnob ("od_drive", "Drive", " %", Knob::Size::large);
+    level = &addKnob ("od_level", "Level", " dB", Knob::Size::large);
     tone = &addKnob ("od_tone", "Tone", " %");
-    level = &addKnob ("od_level", "Level");
     mix = &addKnob ("od_mix", "Mix", " %");
     tight = &addSwitch ("od_tight", "Tight");
-    tightHz = &addKnob ("od_tight_freq", "Frequency", " Hz");
-    oversampling = &addCombo ("drive_oversampling", { "4x", "8x" });
+    tight->setTooltip ("A high-pass before the clipping, so the low end stays tight");
+    tightHz = &addKnob ("od_tight_freq", "Tight", " Hz");
+    oversampling = &addChoice ("drive_oversampling", { "4x", "8x" });
     oversamplingNote = &wrapping (addLabel ("For the boost and the overdrive. 8x costs about twice the CPU. A global setting, not saved in presets.",
                                             Text::label, inkFaint));
     about = &wrapping (addLabel ({}, Text::label, inkDim));
@@ -867,17 +899,13 @@ OverdrivePage::OverdrivePage (AmpSimProcessor& p) : BlockPage (p, BlockId::overd
 
 void OverdrivePage::describe (InspectorLayout& l)
 {
-    l.labelled ("Mode", mode);
-    l.row (about, 48);
-    l.section ("Drive");
-    l.knobs ({ drive, tone });
-    l.section ("Output");
-    l.knobs ({ level, mix });
-    l.section ("Tight");
-    l.switches ({ tight });
-    l.knobs ({ tightHz });
+    l.choice (mode);
+    l.row (about, 32);
+    l.hero ({ drive, level });
+    l.section ("Shape", tight);
+    l.knobs ({ tone, mix, tightHz });
     l.section ("Oversampling");
-    l.labelled ("Factor", oversampling);
+    l.choice (oversampling);
     l.row (oversamplingNote, 48);
 }
 

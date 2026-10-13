@@ -110,4 +110,8 @@ void drawMiniHead (juce::Graphics& g, juce::Rectangle<float> box, Material mater
 /// other capture or gain set).
 void drawMiniAmp (juce::Graphics& g, juce::Rectangle<float> box, const juce::String& amp);
 
+/// An amp's head in small at any size (the board's amp marker, the amp's inspector header, phase 2): the mini head
+/// scaled whole, with its handle, its panel's knobs, its grille's weave, and its feet. Fits `box`, 30 by 23 in shape.
+void drawSmallHead (juce::Graphics& g, juce::Rectangle<float> box, const juce::String& amp);
+
 } // namespace ui
