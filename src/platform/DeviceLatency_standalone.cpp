@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Sean Snaider
 
-#include "DeviceLatency.h"
-
 #include <juce_core/system/juce_TargetPlatform.h>
 
 #if JucePlugin_Build_Standalone
-// The same headers, in the same order, as JUCE's own standalone wrapper (as SampleRateGuard_standalone.cpp).
+// The same headers, in the same order, as JUCE's own standalone wrapper (as SampleRateGuard_standalone.cpp),
+// and before anything else that includes JUCE. On Windows they include <windows.h>, which defines min and max
+// as macros; juce_core's juce_StandardHeader.h #undefs them, but only the first time juce_core is included.
+// With DeviceLatency.h (juce_core) first, the undef ran before <windows.h>, the macros survived, and they broke
+// juce_FloatVectorOperations.h in the Windows build of v0.3.0.
  #include <juce_audio_plugin_client/detail/juce_IncludeSystemHeaders.h>
  #include <juce_audio_plugin_client/detail/juce_IncludeModuleHeaders.h>
  #include <juce_audio_plugin_client/detail/juce_PluginUtilities.h>
@@ -15,6 +17,8 @@
  #include <juce_audio_utils/juce_audio_utils.h>
  #include <juce_audio_plugin_client/Standalone/juce_StandaloneFilterWindow.h>
 #endif
+
+#include "DeviceLatency.h" // after JUCE's standalone headers, which must come first (above)
 
 namespace platform::device
 {
