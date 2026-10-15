@@ -209,6 +209,7 @@ In the app's engine (`make_default_captures.py --measure`, loudness-normalized, 
 | Compressor | See Compressor below | Placeable in pre-FX and post-FX. |
 | Boost | See Boost and Overdrive below | Shares one drive engine. |
 | Overdrive | See Boost and Overdrive below | Shares one drive engine. |
+| Auto-wah | See Auto-wah below | Envelope-followed band-pass; detector reads the DI. In design (2026-10-15). |
 
 ### Boost and Overdrive
 
@@ -317,6 +318,36 @@ Design settled in design review round 5. Sean's main playing is CHON and Polyphi
 - **Mix and makeup.** Parallel blend and auto-makeup land at expected levels.
 - **Stereo linking.** Signal on one channel compresses both equally.
 - **Pedal mode.** Matches a Python reference simulation of the feedback loop.
+
+### Auto-wah
+
+Designed 2026-10-15; Sean builds it by hand from `docs/guides/AUTOWAH_GUIDE.md` (the DSP, the Python reference, the tests, the wiring), and the pedal and its inspector come after in the app's design system.
+
+**What it is.** A wah pedal is a resonant band-pass whose centre frequency the foot moves, roughly 350 Hz (heel) to 2 kHz (toe). The auto-wah replaces the foot with an envelope follower: pick harder and the filter opens, and as the note decays it closes.
+
+**Placement.** Pre FX, mono, before the amp like a real wah. Default position right after Gate A (Pre FX: Gate A, Auto-wah, Compressor, Boost, Overdrive, EQ), so hiss is gated before the filter. Draggable like the other Pre FX pedals. Order name `wah` (permanent).
+
+**Detector.** Reads the clean DI snapshot (`BlockContext::di`), never the processed signal, as the gates and the harmonizer do: wherever the wah is dragged (after the compressor or a drive), it reacts to the guitar as played. With no DI (the block driven alone in unit tests), it reads its own input.
+
+**Parameters** (IDs permanent once shipped):
+
+| ID | Name | Range | Default |
+|---|---|---|---|
+| `wah_on` | On | bool | off |
+| `wah_sensitivity` | Sensitivity | 0 to 100 % | 50 % |
+| `wah_freq_low` | Low | 150 to 800 Hz | 350 Hz |
+| `wah_freq_high` | High | 800 Hz to 4 kHz | 2.2 kHz |
+| `wah_q` | Resonance | 1 to 12 | 4 |
+| `wah_attack` | Attack | 1 to 50 ms | 5 ms |
+| `wah_release` | Release | 20 to 500 ms | 150 ms |
+| `wah_direction` | Direction | Up / Down | Up |
+| `wah_mix` | Mix | 0 to 100 % | 100 % |
+
+Frequencies and Q on skewed ranges, so a knob's middle is a musical middle. Every effect starts off, so presets made before the wah load with it off.
+
+**The math (to be confirmed in the prototype).** An envelope follower (rectify, then a branching one-pole with attack and release time constants, as the compressor's, after Giannoulis, Massberg and Reiss, JAES 2012); the level mapped to a control between 0 and 1 in dB, with Sensitivity setting the floor; the centre frequency swept exponentially between Low and High; the trapezoidal SVF's band-pass (`Svf.h`: Simper, Zavalishin ch. 4), redesigned every 16 samples. Down uses one minus the control. Details, sources and the measured results go here as it's built.
+
+**Testing.** A golden test against `prototypes/autowah.py` (relative error under -100 dB), the sweep's endpoints and geometric middle, the filter's peak and bandwidth, the envelope's measured attack and release, a hard pick sweeping higher than a soft one (lower with Down), Mix 0 bit-exact dry, stability at the extremes, click-free knob moves, and a listening render; then the whole-app tests (real-time safety, gain staging, the CPU profile).
 
 ### EQ
 
@@ -1017,3 +1048,4 @@ The compiler is Apple clang from the command line tools (`xcode-select --install
 2026-10-13: The redesign's finish review (ASSUMPTIONS RD4-1 to RD4-11; docs/UI_DESIGN.md "The finish review's fixes"): a fresh reviewer's seven material fixes, done. A pedal that's off (or whose section is off) is dimmed whole, and the LED is 1.5 times larger, near-black off and haloed on; PRE and POST are labelled toggles; the preset's name is 23 px and the scene 15 px ink; one short line under the amp and the cab, a preset's notes in its tooltip; every inspector knob shows its value; the amp head is gear (tolex, woven cloth, skirted knobs with no value arcs, a jewel lamp, a pool of light under it) with one accent (no teal or emerald pointers); the amp's inspector holds only the amp (Gate A is its own pedal); Settings' audio device is a one-line status with the device's card folded when there's no device.
 2026-10-13: The board is three tabs, Pre FX, Amp & Cab, and Post FX, each with a strip of LEDs (one per block in it) so the closed tabs still show what's on (ASSUMPTIONS RD5-1 to RD5-9; DESIGN.md "Board"). Sean's call. Claude recommended two tabs (Pre FX and Post FX), because the amp and the cab are already on the stage; Sean chose three, and that stands.
 2026-10-13: The app icon's dot is redrawn orange (#ff8a00) on the ground #121212 to match the redesign, in place of emerald (Sean's call; `tools/content/make_icon.py`, `resources/icon/BellyDSP_icon_1024.png`). The bundle's .icns and the website's tab icons are made from it.
+2026-10-15: An auto-wah joins Pre FX (BUILD_PLAN "Auto-wah"): an envelope-followed SVF band-pass whose detector reads the clean DI, default position after Gate A, nine parameters (`wah_on`, `wah_sensitivity`, `wah_freq_low`, `wah_freq_high`, `wah_q`, `wah_attack`, `wah_release`, `wah_direction`, `wah_mix`). Sean's calls, all on the recommended options; Sean builds the DSP, the Python reference, the tests and the wiring himself from `docs/guides/AUTOWAH_GUIDE.md`, and the pedal art and inspector follow in the redesign's system.

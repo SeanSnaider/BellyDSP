@@ -17,6 +17,11 @@ How to use it:
   every user-facing parameter smoothed; parameter IDs permanent once they ship; nontrivial DSP gets comments
   saying where the math comes from; zero added latency; 48 kHz only.
 
+**Since the redesign (2026-10-15):** Steps 1 to 7 and 9 to 11 are yours; Step 8 (the page) is replaced by the
+pedal on the board and its inspector, which get built in the app's design system after your Step 7. Until then,
+the test that every parameter has a control on screen will fail for the `wah_*` IDs. That's expected. Step 1's
+decisions are made and recorded in `docs/BUILD_PLAN.md` "Auto-wah".
+
 Line numbers below were right on 2026-10-11 and will drift. Search for the function or identifier named next to
 them.
 
