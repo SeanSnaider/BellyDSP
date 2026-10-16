@@ -1017,7 +1017,7 @@
       "kind": "chip",
       "refersTo": "site-board-tab",
       "description": "The board as the app's three tabs shown at once: each tab as the strip draws it (a raised capsule with its name and an orange LED per block in it), then its blocks as cells with their lit LEDs; the amp and the cab are raised markers, and the cable's ends are named in dim ink.",
-      "html": "<div class=\"ds-board\"><div class=\"ds-row\"><span class=\"ds-tabnm\">Pre FX<i></i><i></i><i></i><i></i><i></i></span><ol class=\"ds-chain\"><li>Gate A</li><li>Compressor</li><li>Boost</li><li>Overdrive</li><li>EQ</li><li class=\"ds-end\">to Amp &amp; Cab</li></ol></div><div class=\"ds-row\"><span class=\"ds-tabnm\">Amp &amp; Cab<i></i><i></i><i></i></span><ol class=\"ds-chain\"><li class=\"ds-end\">from Pre FX</li><li class=\"ds-gear\">Amp</li><li>Gate B</li><li class=\"ds-gear\">Cab</li><li class=\"ds-end\">to Post FX</li></ol></div></div>",
+      "html": "<div class=\"ds-board\"><div class=\"ds-row\"><span class=\"ds-tabnm\">Pre FX<i></i><i></i><i></i><i></i><i></i><i></i></span><ol class=\"ds-chain\"><li>Gate A</li><li>Auto-wah</li><li>Compressor</li><li>Boost</li><li>Overdrive</li><li>EQ</li><li class=\"ds-end\">to Amp &amp; Cab</li></ol></div><div class=\"ds-row\"><span class=\"ds-tabnm\">Amp &amp; Cab<i></i><i></i><i></i></span><ol class=\"ds-chain\"><li class=\"ds-end\">from Pre FX</li><li class=\"ds-gear\">Amp</li><li>Gate B</li><li class=\"ds-gear\">Cab</li><li class=\"ds-end\">to Post FX</li></ol></div></div>",
       "css": ".ds-board{display:grid;padding:6px 16px;background:#161616;border:1px solid #2c2c2c;border-radius:10px;font-family: Geist, system-ui, sans-serif;color:#e8e8e8;} .ds-row{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:12px 0;} .ds-row+.ds-row{border-top:1px solid #2c2c2c;} .ds-tabnm{display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 13px;border:1px solid #2c2c2c;border-radius:15px;background:#1f1f1f;font-size:13px;font-weight:500;} .ds-tabnm i{width:7px;height:7px;border-radius:50%;background:#ff8a00;box-shadow:0 0 6px rgba(255,138,0,.5);} .ds-tabnm i:first-of-type{margin-left:5px;} .ds-chain{display:flex;flex-wrap:wrap;gap:8px;list-style:none;margin:0;padding:0;font-size:14px;} .ds-chain li{display:inline-flex;align-items:center;gap:9px;border:1px solid #3a3a3a;border-radius:6px;padding:7px 13px 7px 11px;background:#1a1a1a;} .ds-chain li:not(.ds-end)::before{content:'';width:7px;height:7px;border-radius:50%;background:#ff8a00;box-shadow:0 0 8px rgba(255,138,0,.55);} .ds-chain .ds-gear{background:#1f1f1f;border-color:#4a4a4a;font-weight:500;} .ds-chain .ds-end{border:0;background:none;padding:7px 4px;font-size:13px;color:#9a9a9a;}"
     },
     {
@@ -1051,7 +1051,7 @@
     "keyCharacteristics": [
       "A near-black ground (`bg`) with flat panels (`panel-bg`) and raised controls (`raised`), separated by 1px hairlines (`line1`).",
       "One accent, orange (`accent`), meaning on, selected, or active. Red (`clip`) means a clip and nothing else.",
-      "Rendered gear in its own materials: nine amp heads, fourteen pedals, the cab's front, and the board's markers.",
+      "Rendered gear in its own materials: nine amp heads, fifteen pedals, the cab's front, and the board's markers.",
       "An off pedal is dimmed whole, so on and off read from two metres away.",
       "Every knob in the inspector shows its value. Numbers are tabular.",
       "Three short motions: the LED bloom, the scene glide, the stage crossfade."

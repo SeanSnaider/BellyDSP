@@ -59,7 +59,7 @@ const std::vector<Chain::Slot>& Chain::defaultOrder (Section section)
 {
     // Built on first use, which is always the Chain constructor, never the audio thread; after that,
     // reading them never allocates.
-    static const std::vector<Slot> pre { Slot::gateA, Slot::preCompressor, Slot::boost, Slot::overdrive, Slot::preEq };
+    static const std::vector<Slot> pre { Slot::gateA, Slot::wah, Slot::preCompressor, Slot::boost, Slot::overdrive, Slot::preEq };
     static const std::vector<Slot> post { Slot::postEq, Slot::postCompressor, Slot::harmonizer, Slot::multivoicer, Slot::bloom, Slot::chorus, Slot::delay, Slot::reverb };
     return section == Section::pre ? pre : post;
 }
@@ -126,6 +126,7 @@ const Block& Chain::blockFor (Slot slot) const
     {
         case Slot::inputGain:      return inputGain;
         case Slot::gateA:          return gateA;
+        case Slot::wah:            return wah;
         case Slot::preCompressor:  return preCompressor;
         case Slot::boost:          return boost;
         case Slot::overdrive:      return overdrive;

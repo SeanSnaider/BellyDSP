@@ -18,11 +18,6 @@ constexpr float analyzerTopDb = 0.0f, analyzerBottomDb = -90.0f;
 constexpr double analyzerTiltDbPerOctave = 3.0;        // display only: pink noise reads flat (U11)
 constexpr double sampleRate = 48000.0;                 // the chain only runs at 48 kHz
 
-juce::String hertzText (double f)
-{
-    return f >= 1000.0 ? juce::String (f / 1000.0, f >= 10000.0 ? 1 : 2) + " kHz" : juce::String (juce::roundToInt (f)) + " Hz";
-}
-
 juce::RangedAudioParameter* parameter (AmpSimProcessor& p, const juce::String& id)
 {
     return id.isEmpty() ? nullptr : p.parameters.getParameter (id);

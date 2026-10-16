@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Sean Snaider
 
-// The pedal art (the app redesign; ASSUMPTIONS PA): fourteen invented enclosures, one per effect block, drawn in code
+// The pedal art (the app redesign; ASSUMPTIONS PA): fifteen invented enclosures, one per effect block, drawn in code
 // like the amp heads (AmpHead.cpp) and from the same toolkit: finishes evaluated per pixel as pure functions of the
 // point (so they look the same at every scale), hardware from gradients, and lettering as glyph paths.
 //
@@ -15,6 +15,7 @@
 #include <array>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <vector>
 
 namespace ui
@@ -173,7 +174,8 @@ enum class Finish
     pearl,      // a pearlescent coat whose hue shifts across it
     speckle,    // satin enamel with dark and light specks
     wrinkle,    // crinkle finish: fine wandering ridges
-    sandblast   // a fine, dry, granular surface
+    sandblast,  // a fine, dry, granular surface
+    engineTurned // dyed aluminium engine-turned in overlapping spun spots (perlage)
 };
 
 enum class KnobStyle
@@ -205,6 +207,7 @@ struct Design
     juce::Colour topper; // the footswitch's rubber topper (transparent: bare chrome)
     bool screws = false, dcJack = true;
     float bevel = 1.0f; // how strongly the edge's roll catches the light
+    juce::Rectangle<float> sweep; // the auto-wah's sweep window (its glass), empty on the others
 };
 
 /// The pre and post twins (the compressors, the EQs) share a design and differ in colourway and in the PRE / POST
@@ -231,6 +234,22 @@ Design design (BlockId id)
             d.knobs = { { 25.0f, y0 + 30.0f, 23.0f, -40.0f * deg, "THRESH" }, { 67.0f, y0 + 30.0f, 23.0f, 70.0f * deg, "RELEASE" } };
             d.led = { 46.0f, y0 + 62.0f };
             d.footswitch = { 46.0f, y0 + 131.0f };
+            d.dcJack = false;
+            break;
+        case BlockId::wah:
+            // Magenta anodised aluminium, engine-turned; two chrome domes either side of the LED; a sweep window, its
+            // ladder of dead segments lit live where the filter is (drawPedal); the name swelling as the filter opens.
+            d.width = 92.0f;
+            d.finish = Finish::engineTurned;
+            d.top = juce::Colour (0xffb02f7c);
+            d.bottom = juce::Colour (0xff731650);
+            d.fleck = juce::Colour (0xffffd6ef);
+            d.ink = juce::Colour (0xfffff4fa);
+            d.knobStyle = KnobStyle::chrome;
+            d.knobs = { { 22.0f, y0 + 24.0f, 21.0f, -30.0f * deg, "SENS" }, { 70.0f, y0 + 24.0f, 21.0f, 40.0f * deg, "RESO" } };
+            d.led = { 46.0f, y0 + 24.0f };
+            d.sweep = { 13.0f, y0 + 50.0f, 66.0f, 11.0f };
+            d.footswitch = { 46.0f, y0 + 132.0f };
             d.dcJack = false;
             break;
         case BlockId::preCompressor:
@@ -591,6 +610,40 @@ juce::Colour finishAt (const Design& d, float x, float y, float w, float h)
             const auto grain = hash ((int) std::floor (x * 2.0f), (int) std::floor (y * 2.0f), 32) - 0.5f;
             const auto tooth = noise (x / 0.8f, y / 0.8f, 33) - 0.5f;
             return shade (base, 0.07f * grain + 0.06f * tooth + 0.05f * (noise (x / 10.0f, y / 10.0f, 34) - 0.5f));
+        }
+        case Finish::engineTurned:
+        {
+            // Engine turning (perlage): a spinning abrasive stamped in overlapping spots along staggered rows, each
+            // spot over the ones before it (row by row, left to right), then dyed by the anodising. Inside a spot the
+            // grooves run in circles round its centre, so it shows spun metal's bow-tie sheen: a cos 2 theta lobe aimed
+            // at the light (as on the machined knobs' tops) and fine rings. The rim of each later spot darkens where it
+            // cuts the one under it, which draws the scales. The spots are 6.5 pt apart on rows 0.82 of that, offset by
+            // half; with a radius of 0.8 of the pitch every point is under a spot (the triangle's circumradius is 0.56).
+            constexpr float pitch = 6.5f, rowStep = 0.82f * pitch, radius = 0.80f * pitch;
+            const auto row = (int) std::floor (y / rowStep);
+            auto best = std::numeric_limits<int>::min();
+            float ux = 0.0f, uy = 0.0f;
+            for (int j = row - 1; j <= row + 2; ++j)
+            {
+                const auto offset = (j & 1) != 0 ? 0.5f * pitch : 0.0f;
+                const auto col = (int) std::floor ((x - offset) / pitch);
+                for (int i = col - 1; i <= col + 2; ++i)
+                {
+                    const auto dx = x - (offset + ((float) i + 0.5f) * pitch), dy = y - ((float) j + 0.5f) * rowStep;
+                    if (const auto order = j * 4096 + i; dx * dx + dy * dy < radius * radius && order > best)
+                    {
+                        best = order;
+                        ux = dx;
+                        uy = dy;
+                    }
+                }
+            }
+            const auto rr = std::hypot (ux, uy), theta = std::atan2 (uy, ux);
+            const auto sheen = std::cos (2.0f * (theta - std::atan2 (lightY, lightX) - juce::MathConstants<float>::halfPi));
+            const auto rings = std::sin (rr * 9.0f);
+            const auto rim = juce::jlimit (0.0f, 1.0f, (rr - (radius - 0.7f)) / 0.7f);
+            const auto band = std::exp (-juce::square ((x - 0.34f * w) / (0.30f * w))); // the dye's broad sheen, as anodised
+            return shade (base, 0.11f * sheen + 0.025f * rings - 0.12f * rim * rim + 0.06f * band);
         }
     }
     return base;
@@ -1001,6 +1054,44 @@ void drawFader (juce::Graphics& g, float x, float top, float bottom, float posit
     g.fillRect (cap.getX() + 0.8f, y - 0.35f, cap.getWidth() - 1.6f, 0.7f);
 }
 
+/// The sweep window's segment `index` (0 at the Low end) inside its glass: equal cells across it, inset from the glass.
+juce::Rectangle<float> segmentIn (juce::Rectangle<float> glass, int index)
+{
+    constexpr float padX = 1.8f, padY = 2.0f, gap = 0.9f;
+    const auto inner = glass.reduced (padX, padY);
+    const auto pitch = inner.getWidth() / (float) sweepSegments;
+    return { inner.getX() + pitch * (float) index + gap * 0.5f, inner.getY(), pitch - gap, inner.getHeight() };
+}
+
+/// The auto-wah's sweep window (static art; drawPedal lights it): a slot of smoked glass in a chrome bezel, with a
+/// ladder of dead segments behind the glass (the off LED's lens colour) and the glass's glint along its top.
+void drawSweepWindow (juce::Graphics& g, juce::Rectangle<float> glass)
+{
+    const auto bezel = glass.expanded (1.7f);
+    g.setColour (juce::Colours::black.withAlpha (0.45f));
+    g.fillRoundedRectangle (bezel.translated (0.0f, 0.7f).expanded (0.4f), 3.6f);
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xfff2f4f6), bezel.getX(), bezel.getY(), juce::Colour (0xff474c52), bezel.getRight(), bezel.getBottom(), false));
+    g.fillRoundedRectangle (bezel, 3.4f);
+    g.setColour (juce::Colour (0xff050506));
+    g.fillRoundedRectangle (glass.expanded (0.5f), 2.4f);
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff1c1519), 0.0f, glass.getY(), juce::Colour (0xff070507), 0.0f, glass.getBottom(), false));
+    g.fillRoundedRectangle (glass, 2.0f);
+    for (int i = 0; i < sweepSegments; ++i)
+    {
+        const auto cell = segmentIn (glass, i);
+        g.setColour (ledOffColour.withAlpha (0.9f));
+        g.fillRoundedRectangle (cell, 0.6f);
+        g.setColour (juce::Colours::white.withAlpha (0.05f));
+        g.fillRect (cell.withHeight (0.6f));
+    }
+    // The glint: a soft band down from the top, and a crisp line just under the top edge.
+    g.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.13f), 0.0f, glass.getY(), juce::Colours::white.withAlpha (0.0f), 0.0f,
+                                             glass.getY() + glass.getHeight() * 0.45f, false));
+    g.fillRoundedRectangle (glass.withHeight (glass.getHeight() * 0.45f), 2.0f);
+    g.setColour (juce::Colours::white.withAlpha (0.22f));
+    g.fillRect (glass.getX() + 2.0f, glass.getY() + 0.7f, glass.getWidth() - 4.0f, 0.4f);
+}
+
 // ---- The names -----------------------------------------------------------------------------------
 
 /// The PRE or POST mark on a twin: a small rounded pill in the ink, the word knocked out in the body's colour.
@@ -1050,6 +1141,35 @@ Name nameFor (BlockId id, const Design& d)
             {
                 g.setColour (ink);
                 g.drawRoundedRectangle (boxAt, 1.5f, 1.1f);
+            };
+            break;
+        }
+        case BlockId::wah:
+        {
+            // Semibold lowercase whose letters swell as they go (18, 22, 26 pt), the way the filter opens on a harder
+            // pick, with "AUTO" in small tracked capitals nested in the corner over the "w" and the "a", under the h's
+            // ascender. A soft dark drop under it all keeps it off the engine-turning.
+            const std::array<float, 3> sizes { 18.0f, 22.0f, 26.0f };
+            const juce::String letters ("wah");
+            juce::Path word;
+            for (int i = 0; i < 3; ++i)
+            {
+                auto p = lettering (letters.substring (i, i + 1), geist (Weight::semibold, sizes[(size_t) i]), 0.0f);
+                p.applyTransform (juce::AffineTransform::translation (i == 0 ? 0.0f : word.getBounds().getRight() + 0.9f, 0.0f));
+                word.addPath (p);
+            }
+            const auto baseline = y0 + 103.0f;
+            word.applyTransform (juce::AffineTransform::translation (cx - word.getBounds().getCentreX(), baseline));
+            const auto small = geist (Weight::semibold, 6.4f);
+            auto label = lettering ("AUTO", small, 0.34f * 6.4f);
+            label.applyTransform (juce::AffineTransform::translation (word.getBounds().getX() + 0.8f, baseline - 14.0f));
+            n.ink = word;
+            n.ink.addPath (label);
+            const auto p = n.ink;
+            n.under = [p] (juce::Graphics& g)
+            {
+                g.setColour (juce::Colours::black.withAlpha (0.35f));
+                g.fillPath (p, juce::AffineTransform::translation (0.0f, 0.9f));
             };
             break;
         }
@@ -1346,6 +1466,22 @@ void drawGraphics (juce::Graphics& g, BlockId id, const Design& d)
             }
             break;
         }
+        case BlockId::wah:
+        {
+            // The sweep window, its scale's ticks under it (every other segment; the ends and the middle longer), and LO
+            // and HI.
+            drawSweepWindow (g, d.sweep);
+            g.setColour (d.ink.withAlpha (0.6f));
+            for (int i = 0; i < sweepSegments; i += 2)
+            {
+                const auto cell = segmentIn (d.sweep, i);
+                const auto major = i == 0 || i == sweepSegments - 1 || i == sweepSegments / 2;
+                g.fillRect (cell.getCentreX() - 0.3f, d.sweep.getBottom() + 2.4f, 0.6f, major ? 2.6f : 1.6f);
+            }
+            silk (g, "LO", { segmentIn (d.sweep, 0).getCentreX() + 1.0f, d.sweep.getBottom() + 8.6f }, d.ink.withAlpha (0.88f), 4.6f);
+            silk (g, "HI", { segmentIn (d.sweep, sweepSegments - 1).getCentreX() - 0.6f, d.sweep.getBottom() + 8.6f }, d.ink.withAlpha (0.88f), 4.6f);
+            break;
+        }
         case BlockId::bloom:
         case BlockId::preCompressor:
         case BlockId::postCompressor:
@@ -1510,7 +1646,22 @@ PedalLayout pedalLayout (BlockId id)
 {
     const auto d = design (id);
     const auto disc = [] (juce::Point<float> c, float r) { return juce::Rectangle<float> (r * 2.0f, r * 2.0f).withCentre (c); };
-    return { bodyOf (d), disc (d.led, ledBezel), disc (d.led, ledGlowRadius), disc (d.footswitch, nutRadius), nameFor (id, d).ink.getBounds(), disc (d.led, ledLens) };
+    return { bodyOf (d),         disc (d.led, ledBezel), disc (d.led, ledGlowRadius), disc (d.footswitch, nutRadius), nameFor (id, d).ink.getBounds(),
+             disc (d.led, ledLens), d.sweep };
+}
+
+juce::Rectangle<float> sweepSegment (BlockId id, int index)
+{
+    const auto glass = design (id).sweep;
+    return glass.isEmpty() ? juce::Rectangle<float>() : segmentIn (glass, juce::jlimit (0, sweepSegments - 1, index));
+}
+
+juce::Point<float> sweepLampCentre (BlockId id, float control)
+{
+    // From the first segment's centre (Low) to the last's (High), in a straight line: the control is already the
+    // filter's position in octaves between Low and High (fc = Low (High / Low)^control), so the scale is logarithmic.
+    const auto first = sweepSegment (id, 0), last = sweepSegment (id, sweepSegments - 1);
+    return { juce::jmap (juce::jlimit (0.0f, 1.0f, control), first.getCentreX(), last.getCentreX()), first.getCentreY() };
 }
 
 int pedalRenderCount() { return renders; }
@@ -1569,6 +1720,36 @@ void drawPedal (juce::Graphics& g, juce::Rectangle<float> box, BlockId id, const
         g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
         g.setOpacity (1.0f);
         g.drawImage (pedalDimmed (state) ? cached.dim : cached.art, fit);
+    }
+
+    if (! layout.sweep.isEmpty() && state.on && ! state.sectionOff && state.sweep >= 0.0f)
+    {
+        // The sweep window lit where the filter is: the segment under the lamp at full, its neighbours in proportion
+        // (falling to nothing 1.3 segments away, as the tuner's scale lights its neighbours), a soft glow behind the
+        // glass round it, and a white-hot middle. Clipped to the glass; drawn live over the cached art.
+        const juce::Graphics::ScopedSaveState saved (g);
+        const auto glass = toScreen (layout.sweep);
+        juce::Path window;
+        window.addRoundedRectangle (glass, 2.0f * k);
+        g.reduceClipRegion (window);
+        const auto lamp = sweepLampCentre (id, state.sweep);
+        const auto at = juce::Point<float> (fit.getX() + lamp.x * k, fit.getY() + lamp.y * k);
+        const auto pitch = sweepSegment (id, 1).getX() - sweepSegment (id, 0).getX();
+        juce::ColourGradient glow (accent.withAlpha (0.42f), at, accent.withAlpha (0.0f), at.translated (2.6f * pitch * k, 0.0f), true);
+        g.setGradientFill (glow);
+        g.fillRect (glass);
+        for (int i = 0; i < sweepSegments; ++i)
+        {
+            const auto cell = toScreen (sweepSegment (id, i));
+            const auto distance = std::abs (cell.getCentreX() - at.x) / (pitch * k);
+            const auto light = juce::jlimit (0.0f, 1.0f, 1.0f - distance / 1.3f);
+            if (light <= 0.0f)
+                continue;
+            g.setColour (accent.withAlpha (0.25f + 0.75f * light));
+            g.fillRoundedRectangle (cell, 0.6f * k);
+            g.setColour (accent.interpolatedWith (juce::Colours::white, 0.7f).withAlpha (light * light * 0.85f));
+            g.fillRoundedRectangle (cell.reduced (cell.getWidth() * 0.28f, cell.getHeight() * 0.22f), 0.4f * k);
+        }
     }
 
     const auto c = toScreen (layout.led).getCentre();

@@ -14,6 +14,7 @@ namespace
 const std::array<BlockInfo, numBlocks> blocks { {
     { BlockId::input, "Input", "io", Section::inOut, "", false, "" },
     { BlockId::gateA, "Gate A", "gate_a", Section::pre, "gate_a_on", false, "gate" },
+    { BlockId::wah, "Auto-wah", "wah", Section::pre, "wah_on", false, "wah" },
     { BlockId::preCompressor, "Compressor", "comp_pre", Section::pre, "comp_pre_on", false, "comp" },
     { BlockId::boost, "Boost", "boost", Section::pre, "boost_on", false, "boost" },
     { BlockId::overdrive, "Overdrive", "overdrive", Section::pre, "od_on", false, "overdrive" },

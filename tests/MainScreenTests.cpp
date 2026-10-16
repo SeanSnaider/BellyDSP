@@ -88,6 +88,26 @@ juce::StringArray taggedIn (juce::Component& c)
     return ids;
 }
 
+/// The accent's lit pixels in an area of an image (device pixels): how many, and their mean x.
+std::pair<int, double> litIn (const juce::Image& image, juce::Rectangle<int> area)
+{
+    area = area.getIntersection (image.getBounds());
+    int count = 0;
+    double sum = 0.0;
+    for (int y = area.getY(); y < area.getBottom(); ++y)
+        for (int x = area.getX(); x < area.getRight(); ++x)
+        {
+            const auto c = image.getPixelAt (x, y);
+            const auto hue = c.getHue() * 360.0f;
+            if (hue > 15.0f && hue < 50.0f && c.getRed() > c.getBlue() + 80 && c.getBrightness() > 0.55f)
+            {
+                ++count;
+                sum += x + 0.5;
+            }
+        }
+    return { count, count > 0 ? sum / count : -1.0 };
+}
+
 class MainScreenTests final : public juce::UnitTest
 {
 public:
@@ -152,7 +172,7 @@ public:
             for (int b = 0; b < ui::numBlocks; ++b)
                 if (board.getPedal ((ui::BlockId) b) != nullptr)
                     ++pedals;
-            expectEquals (pedals, 14);
+            expectEquals (pedals, 15);
             juce::StringArray rows;
             for (int t = 0; t < ui::numBoardTabs; ++t)
             {
@@ -589,6 +609,124 @@ public:
             logMessage ("  -> " + log.joinIntoString ("; "));
         }
 
+        beginTest ("the auto-wah on the board: on Pre FX after Gate A with its LED on the strip, the row still fitting at 1.18; its sweep window follows the "
+                   "filter while it plays and rests dark when it's off or its section is");
+        {
+            AmpSimProcessor p;
+            p.prepareToPlay (fs, blockSize);
+            std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+            auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
+            auto& board = ed.getBoard();
+            using B = ui::BlockId;
+
+            // Where it stands: the second pedal and the second LED of Pre FX, the row's six pedals still at 1.18 and inside
+            // the board, with the cable's "to Amp & Cab" room after them.
+            const auto pre = board.getTabBlocks (ui::BoardTab::pre);
+            expect (pre == std::vector<B> { B::gateA, B::wah, B::preCompressor, B::boost, B::overdrive, B::preEq });
+            expect (board.getTabLeds (ui::BoardTab::pre).size() == 6 && board.getTabLeds (ui::BoardTab::pre)[1].id == B::wah);
+            expectWithinAbsoluteError (board.getPedalScale (ui::BoardTab::pre), 1.18f, 0.01f);
+            const auto lastRight = board.getPedal (pre.back())->getRight();
+            expect (lastRight <= board.getWidth() - ui::Board::sidePad, "the row inside the board");
+            const auto room = board.getWidth() - ui::Board::sidePad - lastRight;
+            const auto onward = ui::theme::textWidth (ui::theme::geist (ui::theme::Weight::regular, 12.0f), "to Amp & Cab");
+            expectGreaterThan ((float) room, onward + 12.0f, "room for the cable's name after the row");
+            expect (board.getTab() == ui::BoardTab::pre);
+
+            // Selecting it from another tab opens Pre FX, and a click on it (not its footswitch) selects it.
+            ed.selectBlock (B::delay);
+            expect (board.getTab() == ui::BoardTab::post && ! board.isShown (B::wah));
+            ed.selectBlock (B::wah);
+            expect (board.getTab() == ui::BoardTab::pre && board.isShown (B::wah) && ed.getInspector().getContent() == &ed.getPage (B::wah));
+            ed.selectBlock (B::gateA);
+            board.clickPedal (B::wah, false);
+            expect (ed.getSelectedBlock() == B::wah);
+            ed.selectBlock (B::gateA); // so the pedal sits unraised for the pixels below
+
+            // Off by default: the window rests dark.
+            board.refresh();
+            expect (! board.isLit (B::wah) && board.getSweep() < 0.0f);
+
+            // On and playing: refreshed 30 times a second (every 12 buffers), the window shows what the filter reports, to
+            // within the step it redraws at (a 500th of the window, under a pixel), and it moves.
+            setParam (p, "wah_on", 1.0f);
+            board.refresh();
+            expect (board.isLit (B::wah) && board.getSweep() >= 0.0f);
+            const auto input = guitarDI ((int) (2.0 * fs));
+            juce::AudioBuffer<float> buffer (2, blockSize);
+            juce::MidiBuffer midi;
+            float mismatch = 0.0f, lowest = 1.0f, highest = 0.0f;
+            int reads = 0;
+            for (size_t start = 0, n = 0; start + blockSize <= input.size(); start += blockSize, ++n)
+            {
+                buffer.clear();
+                buffer.copyFrom (0, 0, input.data() + start, blockSize);
+                p.processBlock (buffer, midi);
+                if (n % 12 == 11)
+                {
+                    board.refresh();
+                    ++reads;
+                    mismatch = juce::jmax (mismatch, std::abs (board.getSweep() - juce::jlimit (0.0f, 1.0f, p.getWahControl())));
+                    if (start > (size_t) (0.2 * fs))
+                    {
+                        lowest = juce::jmin (lowest, board.getSweep());
+                        highest = juce::jmax (highest, board.getSweep());
+                    }
+                }
+            }
+            expectLessThan (mismatch, ui::Board::sweepStep, "the window shows the filter's control");
+            expectGreaterThan (highest - lowest, 0.15f, "it moves while playing");
+
+            // As drawn: the lamp sits further right for a higher control (a value set through the board's seam, as the
+            // meters' tests push readings).
+            auto& pedal = *board.getPedal (B::wah);
+            const auto fit = ui::pedalBounds (pedal.getLocalBounds().toFloat(), B::wah);
+            const auto k = fit.getWidth() / ui::pedalSize (B::wah).x;
+            const auto layout = ui::pedalLayout (B::wah);
+            const auto glass = (juce::Rectangle<float> (fit.getX() + layout.sweep.getX() * k, fit.getY() + layout.sweep.getY() * k, layout.sweep.getWidth() * k,
+                                                        layout.sweep.getHeight() * k)
+                                * 2.0f)
+                                   .toNearestInt();
+            const auto litAt = [&] (float control)
+            {
+                board.setSweep (control);
+                return litIn (pedal.createComponentSnapshot (pedal.getLocalBounds(), true, 2.0f), glass);
+            };
+            const auto low = litAt (0.1f), high = litAt (0.9f);
+            expect (low.first > 10 && high.first > 10 && high.second > low.second + 0.5 * glass.getWidth(), juce::String (low.second) + " " + juce::String (high.second));
+
+            // Silence: it closes (Up), and the window follows it down.
+            for (int b = 0; b < (int) fs / blockSize; ++b)
+            {
+                buffer.clear();
+                p.processBlock (buffer, midi);
+            }
+            board.refresh();
+            const auto closed = board.getSweep();
+            expectLessThan (closed, 0.02f, "closed in silence");
+            expect (litIn (pedal.createComponentSnapshot (pedal.getLocalBounds(), true, 2.0f), glass).first > 10, "lit, resting at Low");
+
+            // Switched off, or its section off: the window rests dark, whatever the control held.
+            setParam (p, "wah_on", 0.0f);
+            board.refresh();
+            const auto offSweep = board.getSweep();
+            const auto offLit = litIn (pedal.createComponentSnapshot (pedal.getLocalBounds(), true, 2.0f), glass).first;
+            setParam (p, "wah_on", 1.0f);
+            setParam (p, "pre_fx_on", 0.0f);
+            board.refresh();
+            const auto sectionSweep = board.getSweep();
+            const auto sectionLit = litIn (pedal.createComponentSnapshot (pedal.getLocalBounds(), true, 2.0f), glass).first;
+            expect (offSweep < 0.0f && offLit == 0, "off: dark");
+            expect (sectionSweep < 0.0f && sectionLit == 0 && board.isLit (B::wah), "section off: dark, its LED still lit");
+            setParam (p, "pre_fx_on", 1.0f);
+            logMessage ("  -> Pre FX: " + juce::String ((int) pre.size()) + " pedals at " + juce::String (board.getPedalScale (ui::BoardTab::pre), 3) + ", " + juce::String (room)
+                        + " px after the last for \"to Amp & Cab\" (" + juce::String (onward, 1) + " px of text); playing, " + juce::String (reads)
+                        + " reads matched the filter's control within " + juce::String (mismatch, 7) + " and swept " + juce::String (lowest, 3) + " to "
+                        + juce::String (highest, 3) + "; drawn at 0.1 and 0.9 the lamp's pixels centre " + juce::String (low.second - glass.getX(), 1) + " and "
+                        + juce::String (high.second - glass.getX(), 1) + " px into the " + juce::String (glass.getWidth()) + " px window; after 1 s of silence it reads "
+                        + juce::String (closed, 4) + " (lit at Low); off and section off: " + juce::String (offLit) + " and "
+                        + juce::String (sectionLit) + " lit pixels");
+        }
+
         beginTest ("keys: the arrows step the presets, 1 to 8 recall scenes, T opens and closes the tuner, Escape closes an overlay; a clicked knob keeps up and down only");
         {
             AmpSimProcessor p;
@@ -945,8 +1083,9 @@ public:
             }
             expectEquals (ed.getTopBar().getShownPresetName(), juce::String ("Tech Death"));
             p.recallScene (1);
-            for (const auto* id : { "gate_a_on", "od_on", "delay_on", "reverb_on" })
+            for (const auto* id : { "gate_a_on", "wah_on", "od_on", "delay_on", "reverb_on" })
                 setParam (p, id, 1.0f);
+            setParam (p, "wah_sensitivity", 20.0f); // Tech Death's input pins it at High at the default 50 %; at 20 % it sweeps
             play (p, 0.5);
             waitForLoads (p);
             ed.getTopBar().updateMeters (p.takePeaks(), 1.0 / 30.0);
@@ -980,6 +1119,23 @@ public:
             click (board.getTabStrip(), board.getTabArea (ui::BoardTab::pre).getCentre());
             ed.selectBlock (ui::BlockId::overdrive);
             snap ("main_pedal_pre_overdrive");
+            // The auto-wah selected while playing: its meter's lamp and the last second's sweep, its window on the board.
+            ed.selectBlock (ui::BlockId::wah);
+            {
+                // A second of playing (one continuous take, not the same first 33 ms again), read 30 times a second.
+                const auto take = guitarDI ((int) fs);
+                juce::AudioBuffer<float> buffer (2, blockSize);
+                juce::MidiBuffer midi;
+                for (size_t start = 0, n = 0; start + blockSize <= take.size(); start += blockSize, ++n)
+                {
+                    buffer.clear();
+                    buffer.copyFrom (0, 0, take.data() + start, blockSize);
+                    p.processBlock (buffer, midi);
+                    if (n % 12 == 11)
+                        ed.refresh();
+                }
+            }
+            snap ("main_pedal_pre_wah");
             ed.selectBlock (ui::BlockId::delay);
             snap ("main_pedal_post_delay");
             ed.selectBlock (ui::BlockId::harmonizer);

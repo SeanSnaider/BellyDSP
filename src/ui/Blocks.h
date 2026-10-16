@@ -16,6 +16,7 @@ enum class BlockId
 {
     input,
     gateA,
+    wah, // the auto-wah
     preCompressor,
     boost,
     overdrive,

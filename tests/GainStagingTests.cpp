@@ -194,6 +194,7 @@ public:
         };
         const std::vector<Config> configs {
             { "Gate A", { { "gate_a_on", 1 } }, true },
+            { "Auto-wah", { { "wah_on", 1 } }, true },
             { "Pre comp", { { "comp_pre_on", 1 } }, true },
             { "Boost Clean", { { "boost_on", 1 }, { "boost_mode", 0 } }, true },
             { "Boost Tight", { { "boost_on", 1 }, { "boost_mode", 1 } }, true },
@@ -437,6 +438,46 @@ public:
                 return std::unique_ptr<ampsim::Block> (std::move (b));
             });
             logMessage ("  -> loudness change (dB) at DI peaks -12 / -9 / -6 dBFS, bare circuit and with the unity trim: " + rows.joinIntoString ("; "));
+        }
+
+        beginTest ("auto-wah: its level hold keeps the DI's loudness within the audit's 1 dB at its defaults, and Resonance 1 to 12 within 0.5 dB of that");
+        {
+            // The level hold (AutoWah.h, 6): makeupDb at Q 4, rising as sqrt(Q). The bare band-pass's change is the
+            // measured one minus the hold, exactly (the wet is linear in it and the defaults are 100 % wet). A wah's level
+            // follows the playing (a harder pick opens it, brighter and louder), so makeupDb sits between the audit's two
+            // DI levels, -12 and -6 dBFS, rather than on -9 as the drives' unity trims do.
+            juce::StringArray rows;
+            double atReference = 0.0;
+            for (const auto q : { 4.0f, 1.0f, 2.0f, 8.0f, 12.0f })
+            {
+                const auto hold = 20.0 * std::log10 (ampsim::AutoWah::wetGain (q));
+                juce::String row = "Q " + juce::String (q, 0) + " (hold " + juce::String (hold, 1) + " dB):";
+                juce::String bare = " bare";
+                for (const auto* in : { &di12, &di9, &di6 })
+                {
+                    ampsim::AutoWah w;
+                    ampsim::AutoWah::Settings s;
+                    s.q = q;
+                    w.setSettings (s);
+                    const auto change = loudnessChange (w, *in);
+                    row << " " << num (change).trim();
+                    bare << " " << num (change - hold).trim();
+                    if (juce::exactlyEqual (q, 4.0f))
+                    {
+                        expectLessThan (std::abs (change), 1.1, "the defaults"); // the block audit's bar
+                        if (in == &di9)
+                            atReference = change;
+                    }
+                    else if (in == &di9)
+                    {
+                        expectLessThan (std::abs (change - atReference), 0.5, "Q " + juce::String (q));
+                    }
+                }
+                rows.add (row + ";" + bare);
+            }
+            expectLessThan (std::abs (atReference), 0.3);
+            logMessage ("  -> the auto-wah at its defaults (the DI as its detector), loudness change (dB) at DI peaks -12 / -9 / -6 dBFS, by Resonance, with the level hold"
+                        " and the bare band-pass: " + rows.joinIntoString (" | ") + ". makeupDb = " + juce::String (ampsim::AutoWah::makeupDb, 1));
         }
     }
 };

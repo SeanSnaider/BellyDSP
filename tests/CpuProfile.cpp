@@ -237,6 +237,7 @@ const char* slotName (Slot slot)
     {
         case Slot::inputGain:      return "input level";
         case Slot::gateA:          return "gate A";
+        case Slot::wah:            return "auto-wah";
         case Slot::preCompressor:  return "compressor (pre)";
         case Slot::boost:          return "boost";
         case Slot::overdrive:      return "overdrive";
@@ -440,7 +441,7 @@ void setHeaviest (AmpSimProcessor& p)
     waitForLoads (p);
 
     for (const auto& [id, value] : std::initializer_list<std::pair<const char*, float>> {
-             { "gate_a_on", 1 }, { "gate_b_on", 1 }, { "comp_pre_on", 1 }, { "boost_on", 1 }, { "boost_mode", 2 }, { "od_on", 1 },
+             { "gate_a_on", 1 }, { "gate_b_on", 1 }, { "wah_on", 1 }, { "wah_q", 12 }, { "comp_pre_on", 1 }, { "boost_on", 1 }, { "boost_mode", 2 }, { "od_on", 1 },
              { "comp_post_on", 1 }, { "harm_on", 1 }, { "harm_v2_on", 1 }, { "harm_v3_on", 1 }, { "harm_v4_on", 1 }, { "mv_on", 1 },
              { "mv_engine", 1 }, { "mv_voices", 8 }, { "bloom_on", 1 }, { "bloom_crush_on", 1 }, { "bloom_phaser_on", 1 }, { "bloom_flanger_on", 1 },
              { "chorus_on", 1 }, { "chorus_mode", 2 }, { "delay_on", 1 }, { "delay_mode", 2 }, { "reverb_on", 1 }, { "reverb_engine", 1 },

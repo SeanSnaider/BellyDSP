@@ -1,0 +1,55 @@
+{
+  "interval": 4,
+  "cases": {
+    "defaults": {
+      "sensitivity": 50.0,
+      "freq_low": 350.0,
+      "freq_high": 2200.0,
+      "q": 4.0,
+      "attack_ms": 5.0,
+      "release_ms": 150.0,
+      "direction": "up",
+      "mix": 1.0
+    },
+    "down": {
+      "sensitivity": 50.0,
+      "freq_low": 350.0,
+      "freq_high": 2200.0,
+      "q": 4.0,
+      "attack_ms": 5.0,
+      "release_ms": 150.0,
+      "direction": "down",
+      "mix": 1.0
+    },
+    "high_q_fast": {
+      "sensitivity": 50.0,
+      "freq_low": 350.0,
+      "freq_high": 2200.0,
+      "q": 12.0,
+      "attack_ms": 1.0,
+      "release_ms": 60.0,
+      "direction": "up",
+      "mix": 1.0
+    },
+    "narrow": {
+      "sensitivity": 50.0,
+      "freq_low": 600.0,
+      "freq_high": 900.0,
+      "q": 4.0,
+      "attack_ms": 5.0,
+      "release_ms": 150.0,
+      "direction": "up",
+      "mix": 0.5
+    },
+    "low_sensitivity": {
+      "sensitivity": 10.0,
+      "freq_low": 350.0,
+      "freq_high": 2200.0,
+      "q": 4.0,
+      "attack_ms": 5.0,
+      "release_ms": 400.0,
+      "direction": "up",
+      "mix": 0.75
+    }
+  }
+}

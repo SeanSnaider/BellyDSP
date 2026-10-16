@@ -101,6 +101,35 @@ juce::Rectangle<float> boxFor (BlockId id, float k)
     return { 0.0f, 0.0f, (size.x + 2.0f * ui::pedalMargin) * k, (size.y + 2.0f * ui::pedalMargin) * k };
 }
 
+/// The accent's lit pixels in an area (device pixels): how many, and their mean x. "Lit" is the accent's hue (15 to 50
+/// degrees), clearly warmer than blue, and bright.
+struct Lit
+{
+    int count = 0;
+    double centreX = 0.0;
+};
+
+Lit litIn (const juce::Image& image, juce::Rectangle<int> area)
+{
+    Lit lit;
+    area = area.getIntersection (image.getBounds());
+    const juce::Image::BitmapData data (image, juce::Image::BitmapData::readOnly);
+    double sum = 0.0;
+    for (int y = area.getY(); y < area.getBottom(); ++y)
+        for (int x = area.getX(); x < area.getRight(); ++x)
+        {
+            const auto c = data.getPixelColour (x, y);
+            const auto hue = c.getHue() * 360.0f;
+            if (hue > 15.0f && hue < 50.0f && c.getRed() > c.getBlue() + 80 && c.getBrightness() > 0.55f)
+            {
+                ++lit.count;
+                sum += x + 0.5;
+            }
+        }
+    lit.centreX = lit.count > 0 ? sum / lit.count : -1.0;
+    return lit;
+}
+
 class PedalArtTests final : public juce::UnitTest
 {
 public:
@@ -112,9 +141,9 @@ public:
         const auto dir = proofDir().getChildFile ("pedals");
         dir.createDirectory();
 
-        beginTest ("the board's pedals: the pre and post blocks and Gate B, fourteen, in chain order");
+        beginTest ("the board's pedals: the pre and post blocks and Gate B, fifteen, in chain order");
         {
-            const std::vector<BlockId> expected { BlockId::gateA,  BlockId::preCompressor,  BlockId::boost,      BlockId::overdrive,   BlockId::preEq,
+            const std::vector<BlockId> expected { BlockId::gateA,  BlockId::wah, BlockId::preCompressor,  BlockId::boost,      BlockId::overdrive,   BlockId::preEq,
                                                   BlockId::gateB,  BlockId::postEq,         BlockId::postCompressor, BlockId::harmonizer, BlockId::multivoicer,
                                                   BlockId::bloom,  BlockId::chorus,         BlockId::delay,      BlockId::reverb };
             expect (list == expected);
@@ -179,7 +208,7 @@ public:
             drawAll (0.75f, { true, true, false });
             drawAll (1.0f, { true, false, true });
             expectEquals (ui::pedalRenderCount() - before, 2 * (int) list.size(), "two sizes in turn (a board and a larger view) don't thrash");
-            logMessage ("  -> renders: " + juce::String (first) + " for 14 pedals at one scale, none in 30 frames of state changes, "
+            logMessage ("  -> renders: " + juce::String (first) + " for " + juce::String ((int) list.size()) + " pedals at one scale, none in 30 frames of state changes, "
                         + juce::String (ui::pedalRenderCount() - before) + " after a second scale and switching back and forth");
         }
 
@@ -306,6 +335,85 @@ public:
             logMessage ("  -> off vs on (brightness ratio away from the LED, the off lens, the lit lens's pixels at 2x): " + measured.joinIntoString ("; "));
         }
 
+        beginTest ("the auto-wah's sweep window follows the control: lit in the accent where the filter is, its neighbours in proportion; dark off, in a "
+                   "section that's off, or with no reading; drawn live over the cached art");
+        {
+            constexpr float scale = 3.0f, k = 1.0f;
+            const auto id = BlockId::wah;
+            const auto box = boxFor (id, k);
+            const auto fit = ui::pedalBounds (box, id);
+            const auto layout = ui::pedalLayout (id);
+            expect (! layout.sweep.isEmpty() && layout.body.contains (layout.sweep), "the window is on the body");
+            expect (! layout.sweep.intersects (layout.led) && ! layout.sweep.intersects (layout.name) && ! layout.sweep.intersects (layout.footswitch),
+                    "the window clear of the LED, the name and the footswitch");
+            for (const auto other : list)
+                if (other != id)
+                    expect (ui::pedalLayout (other).sweep.isEmpty(), nameOf (other) + " has no window");
+            const auto glass = (juce::Rectangle<float> (fit.getX() + layout.sweep.getX() * k, fit.getY() + layout.sweep.getY() * k, layout.sweep.getWidth() * k,
+                                                        layout.sweep.getHeight() * k)
+                                * scale)
+                                   .toNearestInt();
+            const auto pitch = (ui::sweepSegment (id, 1).getX() - ui::sweepSegment (id, 0).getX()) * k * scale;
+
+            drawn (id, box, scale, { true, false, false, false, 0.5f }); // the art at this scale, cached
+            const auto rendersBefore = ui::pedalRenderCount();
+            juce::StringArray measured;
+            auto previousX = -1.0;
+            for (const auto control : { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f })
+            {
+                const auto image = drawn (id, box, scale, { true, false, false, false, control });
+                const auto lit = litIn (image, glass);
+                const auto expected = (fit.getX() + ui::sweepLampCentre (id, control).x * k) * scale;
+                expectGreaterThan (lit.count, 20, "lit at " + juce::String (control));
+                // The lit pixels centre on the lamp within half a segment (at the ends the glass cuts the neighbours on one
+                // side, so the centre leans inwards by up to that).
+                expectWithinAbsoluteError (lit.centreX, (double) expected, 0.5 * pitch, "the lamp at " + juce::String (control));
+                expectGreaterThan (lit.centreX, previousX, "moves right as the control rises");
+                previousX = lit.centreX;
+                measured.add (juce::String (control, 2) + ": " + juce::String (lit.count) + " px centred at " + juce::String (lit.centreX - glass.getX(), 1) + " (lamp "
+                              + juce::String (expected - glass.getX(), 1) + ")");
+            }
+            // Nothing lit in the window while it rests: switched off (dimmed, the control still given), in a section that's
+            // off, or on with no reading.
+            const auto off = litIn (drawn (id, box, scale, { false, false, false, false, 0.5f }), glass);
+            const auto sectionOff = litIn (drawn (id, box, scale, { true, false, false, true, 0.5f }), glass);
+            const auto noReading = litIn (drawn (id, box, scale, { true, false, false, false, -1.0f }), glass);
+            expectEquals (off.count, 0, "off");
+            expectEquals (sectionOff.count, 0, "its section off");
+            expectEquals (noReading.count, 0, "no reading");
+            // Selected (raised 3 pt), the lamp rides up with the pedal.
+            const auto raised = litIn (drawn (id, box, scale, { true, true, false, false, 0.5f }), glass.translated (0, -juce::roundToInt (3.0f * k * scale)));
+            expectGreaterThan (raised.count, 20, "lit when raised");
+            expectEquals (ui::pedalRenderCount(), rendersBefore, "the window is drawn live: no re-render");
+            // Every other pedal ignores the sweep.
+            for (const auto other : list)
+                if (other != id)
+                {
+                    const auto a = drawn (other, boxFor (other, k), 1.0f, { true, false, false, false, -1.0f });
+                    const auto b = drawn (other, boxFor (other, k), 1.0f, { true, false, false, false, 0.7f });
+                    int differ = 0;
+                    for (int y = 0; y < a.getHeight(); ++y)
+                        for (int x = 0; x < a.getWidth(); ++x)
+                            differ += a.getPixelAt (x, y) != b.getPixelAt (x, y) ? 1 : 0;
+                    expectEquals (differ, 0, nameOf (other));
+                }
+
+            // The proof: the pedal at 3x with the control at 0, 0.5 and 1, then off.
+            juce::Image sheet (juce::Image::RGB, juce::roundToInt (box.getWidth() * scale * 4.0f), juce::roundToInt (box.getHeight() * scale), true);
+            {
+                juce::Graphics g (sheet);
+                g.fillAll (juce::Colour (0xff121212));
+                g.addTransform (juce::AffineTransform::scale (scale));
+                const ui::PedalState states[] { { true, false, false, false, 0.0f }, { true, false, false, false, 0.5f }, { true, false, false, false, 1.0f }, {} };
+                for (int i = 0; i < 4; ++i)
+                    ui::drawPedal (g, box.translated (box.getWidth() * (float) i, 0.0f), id, states[i]);
+            }
+            expect (savePng (sheet, dir.getChildFile ("wah_sweep.png")));
+            logMessage ("  -> the window's lit pixels at 3x (x from the glass's left; one segment is " + juce::String (pitch, 1) + " px): " + measured.joinIntoString ("; ")
+                        + "; off, section off, no reading: " + juce::String (off.count) + ", " + juce::String (sectionOff.count) + ", " + juce::String (noReading.count)
+                        + " lit; no re-render; pedals/wah_sweep.png");
+        }
+
         beginTest ("proof: each pedal off, on, and selected; the contact sheet with the amp heads");
         {
             const auto ground = juce::Colour (0xff121212);
@@ -362,7 +470,7 @@ public:
                 return ui::PedalState { p % 3 != 1, id == BlockId::overdrive, id == BlockId::delay };
             });
             expect (savePng (sheet, dir.getChildFile ("contact_sheet.png")));
-            logMessage ("  -> wrote " + dir.getFullPathName() + "/pedal_<page>.png (14) and contact_sheet.png");
+            logMessage ("  -> wrote " + dir.getFullPathName() + "/pedal_<page>.png (" + juce::String ((int) list.size()) + ") and contact_sheet.png");
         }
     }
 };

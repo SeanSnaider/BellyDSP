@@ -22,6 +22,9 @@ struct PedalState
     bool selected = false;
     bool hovered = false;
     bool sectionOff = false; ///< its section (pre_fx_on, post_fx_on) is off: dimmed even while its own switch is on
+    /// The auto-wah's sweep window: where its filter is (AutoWah::getControl, 0 at Low to 1 at High), lit in the accent
+    /// while the pedal is on and its section is; below 0 (no reading) the window stays dark. Other pedals ignore it.
+    float sweep = -1.0f;
 };
 
 /// A dimmed enclosure's brightness and saturation, as fractions of the art's own (RD4-1).
@@ -57,11 +60,19 @@ juce::Rectangle<float> pedalBounds (juce::Rectangle<float> box, BlockId id);
 
 /// Where an enclosure's parts are, in its points at scale 1 (the art's top-left at 0, 0): the body (the art less the
 /// jacks standing above it), the LED's bezel and the reach of its glow when lit, the footswitch's nut, and the
-/// silkscreened name. ledLens is the lens inside the bezel (the part that lights). Map one into pedalBounds() for hit-testing (x * bounds.getWidth() / pedalSize().x).
+/// silkscreened name. ledLens is the lens inside the bezel (the part that lights). sweep is the auto-wah's sweep window
+/// (its glass; empty on every other pedal). Map one into pedalBounds() for hit-testing (x * bounds.getWidth() / pedalSize().x).
 struct PedalLayout
 {
-    juce::Rectangle<float> body, led, ledGlow, footswitch, name, ledLens;
+    juce::Rectangle<float> body, led, ledGlow, footswitch, name, ledLens, sweep;
 };
+
+/// The sweep window's segments (the auto-wah's), and where segment `index` (0 at Low) is, in the enclosure's points.
+constexpr int sweepSegments = 13; // odd, so the middle of the sweep is a segment of its own
+juce::Rectangle<float> sweepSegment (BlockId id, int index);
+
+/// Where drawPedal lights the sweep window for a control (0 to 1): the lamp's centre, in the enclosure's points.
+juce::Point<float> sweepLampCentre (BlockId id, float control);
 
 PedalLayout pedalLayout (BlockId id);
 

@@ -62,7 +62,7 @@ juce::String snapshotOf (AmpSimProcessor& p)
     ids.addArray ({ "eq_post_on", "eq_post_mode", "eq_post_b1_type", "eq_post_b1_gain", "eq_post_b2_freq", "eq_post_b3_q", "eq_post_b5_gain",
                     "cab_mic2_mute", "cab_room_mute", "post_fx_on",
                     // the pre effects Apply switches off, and the gates it leaves alone
-                    "comp_pre_on", "boost_on", "od_on", "eq_pre_on", "gate_a_on", "gate_b_on", "pre_fx_on" });
+                    "wah_on", "comp_pre_on", "boost_on", "od_on", "eq_pre_on", "gate_a_on", "gate_b_on", "pre_fx_on" });
     juce::StringArray values;
     for (const auto& id : ids)
         values.add (id + "=" + juce::String (getParam (p, id), 2));
@@ -188,6 +188,7 @@ public:
             // Pre effects in a mix of states: Apply must switch the tone-coloring ones off, leave the gate
             // alone, and undo must put each back exactly as it was.
             setParam (p, "pre_fx_on", 1.0f);
+            setParam (p, "wah_on", 1.0f);
             setParam (p, "comp_pre_on", 1.0f);
             setParam (p, "boost_on", 1.0f);
             setParam (p, "od_on", 0.0f);
@@ -221,7 +222,7 @@ public:
             expect (page.getStepNote (4).startsWith ("spectral error "), page.getStepNote (4));
             const auto note = page.getApplyNote();
             expectEquals (note, juce::String ("Apply sets these in one undo step: the compressors, boost, and overdrive as the match has them (it uses none), "
-                                              "the pre EQ off (on now: compressor, boost, pre EQ). The gate stays as it is."));
+                                              "the auto-wah and the pre EQ off (on now: auto-wah, compressor, boost, pre EQ). The gate stays as it is."));
 
             // The search covers every gain set in the content folder (r.slot indexes that list): Apply plays the result
             // on the built-in amp whose set it is, with that amp's knobs (applyAmp).
@@ -240,7 +241,7 @@ public:
             expectEquals (cabPath (p), r.cab.getFullPathName());
             expectEquals (p.getCabAssignment (slot).getFullPathName(), r.cab.getFullPathName());
             expect (getParam (p, "cab_mic2_mute") > 0.5f && getParam (p, "cab_room_mute") > 0.5f);
-            for (const auto* id : { "comp_pre_on", "boost_on", "od_on", "eq_pre_on" })
+            for (const auto* id : { "wah_on", "comp_pre_on", "boost_on", "od_on", "eq_pre_on" })
                 expect (getParam (p, id) < 0.5f, juce::String (id) + " must be off after Apply");
             expect (getParam (p, "gate_a_on") > 0.5f, "Apply must leave the noise gate on");
             expect (getParam (p, "pre_fx_on") > 0.5f, "Apply leaves the pre section's own switch alone");
@@ -262,7 +263,7 @@ public:
             expectEquals (cabPath (p), r.cab.getFullPathName());
             expectEquals ((int) getParam (p, AmpSimProcessor::ampModelParamId), slot);
             expectEquals (p.getAmpCapture (slot).getFullPathName(), r.model.getFullPathName());
-            expect (getParam (p, "boost_on") < 0.5f && getParam (p, "comp_pre_on") < 0.5f && getParam (p, "eq_pre_on") < 0.5f);
+            expect (getParam (p, "boost_on") < 0.5f && getParam (p, "comp_pre_on") < 0.5f && getParam (p, "eq_pre_on") < 0.5f && getParam (p, "wah_on") < 0.5f);
 
             page.discard();
             expect (! session.hasResult() && ! page.getApplyButton().isEnabled());

@@ -64,6 +64,7 @@ juce::String prefixFor (ui::BlockId id)
     {
         case B::gateA:          return "gate_a_";
         case B::gateB:          return "gate_b_";
+        case B::wah:            return "wah_";
         case B::preCompressor:  return "comp_pre_";
         case B::postCompressor: return "comp_post_";
         case B::boost:          return "boost_";
@@ -170,6 +171,7 @@ AmpSimEditor::AmpSimEditor (AmpSimProcessor& p) : AudioProcessorEditor (&p), amp
         blockPages.push_back (std::move (page));
     };
     add (std::make_unique<ui::GatePage> (p, false), B::gateA);
+    add (std::make_unique<ui::AutoWahPage> (p), B::wah);
     add (std::make_unique<ui::CompressorPage> (p, false), B::preCompressor);
     add (std::make_unique<ui::BoostPage> (p), B::boost);
     add (std::make_unique<ui::OverdrivePage> (p), B::overdrive);

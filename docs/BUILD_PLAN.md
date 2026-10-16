@@ -34,10 +34,10 @@ Every knob gets parameter smoothing (ramping from the old value to the new one o
 ```
 Input (mono)
  ├─► Tuner (analysis tap, can mute output)
- ├─► DI tap ──► detection for both gates and the harmonizer
+ ├─► DI tap ──► detection for both gates, the auto-wah, and the harmonizer
  ▼
 PRE FX (mono, reorderable):
-  Gate A ─► Compressor ─► Boost ─► Overdrive ─► EQ (pre instance)
+  Gate A ─► Auto-wah ─► Compressor ─► Boost ─► Overdrive ─► EQ (pre instance)
  ▼
 AMP (fixed): nine NAM amps, only the selected one running; a switch warms the new one, then crossfades
  ▼
@@ -62,7 +62,7 @@ These apply to every block and were settled in the foundation design review.
 
 **Channel layout.** Mono from input through the pre-FX section, the amp, and Gate B. The chain goes stereo at the cab (the two mic slots can be panned) and stays stereo through every post-cab block.
 
-**Reorderable chain.** The chain has four sections. Pre FX (Gate A, the pre compressor, boost, overdrive, and the pre EQ) are freely reorderable among themselves. The amp is fixed. The cab is fixed and is the mono-to-stereo transition point. Gate B is fixed between the amp and the cab. Post FX (the post EQ, the post compressor, harmonizer, multivoicer, Bloom, chorus, delay, reverb) are freely reorderable among themselves. Blocks can't cross sections, because the sections differ in channel count and because moving the amp or cab produces nonsense. Inside Bloom, bitcrush, phaser, and flanger are reorderable too. Reordering on the audio thread is a swap of indices into preallocated blocks, never an allocation, and it crossfades to avoid clicks. The order is saved in presets.
+**Reorderable chain.** The chain has four sections. Pre FX (Gate A, the auto-wah, the pre compressor, boost, overdrive, and the pre EQ) are freely reorderable among themselves. The amp is fixed. The cab is fixed and is the mono-to-stereo transition point. Gate B is fixed between the amp and the cab. Post FX (the post EQ, the post compressor, harmonizer, multivoicer, Bloom, chorus, delay, reverb) are freely reorderable among themselves. Blocks can't cross sections, because the sections differ in channel count and because moving the amp or cab produces nonsense. Inside Bloom, bitcrush, phaser, and flanger are reorderable too. Reordering on the audio thread is a swap of indices into preallocated blocks, never an allocation, and it crossfades to avoid clicks. The order is saved in presets.
 
 **Sample rate.** Fixed internal rate of 48 kHz, because NAM models are trained at 48k. v1 refuses to start at any other rate with a clear error message. Resampling support is deferred to DAW-plugin work.
 
@@ -209,6 +209,7 @@ In the app's engine (`make_default_captures.py --measure`, loudness-normalized, 
 | Compressor | See Compressor below | Placeable in pre-FX and post-FX. |
 | Boost | See Boost and Overdrive below | Shares one drive engine. |
 | Overdrive | See Boost and Overdrive below | Shares one drive engine. |
+| Auto-wah | See Auto-wah below | Envelope-followed band-pass; detector reads the DI. Built 2026-10-15 (the engine and its parameters); its pedal and inspector pending. |
 
 ### Boost and Overdrive
 
@@ -317,6 +318,52 @@ Design settled in design review round 5. Sean's main playing is CHON and Polyphi
 - **Mix and makeup.** Parallel blend and auto-makeup land at expected levels.
 - **Stereo linking.** Signal on one channel compresses both equally.
 - **Pedal mode.** Matches a Python reference simulation of the feedback loop.
+
+### Auto-wah
+
+Designed 2026-10-15. Planned for Sean to build by hand from `docs/guides/AUTOWAH_GUIDE.md`; on the same day he asked Claude to build it from the guide (its Steps 3 to 7, 9 and 10: the Python reference, the DSP, the tests, the wiring), and the pedal, its board entry and its inspector came after in the app's design system ("The UI", below). What was built and measured is under "Built" below.
+
+**What it is.** A wah pedal is a resonant band-pass whose centre frequency the foot moves, roughly 350 Hz (heel) to 2 kHz (toe). The auto-wah replaces the foot with an envelope follower: pick harder and the filter opens, and as the note decays it closes.
+
+**Placement.** Pre FX, mono, before the amp like a real wah. Default position right after Gate A (Pre FX: Gate A, Auto-wah, Compressor, Boost, Overdrive, EQ), so hiss is gated before the filter. Draggable like the other Pre FX pedals. Order name `wah` (permanent).
+
+**Detector.** Reads the clean DI snapshot (`BlockContext::di`), never the processed signal, as the gates and the harmonizer do: wherever the wah is dragged (after the compressor or a drive), it reacts to the guitar as played. With no DI (the block driven alone in unit tests), it reads its own input.
+
+**Parameters** (IDs permanent once shipped):
+
+| ID | Name | Range | Default |
+|---|---|---|---|
+| `wah_on` | On | bool | off |
+| `wah_sensitivity` | Sensitivity | 0 to 100 % | 50 % |
+| `wah_freq_low` | Low | 150 to 800 Hz | 350 Hz |
+| `wah_freq_high` | High | 800 Hz to 4 kHz | 2.2 kHz |
+| `wah_q` | Resonance | 1 to 12 | 4 |
+| `wah_attack` | Attack | 1 to 50 ms | 5 ms |
+| `wah_release` | Release | 20 to 500 ms | 150 ms |
+| `wah_direction` | Direction | Up / Down | Up |
+| `wah_mix` | Mix | 0 to 100 % | 100 % |
+
+Frequencies and Q on skewed ranges, so a knob's middle is a musical middle. Every effect starts off, so presets made before the wah load with it off.
+
+**The math.** An envelope follower (rectify, then a branching one-pole with attack and release time constants, as the compressor's, after Giannoulis, Massberg and Reiss, JAES 2012); the level mapped to a control between 0 and 1 in dB, with Sensitivity setting the floor; the centre frequency swept exponentially between Low and High; the trapezoidal SVF's band-pass (`Svf.h`: Simper, Zavalishin ch. 4), redesigned every few samples. Down uses one minus the control. The derivations are in `src/dsp/AutoWah.h`:
+- Envelope: `e = a e + (1 - a) |d|`, with the attack coefficient while the level rises and the release one while it falls, `a = exp(-1 / (tau fs))`. From rest a step gives `1 - a^n`, which reaches 63 % at `n = tau fs`, so the knobs are exact time constants (and a fall reaches 37 % in Release).
+- Control: `c = clamp((20 log10(e + 1e-9) - floor) / 30, 0, 1)`, `floor = -20 - 0.4 x Sensitivity` dBFS: -20 at 0 %, -40 at the default 50 %, -60 at 100 %, with a fixed 30 dB from closed to open. The guide's mapping, kept (ASSUMPTIONS AW2).
+- Sweep: `fc = Low (High / Low)^c`, so `c = 0.5` is `sqrt(Low High)`, halfway in octaves.
+- Filter: `k s / (s^2 + k s + 1)`, `k = 1/Q`, exactly 0 dB at fc. Its states are the integrators' contents, which a coefficient change leaves alone, so it can be redesigned mid-stream without clicks or instability.
+- Level hold (added in the building, below): `wet = 10^(13.1 / 20) sqrt(Q / 4) x bandpass`.
+
+**Built (2026-10-15).** `src/dsp/AutoWah.*` (`ampsim::AutoWah`, a mono `Block`), `prototypes/autowah.py` (listen, plot, `--study`, `--golden`), `tests/AutoWahTests.cpp` ("Auto-wah"), `params::AutoWahParameters` with the table's IDs, `Chain::Slot::wah` and `Chain::wah` right after Gate A. Settled in the building:
+- **The redesign interval: 4 samples, not the guide's 16.** Measured against redesigning every sample, with a 1 ms attack on picked notes whose harmonics stay under 3 kHz (the golden fixture's input, where nothing up top masks a staircase in fc), the output's energy above 6 kHz: +0.01 / -0.04 dB at 4 samples (Q 12 / Q 4), +1.36 / +1.06 dB at 8, +1.17 / +0.83 dB at 16, +1.72 / +1.52 dB at 32; the largest sample step never exceeded per-sample's (x0.9858 to x0.9999). On the synthetic guitar, whose plucks fill the top end, every interval up to 32 stayed within 0.03 dB, so the deciding case is the clean one. 4 is the largest interval with no measurable stepping (the energy above 6 kHz within 0.1 dB, the largest step within 1 %), and the "Auto-wah" interval study holds it there (it fails if 4 steps, or if 8 doesn't). The cost is a `tan`, a `log10` and two `pow` every 4 samples. The interval counts across buffers, so the output is bit-identical at any buffer size (1, 7, 64, 100, 128 and 512 tested). ASSUMPTIONS AW3.
+- **The level hold (a change to the design).** The band-pass at 0 dB at fc keeps one slice of the guitar: at the defaults the DI's loudness at the amp's input fell 14.1 dB (DI peaks -12 dBFS) and 12.1 dB (-6), which the gain staging audit fails (every block at its defaults within about 1 dB of the amp's drive). Its loss goes as 1/sqrt(Q), because a band-pass passes a pink-ish spectrum's power in proportion to its bandwidth in octaves, about pi / (2 Q): measured bare at -12 dBFS, -8.1, -11.0, -14.1, -17.3 and -19.1 dB for Q 1, 2, 4, 8 and 12. So the wet is made up by 13.1 dB at Q 4, rising as sqrt(Q / 4) (+7.1 dB at Q 1, +17.9 at Q 12). Held, the DI's loudness changes -1.0, -0.2 and +1.0 dB at -12, -9 and -6 dBFS peaks at the defaults (a harder pick opens the filter and reads louder, so 13.1 is the middle of the audit's two levels, not the drives' -9 dBFS), and Q 1 to 12 stay within 0.4 dB of each other at each level. Like a real wah's, the resonance is now a peak above the dry level. ASSUMPTIONS AW4.
+- **Low above High** can't happen: the ranges meet at 800 Hz and the block clamps to them. The formula would just sweep downwards (Low stays the closed position, High the open one), so nothing sorts them. ASSUMPTIONS AW5.
+- Smoothing as the guide has it: 20 ms, Low, High and Q multiplicative, Sensitivity and Mix linear, per redesign (Mix per sample); Attack, Release and Direction unsmoothed, their coefficients recomputed only when they change. At a settled Mix of 0 the dry passes untouched, bit for bit, while the filter and envelope keep running.
+- Measured ("Auto-wah", "Gain staging calibration"): C++ against the prototype exact (the -400 dB floor) for the defaults, high Q with the fastest attack, a narrow range, and low sensitivity, and -251.7 dB for Down; the sweep's ends and geometric middle exact to 17 decimals; the band-pass 0 dB at fc and its -3 dB points on the prewarped prediction, width fc/Q within 0.04 % at 350 Hz and 4.6 % at 4 kHz (Q 4; the bilinear warp), and through the block at 800 Hz 0.0000, -3.0125 and -3.0103 dB at fc and the edges after the hold; attack 5, 1, 50, 12 ms measured 5.021, 1.000, 50.000, 12.021 ms, release 150, 20, 500, 80 ms measured 150.000, 20.021, 500.000, 80.000 ms; a 110 Hz note's spectral centroid 327 Hz picked soft (-36 dBFS) and 1365 Hz hard (-6) with Up, 1220 and 392 Hz with Down; full-scale noise at Q 12 finite and back to exact zeros 0.21 to 0.58 s into silence; knob jumps and glides no larger in sample step than the knobs held still; on the synthetic guitar (peaks -6 dBFS) the defaults sweep 778 to 1683 Hz and never fully open or close (Sean checks: AW.1).
+- CPU: 0.9 us per 128-sample buffer on average (0.03 % of the deadline), p99 1.5 to 2.1 us ("Full rig": the heaviest rig, and the defaults with the wah on).
+- A section order saved before the wah existed gets it right after the gate wherever the gate is ("eq, gate, comp, boost, overdrive" becomes "eq, gate, wah, comp, boost, overdrive"; with the gate dragged last, the wah goes first). Tone match's Apply switches it off (the search never uses it). Real-time safety: switched on, its High and Resonance dragged, Attack, Sensitivity and Mix moved, flipped to Down, dragged after the compressor, the Pre FX switch off and on, off: 0 allocations, 0 frees, 0 blocking locks.
+
+**Testing.** A golden test against `prototypes/autowah.py` (relative error under -100 dB), the sweep's endpoints and geometric middle, the filter's peak and bandwidth, the envelope's measured attack and release, a hard pick sweeping higher than a soft one (lower with Down), Mix 0 bit-exact dry, stability at the extremes and reset and buffer-size repeatability, click-free knob moves, the redesign interval study, and a listening render (`build/proof/autowah_defaults.wav`, with `autowah_dry.wav`); then the whole-app tests (real-time safety, the gain staging audit and the level hold's calibration, the CPU profile).
+
+**The UI (2026-10-15).** `BlockId::wah` on the board's Pre FX tab after Gate A (six pedals, still at 1.18, its LED the strip's second), its pedal in `PedalArt.cpp` (magenta engine-turned aluminium, SENS and RESO, "wah" swelling under AUTO) with a sweep window that lights where the filter is while it sounds, read from `AmpSimProcessor::getWahControl` in `Board::refresh`, and its inspector `AutoWahPage` (the sweep meter, Direction, Sensitivity and Resonance large, Sweep, Response, Output). ASSUMPTIONS AW11 to AW16; DESIGN.md "Rendered gear" and "Inspector parts"; docs/UI_DESIGN.md.
 
 ### EQ
 
@@ -678,6 +725,7 @@ Added 2026-10-04 after Sean's play test ("the clipping is also really high"). Th
 Sean: "when combined they seem to get too chaotic", "the clipping is also really high with the gain". The "Gain staging" test is the audit: the whole app on the built-in captures and a bundled cab, the test DI at -12 and -6 dBFS peaks, each block switched on alone at its defaults (loudness and peak change, at the amp's input and at the output) and the factory presets scene by scene. It found three level faults, fixed as below (the amp's own Gain and the built-in captures' levels are a separate piece of work):
 - The pre compressor's auto makeup restored a -12 dBFS signal, but a DI sits around -21 dBFS between its peaks, so at its defaults it raised the DI's loudness by 4.6 to 6.4 dB and drove every amp after it harder (Modern Prog's amp input peaked at +4.5 dBFS). The pre instance now restores -21 dBFS (`Compressor::preAmpMakeupReferenceDb`): -0.5 to +1.0 dB. The post instance keeps -12.
 - The overdrive's four circuits at Level 0 dB changed the loudness by -1.8 (Mid Drive) to +12.3 dB (Transparent), the boost's Screamer by -2.0. Each now carries a fixed unity trim inside its mode crossfade (`Overdrive::unityTrimDb`, `Boost::screamerUnityTrimDb`), measured on the DI at -9 dBFS peaks, so Level 0 dB is as loud as bypassed in every mode (within 0.3 dB at -9; clipping compresses, so +-1.5 to 3 dB at -12 and -6). The renderer and the circuit tests use the bare circuits.
+- The auto-wah (2026-10-15) joined the audit losing 12.1 to 14.1 dB at the amp's input: a band-pass at 0 dB keeps one slice of the guitar. Its wet is made up by 13.1 dB at Q 4, rising as sqrt(Q) (`AutoWah::wetGain`; BUILD_PLAN "Auto-wah"): -1.0 and +1.0 dB.
 - Bloom's phaser and flanger lost 4 and 3 dB at their defaults (a 50% mix of a signal with a phase-turned copy keeps (1 - a)^2 + a^2 of its power). Their mix is now scaled by 1 / sqrt((1 - a)^2 + a^2) (`mixLevelHold`, Fade.h): -1.0 and -0.1 dB.
 Every other block was already within about 1 dB at its defaults; the audit now holds them there.
 
@@ -1017,3 +1065,6 @@ The compiler is Apple clang from the command line tools (`xcode-select --install
 2026-10-13: The redesign's finish review (ASSUMPTIONS RD4-1 to RD4-11; docs/UI_DESIGN.md "The finish review's fixes"): a fresh reviewer's seven material fixes, done. A pedal that's off (or whose section is off) is dimmed whole, and the LED is 1.5 times larger, near-black off and haloed on; PRE and POST are labelled toggles; the preset's name is 23 px and the scene 15 px ink; one short line under the amp and the cab, a preset's notes in its tooltip; every inspector knob shows its value; the amp head is gear (tolex, woven cloth, skirted knobs with no value arcs, a jewel lamp, a pool of light under it) with one accent (no teal or emerald pointers); the amp's inspector holds only the amp (Gate A is its own pedal); Settings' audio device is a one-line status with the device's card folded when there's no device.
 2026-10-13: The board is three tabs, Pre FX, Amp & Cab, and Post FX, each with a strip of LEDs (one per block in it) so the closed tabs still show what's on (ASSUMPTIONS RD5-1 to RD5-9; DESIGN.md "Board"). Sean's call. Claude recommended two tabs (Pre FX and Post FX), because the amp and the cab are already on the stage; Sean chose three, and that stands.
 2026-10-13: The app icon's dot is redrawn orange (#ff8a00) on the ground #121212 to match the redesign, in place of emerald (Sean's call; `tools/content/make_icon.py`, `resources/icon/BellyDSP_icon_1024.png`). The bundle's .icns and the website's tab icons are made from it.
+2026-10-15: An auto-wah joins Pre FX (BUILD_PLAN "Auto-wah"): an envelope-followed SVF band-pass whose detector reads the clean DI, default position after Gate A, nine parameters (`wah_on`, `wah_sensitivity`, `wah_freq_low`, `wah_freq_high`, `wah_q`, `wah_attack`, `wah_release`, `wah_direction`, `wah_mix`). Sean's calls, all on the recommended options; Sean builds the DSP, the Python reference, the tests and the wiring himself from `docs/guides/AUTOWAH_GUIDE.md`, and the pedal art and inspector follow in the redesign's system.
+2026-10-15: The auto-wah built (BUILD_PLAN "Auto-wah", "Built"; ASSUMPTIONS AW1 to AW10). Sean asked Claude to build it from the guide instead of by hand; the pedal, its board entry and its inspector follow. Two measured changes to the guide's design: the filter is redesigned every 4 samples, not 16 (at 8 and 16, with a 1 ms attack on picked notes, the energy above 6 kHz rose 0.8 to 1.4 dB against redesigning every sample; at 4 it moved 0.04 dB at most), and the wet carries a level hold, 13.1 dB at Q 4 rising as sqrt(Q), because the 0 dB band-pass lowered the DI's loudness at the amp's input by 12 to 14 dB, which the gain staging audit fails (now -1.0 and +1.0 dB). The sensitivity mapping is the guide's (floor -20 - 0.4 x Sensitivity dBFS, 30 dB span), Low can't exceed High (the ranges meet at 800 Hz), and the CPU cost is 0.9 us per buffer. Both changes are Claude's calls for Sean to confirm by ear (PROGRESS AW.1).
+2026-10-15: The auto-wah's pedal, board entry and inspector (ASSUMPTIONS AW11 to AW16). Its pedal carries the one live display on the board, a sweep window lit in the accent where the filter is, resting dark when the wah is off or its section is; the inspector puts Sensitivity and Resonance large and Direction as the mode, where the brief's example had grouped them in Sweep and Response, to follow the inspector grammar. Pre FX keeps 1.18 with six pedals; the cable's "to Amp & Cab" needs 12 px past its text, not 40, to stay drawn.

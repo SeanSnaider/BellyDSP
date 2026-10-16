@@ -560,7 +560,8 @@ void BlockPage::paint (juce::Graphics& g)
 {
     // The header: the pedal in small with its LED as on the board, its name, where it sits, its switch.
     const auto on = onSwitch != nullptr && onSwitch->getToggleState();
-    paintHeader (g, getWidth(), title, subtitle, [this, on] (juce::Graphics& gg, juce::Rectangle<float> box) { drawPedal (gg, box, id, { on, false, false }); },
+    const auto sweep = headerSweep();
+    paintHeader (g, getWidth(), title, subtitle, [this, on, sweep] (juce::Graphics& gg, juce::Rectangle<float> box) { drawPedal (gg, box, id, { on, false, false, false, sweep }); },
                  onSwitch != nullptr ? onSwitch->getWidth() : 0);
     InspectorLayout::paintTexts (g, texts);
     paintContent (g);
@@ -734,6 +735,106 @@ void GatePage::refresh()
     if (learn != nullptr)
         learn->setButtonText (learning ? "Learning, keep the strings muted (" + juce::String (juce::roundToInt (ampSim.getGateLearnProgress() * 100.0f)) + "%)"
                                        : juce::String ("Learn the noise floor"));
+    updateMeter();
+}
+
+// ---- AutoWahPage -----------------------------------------------------------------------------------------
+
+namespace
+{
+/// The wah's knobs' values: whole percents, hertz as the meter writes them, milliseconds with a decimal under 10.
+juce::String percentText (float v) { return juce::String (juce::roundToInt (v)) + " %"; }
+juce::String millisecondsText (float v) { return v < 9.95f ? juce::String (v, 1) + " ms" : juce::String (juce::roundToInt (v)) + " ms"; }
+} // namespace
+
+AutoWahPage::AutoWahPage (AmpSimProcessor& p) : BlockPage (p, BlockId::wah, "Auto-wah", "Before the amp; it listens to the clean DI")
+{
+    meterView = &adopt (std::make_unique<SweepMeterView>());
+    direction = &addChoice ("wah_direction", { "Up", "Down" });
+    direction->setOptionTooltips ({ "Up: a harder pick opens the filter, and it closes as the note dies away (the classic)",
+                                    "Down: a harder pick closes the filter, and it opens as the note dies away" });
+    sensitivity = &addKnob ("wah_sensitivity", "Sensitivity", " %", Knob::Size::large);
+    resonance = &addKnob ("wah_q", "Resonance", "", Knob::Size::large);
+    low = &addKnob ("wah_freq_low", "Low", " Hz");
+    high = &addKnob ("wah_freq_high", "High", " Hz");
+    attack = &addKnob ("wah_attack", "Attack", " ms");
+    release = &addKnob ("wah_release", "Release", " ms");
+    mix = &addKnob ("wah_mix", "Mix", " %");
+
+    sensitivity->setFormatter (percentText);
+    mix->setFormatter (percentText);
+    resonance->setFormatter ([] (float v) { return juce::String (v, 1); });
+    low->setFormatter ([] (float v) { return hertzText (v); });
+    high->setFormatter ([] (float v) { return hertzText (v); });
+    attack->setFormatter (millisecondsText);
+    release->setFormatter (millisecondsText);
+
+    sensitivity->setTooltip ("How readily the filter opens: more opens it on lighter playing, less needs a harder pick");
+    resonance->setTooltip ("How narrow and vocal the filter's peak is (its Q); the level stays about the same whatever it's set to");
+    low->setTooltip ("Where the filter sits when it's closed: the heel of a wah");
+    high->setTooltip ("Where the filter goes when it's fully open: the toe");
+    attack->setTooltip ("How fast the filter follows a pick as it opens");
+    release->setTooltip ("How fast it closes again as the note dies away");
+    mix->setTooltip ("The filtered sound against the dry guitar (100 % is all wah)");
+}
+
+AutoWahPage::~AutoWahPage()
+{
+    stopTimer();
+}
+
+void AutoWahPage::describe (InspectorLayout& l)
+{
+    // What it's doing first, then the mode, the two knobs that shape it most, and the rest in sections.
+    l.row (meterView, SweepMeterView::preferredHeight);
+    l.choice (direction, "Direction");
+    l.hero ({ sensitivity, resonance });
+    l.section ("Sweep");
+    l.knobs ({ low, high });
+    l.section ("Response");
+    l.knobs ({ attack, release });
+    l.section ("Output");
+    l.knobs ({ mix });
+}
+
+void AutoWahPage::pageShown()
+{
+    updateMeter();
+    startTimerHz (meterFps);
+}
+
+void AutoWahPage::pageHidden()
+{
+    stopTimer();
+}
+
+float AutoWahPage::headerSweep() const
+{
+    return shownHeaderSweep;
+}
+
+void AutoWahPage::updateMeter()
+{
+    // It sounds while its switch and the pre section's are on; otherwise the control holds its last value, so the meter
+    // and the header's window rest.
+    SweepMeterView::Reading r;
+    r.on = state.getRawParameterValue ("wah_on")->load() >= 0.5f && state.getRawParameterValue ("pre_fx_on")->load() >= 0.5f;
+    r.down = juce::roundToInt (state.getRawParameterValue ("wah_direction")->load()) == 1;
+    r.control = r.on ? juce::jlimit (0.0f, 1.0f, ampSim.getWahControl()) : (r.down ? 1.0f : 0.0f);
+    r.lowHz = state.getRawParameterValue ("wah_freq_low")->load();
+    r.highHz = state.getRawParameterValue ("wah_freq_high")->load();
+    meterView->set (r);
+
+    const auto sweep = r.on ? r.control : -1.0f;
+    if ((sweep < 0.0f) != (shownHeaderSweep < 0.0f) || std::abs (sweep - shownHeaderSweep) >= 0.002f)
+    {
+        shownHeaderSweep = sweep;
+        repaint (thumbnailArea());
+    }
+}
+
+void AutoWahPage::refresh()
+{
     updateMeter();
 }
 
