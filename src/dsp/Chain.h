@@ -4,6 +4,7 @@
 #pragma once
 
 #include "AmpSection.h"
+#include "AutoWah.h"
 #include "Block.h"
 #include "Bloom.h"
 #include "Boost.h"
@@ -49,6 +50,7 @@ class Chain
 public:
     Gain inputGain { false };
     Gate gateA;
+    AutoWah wah;
     Compressor preCompressor { false };
     Boost boost;
     Overdrive overdrive;
@@ -73,6 +75,7 @@ public:
     {
         inputGain,
         gateA,
+        wah,
         preCompressor,
         boost,
         overdrive,

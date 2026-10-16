@@ -1384,14 +1384,14 @@ juce::String ToneMatchPage::pedalText (const ampsim::tonematch::Pedal& p)
 juce::String ToneMatchPage::getApplyNote() const
 {
     // Since Round 2 Apply sets the pre effects the search tried (the compressor, the boost, the overdrive) as the
-    // match has them, and switches the pre EQ off (the decision log, 2026-10-07).
+    // match has them, and switches the pre EQ off (the decision log, 2026-10-07), and the auto-wah (BUILD_PLAN "Auto-wah").
     const auto on = session.preEffectsOnNow();
     juce::String uses = "none";
     if (session.hasResult())
         if (const auto t = pedalText (session.getResult().pedal); t.isNotEmpty())
             uses = t.upToFirstOccurrenceOf (",", false, false).toLowerCase();
     return "Apply sets these in one undo step: the compressors, boost, and overdrive as the match has them (it uses " + uses
-           + "), the pre EQ off" + (on.isEmpty() ? juce::String() : " (on now: " + on.joinIntoString (", ") + ")") + ". The gate stays as it is.";
+           + "), the auto-wah and the pre EQ off" + (on.isEmpty() ? juce::String() : " (on now: " + on.joinIntoString (", ") + ")") + ". The gate stays as it is.";
 }
 
 void ToneMatchPage::refresh()

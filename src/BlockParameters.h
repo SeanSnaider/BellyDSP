@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "dsp/AutoWah.h"
 #include "dsp/Bloom.h"
 #include "dsp/Boost.h"
 #include "dsp/Chorus.h"
@@ -184,6 +185,17 @@ struct CompressorParameters
     ampsim::Compressor::Settings read() const noexcept;
 
     Raw on, mode, detector, threshold, ratio, knee, attack, release, autoRelease, makeup, autoMakeup, mix, sidechainOn, sidechainHz;
+};
+
+/// The auto-wah ("wah_*"; BUILD_PLAN "Auto-wah"). Ranges are AutoWah's, defaults AutoWah::Settings{}'s.
+struct AutoWahParameters
+{
+    static void addTo (Layout& layout, const juce::String& prefix, const juce::String& name);
+    void bind (State& state, const juce::String& prefix);
+    bool isOn() const noexcept { return on.on(); }
+    ampsim::AutoWah::Settings read() const noexcept;
+
+    Raw on, sensitivity, freqLow, freqHigh, q, attack, release, direction, mix;
 };
 
 struct EqualizerParameters

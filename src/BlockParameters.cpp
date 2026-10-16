@@ -253,6 +253,59 @@ ampsim::Compressor::Settings CompressorParameters::read() const noexcept
     return s;
 }
 
+// ---- Auto-wah --------------------------------------------------------------------------------
+
+void AutoWahParameters::addTo (Layout& layout, const juce::String& p, const juce::String& n)
+{
+    // BUILD_PLAN "Auto-wah": the ranges are the block's (it clamps to the same), the defaults its Settings'. The
+    // frequencies and Q are skewed so each knob's middle is a musical middle: about the geometric mean of the range.
+    using W = ampsim::AutoWah;
+    const W::Settings d;
+    layout.add (std::make_unique<Bool> (juce::ParameterID { p + "_on", 1 }, n + " On", false));
+    layout.add (std::make_unique<Float> (juce::ParameterID { p + "_sensitivity", 1 }, n + " Sensitivity",
+                                         juce::NormalisableRange<float> ((float) W::minSensitivity, (float) W::maxSensitivity, 0.1f), d.sensitivity, percent()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { p + "_freq_low", 1 }, n + " Low",
+                                         skewedRange ((float) W::minLowHz, (float) W::maxLowHz, 350.0f, 1.0f), d.freqLowHz, hertz()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { p + "_freq_high", 1 }, n + " High",
+                                         skewedRange ((float) W::minHighHz, (float) W::maxHighHz, 1800.0f, 1.0f), d.freqHighHz, hertz()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { p + "_q", 1 }, n + " Resonance", skewedRange ((float) W::minQ, (float) W::maxQ, 3.5f, 0.01f), d.q));
+    layout.add (std::make_unique<Float> (juce::ParameterID { p + "_attack", 1 }, n + " Attack",
+                                         skewedRange ((float) W::minAttackMs, (float) W::maxAttackMs, 7.0f, 0.01f), d.attackMs, milliseconds()));
+    layout.add (std::make_unique<Float> (juce::ParameterID { p + "_release", 1 }, n + " Release",
+                                         skewedRange ((float) W::minReleaseMs, (float) W::maxReleaseMs, 100.0f, 0.1f), d.releaseMs, milliseconds()));
+    layout.add (std::make_unique<Choice> (juce::ParameterID { p + "_direction", 1 }, n + " Direction", juce::StringArray { "Up", "Down" },
+                                          (int) d.direction)); // Direction is numbered as the choices: up 0, down 1
+    layout.add (std::make_unique<Float> (juce::ParameterID { p + "_mix", 1 }, n + " Mix",
+                                         juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f), d.mix * 100.0f, percent()));
+}
+
+void AutoWahParameters::bind (State& s, const juce::String& p)
+{
+    on.bind (s, p + "_on");
+    sensitivity.bind (s, p + "_sensitivity");
+    freqLow.bind (s, p + "_freq_low");
+    freqHigh.bind (s, p + "_freq_high");
+    q.bind (s, p + "_q");
+    attack.bind (s, p + "_attack");
+    release.bind (s, p + "_release");
+    direction.bind (s, p + "_direction");
+    mix.bind (s, p + "_mix");
+}
+
+ampsim::AutoWah::Settings AutoWahParameters::read() const noexcept
+{
+    ampsim::AutoWah::Settings s;
+    s.sensitivity = sensitivity.get();
+    s.freqLowHz = freqLow.get();
+    s.freqHighHz = freqHigh.get();
+    s.q = q.get();
+    s.attackMs = attack.get();
+    s.releaseMs = release.get();
+    s.direction = direction.index() == 1 ? ampsim::AutoWah::Direction::down : ampsim::AutoWah::Direction::up;
+    s.mix = mix.get() / 100.0f;
+    return s;
+}
+
 // ---- EQ ---------------------------------------------------------------------------------------
 
 void EqualizerParameters::addTo (Layout& layout, const juce::String& p, const juce::String& n, bool onByDefault)

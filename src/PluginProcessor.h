@@ -567,6 +567,7 @@ private:
     bool autoLearnRunning = false;
     int autoLearnCount = 0;
     float autoLearnResultDb = 0.0f;
+    params::AutoWahParameters wahParams;
     params::CompressorParameters preCompParams, postCompParams;
     params::EqualizerParameters preEqParams, postEqParams;
     params::DelayParameters delayParams;

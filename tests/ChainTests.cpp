@@ -213,7 +213,7 @@ public:
             };
 
             using Section = ampsim::Chain::Section;
-            const std::vector<Slot> swapped { Slot::gateA, Slot::preEq, Slot::preCompressor, Slot::boost, Slot::overdrive };
+            const std::vector<Slot> swapped { Slot::gateA, Slot::wah, Slot::preEq, Slot::preCompressor, Slot::boost, Slot::overdrive };
             auto chainOwner = std::make_unique<ampsim::Chain>();
             auto& chain = *chainOwner;
             auto referenceOwner = std::make_unique<ampsim::Chain>();

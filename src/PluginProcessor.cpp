@@ -63,6 +63,7 @@ AmpSimProcessor::AmpSimProcessor()
     overdriveParams.bind (parameters);
     driveOversampling.bind (parameters, "drive_oversampling");
     cpuSaver = raw ("cpu_saver");
+    wahParams.bind (parameters, "wah");
     preCompParams.bind (parameters, "comp_pre");
     postCompParams.bind (parameters, "comp_post");
     preEqParams.bind (parameters, "eq_pre");
@@ -266,6 +267,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout AmpSimProcessor::createParam
     // every change it makes is crossfaded where it happens (the drives' warm-up and bypass fade, their oversampling
     // fade, the Gain's crossing to its nearest step).
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "cpu_saver", 1 }, "CPU Saver", false));
+    params::AutoWahParameters::addTo (layout, "wah", "Auto-wah");
     params::CompressorParameters::addTo (layout, "comp_pre", "Pre Comp", false);
     params::EqualizerParameters::addTo (layout, "eq_pre", "Pre EQ", true);
     params::EqualizerParameters::addTo (layout, "eq_post", "Post EQ", true);
@@ -496,6 +498,9 @@ void AmpSimProcessor::applyEffectParameters()
     chain.boost.setSettings (boostParams.read (oversampling, volts));
     chain.setBypassed (Slot::overdrive, pre (overdriveParams.isOn()));
     chain.overdrive.setSettings (overdriveParams.read (oversampling, volts));
+    // The auto-wah's detector reads the DI snapshot the chain hands every block (AutoWah.h).
+    chain.setBypassed (Slot::wah, pre (wahParams.isOn()));
+    chain.wah.setSettings (wahParams.read());
     chain.setBypassed (Slot::preCompressor, pre (preCompParams.isOn()));
     {
         // The pre instance compresses the DI, whose level sits far below its peaks: its auto makeup restores
@@ -582,6 +587,8 @@ juce::String AmpSimProcessor::blockName (ampsim::Chain::Slot slot)
     using Slot = ampsim::Chain::Slot;
     if (slot == Slot::gateA)
         return "gate";
+    if (slot == Slot::wah)
+        return "wah";
     if (slot == Slot::boost)
         return "boost";
     if (slot == Slot::bloom)

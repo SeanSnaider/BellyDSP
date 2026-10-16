@@ -688,6 +688,9 @@ bool ToneMatchSession::apply()
         setPlain (p, "od_tight", 0.0f);
     }
     setPlain (p, "eq_pre_on", 0.0f);
+    // The auto-wah off too: the search never tries it, and a filter that moves with the playing would make the match
+    // play back as a different rig from the one it measured.
+    setPlain (p, "wah_on", 0.0f);
     // The post compressor, as the match has it (on with its fitted settings, or off). Its threshold is absolute: the
     // search set it with the slot's Master at 0 dB, so it moves with the Master as it is now.
     auto post = r.postCompressor.settings;
@@ -775,7 +778,7 @@ juce::String ToneMatchSession::modelName (const juce::File& model)
 
 const std::vector<ToneMatchSession::PreEffect>& ToneMatchSession::preEffectsApplyTurnsOff()
 {
-    static const std::vector<PreEffect> list { { "comp_pre_on", "compressor" }, { "boost_on", "boost" }, { "od_on", "overdrive" }, { "eq_pre_on", "pre EQ" } };
+    static const std::vector<PreEffect> list { { "wah_on", "auto-wah" }, { "comp_pre_on", "compressor" }, { "boost_on", "boost" }, { "od_on", "overdrive" }, { "eq_pre_on", "pre EQ" } };
     return list;
 }
 

@@ -730,7 +730,8 @@ public:
                     logMessage ("  !! " + juce::String (id) + " is " + juce::String (getParam (p, id)) + ", expected " + juce::String (value));
                 }
             expectEquals (wrong, 0);
-            expect (p.getSectionOrder (ampsim::Chain::Section::pre) == juce::StringArray { "gate", "eq", "comp", "boost", "overdrive" }); // saved before they existed
+            // Saved before the gate, the drives and the auto-wah existed: each goes where it breaks the fewest pairs.
+            expect (p.getSectionOrder (ampsim::Chain::Section::pre) == juce::StringArray { "gate", "wah", "eq", "comp", "boost", "overdrive" });
             expect (startsWith (p.getSectionOrder (ampsim::Chain::Section::post), { "delay", "eq", "comp" }));
             expect (p.getPresetWarnings().joinIntoString ("; ").contains ("some_future_parameter"));
             logMessage ("  -> tests/fixtures/presets/golden_v1.json: " + juce::String ((int) expected.size()) + " parameter values as expected, order \""
@@ -1720,9 +1721,9 @@ public:
         {
             using Section = ampsim::Chain::Section;
             AmpSimProcessor p;
-            expect (p.getSectionOrder (Section::pre) == juce::StringArray { "gate", "comp", "boost", "overdrive", "eq" });
+            expect (p.getSectionOrder (Section::pre) == juce::StringArray { "gate", "wah", "comp", "boost", "overdrive", "eq" });
             expect (startsWith (p.getSectionOrder (Section::post), { "eq", "comp" }));
-            p.setSectionOrder (Section::pre, { "eq", "gate", "comp", "boost", "overdrive" });
+            p.setSectionOrder (Section::pre, { "eq", "gate", "comp", "wah", "boost", "overdrive" });
             p.setSectionOrder (Section::post, { "comp", "eq" });
             expect (startsWith (p.getSectionOrder (Section::post), { "comp", "eq", "harmonizer", "multivoicer", "bloom", "chorus" }));
 
@@ -1730,7 +1731,7 @@ public:
             p.getStateInformation (state);
             AmpSimProcessor restored;
             restored.setStateInformation (state.getData(), (int) state.getSize());
-            expect (restored.getSectionOrder (Section::pre) == juce::StringArray { "eq", "gate", "comp", "boost", "overdrive" });
+            expect (restored.getSectionOrder (Section::pre) == juce::StringArray { "eq", "gate", "comp", "wah", "boost", "overdrive" });
             expect (startsWith (restored.getSectionOrder (Section::post), { "comp", "eq" }));
             expect (restored.getSectionOrder (Section::post) == p.getSectionOrder (Section::post));
 
@@ -1738,13 +1739,23 @@ public:
             // skipped, and a missing block goes where it breaks the fewest pairs of the default order.
             AmpSimProcessor odd;
             odd.setSectionOrder (Section::pre, { "harmonizer", "eq", "eq" });
-            expect (odd.getSectionOrder (Section::pre) == juce::StringArray { "gate", "comp", "boost", "overdrive", "eq" });
+            expect (odd.getSectionOrder (Section::pre) == juce::StringArray { "gate", "wah", "comp", "boost", "overdrive", "eq" });
 
             // An order saved before the gate and the drive blocks existed (Phase 5): the gate goes first, the
             // boost and overdrive after the compressor, and the player's own order stays.
             AmpSimProcessor phase5;
             phase5.setSectionOrder (Section::pre, { "eq", "comp" });
-            expect (phase5.getSectionOrder (Section::pre) == juce::StringArray { "gate", "eq", "comp", "boost", "overdrive" });
+            expect (phase5.getSectionOrder (Section::pre) == juce::StringArray { "gate", "wah", "eq", "comp", "boost", "overdrive" });
+
+            // An order saved before the auto-wah existed (v0.3.1): it goes right after the gate wherever the player put
+            // the gate, the rest of the player's order untouched; with the gate dragged to the end, it goes first.
+            AmpSimProcessor beforeWah;
+            beforeWah.setSectionOrder (Section::pre, { "eq", "gate", "comp", "boost", "overdrive" });
+            const auto wahAfterGate = beforeWah.getSectionOrder (Section::pre);
+            expect (wahAfterGate == juce::StringArray { "eq", "gate", "wah", "comp", "boost", "overdrive" });
+            beforeWah.setSectionOrder (Section::pre, { "eq", "comp", "boost", "overdrive", "gate" });
+            const auto wahFirst = beforeWah.getSectionOrder (Section::pre);
+            expect (wahFirst == juce::StringArray { "wah", "eq", "comp", "boost", "overdrive", "gate" });
 
             // A state saved before effects existed loads with the default order.
             AmpSimProcessor legacy;
@@ -1753,12 +1764,14 @@ public:
             juce::MemoryBlock old;
             juce::AudioProcessor::copyXmlToBinary (*tree.createXml(), old);
             legacy.setStateInformation (old.getData(), (int) old.getSize());
-            expect (legacy.getSectionOrder (Section::pre) == juce::StringArray { "gate", "comp", "boost", "overdrive", "eq" });
+            expect (legacy.getSectionOrder (Section::pre) == juce::StringArray { "gate", "wah", "comp", "boost", "overdrive", "eq" });
 
             logMessage ("  -> saved \"" + p.parameters.state.getProperty (AmpSimProcessor::orderKey (Section::pre)).toString() + "\" / \""
                         + p.parameters.state.getProperty (AmpSimProcessor::orderKey (Section::post)).toString() + "\", restored the same; "
                         "\"harmonizer, eq, eq\" becomes \"" + odd.getSectionOrder (Section::pre).joinIntoString (", ")
                         + "\"; a Phase 5 \"eq, comp\" becomes \"" + phase5.getSectionOrder (Section::pre).joinIntoString (", ")
+                        + "\"; saved before the wah, \"eq, gate, comp, boost, overdrive\" becomes \"" + wahAfterGate.joinIntoString (", ")
+                        + "\" and \"eq, comp, boost, overdrive, gate\" becomes \"" + wahFirst.joinIntoString (", ")
                         + "\"; a state without an order gets the default");
         }
 
@@ -2142,11 +2155,12 @@ public:
             };
             const auto centreOf = [&board] (ui::BlockId id) { return board.getPedal (id)->getBounds().getCentre().toFloat(); };
 
-            // The boost onto the compressor's place: gate, comp, boost becomes gate, boost, comp.
+            // The boost onto the compressor's place: gate, comp, boost becomes gate, boost, comp. (Until the auto-wah has its
+            // pedal on the board, the board's names leave it out and the processor puts it back right after the gate.)
             const auto preBefore = board.getShownOrder (ui::Section::pre);
             drag (ui::BlockId::boost, centreOf (ui::BlockId::preCompressor));
             const auto requested = p.getSectionOrder (ampsim::Chain::Section::pre);
-            expect (requested == juce::StringArray { "gate", "boost", "comp", "overdrive", "eq" }, requested.joinIntoString (", "));
+            expect (requested == juce::StringArray { "gate", "wah", "boost", "comp", "overdrive", "eq" }, requested.joinIntoString (", "));
             expect (board.getShownOrder (ui::Section::pre)
                     == std::vector<ui::BlockId> { ui::BlockId::gateA, ui::BlockId::boost, ui::BlockId::preCompressor, ui::BlockId::overdrive, ui::BlockId::preEq });
             expect (board.getPedal (ui::BlockId::boost)->getX() < board.getPedal (ui::BlockId::preCompressor)->getX(), "drawn in the new order");
@@ -2162,8 +2176,8 @@ public:
             const auto before = p.getChain().getAppliedOrder (ampsim::Chain::Section::pre);
             processAll (p, sine (220.0, 0.1, 2400));
             const auto after = p.getChain().getAppliedOrder (ampsim::Chain::Section::pre);
-            expect (before[1] == Slot::preCompressor);
-            expect (after == std::vector<Slot> { Slot::gateA, Slot::boost, Slot::preCompressor, Slot::overdrive, Slot::preEq });
+            expect (before[2] == Slot::preCompressor);
+            expect (after == std::vector<Slot> { Slot::gateA, Slot::wah, Slot::boost, Slot::preCompressor, Slot::overdrive, Slot::preEq });
             expect (p.getChain().getAppliedOrder (ampsim::Chain::Section::post)[0] == Slot::reverb);
 
             // A drag that ends where it began changes nothing; Gate B (fixed after the amp) doesn't move; a pre
