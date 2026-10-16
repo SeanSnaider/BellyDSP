@@ -190,6 +190,7 @@ set(AMPSIM_DSP_SOURCES
     src/dsp/CutFilter.cpp
     src/dsp/Equalizer.cpp
     src/dsp/Compressor.cpp
+    src/dsp/AutoWah.cpp
     src/dsp/ModulatedDelay.cpp
     src/dsp/Chorus.cpp
     src/dsp/Gate.cpp
@@ -531,6 +532,7 @@ target_sources(ampsim_tests PRIVATE
     tests/CabTests.cpp
     tests/CabPackTests.cpp
     tests/CompressorTests.cpp
+    tests/AutoWahTests.cpp
     tests/EqualizerTests.cpp
     tests/MatchCurveTests.cpp
     tests/PrimitivesTests.cpp
