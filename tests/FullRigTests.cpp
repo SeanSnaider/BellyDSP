@@ -157,7 +157,8 @@ public:
                 check (run, cpu::typicalBudget, run.name.fromFirstOccurrenceOf ("Factory preset ", false, false) + " (typical)");
         check (heaviest, cpu::heaviestBudget, "heaviest");
 
-        // What the pitch blocks cost when they're on (BUILD_PLAN "CPU", the options), on top of the defaults.
+        // What the pitch blocks (and the auto-wah, the newest block) cost when they're on (BUILD_PLAN "CPU", the options), on top
+        // of the defaults.
         {
             auto p = cpu::makeRig();
             cpu::setDefaults (*p);
@@ -176,6 +177,8 @@ public:
                            + "% (+" + juce::String (run.meanPercent() - base.meanPercent(), 1) + "), p99 " + juce::String (run.p99Percent(), 1) + "%");
             };
             using S = ampsim::Chain::Slot;
+            add ("auto-wah", { { "wah_on", 1 } }, S::wah);
+            cpu::setParam (*p, "wah_on", 0);
             add ("harmonizer, 1 voice", { { "harm_on", 1 } }, S::harmonizer);
             add ("harmonizer, 2 voices", { { "harm_v2_on", 1 } }, S::harmonizer);
             add ("harmonizer, 4 voices", { { "harm_v3_on", 1 }, { "harm_v4_on", 1 } }, S::harmonizer);
@@ -228,7 +231,7 @@ public:
 
         // Everything on.
         for (const auto& [id, value] : std::initializer_list<std::pair<const char*, float>> {
-                 { "gate_a_on", 1 }, { "gate_b_on", 1 }, { "comp_pre_on", 1 }, { "boost_on", 1 }, { "boost_mode", 2 }, { "od_on", 1 }, { "od_mode", 1 },
+                 { "gate_a_on", 1 }, { "gate_b_on", 1 }, { "wah_on", 1 }, { "comp_pre_on", 1 }, { "boost_on", 1 }, { "boost_mode", 2 }, { "od_on", 1 }, { "od_mode", 1 },
                  { "comp_post_on", 1 }, { "harm_on", 1 }, { "harm_v2_on", 1 }, { "mv_on", 1 }, { "bloom_on", 1 }, { "bloom_crush_on", 1 },
                  { "bloom_phaser_on", 1 }, { "bloom_flanger_on", 1 }, { "chorus_on", 1 }, { "chorus_mode", 2 }, { "delay_on", 1 }, { "delay_mode", 2 },
                  { "reverb_on", 1 }, { "reverb_engine", 1 }, { "reverb_shimmer", 50 } })

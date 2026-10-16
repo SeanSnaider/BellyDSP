@@ -106,6 +106,8 @@ public:
             int blocks = 0, modelFadeBlocks = 0, slotSwitchBlocks = 0, morphsBefore = 0, gainMovingBlocks = 0, maxSetModels = 0;
             int setSlotSwitches = 0, heldBlendBlocks = 0, maxTotalModels = 0, maxRunningAmps = 0, warmingBlocks = 0;
             bool ampWasBypassed = false, sectionsWereBypassed = false;
+            int wahBlocks = 0;
+            double wahLowest = 1.0e9, wahHighest = 0.0;
             juce::StringArray events;
 
             // The GUI's side of the meters and the analyzer (Phase 11): it takes the peaks and empties the
@@ -206,6 +208,14 @@ public:
                     case 1340: setParam (p, "eq_pre_mode", 1.0f); break;                    // graphic -> parametric crossfade
                     case 1360: setParam (p, "eq_pre_b2_type", 3.0f); break;                 // peak -> notch: dip and swap
                     case 1380: p.setSectionOrder (ampsim::Chain::Section::pre, { "eq", "comp" }); break;
+                    // The auto-wah: on, its knobs swept (below), a faster attack and more sensitivity, flipped to Down, dragged
+                    // after the compressor in the pre order while it plays, the Pre FX switch off and on around it (3610,
+                    // 3650), and off again.
+                    case 1310: setParam (p, "wah_on", 1.0f); break;
+                    case 1330: setParam (p, "wah_attack", 1.0f); setParam (p, "wah_sensitivity", 80.0f); setParam (p, "wah_mix", 70.0f); break;
+                    case 1350: setParam (p, "wah_direction", 1.0f); setParam (p, "wah_freq_low", 200.0f); break;
+                    case 1390: p.setSectionOrder (ampsim::Chain::Section::pre, { "gate", "eq", "comp", "wah", "boost", "overdrive" }); break;
+                    case 3740: setParam (p, "wah_on", 0.0f); break;
                     case 1400: setParam (p, "comp_post_on", 1.0f); break;
                     case 1420: setParam (p, "eq_post_lowcut_on", 1.0f); break;
                     case 1440: setParam (p, "eq_post_lowcut_slope", 2.0f); break;           // 12 -> 48 dB/oct: dip and swap
@@ -325,6 +335,14 @@ public:
                     default: break;
                 }
 
+                // The auto-wah's High and Resonance knobs dragged across their ranges, a step per buffer (blocks 1311 to 1328).
+                if (blocks > 1310 && blocks < 1329)
+                {
+                    const auto t = (float) (blocks - 1311) / 17.0f;
+                    setParam (p, "wah_freq_high", 800.0f * std::pow (5.0f, t));
+                    setParam (p, "wah_q", 12.0f - 11.0f * t);
+                }
+
                 switch (blocks)
                 {
                     case 3050: preview.setMaterial (material (220.0)); preview.setLoop (0, 0, 30000); preview.setLoop (1, 0, 40000); break;
@@ -435,6 +453,12 @@ public:
                 }
                 previewBlocks += preview.isActive() ? 1 : 0;
                 matchCurveBlocks += p.getChain().isFullyBypassed (ampsim::Chain::Slot::matchCurve) ? 0 : 1;
+                if (p.getChain().didRun (ampsim::Chain::Slot::wah))
+                {
+                    ++wahBlocks;
+                    wahLowest = std::min (wahLowest, p.getChain().wah.getCentreFrequency());
+                    wahHighest = std::max (wahHighest, p.getChain().wah.getCentreFrequency());
+                }
                 countInBlocks += preview.getCountInRemaining() > 0 ? 1 : 0;
                 takeBlocks += session.isPlayingAlong() ? 1 : 0;
 
@@ -476,6 +500,8 @@ public:
 
             expect (ampWasBypassed, "the amp bypass must have reached the audio thread");
             expect (sectionsWereBypassed, "the section switches must have reached the audio thread");
+            expectGreaterThan (wahBlocks, 1000, "the auto-wah must have run during the measurement");
+            expectGreaterThan (wahHighest / wahLowest, 2.0, "the auto-wah must have swept");
             // Loads into the playing amp crossfade (20 ms, 7 or 8 buffers each: the one at 200 and the calibration change's
             // reload); a load into a stopped amp goes live at its next start, unheard, without one. At least one complete
             // crossfade must happen here: on a slow machine (GitHub's Windows runner, 2026-10-10: 7 blocks) the reload can
@@ -499,7 +525,7 @@ public:
             expectEquals (p.getCalibrationReloadCount(), 1, "the calibration change must have reloaded the captures during the measurement");
             expectEquals (p.getChain().gateA.getLearnCount(), 2, "both gate Learns must have finished during the measurement");
             using Slot = ampsim::Chain::Slot;
-            expect (p.getChain().getAppliedOrder (ampsim::Chain::Section::pre) == std::vector<Slot> { Slot::gateA, Slot::preEq, Slot::preCompressor, Slot::boost, Slot::overdrive },
+            expect (p.getChain().getAppliedOrder (ampsim::Chain::Section::pre) == std::vector<Slot> { Slot::gateA, Slot::preEq, Slot::preCompressor, Slot::wah, Slot::boost, Slot::overdrive },
                     "the pre FX reorder must have reached the audio thread");
             const auto postOrder = p.getChain().getAppliedOrder (ampsim::Chain::Section::post);
             expect (postOrder.size() >= 2 && postOrder[0] == Slot::postCompressor && postOrder[1] == Slot::postEq,
@@ -570,6 +596,8 @@ public:
                         + " amps and " + juce::String (maxTotalModels) + " step models running in one buffer");
             logMessage ("  -> the match curve: two curves, swapped and cleared mid-stream, off and on, its amount dragged from 100 to 30% and to 0 and back ("
                         + juce::String (matchBuilds) + " FIR designs handed over, " + juce::String (matchCurveBlocks) + " blocks playing it)");
+            logMessage ("  -> the auto-wah: on for " + juce::String (wahBlocks) + " buffers, swept " + juce::String (wahLowest, 0) + " to " + juce::String (wahHighest, 0)
+                        + " Hz (knobs dragged, Down, dragged after the compressor, the Pre FX switch off and on)");
             logMessage ("  -> audio thread: " + describe (total));
         }
     }
