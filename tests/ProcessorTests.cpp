@@ -2155,14 +2155,14 @@ public:
             };
             const auto centreOf = [&board] (ui::BlockId id) { return board.getPedal (id)->getBounds().getCentre().toFloat(); };
 
-            // The boost onto the compressor's place: gate, comp, boost becomes gate, boost, comp. (Until the auto-wah has its
-            // pedal on the board, the board's names leave it out and the processor puts it back right after the gate.)
+            // The boost onto the compressor's place: gate, wah, comp, boost becomes gate, wah, boost, comp.
             const auto preBefore = board.getShownOrder (ui::Section::pre);
             drag (ui::BlockId::boost, centreOf (ui::BlockId::preCompressor));
             const auto requested = p.getSectionOrder (ampsim::Chain::Section::pre);
             expect (requested == juce::StringArray { "gate", "wah", "boost", "comp", "overdrive", "eq" }, requested.joinIntoString (", "));
             expect (board.getShownOrder (ui::Section::pre)
-                    == std::vector<ui::BlockId> { ui::BlockId::gateA, ui::BlockId::boost, ui::BlockId::preCompressor, ui::BlockId::overdrive, ui::BlockId::preEq });
+                    == std::vector<ui::BlockId> { ui::BlockId::gateA, ui::BlockId::wah, ui::BlockId::boost, ui::BlockId::preCompressor, ui::BlockId::overdrive,
+                                                  ui::BlockId::preEq });
             expect (board.getPedal (ui::BlockId::boost)->getX() < board.getPedal (ui::BlockId::preCompressor)->getX(), "drawn in the new order");
 
             // The reverb to the front of the post section (on the Post FX tab).

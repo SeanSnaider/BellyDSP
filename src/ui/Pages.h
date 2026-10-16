@@ -228,6 +228,10 @@ protected:
     /// The block's controls, in order, as the column shows them.
     virtual void describe (InspectorLayout&) = 0;
     virtual void paintContent (juce::Graphics&) {}
+    /// What the header's pedal shows in its sweep window (the auto-wah's: PedalState::sweep); below 0 for nothing.
+    virtual float headerSweep() const { return -1.0f; }
+    /// The header's gear in small (its plinth), to repaint it alone.
+    static juce::Rectangle<int> thumbnailArea() { return { padding, padding, thumbWidth, thumbHeight }; }
     /// A section's controls dimmed together (an effect inside Bloom that's off, a voice that's off).
     static void dimAll (std::initializer_list<juce::Component*> list, float alpha);
 
@@ -302,6 +306,34 @@ private:
     GateMeterView* meterView = nullptr;
     bool linked = false, learning = false;
     int shownSidechain = -1;
+};
+
+/// The auto-wah: its sweep meter first (where the filter is now, between Low and High, and what the last second swept),
+/// its Direction (Up or Down) as the mode, Sensitivity and Resonance large, then the sweep's range (Low, High), the
+/// envelope's response (Attack, Release), and the output (Mix). The header's pedal lights its sweep window live too.
+class AutoWahPage final : public BlockPage, private juce::Timer
+{
+public:
+    explicit AutoWahPage (AmpSimProcessor& processor);
+    ~AutoWahPage() override;
+    void refresh() override;
+    void pageShown() override;
+    void pageHidden() override;
+
+    SweepMeterView& getMeter() noexcept { return *meterView; }
+    ChoiceBar& getDirection() noexcept { return *direction; }
+    /// Reads the wah now (the page's 30 Hz timer does it while it shows).
+    void updateMeter();
+
+private:
+    void describe (InspectorLayout&) override;
+    void timerCallback() override { updateMeter(); }
+    float headerSweep() const override;
+
+    Knob *sensitivity = nullptr, *resonance = nullptr, *low = nullptr, *high = nullptr, *attack = nullptr, *release = nullptr, *mix = nullptr;
+    ChoiceBar* direction = nullptr;
+    SweepMeterView* meterView = nullptr;
+    float shownHeaderSweep = -1.0f;
 };
 
 /// A compressor (phase 2): the mode (Studio or Pedal) on top, its live meter (the static curve, the gain reduction now

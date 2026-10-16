@@ -90,7 +90,7 @@ public:
     void paint (juce::Graphics& g) override
     {
         const auto box = getLocalBounds().toFloat();
-        drawPedal (g, box, id, { on, board.selected == id, hovered && board.dragged != id, sectionOff });
+        drawPedal (g, box, id, { on, board.selected == id, hovered && board.dragged != id, sectionOff, sweep });
 
         // An LED that has just come on blooms for a moment (the art's own glow is the steady state).
         if (const auto left = glowLeft(); left > 0.0f)
@@ -184,6 +184,17 @@ private:
 
 public:
     bool sectionOff = false; // its section is off: drawn dimmed (RD4-1), its LED still telling its own switch
+
+    /// The auto-wah's sweep window: where its filter is (0 to 1), or below 0 when it isn't sounding (the window dark).
+    /// Repaints the pedal only when the lamp would move by sweepStep (a 500th of the window) or go out.
+    void setSweep (float control)
+    {
+        if ((control < 0.0f) == (sweep < 0.0f) && std::abs (control - sweep) < sweepStep)
+            return;
+        sweep = control;
+        repaint();
+    }
+    float sweep = -1.0f;
 
 private:
     double glowStart = -1.0;
@@ -639,6 +650,18 @@ juce::Rectangle<float> Board::getFootswitchArea (BlockId id) const
     return {};
 }
 
+void Board::setSweep (float control)
+{
+    if (auto* wah = pedalFor (BlockId::wah))
+        wah->setSweep (control);
+}
+
+float Board::getSweep() const
+{
+    auto* wah = pedalFor (BlockId::wah);
+    return wah != nullptr ? wah->sweep : -1.0f;
+}
+
 bool Board::isLit (BlockId id) const
 {
     auto* pedal = pedalFor (id);
@@ -807,6 +830,11 @@ void Board::refresh()
     }
     if (glowing && ! isTimerRunning())
         startTimerHz (animationFps);
+
+    // The auto-wah's sweep window follows its filter while it sounds (on, and the pre section on); otherwise it rests,
+    // dark. The control holds its last value while the wah is bypassed, so it's only read while the wah runs.
+    if (auto* wah = pedalFor (BlockId::wah))
+        wah->setSweep (wah->isOn() && ! wah->sectionOff ? juce::jlimit (0.0f, 1.0f, ampSim.getWahControl()) : -1.0f);
     ampMarker->set (AmpSimProcessor::ampName (ampSim.getSelectedAmp()));
 
     // The strip's LEDs: repainted when any of them, or the order they're in, changes.
@@ -886,11 +914,12 @@ void Board::paint (juce::Graphics& g)
     for (auto id : getTabBlocks (tab))
         if (auto* pedal = pedalFor (id))
             right = juce::jmax (right, pedal->getRight());
-    // Where the row leaves room after its last pedal (the pre section's, mostly), the cable runs on to the row's end,
-    // named for where it goes, as the Amp & Cab tab's ends are.
+    // Where the row leaves room after its last pedal (the pre section's), the cable runs on to the row's end, named for
+    // where it goes, as the Amp & Cab tab's ends are. Pre FX's six pedals leave 91 px, so the name needs its own width
+    // and 12 px (its box's right edge is the row's; the last enclosure's margin adds 9 more of air).
     const auto font = geist (Weight::regular, 12.0f);
     const auto onward = juce::String (tab == BoardTab::pre ? "to Amp & Cab" : "to the output");
-    if (content.getRight() - right > (int) textWidth (font, onward) + 40)
+    if (content.getRight() - right > (int) textWidth (font, onward) + 12)
     {
         right = content.getRight();
         g.setFont (font);

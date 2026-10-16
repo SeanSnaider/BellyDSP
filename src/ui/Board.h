@@ -62,7 +62,8 @@ BoardTab boardTabNamed (const juce::String& name);
 /// The selection opens its tab (setSelected), wherever it came from. The open tab is UI state only: the editor keeps
 /// it in the app state (onTabChange), never in a parameter.
 ///
-/// The LEDs show each block's own switch, live (refresh() reads them); one that comes on lights with a short glow.
+/// The LEDs show each block's own switch, live (refresh() reads them); one that comes on lights with a short glow. The
+/// auto-wah's sweep window follows its filter, live, while it sounds (refresh() reads AmpSimProcessor::getWahControl).
 class Board final : public juce::Component, private juce::Timer
 {
 public:
@@ -114,6 +115,13 @@ public:
     juce::Component* getPedal (BlockId id) const;
     juce::Rectangle<float> getFootswitchArea (BlockId id) const;
     bool isLit (BlockId id) const;
+    /// The auto-wah's sweep window: what its pedal shows (0 at Low to 1 at High, or below 0 for a dark window).
+    /// refresh() sets it from AmpSimProcessor::getWahControl while the wah sounds; tests set it directly, as the meters'
+    /// tests push readings into their views.
+    void setSweep (float control);
+    float getSweep() const;
+    /// The smallest move of the control that redraws the window (a 500th of it: under a pixel at any board scale).
+    static constexpr float sweepStep = 0.002f;
     /// Whether a pedal draws dimmed: switched off, or its section off (RD4-1).
     bool isDimmed (BlockId id) const;
     /// Whether a block's pedal or marker is showing (its tab is open).

@@ -257,6 +257,11 @@ public:
     /// Any thread, for compressor gain reduction meters (dB).
     float getCompressorReduction (bool post) const { return post ? chain.postCompressor.getGainReductionDb() : chain.preCompressor.getGainReductionDb(); }
 
+    /// Any thread, for the auto-wah's sweep window on its pedal and its inspector's meter: where its filter is, 0 at Low
+    /// (closed) to 1 at High (open), Direction applied, as of the last buffer it ran (AutoWah::getControl). It holds its
+    /// last value while the wah is bypassed, so a display shows it only while the wah sounds.
+    float getWahControl() const { return chain.wah.getControl(); }
+
     /// True while a model or IR load (or a moving mic's re-morph) is still running. Used by the tests.
     bool isLoading() const { return loadsInFlight.load() > 0; }
 

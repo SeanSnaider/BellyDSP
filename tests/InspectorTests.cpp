@@ -130,6 +130,7 @@ std::vector<Design> designs()
     using B = ui::BlockId;
     return {
         { B::gateA, { "gate_a_release_mode", "gate_a_detector" }, { "gate_a_threshold", "gate_a_release" } },
+        { B::wah, { "wah_direction" }, { "wah_sensitivity", "wah_q" } },
         { B::preCompressor, { "comp_pre_mode", "comp_pre_detector" }, { "comp_pre_threshold", "comp_pre_ratio" } },
         { B::boost, { "boost_mode" }, { "boost_level", "boost_tilt" } },
         { B::overdrive, { "od_mode", "drive_oversampling" }, { "od_drive", "od_level" } },
@@ -164,7 +165,7 @@ public:
             auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
 
             // A sound with things happening, so the snapshots show the controls in use.
-            for (const auto* id : { "gate_a_on", "comp_pre_on", "od_on", "boost_on", "eq_post_on", "harm_on", "mv_on", "bloom_on", "bloom_phaser_on",
+            for (const auto* id : { "gate_a_on", "wah_on", "comp_pre_on", "od_on", "boost_on", "eq_post_on", "harm_on", "mv_on", "bloom_on", "bloom_phaser_on",
                                     "chorus_on", "delay_on", "reverb_on", "harm_v1_on", "harm_v2_on" })
                 setParam (p, id, 1.0f);
             setParam (p, "comp_pre_threshold", -36.0f);
@@ -406,6 +407,81 @@ public:
             expect (savePng (meter.createComponentSnapshot (meter.getLocalBounds(), true, 2.0f), redesignDir().getChildFile ("compressor_meter.png")));
             logMessage ("  -> through the post compressor at -40 dB, 10:1: up to " + juce::String (most, 1) + " dB of reduction shown, the shown value "
                         "matching the block's within " + juce::String (mismatch, 3) + " dB; compressor_meter.png");
+        }
+
+        beginTest ("the auto-wah: the meter reads the filter live (where it is, the frequency that means, the last second's sweep), rests when off; the "
+                   "knobs read in Hz, ms and %, each with a tooltip");
+        {
+            AmpSimProcessor p;
+            p.prepareToPlay (fs, blockSize);
+            setParam (p, "wah_on", 1.0f);
+            std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+            auto& ed = dynamic_cast<AmpSimEditor&> (*editor);
+            ed.selectBlock (ui::BlockId::wah);
+            auto& page = dynamic_cast<ui::AutoWahPage&> (ed.getPage (ui::BlockId::wah));
+            auto& meter = page.getMeter();
+            expect (ed.getInspector().getContent() == &page);
+
+            // Playing: read 30 times a second, as the page's timer does; the reading is the block's control, and the
+            // frequency it shows is the block's own mapping of it.
+            int n = 0;
+            float mismatch = 0.0f, frequencyError = 0.0f;
+            play (p, guitarDI ((int) (1.5 * fs)), [&]
+            {
+                if (++n % 12 == 0)
+                {
+                    page.updateMeter();
+                    const auto& r = meter.getReading();
+                    mismatch = juce::jmax (mismatch, std::abs (r.control - juce::jlimit (0.0f, 1.0f, p.getWahControl())));
+                    const auto truth = ampsim::AutoWah::centreFrequency (r.control, getParam (p, "wah_freq_low"), getParam (p, "wah_freq_high"));
+                    frequencyError = juce::jmax (frequencyError, (float) std::abs (meter.getFrequency() - truth));
+                }
+            });
+            const auto swept = meter.getSweptRange();
+            const auto playingText = meter.getStateText();
+            expectLessThan (mismatch, 1.0e-6f);
+            expectLessThan (frequencyError, 0.01f);
+            expect (meter.getReading().on && playingText.endsWith ("Hz"), playingText);
+            expectGreaterThan (swept.getLength(), 0.1f, "the last second's sweep");
+            expect (savePng (meter.createComponentSnapshot (meter.getLocalBounds(), true, 2.0f), redesignDir().getChildFile ("wah_meter.png")));
+
+            // Switched off: "Off", the lamp at rest (Low with Up, High with Down), no sweep.
+            setParam (p, "wah_on", 0.0f);
+            page.updateMeter();
+            expect (meter.getStateText() == "Off" && meter.getReading().control == 0.0f && meter.getSweptRange().isEmpty());
+            setParam (p, "wah_direction", 1.0f);
+            page.updateMeter();
+            expect (meter.getReading().down && meter.getReading().control == 1.0f, "Down rests at High");
+            expect (savePng (meter.createComponentSnapshot (meter.getLocalBounds(), true, 2.0f), redesignDir().getChildFile ("wah_meter_off.png")));
+            setParam (p, "wah_direction", 0.0f);
+
+            // The values as the knobs show them, and every control's tooltip.
+            setParam (p, "wah_freq_low", 350.0f);
+            setParam (p, "wah_freq_high", 2200.0f);
+            setParam (p, "wah_attack", 5.0f);
+            setParam (p, "wah_release", 150.0f);
+            setParam (p, "wah_sensitivity", 50.0f);
+            setParam (p, "wah_q", 4.0f);
+            setParam (p, "wah_mix", 100.0f);
+            juce::StringArray shown;
+            const std::vector<std::pair<const char*, const char*>> expected { { "wah_freq_low", "350 Hz" }, { "wah_freq_high", "2.20 kHz" }, { "wah_attack", "5.0 ms" },
+                                                                              { "wah_release", "150 ms" }, { "wah_sensitivity", "50 %" },   { "wah_q", "4.0" },
+                                                                              { "wah_mix", "100 %" } };
+            for (const auto& [id, text] : expected)
+            {
+                auto* knob = findTaggedAs<ui::Knob> (page, id);
+                expect (knob != nullptr, id);
+                if (knob == nullptr)
+                    continue;
+                expectEquals (knob->getValueText(), juce::String (text), id);
+                expect (knob->getTooltip().isNotEmpty(), juce::String (id) + " has a tooltip");
+                shown.add (knob->getCaption() + " " + knob->getValueText());
+            }
+            expect (page.getDirection().getProperties()[ui::parameterIdProperty].toString() == "wah_direction");
+            logMessage ("  -> playing: " + juce::String (n / 12) + " reads matched the block's control within " + juce::String (mismatch, 7) + " and its frequency within "
+                        + juce::String (frequencyError, 4) + " Hz; it read \"" + playingText + "\" at the end and swept " + juce::String (swept.getStart(), 3) + " to "
+                        + juce::String (swept.getEnd(), 3) + " in the last second; off: \"Off\", resting at Low (Up) and High (Down); the knobs at the defaults: "
+                        + shown.joinIntoString (", ") + "; wah_meter.png, wah_meter_off.png");
         }
 
         beginTest ("the EQ pedal puts the stage on its graph; the next other pedal puts it back; the player's own pick of the stage stays");

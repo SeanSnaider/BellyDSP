@@ -88,6 +88,47 @@ private:
     float shown = 0.0f, drawnThreshold = 1.0f, drawnRatio = 0.0f, drawnKnee = -1.0f;
 };
 
+/// The auto-wah's meter: where its filter is now. Its state (the centre frequency, or Off) with its LED, how far open it
+/// is, and a bar from Low to High (spaced in octaves, as the sweep is) with the lamp where the filter is and, washed
+/// behind it, the stretch it has swept over the last second. Off, the lamp rests where silence leaves it (Low, or High
+/// with Direction Down), unlit.
+class SweepMeterView final : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    SweepMeterView();
+
+    struct Reading
+    {
+        float control = 0.0f; ///< AutoWah::getControl: 0 at Low to 1 at High, Direction applied
+        float lowHz = 350.0f, highHz = 2200.0f;
+        bool on = false, down = false;
+    };
+    /// A new reading (30 times a second while the page shows); repaints only when what it shows moves.
+    void set (const Reading& reading);
+    const Reading& getReading() const noexcept { return reading; }
+    /// The filter's centre frequency the reading implies (AutoWah::centreFrequency).
+    float getFrequency() const;
+    /// The state as the meter says it ("1.24 kHz", "Off").
+    juce::String getStateText() const;
+    /// The stretch swept over the last second (the lowest and highest controls read), while on.
+    juce::Range<float> getSweptRange() const;
+
+    static constexpr int historyLength = 30; // a second at 30 a second
+    static constexpr int preferredHeight = 76;
+    juce::Rectangle<float> barArea() const;
+    float xForControl (float control) const;
+
+    void paint (juce::Graphics&) override;
+
+private:
+    Reading reading;
+    std::array<float, historyLength> history {};
+    int head = 0, filled = 0;
+};
+
+/// A frequency as the inspector shows it: "350 Hz", "2.20 kHz", "12.0 kHz".
+juce::String hertzText (double hz);
+
 /// The delay's Tap pad: a raised pad with "Tap", its LED blinking at the tempo (the tempo's field sits under it). A click taps the
 /// tempo (the editor's AmpSimProcessor::tapTempo through onClick); the pad flashes for a moment.
 class TapPad final : public juce::Button, private juce::Timer

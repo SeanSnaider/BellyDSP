@@ -223,6 +223,141 @@ void GateMeterView::mouseUp (const juce::MouseEvent&)
     repaint();
 }
 
+// ---- SweepMeterView ----------------------------------------------------------------------------------
+
+juce::String hertzText (double hz)
+{
+    if (hz < 999.5)
+        return juce::String (juce::roundToInt (hz)) + " Hz";
+    return juce::String (hz / 1000.0, hz >= 9995.0 ? 1 : 2) + " kHz";
+}
+
+SweepMeterView::SweepMeterView()
+{
+    setInterceptsMouseClicks (false, false);
+    setTooltip ("Where the filter is now, between Low and High: a harder pick moves it right (left with Down). The wash is how far it went in "
+                "the last second");
+}
+
+void SweepMeterView::set (const Reading& r)
+{
+    // The history: what the last second swept (only while it sounds; switched off, it starts again).
+    if (r.on)
+    {
+        history[(size_t) head] = juce::jlimit (0.0f, 1.0f, r.control);
+        head = (head + 1) % historyLength;
+        filled = juce::jmin (historyLength, filled + 1);
+    }
+    else
+        filled = 0;
+    const auto moved = std::abs (r.control - reading.control) > 0.002f || r.on != reading.on || r.down != reading.down
+                       || std::abs (r.lowHz - reading.lowHz) > 0.5f || std::abs (r.highHz - reading.highHz) > 0.5f || (r.on && filled < historyLength);
+    reading = r;
+    if (moved || r.on)
+        repaint();
+}
+
+float SweepMeterView::getFrequency() const
+{
+    return (float) ampsim::AutoWah::centreFrequency (juce::jlimit (0.0, 1.0, (double) reading.control), reading.lowHz, reading.highHz);
+}
+
+juce::String SweepMeterView::getStateText() const
+{
+    return reading.on ? hertzText (getFrequency()) : juce::String ("Off");
+}
+
+juce::Range<float> SweepMeterView::getSweptRange() const
+{
+    if (! reading.on || filled == 0)
+        return {};
+    auto lo = 1.0f, hi = 0.0f;
+    for (int i = 0; i < filled; ++i)
+    {
+        const auto v = history[(size_t) ((head - 1 - i + historyLength) % historyLength)];
+        lo = juce::jmin (lo, v);
+        hi = juce::jmax (hi, v);
+    }
+    return { lo, hi };
+}
+
+juce::Rectangle<float> SweepMeterView::barArea() const
+{
+    return { 12.0f, 36.0f, (float) getWidth() - 24.0f, 14.0f };
+}
+
+float SweepMeterView::xForControl (float control) const
+{
+    const auto bar = barArea().reduced (5.0f, 0.0f); // the lamp's centre stays inside the track's rounded ends
+    return bar.getX() + bar.getWidth() * juce::jlimit (0.0f, 1.0f, control);
+}
+
+void SweepMeterView::paint (juce::Graphics& g)
+{
+    const auto card = getLocalBounds().toFloat();
+    drawMeterCard (g, card);
+    const auto on = reading.on;
+
+    // The state: its LED (orange with a glow while the wah sounds) and the frequency now; how open it is at the right.
+    const auto led = juce::Rectangle<float> (8.0f, 8.0f).withCentre ({ 18.0f, 20.0f });
+    if (on)
+    {
+        g.setGradientFill (juce::ColourGradient (accent.withAlpha (0.5f), led.getCentre(), accent.withAlpha (0.0f), led.getCentre().translated (10.0f, 0.0f), true));
+        g.fillEllipse (led.expanded (6.0f));
+    }
+    g.setColour (on ? accent : line2.brighter (0.15f));
+    g.fillEllipse (led);
+    g.setFont (tabular (geist (Weight::semibold, 13.0f)));
+    g.setColour (on ? ink : inkDim);
+    g.drawText (getStateText(), juce::Rectangle<float> (30.0f, 11.0f, card.getWidth() * 0.6f, 18.0f), juce::Justification::centredLeft, false);
+    if (on)
+    {
+        g.setFont (tabular (geist (Weight::medium, 12.0f)));
+        g.setColour (inkDim);
+        g.drawText (juce::String (juce::roundToInt (juce::jlimit (0.0f, 1.0f, reading.control) * 100.0f)) + "% open",
+                    juce::Rectangle<float> (card.getWidth() * 0.5f, 11.0f, card.getWidth() * 0.5f - 12.0f, 18.0f), juce::Justification::centredRight, false);
+    }
+
+    // The bar: the track, an octave's tick wherever one falls between Low and High, the last second's sweep washed in,
+    // and the lamp.
+    const auto bar = barArea();
+    g.setColour (line1);
+    g.fillRoundedRectangle (bar, 4.0f);
+    const auto octaves = std::log2 ((double) reading.highHz / (double) juce::jmax (1.0f, reading.lowHz));
+    g.setColour (line2);
+    for (auto f = 125.0; f < (double) reading.highHz; f *= 2.0) // 125, 250, 500 Hz, 1, 2, 4 kHz
+        if (f > (double) reading.lowHz && octaves > 0.0)
+        {
+            const auto x = xForControl ((float) (std::log2 (f / (double) reading.lowHz) / octaves));
+            g.fillRect (juce::Rectangle<float> (x - 0.5f, bar.getY() + 3.0f, 1.0f, bar.getHeight() - 6.0f));
+        }
+    if (const auto swept = getSweptRange(); on && ! swept.isEmpty())
+    {
+        g.setColour (accentDim);
+        g.fillRoundedRectangle (juce::Rectangle<float> (xForControl (swept.getStart()) - 4.0f, bar.getY(), xForControl (swept.getEnd()) - xForControl (swept.getStart()) + 8.0f,
+                                                        bar.getHeight()),
+                                4.0f);
+    }
+    // Off, the lamp rests unlit where silence leaves the filter: Low, or High with Down.
+    const auto x = xForControl (on ? reading.control : (reading.down ? 1.0f : 0.0f));
+    if (on)
+    {
+        g.setGradientFill (juce::ColourGradient (accent.withAlpha (0.45f), { x, bar.getCentreY() }, accent.withAlpha (0.0f), { x + 14.0f, bar.getCentreY() }, true));
+        g.fillEllipse (juce::Rectangle<float> (28.0f, 28.0f).withCentre ({ x, bar.getCentreY() }));
+    }
+    g.setColour (on ? accent : inkFaint);
+    g.fillRoundedRectangle (juce::Rectangle<float> (on ? 4.0f : 3.0f, bar.getHeight() + (on ? 4.0f : 0.0f)).withCentre ({ x, bar.getCentreY() }), 1.5f);
+
+    // The scale: Low at the left, the geometric middle, High at the right.
+    g.setFont (tabular (geist (Weight::regular, 10.0f)));
+    g.setColour (inkFaint);
+    const auto y = bar.getBottom() + 5.0f;
+    const auto middle = std::sqrt ((double) reading.lowHz * (double) reading.highHz);
+    g.drawText (hertzText (reading.lowHz), juce::Rectangle<float> (bar.getX(), y, 60.0f, 12.0f), juce::Justification::centredLeft, false);
+    g.drawText (hertzText (middle), juce::Rectangle<float> (xForControl (0.5f) - 30.0f, y, 60.0f, 12.0f), juce::Justification::centred, false);
+    g.drawText (hertzText (reading.highHz), juce::Rectangle<float> (bar.getRight() - 60.0f, y, 60.0f, 12.0f), juce::Justification::centredRight, false);
+}
+
 // ---- CompressorMeterView -----------------------------------------------------------------------------
 
 CompressorMeterView::CompressorMeterView (juce::AudioProcessorValueTreeState& s, const juce::String& p) : state (s), prefix (p)
